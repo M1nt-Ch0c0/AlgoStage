@@ -1,0 +1,137 @@
+@import "tailwindcss";
+
+/*
+ * Spotlight · Chalkboard Dark 设计 token
+ * 详见 docs/02-frontend-design.md §2
+ */
+@theme {
+  /* 黑板底色：带绿意的深灰 */
+  --color-board-950: #0b0f0e;
+  --color-board-900: #111716;
+  --color-board-800: #1a2220;
+  --color-board-700: #263231;
+  --color-board-600: #33403f;
+
+  /* 粉笔色阶 */
+  --color-chalk-100: #f4f1e8;
+  --color-chalk-300: #cfc9b8;
+  --color-chalk-500: #8f887a;
+  --color-chalk-700: #5d594e;
+
+  /* 聚光灯光谱（特效专用荧光系） */
+  --color-beam-gold: #ffd166;
+  --color-beam-cyan: #4cc9f0;
+  --color-beam-violet: #b388ff;
+  --color-beam-rose: #ff5d8f;
+  --color-beam-mint: #52e0a4;
+
+  /* 功能色 */
+  --color-accent: #ffd166;
+  --color-success: #52e0a4;
+  --color-danger: #ff5d8f;
+
+  /* 字体 */
+  --font-sans: "Inter", "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Maple Mono NF", ui-monospace, monospace;
+  --font-chalk: "Caveat", "Zhi Mang Xing", "Long Cang", cursive;
+}
+
+/* Paper Light 主题 */
+[data-theme="light"] {
+  --color-board-950: #faf7f0;
+  --color-board-900: #f1ede2;
+  --color-board-800: #e4dfd1;
+  --color-board-700: #d2ccbc;
+  --color-board-600: #b8b2a2;
+  --color-chalk-100: #1c2321;
+  --color-chalk-300: #3a4441;
+  --color-chalk-500: #6a736f;
+  --color-chalk-700: #9aa19d;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--color-board-950);
+  color: var(--color-chalk-100);
+  font-family: var(--font-sans);
+  /* 粉笔灰噪点质感（docs/02 §2.2） */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+}
+
+code,
+pre {
+  font-family: var(--font-mono);
+}
+
+/* ===== 特效系统关键帧（docs/02 §4）===== */
+
+/* Spotlight Beam 呼吸（只动 opacity，零重排） */
+@keyframes beam-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+/* Monaco 行级聚光灯：通过 deltaDecorations 注入 */
+.beam-line {
+  background: radial-gradient(
+    ellipse 90% 100% at 30% 50%,
+    color-mix(in srgb, var(--beam-color, var(--color-beam-gold)) 22%, transparent),
+    transparent 75%
+  );
+  animation: beam-breathe 2.4s ease-in-out infinite;
+}
+
+.beam-line-glyph {
+  background: var(--beam-color, var(--color-beam-gold));
+  width: 3px !important;
+  margin-left: 3px;
+  border-radius: 2px;
+  box-shadow: 0 0 8px 1px color-mix(in srgb, var(--beam-color, var(--color-beam-gold)) 70%, transparent);
+}
+
+/* 注意力涟漪 */
+@keyframes attention-ripple {
+  from {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  to {
+    transform: scale(1.15);
+    opacity: 0;
+  }
+}
+
+/* 字幕打字机光标 */
+@keyframes caret-hop {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+/* 降级：尊重系统减少动效偏好（docs/02 §7） */
+@media (prefers-reduced-motion: reduce) {
+  .beam-line {
+    animation: none;
+    opacity: 0.7;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

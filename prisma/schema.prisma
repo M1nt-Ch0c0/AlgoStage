@@ -1,0 +1,92 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String            @id @default(cuid())
+  name        String            @default("default")
+  createdAt   DateTime          @default(now())
+  progress    ProblemProgress[]
+  submissions Submission[]
+  hintUsages  HintUsage[]
+  reviewCards ReviewCard[]
+  settings    Setting[]
+}
+
+model Problem {
+  slug       String            @id
+  title      String
+  number     Int
+  difficulty String
+  patterns   String // JSON: ['hash-table']
+  prereqs    String // JSON: ['array-basics']
+  order      Int
+  progress   ProblemProgress[]
+}
+
+model ProblemProgress {
+  userId      String
+  problemSlug String
+  status      String    @default("untouched") // untouched|learning|solved|mastered
+  attempts    Int       @default(0)
+  solvedAt    DateTime?
+  lectureSeen Int       @default(0)
+  lastStepAt  DateTime?
+  user        User      @relation(fields: [userId], references: [id])
+  problem     Problem   @relation(fields: [problemSlug], references: [slug])
+
+  @@id([userId, problemSlug])
+}
+
+model Submission {
+  id          String   @id @default(cuid())
+  userId      String
+  problemSlug String
+  code        String
+  language    String
+  verdict     String // AC | WA | RE | TLE
+  runtimeMs   Int?
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id])
+}
+
+model HintUsage {
+  id          String   @id @default(cuid())
+  userId      String
+  problemSlug String
+  level       Int // 1-5
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id])
+}
+
+model LectureScriptCache {
+  key       String   @id // hash(slug+model+lang+mode)
+  script    String // TeachingScript JSON
+  createdAt DateTime @default(now())
+}
+
+model ReviewCard {
+  id          String   @id @default(cuid())
+  userId      String
+  problemSlug String
+  ease        Float    @default(2.5)
+  interval    Int      @default(0) // 天
+  dueAt       DateTime
+  reps        Int      @default(0)
+  lapses      Int      @default(0)
+  user        User     @relation(fields: [userId], references: [id])
+}
+
+model Setting {
+  key    String
+  value  String
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@id([key, userId])
+}

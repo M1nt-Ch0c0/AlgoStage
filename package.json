@@ -1,0 +1,45 @@
+{
+  "name": "spotlight-tutor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Spotlight · 聚光算法导师 — 像老师讲课一样学算法，AI 讲到哪，聚光灯打到哪",
+  "scripts": {
+    "dev": "node node_modules/next/dist/bin/next dev",
+    "build": "node node_modules/next/dist/bin/next build",
+    "start": "node node_modules/next/dist/bin/next start",
+    "db:push": "node node_modules/prisma/build/index.js db push",
+    "db:seed": "node node_modules/tsx/dist/cli.mjs prisma/seed.ts",
+    "postinstall": "prisma generate"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "4.0.53",
+    "@ai-sdk/google": "4.0.69",
+    "@ai-sdk/openai-compatible": "3.0.48",
+    "@ai-sdk/react": "4.0.102",
+    "@monaco-editor/react": "4.7.0",
+    "@prisma/client": "6.19.3",
+    "ai": "7.0.99",
+    "lucide-react": "1.45.0",
+    "motion": "13.2.0",
+    "next": "16.3.5",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "zod": "4.6.5",
+    "zustand": "5.0.15"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/node": "26.5.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "prisma": "6.19.3",
+    "tailwindcss": "4.3.3",
+    "tsx": "4.23.13",
+    "typescript": "5.9.3"
+  },
+  "allowScripts": {
+    "prisma@6.19.3": true,
+    "@prisma/engines@6.19.3": true,
+    "esbuild@0.28.2": true
+  }
+}

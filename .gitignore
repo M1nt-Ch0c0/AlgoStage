@@ -1,0 +1,11 @@
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# 本地数据与密钥
+.env
+.env.local
+prisma/spotlight.db
+prisma/spotlight.db-journal
