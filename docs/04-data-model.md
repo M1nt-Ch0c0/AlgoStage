@@ -1,6 +1,6 @@
 # 04 · 数据模型与看板指标
 
-> 存储：Prisma + SQLite（本地文件 `spotlight.db`）。一期单用户，但所有表带 `userId` 外键，为多档案/云同步预留。
+> 存储：Prisma + SQLite（本地文件 `algostage.db`）。一期单用户，但所有表带 `userId` 外键，为多档案/云同步预留。
 
 ## 1. Prisma Schema（骨架）
 
@@ -106,5 +106,5 @@ model Setting {              // BYOK 等设置（Key 仅存本地）
 
 ## 4. 数据安全与迁移
 
-- 全部数据留在用户本地 `spotlight.db`；设置页提供"导出/导入 JSON"。
+- 全部数据留在用户本地 `algostage.db`；设置页提供"导出/导入 JSON"。
 - Prisma migrate 管理 schema 演进；新增字段一律可空或带默认值，保证老库无缝升级。

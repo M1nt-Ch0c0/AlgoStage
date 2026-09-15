@@ -19,10 +19,10 @@ export function SiteNav() {
       <nav className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
         <Link href="/" className="group flex items-baseline gap-2">
           <span className="font-chalk text-2xl text-chalk-100 transition-colors group-hover:text-beam-gold [text-shadow:0_0_12px_rgba(244,241,232,0.25)]">
-            Spotlight
+            AlgoStage
           </span>
           <span className="hidden text-xs text-chalk-500 sm:inline">
-            · 聚光算法导师
+            · 算法讲台
           </span>
         </Link>
 

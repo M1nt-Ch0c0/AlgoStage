@@ -375,7 +375,7 @@ export default function SettingsPage() {
         </Card>
 
         {/* 数据 */}
-        <Card title="数据" desc="所有数据仅存在本机 SQLite（prisma/spotlight.db），不经过任何云服务器。">
+        <Card title="数据" desc="所有数据仅存在本机 SQLite（prisma/algostage.db），不经过任何云服务器。">
           <button
             onClick={async () => {
               const res = await fetch("/api/dashboard");
@@ -386,7 +386,7 @@ export default function SettingsPage() {
               const url = URL.createObjectURL(blob);
               const a = document.createElement("a");
               a.href = url;
-              a.download = `spotlight-dashboard-${new Date().toISOString().slice(0, 10)}.json`;
+              a.download = `algostage-dashboard-${new Date().toISOString().slice(0, 10)}.json`;
               a.click();
               URL.revokeObjectURL(url);
             }}

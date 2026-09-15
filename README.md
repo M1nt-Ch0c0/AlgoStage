@@ -1,10 +1,10 @@
-# Spotlight · 聚光算法导师
+# AlgoStage · 算法讲台
 
 > 像老师站在黑板前讲课一样学算法 —— AI 讲到哪，聚光灯打到哪。
 
 ![讲课演示：舞台压暗 + 聚光灯 + 粉笔圈选 + 字幕](docs/assets/demo.gif)
 
-Spotlight 是一个**纯本地运行**的 LeetCode Hot 100 AI 学习系统：内置代码 playground、会讲课的 AI 导师（边讲边在页面上高亮当前位置、带华丽特效）、个人学习数据与看板。只需填入你自己的 **API Key + Model Name** 即可开始，无需任何服务器。
+AlgoStage 是一个**纯本地运行**的 LeetCode Hot 100 AI 学习系统：内置代码 playground、会讲课的 AI 导师（边讲边在页面上高亮当前位置、带华丽特效）、个人学习数据与看板。只需填入你自己的 **API Key + Model Name** 即可开始，无需任何服务器。
 
 ## 特性
 

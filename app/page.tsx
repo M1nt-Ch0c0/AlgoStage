@@ -242,7 +242,7 @@ export default function LandingPage() {
           transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
           className="font-chalk text-5xl text-chalk-100 [text-shadow:0_0_24px_rgba(244,241,232,0.2)] sm:text-7xl"
         >
-          Spotlight
+          AlgoStage
         </motion.h1>
         <motion.p
           initial={{ opacity: 0, y: 16 }}

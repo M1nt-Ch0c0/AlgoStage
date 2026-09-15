@@ -4,7 +4,7 @@
 
 ## 核心结论
 
-**"AI 教学 + 刷题平台" 是空白区。** 高 Star 的算法学习仓库全都不带 AI；带 AI 的刷题工具 Star 普遍 < 300，且都是侧边栏问答形态。**没有一个产品做到"像老师讲课一样，边讲边在页面上高亮当前位置并带特效"** —— 这正是 Spotlight 的主打卖点。
+**"AI 教学 + 刷题平台" 是空白区。** 高 Star 的算法学习仓库全都不带 AI；带 AI 的刷题工具 Star 普遍 < 300，且都是侧边栏问答形态。**没有一个产品做到"像老师讲课一样，边讲边在页面上高亮当前位置并带特效"** —— 这正是 AlgoStage 的主打卖点。
 
 ## 一、内容层（题库、题解、学习路径）
 
@@ -52,7 +52,7 @@
 | [langgenius/dify](https://github.com/langgenius/dify) | 155k | 只借鉴模型配置 UX（填 Key 即用），不作底座 |
 | [pipecat-ai/pipecat](https://github.com/pipecat-ai/pipecat) | 15.5k | 二期语音讲解可选：同步控制帧做语音与高亮对齐 |
 
-## 五、Spotlight 的能力组合（差异化公式）
+## 五、AlgoStage 的能力组合（差异化公式）
 
 ```
 algo-sensei 的 5 级渐进提示（教学法内核）

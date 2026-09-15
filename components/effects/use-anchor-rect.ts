@@ -1,6 +1,6 @@
 /**
  * 锚点响应式解析：EffectTarget → viewport DOMRect。
- * 监听窗口 resize / 滚动 / Monaco 内部滚动（'spotlight:anchor-refresh' 自定义事件，
+ * 监听窗口 resize / 滚动 / Monaco 内部滚动（'algostage:anchor-refresh' 自定义事件，
  * 由 CodeEditor 在 onDidScrollChange 时派发）重新解析。
  *
  * 注意：lib/anchors 模块顶层实例化 DOMRect（浏览器专属），
@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { EffectTarget } from "@/lib/teaching/types";
 
-export const ANCHOR_REFRESH_EVENT = "spotlight:anchor-refresh";
+export const ANCHOR_REFRESH_EVENT = "algostage:anchor-refresh";
 
 type AnchorsModule = typeof import("@/lib/anchors");
 

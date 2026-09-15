@@ -3,7 +3,7 @@ import { SiteNav } from "@/components/site-nav";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Spotlight · 聚光算法导师",
+  title: "AlgoStage · 算法讲台",
   description:
     "像老师站在黑板前讲课一样学算法 —— AI 讲到哪，聚光灯打到哪。纯本地运行，填入 API Key 即可开课。",
 };

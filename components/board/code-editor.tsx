@@ -2,7 +2,7 @@
  * CodeEditor · 黑板（Monaco 封装，docs/02 §4.1 / §5.4）
  *  - 纯本地：直接 import monaco-editor ESM（不走 CDN loader）。
  *  - 挂载时向 lib/anchors 注册 codeLineResolver：行号区间 → viewport rect
- *    （内部滚动时派发 'spotlight:anchor-refresh' 让特效层重新解析锚点）。
+ *    （内部滚动时派发 'algostage:anchor-refresh' 让特效层重新解析锚点）。
  *  - 订阅播放器当前步：kind=code-line/code-token 的 targets 注入
  *    .beam-line + .beam-line-glyph decorations（特效色写 --beam-color），
  *    并 revealLineInCenter 平滑滚动跟随。
