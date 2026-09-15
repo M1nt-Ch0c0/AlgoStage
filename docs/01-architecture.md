@@ -53,6 +53,17 @@ interface ProblemSource {
 ### ⑤ Visualizer · 可视化器
 `state → SVG` 纯函数组件，按题目 `vizType` 注册到 `VisualizerRegistry`。新题型 = 新组件 + 一行注册。
 
+### ⑥ JudgeBackend · 判题后端（详见 [06-judge-design.md](06-judge-design.md)）
+```ts
+interface JudgeBackend {
+  name: string;
+  languages: JudgeLanguage[];
+  available(): Promise<{ ok: boolean; reason?: string }>;
+  judge(input): Promise<JudgeResult>;
+}
+```
+四个实现：browser-sandbox（默认，JS/Python 浏览器内）· native-local（默认，C++/Java 本机编译器）· judge0-docker（opt-in）· leetcode-remote（opt-in）。新判题后端 = 实现接口 + 注册一行。
+
 ## 3. 目录结构
 
 ```
@@ -64,6 +75,7 @@ lib/
   content/           # ProblemSource 实现 + 种子数据
   effects/           # 特效注册表与锚点解析
   player/            # 播放器状态机
+  judge/             # JudgeBackend 接口、注册表、四个后端实现（docs/06）
   db/                # Prisma schema、数据访问层（看板指标计算）
 docs/                # 本套文档
 ```
@@ -73,11 +85,11 @@ docs/                # 本套文档
 **AI 讲课**：`设置页 BYOK → /api/lecture 流式请求 → AI 输出 TeachingScript JSON（03 文档）→ 流式 data parts 推给前端 → Player 逐步接收并开始播放 → EffectStage 执行特效`。
 脚本带缓存（同题同模型同语言只生成一次，落 SQLite）。
 
-**练习判题**：`Monaco 代码 → 浏览器内沙箱 iframe（JS）→ 跑题目自带测试用例 → 结果 + AC 事件 → 写库 → 看板更新 + Confetti`。
+**练习判题**（docs/06）：`Monaco 代码 → JudgeRouter 按语言路由（browser-sandbox / native-local）→ 真判题 → verdict 写库 → 看板更新 + AC 触发 Confetti`。
 
 ## 5. 显式不做（一期）
 
 - 多用户/账号体系（本地单档案，预留 User 表字段以便二期扩展）
 - 运行时插桩式可视化（用预编排步骤帧，见 00 调研结论）
 - 语音讲解（Pipecat 二期可选）
-- WebContainers / Judge0（浏览器沙箱已够 Hot 100 用）
+- 多租户安全沙箱（单用户本地场景，见 docs/06 §0；judge0 仅作 opt-in 插件）

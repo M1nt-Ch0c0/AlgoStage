@@ -38,6 +38,7 @@ npm run dev                   # http://localhost:3000
 | [docs/03-teaching-protocol.md](docs/03-teaching-protocol.md) | 讲解脚本协议：AI 如何描述"讲什么、指哪里、放什么特效" |
 | [docs/04-data-model.md](docs/04-data-model.md) | 数据模型与看板指标 |
 | [docs/05-content-license.md](docs/05-content-license.md) | 开源内容合规策略 |
+| [docs/06-judge-design.md](docs/06-judge-design.md) | 判题分层设计：JudgeBackend 插件点与四个后端（浏览器沙箱/本机编译器/Judge0/LeetCode 远程） |
 
 ## 技术栈
 
