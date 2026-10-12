@@ -23,6 +23,8 @@ export interface ProblemMeta {
 }
 
 export interface ProblemDetail extends ProblemMeta {
+  /** 已收录的浏览器判题规格；没有规格时不能提交判题结果。 */
+  judging?: import("../judge/types").ProblemJudgingSpec;
   /** 题面 HTML/Markdown；local-seed 提供改写版，leetcode-live 运行时拉取 */
   statement?: string;
   /** 自产参考题解 */

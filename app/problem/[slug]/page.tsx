@@ -12,6 +12,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ChevronRight, GraduationCap, KeyRound, Lightbulb, Pencil, Play, RotateCcw, Sparkles } from "lucide-react";
 import type { ProblemDetail } from "@/lib/content/types";
+import JudgeControls from "@/components/judge/judge-controls";
 import { loadLectureForPlayback } from "@/lib/player/load-lecture";
 import { TWO_SUM_SCRIPT } from "@/lib/content/scripts/two-sum";
 import { HOT100_CATEGORIES } from "@/lib/content/hot100";
@@ -45,7 +46,7 @@ export default function ProblemPage() {
 
   const [practice, setPractice] = useState(false);
   const [code, setCode] = useState("");
-  const [runResult, setRunResult] = useState<string | null>(null);
+  const [language, setLanguage] = useState<"typescript" | "python">("typescript");
 
   const [lectureBusy, setLectureBusy] = useState(false);
   const [lectureError, setLectureError] = useState<string | null>(null);
@@ -73,6 +74,7 @@ export default function ProblemPage() {
           j.problem.referenceSolutions?.find((s) => s.language === "typescript") ??
           j.problem.referenceSolutions?.[0];
         setCode(ref?.code ?? "");
+        setLanguage("typescript");
       })
       .catch((e: Error) => setLoadError(e.message));
   }, [slug, reset]);
@@ -102,13 +104,14 @@ export default function ProblemPage() {
     setLectureBusy(true);
     try {
       if (slug === "two-sum") {
+        setLanguage("typescript");
         loadLectureForPlayback(TWO_SUM_SCRIPT, detail, { setCode, loadScript, play });
         return;
       }
       const res = await fetch(apiPath("/api/lecture"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slug }),
+        body: JSON.stringify({ slug, solutionLanguage: language }),
       });
       if (!res.ok) {
         const j = (await res.json().catch(() => null)) as { message?: string } | null;
@@ -128,12 +131,12 @@ export default function ProblemPage() {
     } finally {
       setLectureBusy(false);
     }
-  }, [slug, detail, loadScript, play]);
+  }, [slug, detail, language, loadScript, play]);
 
-  // 判题沙箱尚未接入，只提示未判题，不记录提交或通过状态。
-  const run = useCallback(() => {
-    setRunResult("判题功能开发中，代码尚未运行或判题。");
-  }, []);
+  function changeLanguage(next: "typescript" | "python") {
+    setLanguage(next);
+    setCode(detail?.referenceSolutions?.find(s => s.language === next)?.code ?? "");
+  }
 
   // 提示阶梯
   const askHint = useCallback(
@@ -334,7 +337,7 @@ export default function ProblemPage() {
             <div className="flex items-center justify-between gap-3 px-3 pt-1.5 pb-2">
               <span className="chalk text-xl leading-none text-chalk-300">黑板</span>
               <span className="flex items-center gap-2 font-mono text-[11px] text-chalk-500">
-                TypeScript
+                {language === "python" ? "Python" : "TypeScript"}
                 {practice ? (
                   <span className="rounded-full border border-beam-cyan/40 px-2 py-0.5 text-beam-cyan">练习中 · 可编辑</span>
                 ) : inLecture ? (
@@ -348,7 +351,7 @@ export default function ProblemPage() {
               </span>
             </div>
             <div className="min-h-0 flex-1 overflow-hidden rounded-md">
-              <CodeEditor value={code} readOnly={!practice} onChange={setCode} language="typescript" />
+              <CodeEditor value={code} readOnly={!practice} onChange={setCode} language={language} />
             </div>
           </div>
 
@@ -364,25 +367,7 @@ export default function ProblemPage() {
             </div>
           )}
 
-          <div className="flex shrink-0 flex-wrap items-center gap-3 rounded-xl border border-board-700/70 bg-board-900/80 px-4 py-2.5">
-            <span className="text-xs font-medium text-chalk-500">控制台</span>
-            {runResult ? (
-              <span className="text-xs text-chalk-500" role="status">{runResult}</span>
-            ) : (
-              <span className="text-xs text-chalk-700">
-                {practice ? "可以编辑代码；判题功能开发中" : "切到「练习」，就能自己动手写"}
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={run}
-              disabled={!practice}
-              className="ml-auto flex items-center gap-1.5 rounded-full bg-beam-mint px-4 py-1.5 text-sm font-semibold text-on-accent transition-transform hover:scale-[1.03] disabled:pointer-events-none disabled:opacity-35"
-            >
-              <Play size={13} />
-              运行
-            </button>
-          </div>
+          <JudgeControls detail={detail} code={code} language={language} onLanguage={changeLanguage} disabled={!practice} />
         </section>
 
         {/* AI 导师面板 */}

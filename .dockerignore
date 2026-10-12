@@ -7,3 +7,5 @@ prisma/*.db-journal
 docs/assets
 CLAUDE.md
 tsconfig.tsbuildinfo
+
+public/judge

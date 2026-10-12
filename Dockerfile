@@ -19,6 +19,8 @@ COPY package.json package-lock.json ./
 COPY prisma ./prisma
 COPY prisma.config.ts ./
 COPY lib/db/database-url.ts ./lib/db/database-url.ts
+COPY lib/judge ./lib/judge
+COPY scripts/build-judge.ts ./scripts/build-judge.ts
 RUN npm ci --no-audit --no-fund
 
 COPY . .

@@ -1,6 +1,7 @@
 /**
  * local-seed 题目源：仓库内置元数据 + 自产内容（docs/01 §2-①）
  */
+import { JUDGING_SPECS } from "../judge/specs";
 import generatedJSON from "./generated/hot100-content.json";
 import { validateContent, type GeneratedContent } from "./generated-check";
 import { HOT100 } from "./hot100";
@@ -53,9 +54,10 @@ export const localSeedSource: ProblemSource = {
     if (!meta) throw new Error(`Unknown problem: ${slug}`);
     return {
       ...meta,
+      judging: JUDGING_SPECS[slug],
       statement: STATEMENTS[slug] ?? GENERATED[slug]?.statement,
       referenceSolutions: SOLUTIONS[slug] ?? GENERATED[slug]?.solutions,
-      testCases: TEST_CASES[slug] ?? GENERATED[slug]?.testCases,
+      testCases: JUDGING_SPECS[slug]?.cases.map(c => ({ input: c.args.map(arg => JSON.stringify(arg)).join(", "), expected: JSON.stringify(c.expected) })) ?? TEST_CASES[slug] ?? GENERATED[slug]?.testCases,
     };
   },
 };
