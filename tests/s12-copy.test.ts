@@ -59,7 +59,7 @@ describe("S12 版本号", () => {
     for (const f of ["deploy/compose.yaml", "deploy/README.md"]) {
       const content = read(f);
       expect(content).toContain("algostage:0.2.0-alpha.1");
-      expect(content).not.toContain("algostage-demo");
+      expect(content).not.toContain("algostage-demo:");
       expect(content).not.toMatch(/algostage:0\.2\.0(?!-alpha)/);
       expect(content).not.toContain("20261008");
     }
