@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { NextRequest } from "next/server";
 import { vi } from "vitest";
 import { createFixture, request } from "./api-fixture";
@@ -8,6 +8,9 @@ import { HOT100 } from "../lib/content/hot100";
 import { localSeedSource } from "../lib/content/local-source";
 
 test("Demo：请求 Key 和环境 Key 均不能绕过 AI 禁用与设置隔离", async () => {
+  const runtimeSource = readFileSync(new URL("../lib/runtime.ts", import.meta.url), "utf8");
+  assert.equal(runtimeSource.includes("每位访客的进度互相独立"), false);
+  assert.equal(runtimeSource.includes("不记录任何"), true);
   const databasePath = `/tmp/algostage-demo-forbidden-${process.pid}.db`;
   process.env.DATABASE_URL = `file:${databasePath}`;
   process.env.NEXT_PUBLIC_ALGOSTAGE_DEMO = "1";

@@ -1,7 +1,7 @@
 /**
  * 运行形态（构建时由环境变量决定，客户端与服务端通用）
  *  - NEXT_PUBLIC_BASE_PATH：部署在子路径下时的前缀，如 "/a1"（需与 next.config.ts 的 basePath 一致）
- *  - NEXT_PUBLIC_ALGOSTAGE_DEMO=1：公开在线体验版。不接 AI、不保存 API Key，每位访客的进度互相独立。
+ *  - NEXT_PUBLIC_ALGOSTAGE_DEMO=1：公开在线体验版。不接 AI、不保存 API Key，不记录任何学习进度。
  */
 export const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 export const IS_DEMO = process.env.NEXT_PUBLIC_ALGOSTAGE_DEMO === "1";
