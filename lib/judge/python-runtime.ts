@@ -79,8 +79,10 @@ def _run_case():
         except _base_error:
             raise _runtime_error('Python 运行状态清理失败，执行环境将被替换') from None
     def _user_failure(_error):
+        _error_str = ''.join(_format_exception(_error))
+        _reusable = not _isinstance(_error, _fatal_errors)
         _restore()
-        return _dumps({'error': ''.join(_format_exception(_error)), 'reusable': not _isinstance(_error, _fatal_errors)}, ensure_ascii=False)
+        return _dumps({'error': _error_str, 'reusable': _reusable}, ensure_ascii=False)
     try:
         _args = _loads(__args_json)
         _names = _loads(__names_json)

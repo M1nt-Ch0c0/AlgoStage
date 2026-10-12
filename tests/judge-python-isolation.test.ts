@@ -250,3 +250,21 @@ class Solution:
   }
   expect(workers).toHaveLength(1);
 });
+
+test("真实 Pyodide 覆盖 builtins（str/repr/type）后抛异常，在 restore 前正确格式化异常信息", async () => {
+  const { run } = setup();
+  const result = await run(`
+import builtins
+builtins.str = None
+builtins.repr = None
+builtins.type = None
+raise ValueError("custom_error_message")
+`);
+  expect(result.verdict, JSON.stringify(result)).toBe("RE");
+  expect(result.cases[0].stderr).toContain("ValueError: custom_error_message");
+
+  // 验证环境已被 restore 正常恢复，下一题可以正常运行
+  const next = await run(correct);
+  expect(next.verdict, JSON.stringify(next)).toBe("AC");
+});
+

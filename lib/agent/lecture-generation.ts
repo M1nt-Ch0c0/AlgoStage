@@ -163,6 +163,8 @@ export async function generateLecture(input: {
     let noCalls = 0,
       upstreamRetries = 0,
       toolRetries = 0;
+    // retryOf 对不上任何待修复调用时不回退到 pending[0]，单独计次，避免无限重试。
+    let unknownRetryAttempts = 0;
     for (let round = 1; round <= 48; round++) {
       if (controller.signal.aborted) return cancelled;
       const repair = repairs[0];
@@ -221,7 +223,7 @@ export async function generateLecture(input: {
           const retryOf = (part.input as { retryOf?: unknown } | null)?.retryOf;
           const pending = roundRepairs.filter(item => repairs.includes(item));
           const activeRepair = typeof retryOf === "string"
-            ? pending.find(item => item.toolCallId === retryOf) ?? pending[0]
+            ? pending.find(item => item.toolCallId === retryOf)
             : pending.find(item => item.name === name && item.step === callStep)
               ?? pending.find(item => item.name === name)
               ?? (name === "finish" ? undefined : pending[0]);
@@ -286,7 +288,8 @@ export async function generateLecture(input: {
             if (applied.finished) finished = true;
           } catch (error) {
             const info = failure(error),
-              attempt = activeRepair?.attempt ?? 1,
+              unknownRetry = info.type === "unknown_retry_call",
+              attempt = unknownRetry ? ++unknownRetryAttempts : activeRepair?.attempt ?? 1,
               step = activeRepair?.step ?? stepOf(name, part.input);
             console.warn(
               "lecture_validation",
@@ -300,7 +303,9 @@ export async function generateLecture(input: {
             );
             if (attempt > TOOL_RETRY_LIMIT || !Object.hasOwn(kit.tools, name))
               return invalid;
-            if (activeRepair) {
+            if (unknownRetry) {
+              // 不消费、不新增修复记录：原始失败调用仍待修复。
+            } else if (activeRepair) {
               activeRepair.attempt++;
               activeRepair.fields = info.fields;
             } else
@@ -316,7 +321,7 @@ export async function generateLecture(input: {
               });
             output = {
               ok: false,
-              retryOf: activeRepair?.toolCallId ?? part.toolCallId,
+              retryOf: unknownRetry ? (pending[0]?.toolCallId ?? null) : activeRepair?.toolCallId ?? part.toolCallId,
               error: info.type,
               fields: info.fields,
               reason:
