@@ -3,6 +3,7 @@
  */
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db/prisma";
+import { byokFromEnv } from "@/lib/agent/provider";
 import { IS_DEMO } from "@/lib/runtime";
 
 export const runtime = "nodejs";
@@ -20,16 +21,18 @@ const ALLOWED_KEYS = new Set([
 
 export async function GET() {
   // 在线体验版：访客之间不共享任何设置
-  if (IS_DEMO) return Response.json({ settings: {} });
+  if (IS_DEMO) return Response.json({ settings: {}, keySource: "none", envConfigured: false });
   const rows = await prisma.setting.findMany({ where: { userId: USER_ID } });
   const settings = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  const envConfigured = Boolean(byokFromEnv());
+  const keySource = settings.apiKey?.trim() ? "settings" : envConfigured ? "env" : "none";
   // 不回传完整 Key，只回掩码
   if (settings.apiKey) {
     const k = settings.apiKey as string;
     settings.apiKeyMasked = k.length > 8 ? `${k.slice(0, 4)}…${k.slice(-4)}` : "已配置";
-    delete settings.apiKey;
   }
-  return Response.json({ settings });
+  delete settings.apiKey;
+  return Response.json({ settings, keySource, envConfigured });
 }
 
 export async function PUT(req: NextRequest) {

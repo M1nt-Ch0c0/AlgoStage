@@ -5,7 +5,7 @@
 import { generateText } from "ai";
 import { NextRequest } from "next/server";
 import { IS_DEMO } from "@/lib/runtime";
-import { createModel, byokFromEnv, type ByokConfig } from "@/lib/agent/provider";
+import { createModel, resolveByok, type ByokConfig } from "@/lib/agent/provider";
 import { localSeedSource } from "@/lib/content/local-source";
 
 export const runtime = "nodejs";
@@ -32,7 +32,8 @@ export async function POST(req: NextRequest) {
       { status: 403 },
     );
   }
-  const byok = body.byok ?? byokFromEnv();
+  const resolved = await resolveByok(body.byok);
+  const byok = resolved?.config;
   if (!byok) {
     return Response.json(
       { error: "NO_BYOK", message: "老师还没接上 AI，先去设置里接一下吧。" },

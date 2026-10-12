@@ -48,6 +48,7 @@ export default function SettingsPage() {
   const [baseURL, setBaseURL] = useState("https://api.deepseek.com/v1");
   const [apiKey, setApiKey] = useState("");
   const [apiKeyMasked, setApiKeyMasked] = useState("");
+  const [keySource, setKeySource] = useState<"settings" | "env" | "none">("none");
   const [model, setModel] = useState("");
   const [theme, setTheme] = useState("dark");
   const [showKey, setShowKey] = useState(false);
@@ -63,7 +64,8 @@ export default function SettingsPage() {
   useEffect(() => {
     fetch(apiPath("/api/settings"))
       .then((r) => r.json())
-      .then(({ settings }) => {
+      .then(({ settings, keySource }) => {
+        setKeySource(keySource ?? "none");
         if (settings.provider) setProvider(settings.provider);
         if (settings.baseURL) setBaseURL(settings.baseURL);
         if (settings.apiKeyMasked) setApiKeyMasked(settings.apiKeyMasked);
@@ -91,11 +93,14 @@ export default function SettingsPage() {
     if (provider === "openai-compatible") settings.baseURL = baseURL;
     if (apiKey) settings.apiKey = apiKey;
     try {
-      await fetch(apiPath("/api/settings"), {
+      const res = await fetch(apiPath("/api/settings"), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ settings }),
       });
+      if (!res.ok) throw new Error("设置保存失败");
+      const saved = await fetch(apiPath("/api/settings")).then((r) => r.json());
+      setKeySource(saved.keySource ?? "none");
       if (apiKey) {
         setApiKeyMasked(
           apiKey.length > 8 ? `${apiKey.slice(0, 4)}…${apiKey.slice(-4)}` : "已配置",
@@ -133,9 +138,7 @@ export default function SettingsPage() {
       } else if (data.error === "NO_BYOK") {
         setTestState({
           kind: "fail",
-          message: apiKey
-            ? "还没保存，先点「保存设置」再测试。"
-            : "先填上 API Key 再测试。为了安全，之前存的钥匙不会显示出来，需要再输入一次。",
+          message: "请填好 API Key 和模型名，或在环境变量中配置后再测试。",
         });
       } else {
         setTestState({
@@ -184,6 +187,9 @@ export default function SettingsPage() {
           title="接上你的 AI 老师"
           desc="AlgoStage 自己不带 AI，需要接上一个你自己的 AI 账号，老师才能给其余的题备课。账号的钥匙（API Key）只存在这台电脑上，不会发给任何人。"
         >
+          <p className="mb-4 text-sm text-chalk-300" role="status">
+            {keySource === "settings" ? "当前用的是设置页保存的 Key" : keySource === "env" ? "当前用的是环境变量" : "还没接上 AI"}
+          </p>
           <fieldset>
             <legend className={labelClass}>用哪家的 AI</legend>
             <div className="grid gap-2 sm:grid-cols-3">

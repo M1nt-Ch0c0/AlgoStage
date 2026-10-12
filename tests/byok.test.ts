@@ -1,0 +1,36 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { createFixture, request } from "./api-fixture";
+
+test("S1：请求 > 设置 > 环境变量；已保存 Key 可直接要提示且不会泄露", async () => {
+  const f = await createFixture();
+  try {
+    const { resolveByok } = await import("../lib/agent/provider");
+    const { GET } = await import("../app/api/settings/route");
+    const { POST } = await import("../app/api/hint/route");
+    assert.equal(await resolveByok(), null);
+    assert.equal((await (await GET()).json()).keySource, "none");
+    process.env.AI_API_KEY = "env-test-key";
+    process.env.AI_MODEL = "env-model";
+    process.env.AI_BASE_URL = f.baseURL;
+    assert.equal((await resolveByok())?.source, "env");
+    assert.equal((await (await GET()).json()).keySource, "env");
+    await f.save({ apiKey: "saved-test-key", model: "saved-model", provider: "openai-compatible", baseURL: f.baseURL });
+    const saved = await resolveByok();
+    assert.equal(saved?.source, "settings");
+    assert.equal(saved?.config.apiKey, "saved-test-key");
+    const settings = await (await GET()).json();
+    assert.equal(settings.keySource, "settings");
+    assert.equal(settings.envConfigured, true);
+    assert.equal(settings.settings.apiKey, undefined);
+    assert.ok(!JSON.stringify(settings).includes("saved-test-key"));
+    const incomplete = { provider: "google" as const, apiKey: "new-key", model: "" };
+    assert.equal((await resolveByok(incomplete))?.source, "settings");
+    const complete = { ...incomplete, model: "new-model" };
+    assert.equal((await resolveByok(complete))?.source, "request");
+    const response = await POST(request({ slug: "3sum", level: 1 }));
+    assert.equal(response.status, 200);
+    assert.ok((await response.json()).hint);
+    assert.deepEqual(f.calls.at(-1), { model: "saved-model", key: "Bearer saved-test-key" });
+  } finally { await f.close(); }
+});
