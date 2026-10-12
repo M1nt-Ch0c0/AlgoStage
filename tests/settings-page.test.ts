@@ -102,3 +102,43 @@ test.each([
     expect(hints[1].byok).toBeUndefined();
   } finally { await act(async () => root.unmount()); }
 });
+
+async function renderWith(response: Record<string, unknown>) {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json(response));
+  const container = document.createElement("div"); document.body.append(container);
+  const root = createRoot(container);
+  await act(async () => { root.render(createElement(SettingsPage)); });
+  const type = async (id: string, value: string) => { await act(async () => {
+    const input = container.querySelector<HTMLInputElement>(`#${id}`)!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  }); };
+  return { container, root, type, hint: () => container.querySelector("#baseURL-hint")?.textContent ?? null };
+}
+
+test("openai-compatible 接口地址留空：新 Key 提示使用官方默认地址，填写后提示消失", async () => {
+  const { root, type, hint, container } = await renderWith({ settings: {}, keySource: "none" });
+  try {
+    expect(hint()).toContain("https://api.openai.com/v1");
+    expect(container.querySelector("#baseURL")!.getAttribute("aria-describedby")).toBe("baseURL-hint");
+    await type("baseURL", "https://api.deepseek.com/v1");
+    expect(hint()).toBeNull();
+    await type("baseURL", "   ");
+    expect(hint()).toContain("https://api.openai.com/v1");
+  } finally { await act(async () => root.unmount()); }
+});
+
+test("openai-compatible 接口地址留空：环境变量 Key 提示沿用环境地址，输入新 Key 后改为默认地址提示", async () => {
+  const { root, type, hint } = await renderWith({ settings: {}, keySource: "env" });
+  try {
+    expect(hint()).toContain("沿用环境变量");
+    await type("apiKey", "sk-new");
+    expect(hint()).toContain("https://api.openai.com/v1");
+  } finally { await act(async () => root.unmount()); }
+});
+
+test("非 openai-compatible 服务商不显示留空提示", async () => {
+  const { root, hint } = await renderWith({ settings: { provider: "anthropic" }, keySource: "none" });
+  try { expect(hint()).toBeNull(); } finally { await act(async () => root.unmount()); }
+});

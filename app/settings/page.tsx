@@ -247,7 +247,15 @@ export default function SettingsPage() {
                   onChange={(e) => edit("baseURL", e.target.value, setBaseURL)}
                   placeholder={provider === "openai-compatible" ? "环境变量 Key 沿用环境地址；新 Key 留空使用默认地址" : "留空使用该服务商官方接口"}
                   className={`${inputClass} font-mono`}
+                  aria-describedby={provider === "openai-compatible" && !baseURL.trim() ? "baseURL-hint" : undefined}
                 />
+                {provider === "openai-compatible" && !baseURL.trim() && (
+                  <p id="baseURL-hint" className="mt-2 text-xs leading-5 text-chalk-500">
+                    {keySource === "env" && !apiKey.trim()
+                      ? "留空：沿用环境变量里配置的接口地址。"
+                      : "留空将使用 OpenAI 官方地址 https://api.openai.com/v1；DeepSeek、通义、Kimi 等请填写对应服务商的地址。"}
+                  </p>
+                )}
               </div>
             )}
             <div className="sm:col-span-2">
