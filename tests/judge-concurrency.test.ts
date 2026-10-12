@@ -30,7 +30,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   delete process.env.JUDGE_MAX_CONCURRENCY;
   delete process.env.NEXT_PUBLIC_ALGOSTAGE_DEMO;
-  for (let i = 0; i < 20; i++) judgeServer.release();
+  for (let i = 0; i < 64; i++) judgeServer.release();
   await f.prisma.submission.deleteMany();
   await f.prisma.problemProgress.deleteMany();
   await f.prisma.reviewCard.deleteMany();
@@ -41,7 +41,7 @@ afterEach(() => {
   delete process.env.NEXT_PUBLIC_ALGOSTAGE_DEMO;
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
-  for (let i = 0; i < 20; i++) judgeServer.release();
+  for (let i = 0; i < 64; i++) judgeServer.release();
 });
 
 afterAll(async () => {
@@ -72,6 +72,14 @@ test("环境变量非法、0、负数或未设置时回退为 4，正整数生�
   expect(judgeServer.tryAcquire()).toBe(true);
   judgeServer.release();
   judgeServer.release();
+
+  for (const capped of ["64", "65", "100", "999"]) {
+    process.env.JUDGE_MAX_CONCURRENCY = capped;
+    expect(judgeServer.maxJudgeConcurrency()).toBe(64);
+    for (let i = 0; i < 64; i++) expect(judgeServer.tryAcquire()).toBe(true);
+    expect(judgeServer.tryAcquire()).toBe(false);
+    for (let i = 0; i < 64; i++) judgeServer.release();
+  }
 });
 
 test.each([false, true])("同时 5 个请求第 5 个立即返回 429 BUSY（demo=%s），前面跑完后新请求正常判题", async isDemo => {
