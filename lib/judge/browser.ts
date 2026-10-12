@@ -36,7 +36,8 @@ export function judgeInBrowser(input: JudgeInput, options: JudgeOptions = {}): P
     const cancel = () => finish("CANCELLED");
     if (options.signal?.aborted) { cancel(); return; }
     options.signal?.addEventListener("abort",cancel,{ once: true });
-    options.onProgress?.(python ? "正在加载 Python 环境…" : "正在准备判题…");
+    // 加载文案由控件订阅 worker 池的实际状态，预热后的提交不再闪现加载提示。
+    options.onProgress?.("正在准备判题…");
     timer = setTimeout(() => finish("UNAVAILABLE"),options.initializationTimeoutMs ?? (python ? 60000 : 15000));
     const listen = (worker: WorkerPort) => {
       worker.onmessage = ({ data }) => {
@@ -68,6 +69,7 @@ export function judgeInBrowser(input: JudgeInput, options: JudgeOptions = {}): P
             createWorker: createWorker ? () => createWorker(true) : undefined,
             indexURL: options.indexURL,
             initializationTimeoutMs: options.initializationTimeoutMs,
+            keepSpare: false,
           });
         }
         const acquired = lease = pool.acquire();
