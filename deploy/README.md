@@ -44,6 +44,14 @@ docker exec cpa-nginx nginx -s reload
 
 讲解流使用 `application/x-ndjson`，响应带 `X-Accel-Buffering: no` 与 `Cache-Control: no-store, no-transform`。`/algostage/api/lecture` 使用独立 location，关闭代理缓冲、缓存及上下游压缩；共享代理片段的读超时为 300 秒，覆盖服务端 240 秒的生成上限并留出错误提示时间。更新时需同时安装 `nginx.conf` 和 `algostage-proxy.conf`；使用其他子路径时同步调整该 location。Demo 的 AI 禁用规则仍由应用执行。
 
+发布前可在本机验证这份代理配置，无需连接线上站点或真实模型：
+
+```sh
+NGINX_BINARY=/usr/sbin/nginx npm test -- tests/nginx-streaming.test.ts tests/streaming-proxy.test.ts
+```
+
+集成回归启动独立 nginx 临时实例，将上述讲解 location 与共享代理片段原样用于真实讲解路由（仅替换端口和 include 文件路径）。测试使用假模型和临时数据库，检查首段与后续步骤在完成前分批送达、禁止压缩、客户端取消后上游中止且不缓存，以及超时提示能穿过代理送达。测试内缩短生成时限以避免等待四分钟，部署时限保持 240 秒。进程和临时文件会自动清理，不修改已有 nginx 服务。未安装 nginx 的本机可先运行普通单测；CI 安装 nginx 并强制执行这三条代理回归，指定无效的 `NGINX_BINARY` 会直接失败。
+
 ## 检查与停止
 
 ```sh

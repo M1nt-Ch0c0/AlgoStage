@@ -24,6 +24,7 @@ jobs:
       AI_MODEL: ""
       AI_PROVIDER: ""
       AI_BASE_URL: "http://127.0.0.1:1/no-model"
+      NGINX_BINARY: /usr/sbin/nginx
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -34,6 +35,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: npm ci
+      - name: 安装流式代理回归依赖
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends nginx
       - run: npm run lint
       - run: npm run typecheck
       # Run the complete suite once, with the core coverage gate enabled.
