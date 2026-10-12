@@ -5,12 +5,14 @@ import type { ProblemDetail } from "@/lib/content/types";
 import type { JudgeResult } from "@/lib/judge/types";
 import { judgeInBrowser } from "@/lib/judge/browser";
 import { pythonWorkerPool } from "@/lib/judge/python-pool";
+import { apiPath } from "@/lib/runtime";
 export default function JudgeControls({ detail, code, language, onLanguage, disabled = false, onResult }: {
   detail: ProblemDetail | null; code: string; language: "typescript" | "python";
   onLanguage: (language: "typescript" | "python") => void;
   disabled?: boolean; onResult?: (result: JudgeResult) => Promise<void> | void;
 }) {
   const [busy,setBusy] = useState(false), [message,setMessage] = useState(""), [result,setResult] = useState<JudgeResult | null>(null);
+  const [saving, setSaving] = useState(false);
   const controller = useRef<AbortController | null>(null);
   const pythonStatus = useSyncExternalStore(pythonWorkerPool.subscribe, pythonWorkerPool.getStatus, () => "idle");
   useEffect(() => { pythonWorkerPool.preload(); }, []);
@@ -20,13 +22,31 @@ export default function JudgeControls({ detail, code, language, onLanguage, disa
     const abort = new AbortController(); controller.current = abort;
     setBusy(true); setResult(null);
     try {
-      const judged = await judgeInBrowser({ code, language, problem: detail.judging },{ signal: abort.signal, onProgress: setMessage });
+      let judged = await judgeInBrowser({ code, language, problem: detail.judging },{ signal: abort.signal, onProgress: setMessage });
       if (abort.signal.aborted) { setMessage("已取消运行，没有记录提交。"); return; }
       setResult(judged);
-      setMessage(judged.error ? "运行环境未能加载，请重试。" : `${judged.verdict} · ${judged.cases.filter(c=>c.verdict==="AC").length}/${detail.judging.cases.length} 个用例通过`);
-      if (!judged.error) await onResult?.(judged);
-    } catch { setMessage("运行或保存结果失败，请重试。"); }
-    finally { if (controller.current === abort) { setBusy(false); controller.current = null; } }
+      if (judged.error) { setMessage("运行环境未能加载，请重试。"); return; }
+      const needsVerification = judged.verdict === "AC";
+      setSaving(true);
+      setMessage(needsVerification ? "本地用例通过，正在等待服务端判定…" : "正在保存提交…");
+      const response = await fetch(apiPath(needsVerification ? "/api/judge" : "/api/progress"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(needsVerification ? { problemSlug: detail.slug, language, code } : {
+          type: "submission", problemSlug: detail.slug, language, code,
+          verdict: judged.verdict, runtimeMs: Math.round(judged.runtimeMs),
+        }),
+      });
+      const saved = await response.json();
+      if (!response.ok) throw new Error(saved.message ?? "保存结果失败，请重试。");
+      if (needsVerification) judged = saved.result as JudgeResult;
+      if (abort.signal.aborted) return;
+      setResult(judged);
+      setMessage(`${judged.verdict} · ${judged.cases.filter(c=>c.verdict==="AC").length}/${detail.judging.cases.length} 个用例通过 · 已保存`);
+      await onResult?.(judged);
+    } catch (error) {
+      if (!abort.signal.aborted) setMessage(error instanceof Error ? error.message : "运行或保存结果失败，请重试。");
+    }
+    finally { if (controller.current === abort) { setBusy(false); setSaving(false); controller.current = null; } }
   }
   const failed = result?.cases.find(c=>c.verdict!=="AC");
   return <div className="shrink-0 rounded-xl border border-board-700 bg-board-900/80 p-3">
@@ -36,7 +56,7 @@ export default function JudgeControls({ detail, code, language, onLanguage, disa
       </select></label>
       <button type="button" onClick={run} disabled={busy || disabled || !detail?.judging} className="ml-auto rounded-full bg-beam-mint px-4 py-1.5 text-sm font-semibold text-on-accent disabled:opacity-40">{busy ? "判题中…" : "运行"}</button>
       {pythonStatus === "loading" && <span role="status" aria-live="polite" className="text-xs text-chalk-300">正在加载 Python 环境…</span>}
-      {busy && <button type="button" onClick={()=>controller.current?.abort()} className="text-sm text-chalk-300">取消运行</button>}
+      {busy && !saving && <button type="button" onClick={()=>controller.current?.abort()} className="text-sm text-chalk-300">取消运行</button>}
     </div>
     <p role="status" aria-live="polite" className="mt-2 text-xs text-chalk-300">{message || (detail && !detail.judging ? "这道题暂未配判题用例，目前支持路线图前 20 题。" : disabled ? "切到练习后可运行代码。" : "使用本机浏览器判题，运行时间限制 2 秒，输出上限 32 KiB。")}</p>
     {failed && <div className="mt-3 grid max-h-44 gap-2 overflow-auto text-xs sm:grid-cols-3">
