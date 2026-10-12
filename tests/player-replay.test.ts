@@ -60,6 +60,15 @@ test("流式中或无步骤时 replay 不生效", () => {
   expect(usePlayerStore.getState()).toMatchObject({ currentIndex: 1, receiving: true });
 });
 
+test("重播播完即退出重播态", () => {
+  finishStreamed();
+  const store = usePlayerStore.getState();
+  store.replay();
+  expect(usePlayerStore.getState().replaying).toBe(true);
+  while (usePlayerStore.getState().status !== "finished") store.next();
+  expect(usePlayerStore.getState()).toMatchObject({ status: "finished", replaying: false });
+});
+
 test("完成→重新生成：beginStream 清空旧步骤，从新流开始", () => {
   finishStreamed();
   const store = usePlayerStore.getState();

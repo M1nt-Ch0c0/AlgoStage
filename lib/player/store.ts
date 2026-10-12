@@ -134,7 +134,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       const nextIndex = s.currentIndex + 1;
       if (nextIndex >= s.steps.length) {
         // 流式中后面可能还有步骤；非流式则结束
-        return { status: s.receiving ? "streaming" : "finished" };
+        if (s.receiving) return { status: "streaming" };
+        // 重播播完即退出重播态，之后回看按正常进度上报
+        return { status: "finished", replaying: false };
       }
       return { currentIndex: nextIndex };
     }),
