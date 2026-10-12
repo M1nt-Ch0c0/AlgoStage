@@ -27,6 +27,7 @@ import JudgeEditor from "@/components/judge/judge-editor";
 import JudgeSignature from "@/components/judge/judge-signature";
 import AiSetupPrompt from "@/components/settings/ai-setup-prompt";
 import { teachingScriptSchema } from "@/lib/teaching/schema";
+import { readDraft, saveDraft, draftLanguage } from "@/lib/player/drafts";
 import { readLectureResponse } from "@/lib/player/lecture-response";
 import { cancelLectureForPlayback, loadLectureForPlayback } from "@/lib/player/load-lecture";
 import { TWO_SUM_SCRIPT } from "@/lib/content/scripts/two-sum";
@@ -111,24 +112,27 @@ export default function ProblemPage() {
     };
   }, [slug]);
 
-  // 题面加载
+  // 题面加载只恢复本题草稿；取消旧请求，避免晚到响应覆盖另一题的编辑内容。
   useEffect(() => {
+    const abort = new AbortController();
     reset();
     setDetail(null);
     setLoadError(null);
-    fetch(apiPath(`/api/problems/${slug}`))
+    fetch(apiPath(`/api/problems/${slug}`), { signal: abort.signal })
       .then(async (res) => {
         if (!res.ok) throw new Error("没找到这道题，回路线图换一道吧。");
         const j = (await res.json()) as { problem: ProblemDetail };
+        if (abort.signal.aborted) return;
         setDetail(j.problem);
-        const ref =
-          j.problem.referenceSolutions?.find(
-            (s) => s.language === "typescript",
-          ) ?? j.problem.referenceSolutions?.[0];
-        setCode(ref?.code ?? "");
-        setLanguage("typescript");
+        const language = draftLanguage(slug);
+        const ref = j.problem.referenceSolutions?.find(s => s.language === language);
+        const draft = readDraft(slug, language);
+        setCode(draft ?? ref?.code ?? "");
+        setLanguage(language);
+        setPractice(draft !== null);
       })
-      .catch((e: Error) => setLoadError(e.message));
+      .catch((e: Error) => { if (!abort.signal.aborted) setLoadError(e.message); });
+    return () => abort.abort();
   }, [slug, reset]);
 
   // 讲解进度埋点（看板数据源）
@@ -153,6 +157,7 @@ export default function ProblemPage() {
   const startLecture = useCallback(async () => {
     setLectureError(null);
     setLectureComplete(false);
+    if (practice) saveDraft(slug, language, code);
     setPractice(false);
     if (!detail) {
       setLectureError("题目和参考代码还没加载好，请稍后再试。");
@@ -250,7 +255,7 @@ export default function ProblemPage() {
         lectureAbort.current = null;
       }
     }
-  }, [slug, detail, language, loadScript, play, reset]);
+  }, [slug, detail, language, loadScript, play, reset, practice, code]);
 
   function cancelLecture(next = language) {
     cancelLectureForPlayback(detail, next, {
@@ -270,8 +275,20 @@ export default function ProblemPage() {
   }
 
   function changeLanguage(next: "typescript" | "python") {
+    if (next === language) return;
+    if (practice) saveDraft(slug, language, code);
     cancelLecture(next);
     setLanguage(next);
+    if (practice) {
+      const draft = readDraft(slug, next) ?? detail?.referenceSolutions?.find(s => s.language === next)?.code ?? "";
+      setCode(draft);
+      saveDraft(slug, next, draft);
+    }
+  }
+
+  function editCode(value: string) {
+    setCode(value);
+    if (practice) saveDraft(slug, language, value);
   }
 
   // 提示阶梯
@@ -426,7 +443,11 @@ export default function ProblemPage() {
             <button
               type="button"
               aria-pressed={!practice}
-              onClick={() => setPractice(false)}
+              onClick={() => {
+                if (practice) saveDraft(slug, language, code);
+                setPractice(false);
+                setCode(detail?.referenceSolutions?.find(s => s.language === language)?.code ?? "");
+              }}
               className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm transition-colors ${
                 !practice
                   ? "bg-board-700 text-chalk-100"
@@ -441,7 +462,10 @@ export default function ProblemPage() {
               aria-pressed={practice}
               onClick={() => {
                 // 上台自己写时，停止生成，避免后续步骤覆盖练习代码。
-                if (!practice) cancelLecture();
+                if (!practice) {
+                  cancelLecture();
+                  setCode(readDraft(slug, language) ?? detail?.referenceSolutions?.find(s => s.language === language)?.code ?? "");
+                }
                 setPractice(true);
               }}
               className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm transition-colors ${
@@ -592,12 +616,12 @@ export default function ProblemPage() {
             {practice && <JudgeSignature problem={detail?.judging} language={language} />}
             <div className="min-h-0 flex-1 overflow-hidden rounded-md">
               {practice ? (
-                <JudgeEditor value={code} readOnly={false} onChange={setCode} language={language} />
+                <JudgeEditor value={code} readOnly={false} onChange={editCode} language={language} />
               ) : (
                 <CodeEditor
                   value={code}
                   readOnly={!practice}
-                  onChange={setCode}
+                  onChange={editCode}
                   language={language}
                 />
               )}

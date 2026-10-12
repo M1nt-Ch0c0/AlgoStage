@@ -125,8 +125,9 @@ export default function CodeEditor({
       editorRef.current = editor;
       decorationsRef.current = editor.createDecorationsCollection();
 
-      editor.onDidChangeModelContent(() => {
-        onChangeRef.current?.(editor.getValue());
+      editor.onDidChangeModelContent((event) => {
+        // setValue 恢复参考代码属于程序更新，不是学生输入，不能回写或保存为草稿。
+        if (!event.isFlush) onChangeRef.current?.(editor.getValue());
       });
 
       // Monaco 内部滚动 → 通知特效层重新解析锚点（rAF 合帧）

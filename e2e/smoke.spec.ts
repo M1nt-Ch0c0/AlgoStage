@@ -52,3 +52,24 @@ test("Demo plays the built-in lesson and disables model requests", async ({ page
     expect(await response.json()).toMatchObject({ error: "DEMO" });
   }
 });
+
+test("student draft survives browser tabs, lecture mode and page reload", async ({ page, context }) => {
+  await page.goto("/problem/two-sum");
+  await expect(page.locator(".monaco-editor .view-lines")).toContainText("function twoSum");
+  await page.getByRole("button", { name: "练习", exact: true }).click();
+  await page.getByRole("textbox", { name: "Editor content", exact: true }).focus();
+  await page.keyboard.press("ControlOrMeta+A");
+  await page.keyboard.insertText("// draftMarker\nconst draft = 31415;");
+  await expect(page.locator(".monaco-editor .view-lines")).toContainText("draftMarker");
+  const other = await context.newPage();
+  await other.goto("/roadmap");
+  await page.bringToFront(); await other.close();
+  await expect(page.locator(".monaco-editor .view-lines")).toContainText("draftMarker");
+  await page.getByRole("button", { name: "听课", exact: true }).click();
+  await expect(page.locator(".monaco-editor .view-lines")).toContainText("function twoSum");
+  await page.getByRole("button", { name: "练习", exact: true }).click();
+  await expect(page.locator(".monaco-editor .view-lines")).toContainText("draftMarker");
+  await page.reload();
+  await expect(page.getByRole("button", { name: "练习", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".monaco-editor .view-lines")).toContainText("draftMarker");
+});
