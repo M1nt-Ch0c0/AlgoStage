@@ -11,8 +11,8 @@ test("local content lists 100 unique problems and rejects unknown slugs", async 
   await expect(localSeedSource.detail("missing-problem")).rejects.toThrow("Unknown problem");
 });
 
-test("进度接受未通过结果，拒绝客户端 AC 且不创建复习卡", async () => {
-  const fixture = await createFixture();
+test("进度接受未通过结果并安排复习，拒绝客户端 AC 且不改变复习卡", async () => {
+  const fixture = await createFixture({ modelServer: false });
   try {
     const { POST } = await import("../app/api/progress/route");
     for (const problem of HOT100.slice(0, 3)) {
@@ -25,10 +25,11 @@ test("进度接受未通过结果，拒绝客户端 AC 且不创建复习卡", a
       type: "submission", problemSlug, verdict, code: "test submission", language: "typescript", runtimeMs: 7,
     }));
     for (const verdict of ["WA", "RE", "TLE"] as const) expect((await submit("two-sum", verdict)).status).toBe(200);
-    expect(await fixture.prisma.reviewCard.count()).toBe(0);
+    const card = await fixture.prisma.reviewCard.findFirstOrThrow();
+    expect(card).toMatchObject({ interval: 1, lapses: 3, reps: 0 });
     expect((await submit("two-sum", "AC")).status).toBe(400);
     expect((await submit(HOT100[1].slug, "AC")).status).toBe(400);
-    expect(await fixture.prisma.reviewCard.count()).toBe(0);
+    expect(await fixture.prisma.reviewCard.findMany()).toEqual([card]);
     expect(await fixture.prisma.submission.count()).toBe(3);
     const progress = await fixture.prisma.problemProgress.findUniqueOrThrow({
       where: { userId_problemSlug: { userId: "local-default", problemSlug: "two-sum" } },

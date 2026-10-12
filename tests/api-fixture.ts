@@ -1,5 +1,5 @@
 /** 只调用本机假模型，使用独立 SQLite 库，不接触用户 Key 或学习记录。 */
-import { mkdtempSync, rmSync } from "node:fs";
+import { closeSync, mkdtempSync, openSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -7,17 +7,18 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { NextRequest } from "next/server";
 
-export async function createFixture() {
+export async function createFixture({ modelServer = true } = {}) {
   const directory = mkdtempSync(join(tmpdir(), "algostage-m1-"));
   process.env.DATABASE_URL = `file:${join(directory, "test.db")}`;
   delete process.env.NEXT_PUBLIC_ALGOSTAGE_DEMO;
   for (const key of ["AI_API_KEY", "AI_MODEL", "AI_PROVIDER", "AI_BASE_URL"])
     delete process.env[key];
-  execFileSync(
-    process.execPath,
-    ["node_modules/prisma/build/index.js", "db", "push"],
-    { stdio: "pipe" },
-  );
+  const schemaLog = openSync(join(directory, "schema.log"), "w");
+  try {
+    execFileSync(process.execPath, ["node_modules/prisma/build/index.js", "db", "push"], {
+      stdio: ["ignore", schemaLog, schemaLog],
+    });
+  } finally { closeSync(schemaLog); }
   const { prisma } = await import("../lib/db/prisma");
   await prisma.user.create({ data: { id: "local-default" } });
   const requests: Record<string, unknown>[] = [];
@@ -192,8 +193,19 @@ export async function createFixture() {
       }),
     );
   });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const baseURL = `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`;
+  if (modelServer) {
+    try {
+      await new Promise<void>((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(0, "127.0.0.1", resolve);
+      });
+    } catch (error) {
+      await prisma.$disconnect();
+      rmSync(directory, { recursive: true, force: true });
+      throw error;
+    }
+  }
+  const baseURL = `http://127.0.0.1:${(server.address() as AddressInfo | null)?.port ?? 0}/v1`;
   return {
     prisma,
     calls,
@@ -237,7 +249,7 @@ export async function createFixture() {
     },
     async close() {
       await prisma.$disconnect();
-      await new Promise<void>((resolve, reject) =>
+      if (server.listening) await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve())),
       );
       rmSync(directory, { recursive: true, force: true });
