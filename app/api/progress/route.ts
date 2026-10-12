@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
   if (body.type === "submission" || body.type === "client-ac") {
     await recordSubmission(userId, {
       problemSlug: body.problemSlug, code: body.code, language: body.language,
-      verdict: body.verdict, runtimeMs: body.runtimeMs, judgedBy: body.type === "client-ac" ? "client" : "server",
+      verdict: body.verdict, runtimeMs: body.runtimeMs, judgedBy: "client", // 浏览器判的结果；只有 /api/judge 写入 server
     });
     return Response.json({ ok: true });
   }

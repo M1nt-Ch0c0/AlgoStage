@@ -147,3 +147,12 @@ test("服务端判出的提交带 judgedBy: server", async () => {
   expect((await submit()).status).toBe(200);
   expect(await f.prisma.submission.findFirstOrThrow()).toMatchObject({ verdict: "AC", judgedBy: "server" });
 });
+
+test("浏览器上报的 WA/RE/TLE 记为 judgedBy: client", async () => {
+  for (const verdict of ["WA", "RE", "TLE"]) {
+    expect((await progress(request({ type: "submission", problemSlug: "two-sum", language: "typescript", code: "x", verdict }))).status).toBe(200);
+  }
+  const rows = await f.prisma.submission.findMany();
+  expect(rows).toHaveLength(3);
+  expect(rows.every(row => row.judgedBy === "client")).toBe(true);
+});
