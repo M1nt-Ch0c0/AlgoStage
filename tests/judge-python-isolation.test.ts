@@ -39,6 +39,37 @@ function setup(keepSpare = false) {
   return { pool, workers, run };
 }
 
+test.each([
+  ["SyntaxError / IndentationError", ["def two_sum(nums, target)\n    return [0, 1]", "def two_sum(nums, target):\nreturn [0, 1]"]],
+  ["RuntimeError / 自定义 BaseException", [
+    "import builtins, json\nbuiltins.s7_dirty = True\njson.X = 1\nraise RuntimeError('MemoryError / RecursionError 只是普通异常消息')",
+    "class UserError(BaseException):\n    pass\ndef two_sum(nums, target):\n    raise UserError('用户异常')",
+  ]],
+  ["SystemExit / KeyboardInterrupt", ["raise SystemExit('用户退出')", "raise KeyboardInterrupt('用户中断')"]],
+  ["返回值序列化异常", [
+    "def two_sum(nums, target):\n    return object()",
+    "class Result(list):\n    def __iter__(self):\n        raise ValueError('用户迭代异常')\ndef two_sum(nums, target):\n    return Result([0, 1])",
+  ]],
+])("真实 Pyodide 连续两次 RE（%s）后 AC，清理成功时不创建或替换 worker", async (_reason, codes) => {
+  const { pool, workers, run } = setup();
+  for (const code of codes) {
+    const result = await run(code);
+    expect(result.verdict, JSON.stringify(result)).toBe("RE");
+    expect(result.cases[0].stderr).toBeTruthy();
+    expect(pool.getStatus()).toBe("ready");
+    expect(workers).toHaveLength(1);
+    expect(workers[0].terminated).toBe(false);
+  }
+  const result = await run(`
+import builtins, json
+assert not hasattr(builtins, 's7_dirty')
+assert not hasattr(json, 'X')
+${correct}
+`);
+  expect(result.verdict, JSON.stringify(result)).toBe("AC");
+  expect(workers).toEqual([expect.objectContaining({ terminated: false, runs: 3 })]);
+});
+
 test("真实 Pyodide 连续提交：复用 worker，但不泄漏 globals、imports、builtins 或递归上限", async () => {
   const { pool, workers, run } = setup();
   pool.preload();
@@ -176,6 +207,8 @@ test("真实 Pyodide TLE 后首次提交直接使用已预热备用，同时后�
 test.each([
   ["RecursionError", "def recurse():\n    return recurse()\nrecurse()"],
   ["MemoryError", "raise MemoryError('模拟内存耗尽')"],
+  ["RecursionError 子类", "class DeepError(RecursionError):\n    pass\nraise DeepError('RecursionError 子类')"],
+  ["MemoryError 子类", "class Exhausted(MemoryError):\n    pass\nraise Exhausted('MemoryError 子类')"],
   ["清理失败", `
 import sys, types
 class LockedSys(types.ModuleType):

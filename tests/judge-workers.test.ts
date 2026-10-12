@@ -70,10 +70,20 @@ test("Python worker loads real local Pyodide and reports output, mutations and i
   expect(messages.at(-1)).toEqual({ type: "done", reusable: true });
   expect(interruptBuffer[0]).toBe(0);
   expect(await run({ ...input, code: "raise RuntimeError('broken')" })).toMatchObject([{ verdict: "RE" }]);
-  expect(messages.at(-1)).toEqual({ type: "done", reusable: false });
+  expect(messages.at(-1)).toEqual({ type: "done", reusable: true });
   const problem = { ...input.problem, comparison: "exact" as const, mutatesArg: 0,
     cases: [{ args: [[1, 2]], expected: [2, 1] }, { args: [[3, 4]], expected: [4, 3] }] };
   const results = await run({ ...input, problem, code: "def twoSum(nums):\n    print('汉')\n    nums.reverse()" });
   expect(results).toHaveLength(2);
   expect(results.every(result => result.verdict === "AC" && result.stdout === "汉\n")).toBe(true);
+
+  const runtime = await import("../lib/judge/python-runtime");
+  const runCase = vi.spyOn(runtime, "runPythonCase");
+  try {
+    for (const error of [new Error("harness failed"), new RangeError("Maximum call stack size exceeded"), new WebAssembly.RuntimeError("out of memory")]) {
+      runCase.mockImplementationOnce(() => { throw error; });
+      expect(await run({ ...input, code: "" })).toMatchObject([{ verdict: "RE", stderr: String(error) }]);
+      expect(messages.at(-1)).toEqual({ type: "done", reusable: false });
+    }
+  } finally { runCase.mockRestore(); }
 });

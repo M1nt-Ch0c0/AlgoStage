@@ -23,7 +23,7 @@ export function judgeInBrowser(input: JudgeInput, options: JudgeOptions = {}): P
       options.signal?.removeEventListener("abort",cancel);
       const verdict = error ? "RE" : results.find(c => c.verdict !== "AC")?.verdict ?? (results.length === input.problem.cases.length ? "AC" : "RE");
       ownedPool?.dispose();
-      if (lease) lease.release(reusable && (verdict === "AC" || verdict === "WA"));
+      if (lease) lease.release(reusable && !error && verdict !== "TLE");
       else worker?.terminate();
       resolve({ verdict, backend: "browser", cases: results, runtimeMs: results.reduce((sum,c) => sum+c.runtimeMs,0), ...(error ? { error } : {}) });
     };
@@ -54,7 +54,7 @@ export function judgeInBrowser(input: JudgeInput, options: JudgeOptions = {}): P
           results.push(data.result);
         } else if (data.type === "output-limit") fail("RE","输出超过 32 KiB，执行已停止。");
         else if (data.type === "unavailable") finish("UNAVAILABLE");
-        else if (data.type === "done") finish(undefined, data.reusable === true && results.length > 0 && results.every(result => result.verdict === "AC" || result.verdict === "WA"));
+        else if (data.type === "done") finish(undefined, data.reusable === true && results.length > 0);
       };
       worker.onerror = () => caseStarted ? fail("RE",python ? "执行环境发生错误，正在重新加载 Python 环境。" : "执行环境发生错误，请重新运行。") : finish("UNAVAILABLE");
       worker.onmessageerror = () => fail("RE","执行结果无法读取，已丢弃执行环境。");

@@ -35,7 +35,7 @@ export default function JudgeControls({ detail, code, language, onLanguage, disa
         <option value="typescript">TypeScript / JS</option><option value="python">Python</option>
       </select></label>
       <button type="button" onClick={run} disabled={busy || disabled || !detail?.judging} className="ml-auto rounded-full bg-beam-mint px-4 py-1.5 text-sm font-semibold text-on-accent disabled:opacity-40">{busy ? "判题中…" : "运行"}</button>
-      {pythonStatus === "loading" && <span role="status" aria-live="polite" className="text-xs text-chalk-300">正在加载 Python 环境…</span>}
+      {!disabled && pythonStatus === "loading" && <span role="status" aria-live="polite" className="text-xs text-chalk-300">正在加载 Python 环境…</span>}
       {busy && <button type="button" onClick={()=>controller.current?.abort()} className="text-sm text-chalk-300">取消运行</button>}
     </div>
     <p role="status" aria-live="polite" className="mt-2 text-xs text-chalk-300">{message || (detail && !detail.judging ? "这道题暂未配判题用例，目前支持路线图前 20 题。" : disabled ? "切到练习后可运行代码。" : "使用本机浏览器判题，运行时间限制 2 秒，输出上限 32 KiB。")}</p>
