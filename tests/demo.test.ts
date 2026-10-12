@@ -21,6 +21,8 @@ test("Demo：请求 Key 和环境 Key 均不能绕过 AI 禁用与设置隔离",
     const settings = await import("../app/api/settings/route");
     assert.deepEqual(await (await settings.GET()).json(), { settings: {}, keySource: "none", envConfigured: false });
     assert.equal((await settings.PUT(request({ settings: { apiKey: "new-key" } }))).status, 403);
+    const progress = await import("../app/api/progress/route");
+    assert.equal((await progress.POST(request({ type: "submission", problemSlug: "two-sum", code: "", language: "typescript", verdict: "AC" }))).status, 400);
     assert.equal(calls, 0);
     assert.equal(existsSync(databasePath), false);
   } finally { globalThis.fetch = originalFetch; }

@@ -1,91 +1,116 @@
 /**
  * POST /api/progress · 学习行为写入（提交/提示消耗/讲解进度）
- * 看板指标的数据源（docs/04 §2）。
+ * 客户端上报不具备证明 AC 的资格；通过判题后持久化的链路另行实现。
  */
+import { z } from "zod";
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { currentUserId } from "@/lib/visitor";
 
 export const runtime = "nodejs";
 
+const progressRequestSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("submission"),
+      problemSlug: z.string().min(1),
+      code: z.string(),
+      language: z.enum(["typescript", "python", "javascript"]),
+      verdict: z.enum(["WA", "RE", "TLE"]),
+      runtimeMs: z.number().int().min(0).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("hint"),
+      problemSlug: z.string().min(1),
+      level: z.number().int().min(1).max(5),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("lecture-step"),
+      problemSlug: z.string().min(1),
+      stepIndex: z.number().int().min(0),
+    })
+    .strict(),
+]);
 
 export async function POST(req: NextRequest) {
-  const USER_ID = await currentUserId();
-  const body = (await req.json()) as
-    | {
-        type: "submission";
-        problemSlug: string;
-        code: string;
-        language: string;
-        verdict: "AC" | "WA" | "RE" | "TLE";
-        runtimeMs?: number;
-      }
-    | { type: "hint"; problemSlug: string; level: number }
-    | { type: "lecture-step"; problemSlug: string; stepIndex: number };
-
+  let input: unknown;
+  try {
+    input = await req.json();
+  } catch {
+    return Response.json(
+      { error: "BAD_JSON", message: "学习记录请求不是有效的 JSON。" },
+      { status: 400 },
+    );
+  }
+  const parsed = progressRequestSchema.safeParse(input);
+  if (!parsed.success) {
+    // 在解析访客或写入任何表之前拒绝，包括伪造的 AC；不记录代码或原始输入。
+    return Response.json(
+      {
+        error: "BAD_REQUEST",
+        message: "学习记录参数不正确；客户端不能直接上报 AC。",
+      },
+      { status: 400 },
+    );
+  }
+  const body = parsed.data;
+  const userId = await currentUserId();
   if (body.type === "submission") {
-    await prisma.submission.create({
-      data: {
-        userId: USER_ID,
-        problemSlug: body.problemSlug,
-        code: body.code,
-        language: body.language,
-        verdict: body.verdict,
-        runtimeMs: body.runtimeMs,
-      },
-    });
-    const solved = body.verdict === "AC";
-    await prisma.problemProgress.upsert({
-      where: { userId_problemSlug: { userId: USER_ID, problemSlug: body.problemSlug } },
-      update: {
-        attempts: { increment: 1 },
-        lastStepAt: new Date(),
-        ...(solved ? { status: "solved", solvedAt: new Date() } : { status: "learning" }),
-      },
-      create: {
-        userId: USER_ID,
-        problemSlug: body.problemSlug,
-        attempts: 1,
-        status: solved ? "solved" : "learning",
-        solvedAt: solved ? new Date() : null,
-        lastStepAt: new Date(),
-      },
-    });
-    // AC 后自动生成 SM-2 复习卡（docs/04 §3）
-    if (solved) {
-      const dueAt = new Date(Date.now() + 24 * 3600 * 1000);
-      await prisma.reviewCard.create({
-        data: { userId: USER_ID, problemSlug: body.problemSlug, dueAt },
+    await prisma.$transaction(async (tx) => {
+      await tx.submission.create({
+        data: {
+          userId,
+          problemSlug: body.problemSlug,
+          code: body.code,
+          language: body.language,
+          verdict: body.verdict,
+          runtimeMs: body.runtimeMs,
+        },
       });
-    }
+      await tx.problemProgress.upsert({
+        where: {
+          userId_problemSlug: { userId, problemSlug: body.problemSlug },
+        },
+        update: {
+          attempts: { increment: 1 },
+          lastStepAt: new Date(),
+          status: "learning",
+        },
+        create: {
+          userId,
+          problemSlug: body.problemSlug,
+          attempts: 1,
+          status: "learning",
+          lastStepAt: new Date(),
+        },
+      });
+    });
     return Response.json({ ok: true });
   }
-
   if (body.type === "hint") {
     await prisma.hintUsage.create({
-      data: { userId: USER_ID, problemSlug: body.problemSlug, level: body.level },
+      data: { userId, problemSlug: body.problemSlug, level: body.level },
     });
     return Response.json({ ok: true });
   }
-
-  if (body.type === "lecture-step") {
-    await prisma.problemProgress.upsert({
-      where: { userId_problemSlug: { userId: USER_ID, problemSlug: body.problemSlug } },
-      update: {
-        lectureSeen: { increment: 1 },
-        status: "learning",
-        lastStepAt: new Date(),
-      },
-      create: {
-        userId: USER_ID,
-        problemSlug: body.problemSlug,
-        lectureSeen: 1,
-        status: "learning",
-        lastStepAt: new Date(),
-      },
-    });
-    return Response.json({ ok: true });
-  }
-
-  return Response.json({ error: "BAD_TYPE" }, { status: 400 });
+  await prisma.problemProgress.upsert({
+    where: { userId_problemSlug: { userId, problemSlug: body.problemSlug } },
+    update: {
+      lectureSeen: { increment: 1 },
+      status: "learning",
+      lastStepAt: new Date(),
+    },
+    create: {
+      userId,
+      problemSlug: body.problemSlug,
+      lectureSeen: 1,
+      status: "learning",
+      lastStepAt: new Date(),
+    },
+  });
+  return Response.json({ ok: true });
 }
