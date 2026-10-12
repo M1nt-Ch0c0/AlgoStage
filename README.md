@@ -9,7 +9,7 @@ AlgoStage 是一个**纯本地运行**的 LeetCode Hot 100 AI 学习系统：内
 ## 特性
 
 - 🎯 **教鞭特效讲解**：AI 输出结构化讲解脚本，前端逐步播放 —— 聚光灯、粉笔划线、注意力涟漪、舞台压暗……讲到哪行代码，光就打在哪行
-- 💻 **本地 Playground**：Monaco 编辑器 + 浏览器内执行（JS 沙箱 / Python Pyodide），离线可跑
+- 💻 **本地 Playground + 浏览器判题**：Monaco 编辑器；JS/TS 与 Python（Pyodide）在浏览器 Worker 中真实判题；JS/TS 提交时由服务端隔离复判。
 - 🤖 **BYOK 内嵌 Agent**：填 API Key + model name 即用，基于 Vercel AI SDK，OpenAI / DeepSeek / Claude / Gemini 等几十家模型即插即用
 - 📊 **个人看板**：刷题热力图、知识点掌握度、提示消耗、SM-2 间隔复习队列，全部存在本地 SQLite
 - 🧩 **长期主义架构**：题目源、模型、特效、可视化器全部插件化，换数据源/换模型/加特效不动主框架
@@ -32,7 +32,43 @@ npm run dev                   # http://localhost:3000
 
 使用环境变量 Key 时，请同时填写 `AI_BASE_URL`，并按服务商配置 `AI_PROVIDER`；设置页可单独覆盖模型名，接口和 Key 必须保持同一来源。设置页只保存实际修改的字段；保存新 Key 时请同时填写对应接口地址和服务商，来源混用会被拒绝，不会发出模型请求。
 
-验证命令：`npm run lint`、`npx tsc --noEmit`、`npm test`、`npm run build`。
+验证命令：`npm run lint`、`npm run typecheck`、`npm test`、`npm run test:e2e`、`npm run build`。
+
+## 从旧版本升级
+
+```bash
+npm ci
+npm run db:push
+```
+
+v0.2.0 给 `Submission` 加了 `judgedBy`。保留旧库却不跑 `db:push` 时，学习看板会 500。补列不丢记录。Docker 启动会自动 `db push`。
+
+## 判题
+
+- 覆盖：Hot 100 前 20 题；2 秒超时；输出超 32 KiB → RE；支持 `class Solution`；Python 打开题目页预热。
+- JS/TS：浏览器先跑 → `/api/judge` 服务端复判 → 仅服务端 AC 写进度。
+- Python：服务端不可判，接受浏览器 AC（`judgedBy: client`）。
+- 已 solved 不因 WA/RE/TLE 或重听课退回 learning。
+- 构建自动 `build:judge`；`/judge/*` 需 COOP/COEP（Next 已加）。
+- 可选环境变量 `JUDGE_MAX_CONCURRENCY`（默认 4，最大 64，按进程计）。
+
+## Docker 自托管
+
+```bash
+docker build --build-arg BASE_PATH=/algostage -t algostage:0.2.0-alpha.1 .
+# 或
+docker compose -f deploy/compose.yaml up -d --wait
+```
+
+无 Demo；需自备 API Key。数据卷 `/data/algostage.db`。详见 [deploy/README.md](deploy/README.md)。
+
+## 子路径 + nginx
+
+构建时设 `NEXT_PUBLIC_BASE_PATH`。讲解流 `application/x-ndjson`，需关代理缓冲（应用已发 `X-Accel-Buffering: no`）；`/algostage/api/lecture` 独立 location，读超时 300 秒。
+
+## 提示超时
+
+`.env` 可设 `HINT_TIMEOUT_MS`（默认 60000）。
 
 ## 文档
 
