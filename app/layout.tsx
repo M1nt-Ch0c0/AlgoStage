@@ -3,7 +3,6 @@ import Script from "next/script";
 import { Caveat, Inter, JetBrains_Mono, Long_Cang } from "next/font/google";
 import { SiteNav } from "@/components/site-nav";
 import { SiteFooter } from "@/components/site-footer";
-import { DemoBanner } from "@/components/demo-banner";
 import { THEME_BOOT_SCRIPT } from "@/lib/theme";
 import "./globals.css";
 
@@ -52,7 +51,6 @@ export default function RootLayout({
         </Script>
       </head>
       <body className="flex min-h-screen flex-col antialiased">
-        <DemoBanner />
         <SiteNav />
         <main className="flex-1">{children}</main>
         <SiteFooter />
