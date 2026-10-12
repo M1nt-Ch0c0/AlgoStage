@@ -14,15 +14,18 @@ describe("S12 Demo 文案", () => {
 });
 
 describe("S12 版本号", () => {
-  it("package.json 与 lockfile 根版本为 0.2.0", () => {
-    expect(JSON.parse(read("package.json")).version).toBe("0.2.0");
+  it("package.json 与 lockfile 根版本为 0.2.0-alpha.1", () => {
+    expect(JSON.parse(read("package.json")).version).toBe("0.2.0-alpha.1");
     const lock = JSON.parse(read("package-lock.json"));
-    expect(lock.version).toBe("0.2.0");
-    expect(lock.packages[""].version).toBe("0.2.0");
+    expect(lock.version).toBe("0.2.0-alpha.1");
+    expect(lock.packages[""].version).toBe("0.2.0-alpha.1");
   });
-  it("仓库不再残留 20261008 镜像 tag", () => {
+  it("deploy 镜像 tag 为 algostage-demo:0.2.0-alpha.1 且不残留裸 0.2.0 或 20261008", () => {
     for (const f of ["deploy/compose.yaml", "deploy/README.md"]) {
-      expect(read(f)).not.toContain("20261008");
+      const content = read(f);
+      expect(content).toContain("algostage-demo:0.2.0-alpha.1");
+      expect(content).not.toMatch(/algostage-demo:0\.2\.0(?!-alpha)/);
+      expect(content).not.toContain("20261008");
     }
   });
 });
