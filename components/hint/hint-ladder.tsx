@@ -94,11 +94,6 @@ export default function HintLadder({
           error?: string;
         };
         if (!res.ok) {
-          if (j.error === "DEMO") {
-            throw new Error(
-              "在线体验版里还不能要提示。装到自己电脑上接上 AI，就能一级一级地问老师。",
-            );
-          }
           if (j.error === "NO_BYOK") {
             throw new Error("提示要老师现场想，先在设置里接上你的 AI 吧。");
           }

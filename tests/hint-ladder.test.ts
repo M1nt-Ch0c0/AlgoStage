@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
@@ -19,6 +21,23 @@ afterEach(async () => {
   container.remove();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+test("副标题固定为本地文案，不含体验版", async () => {
+  await act(async () => {
+    root.render(createElement(HintLadder, { slug: "two-sum" }));
+  });
+  expect(container.textContent).toContain("用了几级会记在看板上");
+  expect(container.textContent).not.toContain("体验版");
+  expect(container.textContent).not.toContain("在线体验");
+
+  const source = readFileSync(
+    path.join(__dirname, "../components/hint/hint-ladder.tsx"),
+    "utf8",
+  );
+  expect(source).not.toContain("IS_DEMO");
+  expect(source).not.toContain('error === "DEMO"');
+  expect(source).not.toContain("体验版");
 });
 
 function levelButton(label = "观察") {
