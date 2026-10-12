@@ -1,5 +1,6 @@
 "use client";
 
+import { KeySourceBadge, type KeySource } from "@/components/settings/key-source-badge";
 import { DEFAULT_MODEL } from "@/lib/agent/defaults";
 import { apiPath, IS_DEMO, REPO_URL } from "@/lib/runtime";
 import { useEffect, useRef, useState } from "react";
@@ -49,7 +50,7 @@ export default function SettingsPage() {
   const [baseURL, setBaseURL] = useState("https://api.openai.com/v1");
   const [apiKey, setApiKey] = useState("");
   const [apiKeyMasked, setApiKeyMasked] = useState("");
-  const [keySource, setKeySource] = useState<"settings" | "env" | "none">("none");
+  const [keySource, setKeySource] = useState<KeySource>("none");
   const [model, setModel] = useState<string>(DEFAULT_MODEL);
   const [theme, setTheme] = useState("dark");
   const [showKey, setShowKey] = useState(false);
@@ -188,9 +189,7 @@ export default function SettingsPage() {
           title="接上你的 AI 老师"
           desc="AlgoStage 自己不带 AI，需要接上一个你自己的 AI 账号，老师才能给其余的题备课。账号的钥匙（API Key）只存在这台电脑上，不会发给任何人。"
         >
-          <p className="mb-4 text-sm text-chalk-300" role="status">
-            {keySource === "settings" ? "当前用的是设置页保存的 Key" : keySource === "env" ? "当前用的是环境变量" : "还没接上 AI"}
-          </p>
+          <div className="mb-4"><KeySourceBadge source={keySource} /></div>
           <fieldset>
             <legend className={labelClass}>用哪家的 AI</legend>
             <div className="grid gap-2 sm:grid-cols-3">
