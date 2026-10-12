@@ -18,7 +18,6 @@ jobs:
     timeout-minutes: 25
     env:
       NEXT_TELEMETRY_DISABLED: "1"
-      NEXT_PUBLIC_ALGOSTAGE_DEMO: "1"
       NEXT_PUBLIC_BASE_PATH: ""
       AI_API_KEY: ""
       AI_MODEL: ""

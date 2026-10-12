@@ -8,7 +8,7 @@ npm run lint
 npm run typecheck
 npm test
 npm run test:coverage
-NEXT_PUBLIC_ALGOSTAGE_DEMO=1 NEXT_PUBLIC_BASE_PATH= npm run build
+NEXT_PUBLIC_BASE_PATH= npm run build
 npx playwright install --with-deps chromium
 npm run test:e2e
 ```
@@ -25,8 +25,8 @@ npm run test:e2e
 
 共享 `node_modules` 的 worktree 可用 `npm test -- --configLoader=runner` 避免配置加载器在依赖目录生成临时文件；测试缓存写到本 worktree 的 `.next/cache/vitest`。禁止监听端口的环境无法运行需要本地假模型 HTTP 服务的测试，但上述 S9-11 回归不依赖监听端口。
 
-Playwright 测试生产 Demo 构建，覆盖首页、题面和 Monaco 编辑器、内置讲解的播放/暂停/代码高亮，以及其他题目的 Demo 限制。运行前按上面的环境变量构建，确保公开开关编译进客户端。服务器自动创建、初始化、seed 并清理临时数据库，清空模型配置，禁止复用已有服务；浏览器只允许访问本机。默认端口 4173，冲突时可用 `E2E_PORT=4174 npm run test:e2e`。失败截图和 trace 位于 `test-results/`，HTML 报告位于 `playwright-report/`。
+Playwright 测试本地完整版生产构建，覆盖首页、题面和 Monaco 编辑器、内置讲解的播放/暂停/代码高亮，以及讲课、进度记录、看板与设置页面的完整可用性。运行前按上面的环境变量构建。服务器自动创建、初始化、seed 并清理临时数据库，清空模型配置，禁止复用已有服务；浏览器只允许访问本机。默认端口 4173，冲突时可用 `E2E_PORT=4174 npm run test:e2e`。失败截图和 trace 位于 `test-results/`，HTML 报告位于 `playwright-report/`。
 
 `tests/nginx-streaming.test.ts` 通过独立临时 nginx 验证真实讲解路由的首段/增量送达、取消和超时。已安装 nginx 时自动执行，也可用 `NGINX_BINARY=/path/to/nginx npm test` 指定二进制；未安装且未指定时仅跳过这三条集成用例。使用本地假模型和临时数据库，服务端总时限在测试中缩短，不连接线上站点，不使用 Key，不改动已有 nginx 服务。
 
-GitHub Actions 在 Node 22 上运行 `npm ci`、lint、typecheck、带覆盖率的完整测试、生产 Demo build 和 Chromium 冒烟测试，上传测试报告。CI 安装 nginx 并显式指定二进制，确保代理集成用例不能被跳过。独立 Docker job 运行 `docker build`，不登录镜像仓库、不推送镜像。
+GitHub Actions 在 Node 22 上运行 `npm ci`、lint、typecheck、带覆盖率的完整测试、生产构建和 Chromium 冒烟测试，上传测试报告。CI 安装 nginx 并显式指定二进制，确保代理集成用例不能被跳过。独立 Docker job 运行 `docker build`，不登录镜像仓库、不推送镜像。
