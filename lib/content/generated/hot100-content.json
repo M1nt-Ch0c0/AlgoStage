@@ -1,0 +1,1428 @@
+{
+  "two-sum": {
+    "statement": "从整数数组中找两个位置，使其数值之和等于目标值。\n\n不能重复使用一个位置，输入保证有唯一答案。\n\n**示例**：[2,7,11,15], 9 → [0,1]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function twoSum(nums: number[], target: number): number[] {\n  // 哈希表：键 = 数值，值 = 下标\n  const map = new Map<number, number>();\n  for (let i = 0; i < nums.length; i++) {\n    const complement = target - nums[i];\n    // 命中：之前见过 complement\n    if (map.has(complement)) {\n      return [map.get(complement)!, i];\n    }\n    map.set(nums[i], i);\n  }\n  return [];\n}"
+      },
+      {
+        "language": "python",
+        "code": "def two_sum(nums: list[int], target: int) -> list[int]:\n    # 哈希表：键 = 数值，值 = 下标\n    seen = {}\n    for i, num in enumerate(nums):\n        complement = target - num\n        # 命中：之前见过 complement\n        if complement in seen:\n            return [seen[complement], i]\n        seen[num] = i\n    return []"
+      }
+    ],
+    "testCases": []
+  },
+  "group-anagrams": {
+    "statement": "把字符串数组中由同一组字母重新排列得到的单词放在同一组。\n\n单词仅含小写英文字母；组与组、组内单词的顺序都不影响答案。\n\n**示例**：[\"eat\",\"tea\",\"tan\",\"ate\",\"nat\",\"bat\"] → [[\"eat\",\"tea\",\"ate\"],[\"tan\",\"nat\"],[\"bat\"]]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function groupAnagrams(strs: string[]): string[][] {\n  const groups = new Map<string, string[]>();\n  for (const word of strs) {\n    // 计数向量唯一标识一组异位词\n    const count = Array(26).fill(0);\n    for (const ch of word) count[ch.charCodeAt(0) - 97]++;\n    const key = count.join(\",\");\n    if (!groups.has(key)) groups.set(key, []);\n    groups.get(key)!.push(word);\n  }\n  return [...groups.values()];\n}"
+      },
+      {
+        "language": "python",
+        "code": "def groupAnagrams(strs: list[str]) -> list[list[str]]:\n    groups = {}\n    for word in strs:\n        count = [0] * 26\n        for ch in word:\n            count[ord(ch) - 97] += 1\n        groups.setdefault(tuple(count), []).append(word)\n    return list(groups.values())"
+      }
+    ],
+    "testCases": []
+  },
+  "longest-consecutive-sequence": {
+    "statement": "找出数组里的数字能够组成的最长连续整数段，返回它的长度。\n\n连续段不要求在原数组相邻；重复数字只算一次，目标时间复杂度为 O(n)。\n\n**示例**：[100,4,200,1,3,2] → 4",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function longestConsecutive(nums: number[]): number {\n  const seen = new Set(nums);\n  let best = 0;\n  for (const x of seen) {\n    // 只从连续段的起点开始计数\n    if (seen.has(x - 1)) continue;\n    let end = x;\n    while (seen.has(end + 1)) end++;\n    best = Math.max(best, end - x + 1);\n  }\n  return best;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def longestConsecutive(nums: list[int]) -> int:\n    seen = set(nums)\n    best = 0\n    for x in seen:\n        if x - 1 in seen:\n            continue\n        end = x\n        while end + 1 in seen:\n            end += 1\n        best = max(best, end - x + 1)\n    return best"
+      }
+    ],
+    "testCases": []
+  },
+  "move-zeroes": {
+    "statement": "给定一个整数数组 `nums`，请你**原地**将数组中所有的 0 移动到末尾，同时保持非零元素的相对顺序。\n\n请直接在传入的数组上修改，不要创建新的数组。必须在不复制数组的前提下完成此题。\n\n**示例**：\n输入：`[0,1,0,3,12]`\n输出：`[1,3,12,0,0]`",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function moveZeroes(nums: number[]): void {\n    let slow = 0;\n    // fast 指针遍历数组\n    for (let fast = 0; fast < nums.length; fast++) {\n        if (nums[fast] !== 0) {\n            // 遇到非零元素就交换到 slow 位置\n            [nums[slow], nums[fast]] = [nums[fast], nums[slow]];\n            slow++;\n        }\n    }\n}"
+      },
+      {
+        "language": "python",
+        "code": "from typing import List\n\ndef moveZeroes(nums: List[int]) -> None:\n    slow = 0\n    for fast in range(len(nums)):\n        if nums[fast] != 0:\n            nums[slow], nums[fast] = nums[fast], nums[slow]\n            slow += 1"
+      }
+    ],
+    "testCases": [
+      {
+        "input": "[0,1,0,3,12]",
+        "expected": "[1,3,12,0,0]"
+      },
+      {
+        "input": "[0]",
+        "expected": "[0]"
+      },
+      {
+        "input": "[1,2,3,4,5]",
+        "expected": "[1,2,3,4,5]"
+      }
+    ]
+  },
+  "container-with-most-water": {
+    "statement": "选择两根竖线作为容器的两侧，求可以容纳的最大水量。\n\n数组下标代表横坐标，数值代表高度；容器不能倾斜。\n\n**示例**：[1,8,6,2,5,4,8,3,7] → 49",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function maxArea(height: number[]): number {\n  let left = 0, right = height.length - 1, best = 0;\n  while (left < right) {\n    best = Math.max(best, (right - left) * Math.min(height[left], height[right]));\n    // 短边不变时缩小宽度不可能改进答案\n    if (height[left] < height[right]) left++;\n    else right--;\n  }\n  return best;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def maxArea(height: list[int]) -> int:\n    left, right, best = 0, len(height) - 1, 0\n    while left < right:\n        best = max(best, (right - left) * min(height[left], height[right]))\n        if height[left] < height[right]:\n            left += 1\n        else:\n            right -= 1\n    return best"
+      }
+    ],
+    "testCases": []
+  },
+  "3sum": {
+    "statement": "给你一个整数数组 `nums`，请你找出其中**所有**和为 0 且**不重复**的三元组。\n\n返回的结果中不能包含重复的三元组，每个三元组内的数字也需要按**非递减**顺序排列。\n\n**示例**：\n输入：`nums = [-1,0,1,2,-1,-4]`\n输出：`[[-1,-1,2],[-1,0,1]]`",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function threeSum(nums: number[]): number[][] {\n    const res: number[][] = [];\n    // 先排序，为去重和双指针创造条件\n    nums.sort((a, b) => a - b);\n    \n    for (let i = 0; i < nums.length - 2; i++) {\n        // 跳过重复的第一个数\n        if (i > 0 && nums[i] === nums[i - 1]) continue;\n        \n        let left = i + 1;\n        let right = nums.length - 1;\n        const target = -nums[i];\n        \n        while (left < right) {\n            const sum = nums[left] + nums[right];\n            \n            if (sum === target) {\n                res.push([nums[i], nums[left], nums[right]]);\n                // 跳过重复的第二个数和第三个数\n                while (left < right && nums[left] === nums[left + 1]) left++;\n                while (left < right && nums[right] === nums[right - 1]) right--;\n                left++;\n                right--;\n            } else if (sum < target) {\n                left++;\n            } else {\n                right--;\n            }\n        }\n    }\n    \n    return res;\n}"
+      },
+      {
+        "language": "python",
+        "code": "from typing import List\n\ndef threeSum(nums: List[int]) -> List[List[int]]:\n    res: List[List[int]] = []\n    nums.sort()  # 为双指针和去重做准备\n    \n    for i in range(len(nums) - 2):\n        # 跳过重复的第一个数\n        if i > 0 and nums[i] == nums[i - 1]:\n            continue\n        \n        left, right = i + 1, len(nums) - 1\n        target = -nums[i]\n        \n        while left < right:\n            total = nums[left] + nums[right]\n            \n            if total == target:\n                res.append([nums[i], nums[left], nums[right]])\n                # 跳过重复的左右指针值\n                while left < right and nums[left] == nums[left + 1]:\n                    left += 1\n                while left < right and nums[right] == nums[right - 1]:\n                    right -= 1\n                left += 1\n                right -= 1\n            elif total < target:\n                left += 1\n            else:\n                right -= 1\n    \n    return res"
+      }
+    ],
+    "testCases": [
+      {
+        "input": "[-1,0,1,2,-1,-4]",
+        "expected": "[[-1,-1,2],[-1,0,1]]"
+      },
+      {
+        "input": "[0,1,1]",
+        "expected": "[]"
+      },
+      {
+        "input": "[0,0,0]",
+        "expected": "[[0,0,0]]"
+      }
+    ]
+  },
+  "trapping-rain-water": {
+    "statement": "地形由一排宽度为 1 的柱子构成，计算下雨后柱子之间能留下多少水。\n\n高度均为非负整数，左右边界外的水会流走。\n\n**示例**：[0,1,0,2,1,0,1,3,2,1,2,1] → 6",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function trap(height: number[]): number {\n  let l = 0, r = height.length - 1, lm = 0, rm = 0, water = 0;\n  while (l <= r) {\n    // 较低一侧的蓄水上界已经确定\n    if (lm <= rm) {\n      lm = Math.max(lm, height[l]);\n      water += lm - height[l++];\n    } else {\n      rm = Math.max(rm, height[r]);\n      water += rm - height[r--];\n    }\n  }\n  return water;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def trap(height: list[int]) -> int:\n    l, r, lm, rm, water = 0, len(height) - 1, 0, 0, 0\n    while l <= r:\n        if lm <= rm:\n            lm = max(lm, height[l])\n            water += lm - height[l]\n            l += 1\n        else:\n            rm = max(rm, height[r])\n            water += rm - height[r]\n            r -= 1\n    return water"
+      }
+    ],
+    "testCases": []
+  },
+  "longest-substring-without-repeating-characters": {
+    "statement": "返回字符串中不含重复字符的最长连续片段的长度。\n\n片段必须连续；空字符串的答案是 0。\n\n**示例**：\"abcabcbb\" → 3",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function lengthOfLongestSubstring(s: string): number {\n  const last = new Map<string, number>();\n  let left = 0, best = 0;\n  for (let right = 0; right < s.length; right++) {\n    // 左边界只能向右移动\n    left = Math.max(left, (last.get(s[right]) ?? -1) + 1);\n    last.set(s[right], right);\n    best = Math.max(best, right - left + 1);\n  }\n  return best;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def lengthOfLongestSubstring(s: str) -> int:\n    last = {}\n    left = best = 0\n    for right, ch in enumerate(s):\n        left = max(left, last.get(ch, -1) + 1)\n        last[ch] = right\n        best = max(best, right - left + 1)\n    return best"
+      }
+    ],
+    "testCases": []
+  },
+  "find-all-anagrams-in-a-string": {
+    "statement": "在 s 中寻找所有与 p 字母构成相同的连续片段，返回这些片段的起始位置。\n\ns 与 p 只含小写字母；片段长度必须等于 p 的长度。\n\n**示例**：\"cbaebabacd\", \"abc\" → [0,6]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function findAnagrams(s: string, p: string): number[] {\n  const need = Array(26).fill(0), window = Array(26).fill(0), result: number[] = [];\n  for (const ch of p) need[ch.charCodeAt(0) - 97]++;\n  for (let i = 0; i < s.length; i++) {\n    window[s.charCodeAt(i) - 97]++;\n    if (i >= p.length) window[s.charCodeAt(i - p.length) - 97]--;\n    // 固定长度窗口比较 26 个计数\n    if (i >= p.length - 1 && window.every((v, j) => v === need[j])) result.push(i - p.length + 1);\n  }\n  return result;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def findAnagrams(s: str, p: str) -> list[int]:\n    need, window, result = [0] * 26, [0] * 26, []\n    for ch in p:\n        need[ord(ch) - 97] += 1\n    for i, ch in enumerate(s):\n        window[ord(ch) - 97] += 1\n        if i >= len(p):\n            window[ord(s[i - len(p)]) - 97] -= 1\n        if i >= len(p) - 1 and window == need:\n            result.append(i - len(p) + 1)\n    return result"
+      }
+    ],
+    "testCases": []
+  },
+  "subarray-sum-equals-k": {
+    "statement": "统计数组中元素之和等于 k 的连续子数组数量。\n\n子数组不能为空，元素可以为负数，不能靠单纯滑动窗口求解。\n\n**示例**：[1,1,1], 2 → 2",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function subarraySum(nums: number[], k: number): number {\n  const counts = new Map<number, number>([[0, 1]]);\n  let prefix = 0, result = 0;\n  for (const x of nums) {\n    prefix += x;\n    // 两个前缀和的差就是中间子数组的和\n    result += counts.get(prefix - k) ?? 0;\n    counts.set(prefix, (counts.get(prefix) ?? 0) + 1);\n  }\n  return result;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def subarraySum(nums: list[int], k: int) -> int:\n    counts = {0: 1}\n    prefix = result = 0\n    for x in nums:\n        prefix += x\n        result += counts.get(prefix - k, 0)\n        counts[prefix] = counts.get(prefix, 0) + 1\n    return result"
+      }
+    ],
+    "testCases": []
+  },
+  "sliding-window-maximum": {
+    "statement": "长度为 k 的窗口从左到右移动，每个位置输出窗口内最大值。\n\n1 ≤ k ≤ 数组长度；每次仅移动一格。\n\n**示例**：[1,3,-1,-3,5,3,6,7], 3 → [3,3,5,5,6,7]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function maxSlidingWindow(nums: number[], k: number): number[] {\n  const deque: number[] = [], result: number[] = [];\n  let head = 0;\n  for (let i = 0; i < nums.length; i++) {\n    if (head < deque.length && deque[head] <= i - k) head++;\n    // 队列按值递减，队首始终是当前最大值\n    while (deque.length > head && nums[deque[deque.length - 1]] <= nums[i]) deque.pop();\n    deque.push(i);\n    if (i >= k - 1) result.push(nums[deque[head]]);\n  }\n  return result;\n}"
+      },
+      {
+        "language": "python",
+        "code": "from collections import deque\n\ndef maxSlidingWindow(nums: list[int], k: int) -> list[int]:\n    q, result = deque(), []\n    for i, x in enumerate(nums):\n        if q and q[0] <= i - k:\n            q.popleft()\n        while q and nums[q[-1]] <= x:\n            q.pop()\n        q.append(i)\n        if i >= k - 1:\n            result.append(nums[q[0]])\n    return result"
+      }
+    ],
+    "testCases": []
+  },
+  "min-window-substring": {
+    "statement": "找出 s 中最短的连续片段，要求它包含 t 的全部字符。\n\n重复字符需要满足对应次数；找不到时返回空字符串。\n\n**示例**：\"ADOBECODEBANC\", \"ABC\" → \"BANC\"",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function minWindow(s: string, t: string): string {\n  if (!t) return \"\";\n  const need = new Map<string, number>();\n  for (const c of t) need.set(c, (need.get(c) ?? 0) + 1);\n  let missing = t.length, left = 0, start = 0, length = Infinity;\n  for (let right = 0; right < s.length; right++) {\n    const c = s[right];\n    if ((need.get(c) ?? 0) > 0) missing--;\n    need.set(c, (need.get(c) ?? 0) - 1);\n    // 满足覆盖后尽量缩小左边界\n    while (missing === 0) {\n      if (right - left + 1 < length) { start = left; length = right - left + 1; }\n      const out = s[left++];\n      need.set(out, (need.get(out) ?? 0) + 1);\n      if (need.get(out)! > 0) missing++;\n    }\n  }\n  return length === Infinity ? \"\" : s.slice(start, start + length);\n}"
+      },
+      {
+        "language": "python",
+        "code": "from collections import Counter\n\ndef minWindow(s: str, t: str) -> str:\n    if not t:\n        return \"\"\n    need = Counter(t)\n    missing, left, start, length = len(t), 0, 0, float(\"inf\")\n    for right, ch in enumerate(s):\n        if need[ch] > 0:\n            missing -= 1\n        need[ch] -= 1\n        while missing == 0:\n            if right - left + 1 < length:\n                start, length = left, right - left + 1\n            out = s[left]\n            left += 1\n            need[out] += 1\n            if need[out] > 0:\n                missing += 1\n    return \"\" if length == float(\"inf\") else s[start:start + length]"
+      }
+    ],
+    "testCases": []
+  },
+  "max-subarray": {
+    "statement": "求整数数组中和最大的非空连续子数组，返回这个和。\n\n数组至少含一个元素，所有元素为负数时也必须选择一个非空片段。\n\n**示例**：[-2,1,-3,4,-1,2,1,-5,4] → 6",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function maxSubArray(nums: number[]): number {\n  let ending = nums[0], best = nums[0];\n  for (let i = 1; i < nums.length; i++) {\n    // 要么接在上一段后面，要么从当前数重新开始\n    ending = Math.max(nums[i], ending + nums[i]);\n    best = Math.max(best, ending);\n  }\n  return best;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def maxSubArray(nums: list[int]) -> int:\n    ending = best = nums[0]\n    for x in nums[1:]:\n        ending = max(x, ending + x)\n        best = max(best, ending)\n    return best"
+      }
+    ],
+    "testCases": []
+  },
+  "merge-intervals": {
+    "statement": "把所有有交集的区间合并，返回彼此不重叠的区间集合。\n\n区间端点包含在区间内，因此 [1,4] 与 [4,5] 也应合并。\n\n**示例**：[[1,3],[2,6],[8,10],[15,18]] → [[1,6],[8,10],[15,18]]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function merge(intervals: number[][]): number[][] {\n  intervals.sort((a, b) => a[0] - b[0]);\n  const result: number[][] = [];\n  for (const [start, end] of intervals) {\n    const last = result[result.length - 1];\n    if (last && start <= last[1]) last[1] = Math.max(last[1], end);\n    else result.push([start, end]);\n  }\n  return result;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def merge(intervals: list[list[int]]) -> list[list[int]]:\n    result = []\n    for start, end in sorted(intervals):\n        if result and start <= result[-1][1]:\n            result[-1][1] = max(result[-1][1], end)\n        else:\n            result.append([start, end])\n    return result"
+      }
+    ],
+    "testCases": []
+  },
+  "rotate-array": {
+    "statement": "将数组向右循环移动 k 个位置，原数组上完成修改。\n\nk 为非负整数；移出右边界的元素从左边重新进入。\n\n**示例**：[1,2,3,4,5,6,7], 3 → [5,6,7,1,2,3,4]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function rotate(nums: number[], k: number): void {\n  if (!nums.length) return;\n  k %= nums.length;\n  const reverse = (l: number, r: number) => {\n    while (l < r) { [nums[l], nums[r]] = [nums[r], nums[l]]; l++; r--; }\n  };\n  // 整体翻转后分别翻转两段，恢复各段内顺序\n  reverse(0, nums.length - 1);\n  reverse(0, k - 1);\n  reverse(k, nums.length - 1);\n}"
+      },
+      {
+        "language": "python",
+        "code": "def rotate(nums: list[int], k: int) -> None:\n    if not nums:\n        return\n    k %= len(nums)\n    def reverse(l: int, r: int) -> None:\n        while l < r:\n            nums[l], nums[r] = nums[r], nums[l]\n            l, r = l + 1, r - 1\n    reverse(0, len(nums) - 1)\n    reverse(0, k - 1)\n    reverse(k, len(nums) - 1)"
+      }
+    ],
+    "testCases": []
+  },
+  "product-of-array-except-self": {
+    "statement": "为每个位置计算其余所有元素的乘积，返回新数组。\n\n不允许除法；除输出数组外尽量只使用常数空间。\n\n**示例**：[1,2,3,4] → [24,12,8,6]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function productExceptSelf(nums: number[]): number[] {\n  const result = Array(nums.length).fill(1);\n  let prefix = 1, suffix = 1;\n  for (let i = 0; i < nums.length; i++) {\n    result[i] = prefix;\n    prefix *= nums[i];\n  }\n  // 第二次扫描将右侧乘积乘进去\n  for (let i = nums.length - 1; i >= 0; i--) {\n    result[i] *= suffix;\n    suffix *= nums[i];\n  }\n  return result;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def productExceptSelf(nums: list[int]) -> list[int]:\n    result = [1] * len(nums)\n    prefix = suffix = 1\n    for i, x in enumerate(nums):\n        result[i] = prefix\n        prefix *= x\n    for i in range(len(nums) - 1, -1, -1):\n        result[i] *= suffix\n        suffix *= nums[i]\n    return result"
+      }
+    ],
+    "testCases": []
+  },
+  "first-missing-positive": {
+    "statement": "找出数组中没有出现的最小正整数。\n\n要求 O(n) 时间、O(1) 额外空间；允许修改原数组。\n\n**示例**：[3,4,-1,1] → 2",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function firstMissingPositive(nums: number[]): number {\n  const n = nums.length;\n  for (let i = 0; i < n; i++) {\n    // 数字 x 应当放在下标 x-1，遇到重复值就停\n    while (nums[i] >= 1 && nums[i] <= n && nums[nums[i] - 1] !== nums[i]) {\n      const j = nums[i] - 1;\n      [nums[i], nums[j]] = [nums[j], nums[i]];\n    }\n  }\n  for (let i = 0; i < n; i++) if (nums[i] !== i + 1) return i + 1;\n  return n + 1;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def firstMissingPositive(nums: list[int]) -> int:\n    n = len(nums)\n    for i in range(n):\n        while 1 <= nums[i] <= n and nums[nums[i] - 1] != nums[i]:\n            j = nums[i] - 1\n            nums[i], nums[j] = nums[j], nums[i]\n    for i, x in enumerate(nums):\n        if x != i + 1:\n            return i + 1\n    return n + 1"
+      }
+    ],
+    "testCases": []
+  },
+  "set-matrix-zeroes": {
+    "statement": "矩阵中的某个格子为 0 时，将其所在整行与整列都改为 0。\n\n必须依据修改前的零位置决定；原地修改，使用常数额外空间。\n\n**示例**：[[1,1,1],[1,0,1],[1,1,1]] → [[1,0,1],[0,0,0],[1,0,1]]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function setZeroes(matrix: number[][]): void {\n  const m = matrix.length, n = matrix[0].length;\n  const rowZero = matrix[0].some(x => x === 0), colZero = matrix.some(row => row[0] === 0);\n  // 第一行和第一列充当标记区\n  for (let i = 1; i < m; i++) for (let j = 1; j < n; j++) {\n    if (matrix[i][j] === 0) matrix[i][0] = matrix[0][j] = 0;\n  }\n  for (let i = 1; i < m; i++) for (let j = 1; j < n; j++) {\n    if (matrix[i][0] === 0 || matrix[0][j] === 0) matrix[i][j] = 0;\n  }\n  if (rowZero) matrix[0].fill(0);\n  if (colZero) for (const row of matrix) row[0] = 0;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def setZeroes(matrix: list[list[int]]) -> None:\n    m, n = len(matrix), len(matrix[0])\n    row_zero = 0 in matrix[0]\n    col_zero = any(row[0] == 0 for row in matrix)\n    for i in range(1, m):\n        for j in range(1, n):\n            if matrix[i][j] == 0:\n                matrix[i][0] = matrix[0][j] = 0\n    for i in range(1, m):\n        for j in range(1, n):\n            if matrix[i][0] == 0 or matrix[0][j] == 0:\n                matrix[i][j] = 0\n    if row_zero:\n        matrix[0][:] = [0] * n\n    if col_zero:\n        for row in matrix:\n            row[0] = 0"
+      }
+    ],
+    "testCases": []
+  },
+  "spiral-matrix": {
+    "statement": "按顺时针从外到内的螺旋路径访问矩阵，返回访问到的所有元素。\n\n矩阵可以不是正方形；每个元素只访问一次。\n\n**示例**：[[1,2,3],[4,5,6],[7,8,9]] → [1,2,3,6,9,8,7,4,5]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function spiralOrder(matrix: number[][]): number[] {\n  if (!matrix.length) return [];\n  const result: number[] = [];\n  let top = 0, bottom = matrix.length - 1, left = 0, right = matrix[0].length - 1;\n  while (top <= bottom && left <= right) {\n    for (let j = left; j <= right; j++) result.push(matrix[top][j]);\n    top++;\n    for (let i = top; i <= bottom; i++) result.push(matrix[i][right]);\n    right--;\n    if (top <= bottom) { for (let j = right; j >= left; j--) result.push(matrix[bottom][j]); bottom--; }\n    if (left <= right) { for (let i = bottom; i >= top; i--) result.push(matrix[i][left]); left++; }\n  }\n  return result;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def spiralOrder(matrix: list[list[int]]) -> list[int]:\n    if not matrix:\n        return []\n    top, bottom, left, right = 0, len(matrix) - 1, 0, len(matrix[0]) - 1\n    result = []\n    while top <= bottom and left <= right:\n        result.extend(matrix[top][j] for j in range(left, right + 1))\n        top += 1\n        result.extend(matrix[i][right] for i in range(top, bottom + 1))\n        right -= 1\n        if top <= bottom:\n            result.extend(matrix[bottom][j] for j in range(right, left - 1, -1))\n            bottom -= 1\n        if left <= right:\n            result.extend(matrix[i][left] for i in range(bottom, top - 1, -1))\n            left += 1\n    return result"
+      }
+    ],
+    "testCases": []
+  },
+  "rotate-image": {
+    "statement": "将 n×n 矩阵顺时针旋转 90 度。\n\n直接修改输入矩阵，不额外创建另一张矩阵。\n\n**示例**：[[1,2],[3,4]] → [[3,1],[4,2]]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function rotate(matrix: number[][]): void {\n  const n = matrix.length;\n  // 转置再逐行翻转等价于顺时针旋转\n  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {\n    [matrix[i][j], matrix[j][i]] = [matrix[j][i], matrix[i][j]];\n  }\n  for (const row of matrix) row.reverse();\n}"
+      },
+      {
+        "language": "python",
+        "code": "def rotate(matrix: list[list[int]]) -> None:\n    n = len(matrix)\n    for i in range(n):\n        for j in range(i + 1, n):\n            matrix[i][j], matrix[j][i] = matrix[j][i], matrix[i][j]\n    for row in matrix:\n        row.reverse()"
+      }
+    ],
+    "testCases": []
+  },
+  "search-a-2d-matrix-ii": {
+    "statement": "判断目标数是否存在于每行、每列都递增的矩阵中。\n\n行与行之间不保证整体有序；找到任意一处即可返回 true。\n\n**示例**：[[1,4,7],[2,5,8],[3,6,9]], 5 → true",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function searchMatrix(matrix: number[][], target: number): boolean {\n  if (!matrix.length) return false;\n  let row = 0, col = matrix[0].length - 1;\n  while (row < matrix.length && col >= 0) {\n    const x = matrix[row][col];\n    if (x === target) return true;\n    // 右上角可以一次排除一行或一列\n    if (x > target) col--;\n    else row++;\n  }\n  return false;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def searchMatrix(matrix: list[list[int]], target: int) -> bool:\n    if not matrix:\n        return False\n    row, col = 0, len(matrix[0]) - 1\n    while row < len(matrix) and col >= 0:\n        x = matrix[row][col]\n        if x == target:\n            return True\n        if x > target:\n            col -= 1\n        else:\n            row += 1\n    return False"
+      }
+    ],
+    "testCases": []
+  },
+  "intersection-of-two-linked-lists": {
+    "statement": "找到两条单链表第一次共享的节点；没有相交则返回空。\n\n相交按节点身份判断，不按数值；链表无环且不能破坏结构。\n\n**示例**：A=[4,1,8,4,5], B=[5,6,1,8,4,5]，共享尾部 → 值为 8 的共享节点",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function getIntersectionNode(headA: ListNode | null, headB: ListNode | null): ListNode | null {\n  let a = headA, b = headB;\n  // 各走完 A+B，总路程相等，抵消前缀长度差\n  while (a !== b) {\n    a = a ? a.next : headB;\n    b = b ? b.next : headA;\n  }\n  return a;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def getIntersectionNode(headA: \"ListNode | None\", headB: \"ListNode | None\") -> \"ListNode | None\":\n    a, b = headA, headB\n    while a is not b:\n        a = a.next if a else headB\n        b = b.next if b else headA\n    return a"
+      }
+    ],
+    "testCases": []
+  },
+  "reverse-linked-list": {
+    "statement": "将单链表的连接方向完全反转，返回新的头节点。\n\n允许空链表，直接调整原节点的 next 指针。\n\n**示例**：[1,2,3] → [3,2,1]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function reverseList(head: ListNode | null): ListNode | null {\n  let prev: ListNode | null = null;\n  while (head) {\n    const next: ListNode | null = head.next;\n    head.next = prev;\n    prev = head;\n    head = next;\n  }\n  return prev;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def reverseList(head: \"ListNode | None\") -> \"ListNode | None\":\n    prev = None\n    while head:\n        nxt = head.next\n        head.next = prev\n        prev, head = head, nxt\n    return prev"
+      }
+    ],
+    "testCases": []
+  },
+  "palindrome-linked-list": {
+    "statement": "判断单链表从前向后与从后向前读出的数值序列是否一致。\n\n使用 O(n) 时间和 O(1) 额外空间；比较后恢复原链表。\n\n**示例**：[1,2,2,1] → true",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function isPalindrome(head: ListNode | null): boolean {\n  if (!head) return true;\n  const reverse = (node: ListNode | null): ListNode | null => {\n    let prev: ListNode | null = null;\n    while (node) { const next: ListNode | null = node.next; node.next = prev; prev = node; node = next; }\n    return prev;\n  };\n  let slow = head, fast = head;\n  while (fast.next && fast.next.next) { slow = slow.next!; fast = fast.next.next; }\n  const second = reverse(slow.next);\n  let a: ListNode | null = head, b = second, ok = true;\n  while (b) { if (a!.val !== b.val) ok = false; a = a!.next; b = b.next; }\n  slow.next = reverse(second);\n  return ok;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def isPalindrome(head: \"ListNode | None\") -> bool:\n    if not head:\n        return True\n    def reverse(node):\n        prev = None\n        while node:\n            nxt = node.next\n            node.next = prev\n            prev, node = node, nxt\n        return prev\n    slow = fast = head\n    while fast.next and fast.next.next:\n        slow, fast = slow.next, fast.next.next\n    second = reverse(slow.next)\n    a, b, ok = head, second, True\n    while b:\n        if a.val != b.val:\n            ok = False\n        a, b = a.next, b.next\n    slow.next = reverse(second)\n    return ok"
+      }
+    ],
+    "testCases": []
+  },
+  "linked-list-cycle": {
+    "statement": "判断从链表头不断沿 next 前进，是否会再次到达已经访问过的节点。\n\n按节点身份检测；使用常数额外空间，不修改链表。\n\n**示例**：[3,2,0,-4] 的尾部指向下标 1 → true",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function hasCycle(head: ListNode | null): boolean {\n  let slow = head, fast = head;\n  while (fast?.next) {\n    slow = slow!.next;\n    fast = fast.next.next;\n    if (slow === fast) return true;\n  }\n  return false;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def hasCycle(head: \"ListNode | None\") -> bool:\n    slow = fast = head\n    while fast and fast.next:\n        slow, fast = slow.next, fast.next.next\n        if slow is fast:\n            return True\n    return False"
+      }
+    ],
+    "testCases": []
+  },
+  "linked-list-cycle-ii": {
+    "statement": "链表存在环时返回进入环的第一个节点，否则返回空。\n\n不能修改链表；节点比较使用身份，额外空间应为常数。\n\n**示例**：[3,2,0,-4] 尾部指向下标 1 → 下标 1 的节点",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function detectCycle(head: ListNode | null): ListNode | null {\n  let slow = head, fast = head;\n  while (fast?.next) {\n    slow = slow!.next;\n    fast = fast.next.next;\n    if (slow === fast) {\n      let entry = head;\n      // 相遇后从头和相遇点同步走，交点就是环入口\n      while (entry !== slow) { entry = entry!.next; slow = slow!.next; }\n      return entry;\n    }\n  }\n  return null;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def detectCycle(head: \"ListNode | None\") -> \"ListNode | None\":\n    slow = fast = head\n    while fast and fast.next:\n        slow, fast = slow.next, fast.next.next\n        if slow is fast:\n            entry = head\n            while entry is not slow:\n                entry, slow = entry.next, slow.next\n            return entry\n    return None"
+      }
+    ],
+    "testCases": []
+  },
+  "merge-two-sorted-lists": {
+    "statement": "合并两条递增单链表，返回一条仍然递增的链表。\n\n复用原节点，任一输入可以为空。\n\n**示例**：[1,2,4], [1,3,4] → [1,1,2,3,4,4]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function mergeTwoLists(a: ListNode | null, b: ListNode | null): ListNode | null {\n  const dummy = new ListNode(0);\n  let tail = dummy;\n  while (a && b) {\n    if (a.val <= b.val) { tail.next = a; a = a.next; }\n    else { tail.next = b; b = b.next; }\n    tail = tail.next;\n  }\n  tail.next = a ?? b;\n  return dummy.next;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def mergeTwoLists(a: \"ListNode | None\", b: \"ListNode | None\") -> \"ListNode | None\":\n    dummy = ListNode(0)\n    tail = dummy\n    while a and b:\n        if a.val <= b.val:\n            tail.next, a = a, a.next\n        else:\n            tail.next, b = b, b.next\n        tail = tail.next\n    tail.next = a or b\n    return dummy.next"
+      }
+    ],
+    "testCases": []
+  },
+  "add-two-numbers": {
+    "statement": "两个非负整数分别以逆序链表存储各位数字，返回它们的和的逆序链表。\n\n每个节点值为 0 到 9；除了数字 0，自身没有多余的前导零。\n\n**示例**：[2,4,3], [5,6,4] → [7,0,8]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function addTwoNumbers(a: ListNode | null, b: ListNode | null): ListNode | null {\n  const dummy = new ListNode(0);\n  let tail = dummy, carry = 0;\n  while (a || b || carry) {\n    const sum = (a?.val ?? 0) + (b?.val ?? 0) + carry;\n    tail.next = new ListNode(sum % 10);\n    tail = tail.next;\n    carry = Math.floor(sum / 10);\n    a = a?.next ?? null;\n    b = b?.next ?? null;\n  }\n  return dummy.next;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def addTwoNumbers(a: \"ListNode | None\", b: \"ListNode | None\") -> \"ListNode | None\":\n    dummy = ListNode(0)\n    tail, carry = dummy, 0\n    while a or b or carry:\n        total = (a.val if a else 0) + (b.val if b else 0) + carry\n        carry, digit = divmod(total, 10)\n        tail.next = ListNode(digit)\n        tail = tail.next\n        a = a.next if a else None\n        b = b.next if b else None\n    return dummy.next"
+      }
+    ],
+    "testCases": []
+  },
+  "remove-nth-node-from-end-of-list": {
+    "statement": "删除链表倒数第 n 个节点并返回新头节点。\n\nn 保证在链表长度范围内；尽量只遍历一次。\n\n**示例**：[1,2,3,4,5], 2 → [1,2,3,5]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function removeNthFromEnd(head: ListNode | null, n: number): ListNode | null {\n  const dummy = new ListNode(0, head);\n  let fast = dummy, slow = dummy;\n  for (let i = 0; i < n; i++) fast = fast.next!;\n  // 两指针间隔 n，慢指针停在待删节点之前\n  while (fast.next) { fast = fast.next; slow = slow.next!; }\n  slow.next = slow.next!.next;\n  return dummy.next;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def removeNthFromEnd(head: \"ListNode | None\", n: int) -> \"ListNode | None\":\n    dummy = ListNode(0, head)\n    fast = slow = dummy\n    for _ in range(n):\n        fast = fast.next\n    while fast.next:\n        fast, slow = fast.next, slow.next\n    slow.next = slow.next.next\n    return dummy.next"
+      }
+    ],
+    "testCases": []
+  },
+  "swap-nodes-in-pairs": {
+    "statement": "将链表每两个相邻节点交换，返回交换后的头节点。\n\n只能调整连接关系，不能仅交换节点数值；末尾落单节点保持原样。\n\n**示例**：[1,2,3,4] → [2,1,4,3]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function swapPairs(head: ListNode | null): ListNode | null {\n  const dummy = new ListNode(0, head);\n  let prev = dummy;\n  while (prev.next?.next) {\n    const a = prev.next, b = a.next!;\n    a.next = b.next;\n    b.next = a;\n    prev.next = b;\n    prev = a;\n  }\n  return dummy.next;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def swapPairs(head: \"ListNode | None\") -> \"ListNode | None\":\n    dummy = ListNode(0, head)\n    prev = dummy\n    while prev.next and prev.next.next:\n        a, b = prev.next, prev.next.next\n        a.next = b.next\n        b.next = a\n        prev.next = b\n        prev = a\n    return dummy.next"
+      }
+    ],
+    "testCases": []
+  },
+  "reverse-nodes-in-k-group": {
+    "statement": "把链表按 k 个节点分组，每个完整分组反转连接顺序。\n\n末尾不足 k 个节点的部分保持原样；不能交换数值，额外空间为常数。\n\n**示例**：[1,2,3,4,5], 2 → [2,1,4,3,5]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function reverseKGroup(head: ListNode | null, k: number): ListNode | null {\n  const dummy = new ListNode(0, head);\n  let before = dummy;\n  while (true) {\n    let end: ListNode | null = before;\n    for (let i = 0; i < k && end; i++) end = end.next;\n    if (!end) break;\n    const after = end.next, first = before.next!;\n    let prev = after, cur: ListNode | null = first;\n    // 只反转已经确认长度足够的一组\n    while (cur !== after) {\n      const next: ListNode | null = cur!.next;\n      cur!.next = prev; prev = cur; cur = next;\n    }\n    before.next = end;\n    before = first;\n  }\n  return dummy.next;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def reverseKGroup(head: \"ListNode | None\", k: int) -> \"ListNode | None\":\n    dummy = ListNode(0, head)\n    before = dummy\n    while True:\n        end = before\n        for _ in range(k):\n            end = end.next\n            if end is None:\n                return dummy.next\n        after, first = end.next, before.next\n        prev, cur = after, first\n        while cur is not after:\n            nxt = cur.next\n            cur.next = prev\n            prev, cur = cur, nxt\n        before.next = end\n        before = first"
+      }
+    ],
+    "testCases": []
+  },
+  "copy-list-with-random-pointer": {
+    "statement": "深拷贝带 next 和 random 两种指针的链表。\n\nrandom 可以指向任意节点或空；新链表不能引用原链表中的节点。\n\n**示例**：[[7,null],[13,0],[11,1]] → 相同指针结构的全新链表",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function copyRandomList(head: Node | null): Node | null {\n  const copies = new Map<Node, Node>();\n  for (let cur = head; cur; cur = cur.next) copies.set(cur, new Node(cur.val));\n  // 先建节点，再连接，避免随机指针指向尚未创建的副本\n  for (let cur = head; cur; cur = cur.next) {\n    const copy = copies.get(cur)!;\n    copy.next = cur.next ? copies.get(cur.next)! : null;\n    copy.random = cur.random ? copies.get(cur.random)! : null;\n  }\n  return head ? copies.get(head)! : null;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def copyRandomList(head: \"Node | None\") -> \"Node | None\":\n    copies = {}\n    cur = head\n    while cur:\n        copies[cur] = Node(cur.val)\n        cur = cur.next\n    cur = head\n    while cur:\n        copies[cur].next = copies.get(cur.next)\n        copies[cur].random = copies.get(cur.random)\n        cur = cur.next\n    return copies.get(head)"
+      }
+    ],
+    "testCases": []
+  },
+  "sort-list": {
+    "statement": "将单链表按节点值从小到大排序。\n\n使用 O(n log n) 时间；下方自底向上归并仅使用常数额外空间。\n\n**示例**：[4,2,1,3] → [1,2,3,4]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function sortList(head: ListNode | null): ListNode | null {\n  let n = 0;\n  for (let p = head; p; p = p.next) n++;\n  const dummy = new ListNode(0, head);\n  const split = (p: ListNode | null, size: number): ListNode | null => {\n    for (let i = 1; p && i < size; i++) p = p.next;\n    if (!p) return null;\n    const rest = p.next; p.next = null; return rest;\n  };\n  for (let size = 1; size < n; size *= 2) {\n    let cur = dummy.next, tail = dummy;\n    while (cur) {\n      let a: ListNode | null = cur, b = split(a, size);\n      cur = split(b, size);\n      while (a && b) {\n        if (a.val <= b.val) { tail.next = a; a = a.next; }\n        else { tail.next = b; b = b.next; }\n        tail = tail.next;\n      }\n      tail.next = a ?? b;\n      while (tail.next) tail = tail.next;\n    }\n  }\n  return dummy.next;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def sortList(head: \"ListNode | None\") -> \"ListNode | None\":\n    n, p = 0, head\n    while p:\n        n, p = n + 1, p.next\n    dummy = ListNode(0, head)\n    def split(p, size):\n        for _ in range(size - 1):\n            if p:\n                p = p.next\n        if not p:\n            return None\n        rest, p.next = p.next, None\n        return rest\n    size = 1\n    while size < n:\n        cur, tail = dummy.next, dummy\n        while cur:\n            a = cur\n            b = split(a, size)\n            cur = split(b, size)\n            while a and b:\n                if a.val <= b.val:\n                    tail.next, a = a, a.next\n                else:\n                    tail.next, b = b, b.next\n                tail = tail.next\n            tail.next = a or b\n            while tail.next:\n                tail = tail.next\n        size *= 2\n    return dummy.next"
+      }
+    ],
+    "testCases": []
+  },
+  "merge-k-sorted-lists": {
+    "statement": "把 k 条递增链表合并成一条递增链表。\n\nk 可以为 0；使用分治归并，时间复杂度 O(N log k)，N 为总节点数。\n\n**示例**：[[1,4,5],[1,3,4],[2,6]] → [1,1,2,3,4,4,5,6]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function mergeKLists(lists: (ListNode | null)[]): ListNode | null {\n  const merge = (a: ListNode | null, b: ListNode | null): ListNode | null => {\n    const dummy = new ListNode(0); let tail = dummy;\n    while (a && b) {\n      if (a.val <= b.val) { tail.next = a; a = a.next; }\n      else { tail.next = b; b = b.next; }\n      tail = tail.next;\n    }\n    tail.next = a ?? b; return dummy.next;\n  };\n  // 每轮两两合并，轮数为 log k\n  for (let size = 1; size < lists.length; size *= 2) {\n    for (let i = 0; i + size < lists.length; i += size * 2) lists[i] = merge(lists[i], lists[i + size]);\n  }\n  return lists[0] ?? null;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def mergeKLists(lists: list) -> \"ListNode | None\":\n    def merge(a, b):\n        dummy = ListNode(0)\n        tail = dummy\n        while a and b:\n            if a.val <= b.val:\n                tail.next, a = a, a.next\n            else:\n                tail.next, b = b, b.next\n            tail = tail.next\n        tail.next = a or b\n        return dummy.next\n    size = 1\n    while size < len(lists):\n        for i in range(0, len(lists) - size, size * 2):\n            lists[i] = merge(lists[i], lists[i + size])\n        size *= 2\n    return lists[0] if lists else None"
+      }
+    ],
+    "testCases": []
+  },
+  "lru-cache": {
+    "statement": "实现固定容量的缓存：get 查询，put 写入；满容量时淘汰最久未访问的条目。\n\nget 和 put 都要求平均 O(1)；写入已有键也算最近访问，查不到返回 -1。\n\n**示例**：容量 2，put(1,1), put(2,2), get(1), put(3,3), get(2) → 1, -1",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "class LRUCache {\n  private entries = new Map<number, number>();\n  constructor(private capacity: number) {}\n  get(key: number): number {\n    if (!this.entries.has(key)) return -1;\n    const value = this.entries.get(key)!;\n    // Map 保持插入顺序，重新插入代表最近使用\n    this.entries.delete(key);\n    this.entries.set(key, value);\n    return value;\n  }\n  put(key: number, value: number): void {\n    this.entries.delete(key);\n    this.entries.set(key, value);\n    if (this.entries.size > this.capacity) this.entries.delete(this.entries.keys().next().value!);\n  }\n}"
+      },
+      {
+        "language": "python",
+        "code": "from collections import OrderedDict\n\nclass LRUCache:\n    def __init__(self, capacity: int):\n        self.capacity = capacity\n        self.entries = OrderedDict()\n    def get(self, key: int) -> int:\n        if key not in self.entries:\n            return -1\n        self.entries.move_to_end(key)\n        return self.entries[key]\n    def put(self, key: int, value: int) -> None:\n        self.entries[key] = value\n        self.entries.move_to_end(key)\n        if len(self.entries) > self.capacity:\n            self.entries.popitem(last=False)"
+      }
+    ],
+    "testCases": []
+  },
+  "binary-tree-inorder-traversal": {
+    "statement": "按左子树、当前节点、右子树的顺序返回二叉树的节点值。\n\n空树返回空列表；下方使用显式栈，避免依赖递归深度。\n\n**示例**：[1,null,2,3] → [1,3,2]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function inorderTraversal(root: TreeNode | null): number[] {\n  const stack: TreeNode[] = [], result: number[] = [];\n  let cur = root;\n  while (cur || stack.length) {\n    while (cur) { stack.push(cur); cur = cur.left; }\n    cur = stack.pop()!;\n    result.push(cur.val);\n    cur = cur.right;\n  }\n  return result;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def inorderTraversal(root: \"TreeNode | None\") -> list[int]:\n    stack, result, cur = [], [], root\n    while cur or stack:\n        while cur:\n            stack.append(cur)\n            cur = cur.left\n        cur = stack.pop()\n        result.append(cur.val)\n        cur = cur.right\n    return result"
+      }
+    ],
+    "testCases": []
+  },
+  "maximum-depth-of-binary-tree": {
+    "statement": "求从根节点到最深叶子的路径中包含的节点数。\n\n空树深度为 0；叶子节点深度为 1。\n\n**示例**：[3,9,20,null,null,15,7] → 3",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function maxDepth(root: TreeNode | null): number {\n  if (!root) return 0;\n  // 当前高度等于较高子树的高度加一\n  return 1 + Math.max(maxDepth(root.left), maxDepth(root.right));\n}"
+      },
+      {
+        "language": "python",
+        "code": "def maxDepth(root: \"TreeNode | None\") -> int:\n    if not root:\n        return 0\n    return 1 + max(maxDepth(root.left), maxDepth(root.right))"
+      }
+    ],
+    "testCases": []
+  },
+  "invert-binary-tree": {
+    "statement": "交换每个节点的左右孩子，把整棵树翻转成镜像。\n\n可以原地修改；空树返回空。\n\n**示例**：[4,2,7,1,3,6,9] → [4,7,2,9,6,3,1]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function invertTree(root: TreeNode | null): TreeNode | null {\n  if (!root) return null;\n  const left = invertTree(root.left);\n  root.left = invertTree(root.right);\n  root.right = left;\n  return root;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def invertTree(root: \"TreeNode | None\") -> \"TreeNode | None\":\n    if not root:\n        return None\n    root.left, root.right = invertTree(root.right), invertTree(root.left)\n    return root"
+      }
+    ],
+    "testCases": []
+  },
+  "symmetric-tree": {
+    "statement": "判断一棵二叉树是否围绕根节点左右镜像对称。\n\n镜像要求结构和节点值都对应；空树视为对称。\n\n**示例**：[1,2,2,3,4,4,3] → true",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function isSymmetric(root: TreeNode | null): boolean {\n  const mirror = (a: TreeNode | null, b: TreeNode | null): boolean => {\n    if (!a || !b) return a === b;\n    return a.val === b.val && mirror(a.left, b.right) && mirror(a.right, b.left);\n  };\n  return !root || mirror(root.left, root.right);\n}"
+      },
+      {
+        "language": "python",
+        "code": "def isSymmetric(root: \"TreeNode | None\") -> bool:\n    def mirror(a, b):\n        if not a or not b:\n            return a is b\n        return a.val == b.val and mirror(a.left, b.right) and mirror(a.right, b.left)\n    return not root or mirror(root.left, root.right)"
+      }
+    ],
+    "testCases": []
+  },
+  "diameter-of-binary-tree": {
+    "statement": "求二叉树任意两个节点之间最长路径的边数。\n\n最长路径不一定经过根；只有一个节点时结果为 0。\n\n**示例**：[1,2,3,4,5] → 3",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function diameterOfBinaryTree(root: TreeNode | null): number {\n  let best = 0;\n  const height = (node: TreeNode | null): number => {\n    if (!node) return 0;\n    const left = height(node.left), right = height(node.right);\n    best = Math.max(best, left + right);\n    return 1 + Math.max(left, right);\n  };\n  height(root);\n  return best;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def diameterOfBinaryTree(root: \"TreeNode | None\") -> int:\n    best = 0\n    def height(node):\n        nonlocal best\n        if not node:\n            return 0\n        left, right = height(node.left), height(node.right)\n        best = max(best, left + right)\n        return 1 + max(left, right)\n    height(root)\n    return best"
+      }
+    ],
+    "testCases": []
+  },
+  "binary-tree-level-order-traversal": {
+    "statement": "从上到下逐层访问二叉树，每层的节点值单独组成列表。\n\n同层按从左到右排列；空树返回空列表。\n\n**示例**：[3,9,20,null,null,15,7] → [[3],[9,20],[15,7]]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function levelOrder(root: TreeNode | null): number[][] {\n  if (!root) return [];\n  const queue: TreeNode[] = [root], result: number[][] = [];\n  let head = 0;\n  while (head < queue.length) {\n    const end = queue.length, level: number[] = [];\n    // 本层边界固定，新入队的孩子属于下一层\n    while (head < end) {\n      const node = queue[head++]; level.push(node.val);\n      if (node.left) queue.push(node.left);\n      if (node.right) queue.push(node.right);\n    }\n    result.push(level);\n  }\n  return result;\n}"
+      },
+      {
+        "language": "python",
+        "code": "from collections import deque\n\ndef levelOrder(root: \"TreeNode | None\") -> list[list[int]]:\n    if not root:\n        return []\n    queue, result = deque([root]), []\n    while queue:\n        level = []\n        for _ in range(len(queue)):\n            node = queue.popleft()\n            level.append(node.val)\n            if node.left:\n                queue.append(node.left)\n            if node.right:\n                queue.append(node.right)\n        result.append(level)\n    return result"
+      }
+    ],
+    "testCases": []
+  },
+  "sorted-array-to-binary-search-tree": {
+    "statement": "把递增数组转换为高度平衡的二叉搜索树。\n\n每个节点的左右子树高度差最多为 1；允许返回任意满足条件的树。\n\n**示例**：[-10,-3,0,5,9] → 以 0 为根的一棵平衡搜索树",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function sortedArrayToBST(nums: number[]): TreeNode | null {\n  const build = (left: number, right: number): TreeNode | null => {\n    if (left > right) return null;\n    const mid = Math.floor((left + right) / 2);\n    // 中点作根，两侧分别构建，保证高度平衡\n    return new TreeNode(nums[mid], build(left, mid - 1), build(mid + 1, right));\n  };\n  return build(0, nums.length - 1);\n}"
+      },
+      {
+        "language": "python",
+        "code": "def sortedArrayToBST(nums: list[int]) -> \"TreeNode | None\":\n    def build(left, right):\n        if left > right:\n            return None\n        mid = (left + right) // 2\n        return TreeNode(nums[mid], build(left, mid - 1), build(mid + 1, right))\n    return build(0, len(nums) - 1)"
+      }
+    ],
+    "testCases": []
+  },
+  "validate-binary-search-tree": {
+    "statement": "判断每个节点是否满足左子树所有值更小、右子树所有值更大的搜索树条件。\n\n相同值不允许；不能只比较节点与直接孩子。\n\n**示例**：[5,1,4,null,null,3,6] → false",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function isValidBST(root: TreeNode | null): boolean {\n  const check = (node: TreeNode | null, low: number, high: number): boolean => {\n    if (!node) return true;\n    if (node.val <= low || node.val >= high) return false;\n    return check(node.left, low, node.val) && check(node.right, node.val, high);\n  };\n  return check(root, -Infinity, Infinity);\n}"
+      },
+      {
+        "language": "python",
+        "code": "def isValidBST(root: \"TreeNode | None\") -> bool:\n    def check(node, low, high):\n        if not node:\n            return True\n        if not low < node.val < high:\n            return False\n        return check(node.left, low, node.val) and check(node.right, node.val, high)\n    return check(root, float(\"-inf\"), float(\"inf\"))"
+      }
+    ],
+    "testCases": []
+  },
+  "kth-smallest-element-in-a-bst": {
+    "statement": "在二叉搜索树中找出按大小排序后的第 k 个节点值。\n\nk 从 1 开始，保证在节点数量范围内。\n\n**示例**：[3,1,4,null,2], 1 → 1",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function kthSmallest(root: TreeNode | null, k: number): number {\n  const stack: TreeNode[] = [];\n  let cur = root;\n  while (cur || stack.length) {\n    while (cur) { stack.push(cur); cur = cur.left; }\n    cur = stack.pop()!;\n    // 搜索树中序遍历就是递增顺序\n    if (--k === 0) return cur.val;\n    cur = cur.right;\n  }\n  throw new Error(\"k 超出节点数\");\n}"
+      },
+      {
+        "language": "python",
+        "code": "def kthSmallest(root: \"TreeNode | None\", k: int) -> int:\n    stack, cur = [], root\n    while cur or stack:\n        while cur:\n            stack.append(cur)\n            cur = cur.left\n        cur = stack.pop()\n        k -= 1\n        if k == 0:\n            return cur.val\n        cur = cur.right\n    raise ValueError(\"k 超出节点数\")"
+      }
+    ],
+    "testCases": []
+  },
+  "binary-tree-right-side-view": {
+    "statement": "从二叉树右侧观察，返回每一层最右侧可见的节点值。\n\n从上到下排列；空树没有可见节点。\n\n**示例**：[1,2,3,null,5,null,4] → [1,3,4]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function rightSideView(root: TreeNode | null): number[] {\n  const result: number[] = [];\n  const visit = (node: TreeNode | null, depth: number): void => {\n    if (!node) return;\n    // 先走右侧，每层首次遇到的就是最右节点\n    if (depth === result.length) result.push(node.val);\n    visit(node.right, depth + 1);\n    visit(node.left, depth + 1);\n  };\n  visit(root, 0);\n  return result;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def rightSideView(root: \"TreeNode | None\") -> list[int]:\n    result = []\n    def visit(node, depth):\n        if not node:\n            return\n        if depth == len(result):\n            result.append(node.val)\n        visit(node.right, depth + 1)\n        visit(node.left, depth + 1)\n    visit(root, 0)\n    return result"
+      }
+    ],
+    "testCases": []
+  },
+  "flatten-binary-tree-to-linked-list": {
+    "statement": "按前序遍历顺序把二叉树原地展开成仅使用 right 的链表。\n\n所有 left 都置空；复用原节点，额外空间为常数。\n\n**示例**：[1,2,5,3,4,null,6] → 1→2→3→4→5→6",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function flatten(root: TreeNode | null): void {\n  let cur = root;\n  while (cur) {\n    if (cur.left) {\n      let tail = cur.left;\n      while (tail.right) tail = tail.right;\n      // 左子树插到当前节点与原右子树之间\n      tail.right = cur.right;\n      cur.right = cur.left;\n      cur.left = null;\n    }\n    cur = cur.right;\n  }\n}"
+      },
+      {
+        "language": "python",
+        "code": "def flatten(root: \"TreeNode | None\") -> None:\n    cur = root\n    while cur:\n        if cur.left:\n            tail = cur.left\n            while tail.right:\n                tail = tail.right\n            tail.right = cur.right\n            cur.right = cur.left\n            cur.left = None\n        cur = cur.right"
+      }
+    ],
+    "testCases": []
+  },
+  "construct-binary-tree-from-preorder-and-inorder-traversal": {
+    "statement": "给定同一棵树的前序与中序遍历结果，重建这棵二叉树。\n\n节点值互不相同，两个数组保证来自同一棵树。\n\n**示例**：[3,9,20,15,7], [9,3,15,20,7] → [3,9,20,null,null,15,7]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function buildTree(preorder: number[], inorder: number[]): TreeNode | null {\n  const index = new Map(inorder.map((value, i) => [value, i]));\n  let pos = 0;\n  const build = (left: number, right: number): TreeNode | null => {\n    if (left > right) return null;\n    const value = preorder[pos++], mid = index.get(value)!;\n    const node = new TreeNode(value);\n    node.left = build(left, mid - 1);\n    node.right = build(mid + 1, right);\n    return node;\n  };\n  return build(0, inorder.length - 1);\n}"
+      },
+      {
+        "language": "python",
+        "code": "def buildTree(preorder: list[int], inorder: list[int]) -> \"TreeNode | None\":\n    index = {value: i for i, value in enumerate(inorder)}\n    pos = 0\n    def build(left, right):\n        nonlocal pos\n        if left > right:\n            return None\n        value = preorder[pos]\n        pos += 1\n        mid = index[value]\n        return TreeNode(value, build(left, mid - 1), build(mid + 1, right))\n    return build(0, len(inorder) - 1)"
+      }
+    ],
+    "testCases": []
+  },
+  "path-sum-iii": {
+    "statement": "统计二叉树中节点值之和等于目标的向下路径数量。\n\n路径可以从任意节点开始和结束，但只能向孩子方向走；节点值可为负数。\n\n**示例**：[10,5,-3,3,2,null,11,3,-2,null,1], 8 → 3",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function pathSum(root: TreeNode | null, targetSum: number): number {\n  const counts = new Map<number, number>([[0, 1]]);\n  const visit = (node: TreeNode | null, prefix: number): number => {\n    if (!node) return 0;\n    prefix += node.val;\n    let result = counts.get(prefix - targetSum) ?? 0;\n    counts.set(prefix, (counts.get(prefix) ?? 0) + 1);\n    result += visit(node.left, prefix) + visit(node.right, prefix);\n    // 回溯时移除当前前缀，兄弟分支不能相互拼接\n    counts.set(prefix, counts.get(prefix)! - 1);\n    return result;\n  };\n  return visit(root, 0);\n}"
+      },
+      {
+        "language": "python",
+        "code": "def pathSum(root: \"TreeNode | None\", targetSum: int) -> int:\n    counts = {0: 1}\n    def visit(node, prefix):\n        if not node:\n            return 0\n        prefix += node.val\n        result = counts.get(prefix - targetSum, 0)\n        counts[prefix] = counts.get(prefix, 0) + 1\n        result += visit(node.left, prefix) + visit(node.right, prefix)\n        counts[prefix] -= 1\n        return result\n    return visit(root, 0)"
+      }
+    ],
+    "testCases": []
+  },
+  "lowest-common-ancestor-of-a-binary-tree": {
+    "statement": "返回同时作为 p 与 q 祖先的最深节点。\n\np 与 q 为树中两个不同节点；一个节点也可以是自己的祖先。\n\n**示例**：[3,5,1,6,2,0,8,null,null,7,4], p=5, q=1 → 根节点 3",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function lowestCommonAncestor(root: TreeNode | null, p: TreeNode, q: TreeNode): TreeNode | null {\n  if (!root || root === p || root === q) return root;\n  const left = lowestCommonAncestor(root.left, p, q);\n  const right = lowestCommonAncestor(root.right, p, q);\n  // 两侧都找到目标，当前根就是最近公共祖先\n  if (left && right) return root;\n  return left ?? right;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def lowestCommonAncestor(root: \"TreeNode | None\", p: \"TreeNode\", q: \"TreeNode\") -> \"TreeNode | None\":\n    if root is None or root is p or root is q:\n        return root\n    left = lowestCommonAncestor(root.left, p, q)\n    right = lowestCommonAncestor(root.right, p, q)\n    if left and right:\n        return root\n    return left or right"
+      }
+    ],
+    "testCases": []
+  },
+  "binary-tree-maximum-path-sum": {
+    "statement": "求二叉树任意非空简单路径的最大节点值之和。\n\n路径不要求经过根；同一节点不能重复经过，负数节点也合法。\n\n**示例**：[-10,9,20,null,null,15,7] → 42",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function maxPathSum(root: TreeNode | null): number {\n  let best = -Infinity;\n  const gain = (node: TreeNode | null): number => {\n    if (!node) return 0;\n    const left = Math.max(0, gain(node.left)), right = Math.max(0, gain(node.right));\n    best = Math.max(best, node.val + left + right);\n    // 向父节点延伸时只能选择一侧，不能产生分叉\n    return node.val + Math.max(left, right);\n  };\n  gain(root);\n  return best;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def maxPathSum(root: \"TreeNode | None\") -> int:\n    best = float(\"-inf\")\n    def gain(node):\n        nonlocal best\n        if not node:\n            return 0\n        left, right = max(0, gain(node.left)), max(0, gain(node.right))\n        best = max(best, node.val + left + right)\n        return node.val + max(left, right)\n    gain(root)\n    return best"
+      }
+    ],
+    "testCases": []
+  },
+  "number-of-islands": {
+    "statement": "统计字符网格中由陆地格子组成的岛屿数量。\n\n陆地为 \"1\"、水为 \"0\"；只有上下左右连通，下方算法会修改网格标记访问。\n\n**示例**：[[\"1\",\"1\",\"0\"],[\"0\",\"1\",\"0\"],[\"0\",\"0\",\"1\"]] → 2",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function numIslands(grid: string[][]): number {\n  if (!grid.length) return 0;\n  const m = grid.length, n = grid[0].length;\n  let count = 0;\n  for (let r = 0; r < m; r++) for (let c = 0; c < n; c++) {\n    if (grid[r][c] !== \"1\") continue;\n    count++;\n    const stack: number[][] = [[r, c]]; grid[r][c] = \"0\";\n    while (stack.length) {\n      const [x, y] = stack.pop()!;\n      for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {\n        const a = x + dx, b = y + dy;\n        if (a >= 0 && a < m && b >= 0 && b < n && grid[a][b] === \"1\") {\n          grid[a][b] = \"0\"; stack.push([a, b]);\n        }\n      }\n    }\n  }\n  return count;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def numIslands(grid: list[list[str]]) -> int:\n    if not grid:\n        return 0\n    m, n, count = len(grid), len(grid[0]), 0\n    for r in range(m):\n        for c in range(n):\n            if grid[r][c] != \"1\":\n                continue\n            count += 1\n            stack = [(r, c)]\n            grid[r][c] = \"0\"\n            while stack:\n                x, y = stack.pop()\n                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):\n                    a, b = x + dx, y + dy\n                    if 0 <= a < m and 0 <= b < n and grid[a][b] == \"1\":\n                        grid[a][b] = \"0\"\n                        stack.append((a, b))\n    return count"
+      }
+    ],
+    "testCases": []
+  },
+  "rotting-oranges": {
+    "statement": "每分钟腐烂橘子会感染上下左右的新鲜橘子，计算全部腐烂的最少分钟数。\n\n0 为空格、1 为新鲜、2 为腐烂；有永远到不了的新鲜橘子时返回 -1。\n\n**示例**：[[2,1,1],[1,1,0],[0,1,1]] → 4",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function orangesRotting(grid: number[][]): number {\n  const m = grid.length, n = grid[0].length, queue: number[][] = [];\n  let fresh = 0, head = 0, minutes = 0;\n  for (let i = 0; i < m; i++) for (let j = 0; j < n; j++) {\n    if (grid[i][j] === 2) queue.push([i, j]);\n    if (grid[i][j] === 1) fresh++;\n  }\n  // 所有腐烂点同时出发，每一层代表一分钟\n  while (fresh && head < queue.length) {\n    const end = queue.length; minutes++;\n    while (head < end) {\n      const [x, y] = queue[head++];\n      for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {\n        const a = x + dx, b = y + dy;\n        if (a >= 0 && a < m && b >= 0 && b < n && grid[a][b] === 1) {\n          grid[a][b] = 2; fresh--; queue.push([a, b]);\n        }\n      }\n    }\n  }\n  return fresh ? -1 : minutes;\n}"
+      },
+      {
+        "language": "python",
+        "code": "from collections import deque\n\ndef orangesRotting(grid: list[list[int]]) -> int:\n    m, n, queue, fresh, minutes = len(grid), len(grid[0]), deque(), 0, 0\n    for i in range(m):\n        for j in range(n):\n            if grid[i][j] == 2:\n                queue.append((i, j))\n            elif grid[i][j] == 1:\n                fresh += 1\n    while fresh and queue:\n        minutes += 1\n        for _ in range(len(queue)):\n            x, y = queue.popleft()\n            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):\n                a, b = x + dx, y + dy\n                if 0 <= a < m and 0 <= b < n and grid[a][b] == 1:\n                    grid[a][b] = 2\n                    fresh -= 1\n                    queue.append((a, b))\n    return -1 if fresh else minutes"
+      }
+    ],
+    "testCases": []
+  },
+  "course-schedule": {
+    "statement": "课程之间有先修关系，判断能否完成全部课程。\n\n课程编号为 0 到 n-1；[a,b] 表示学 a 前必须先完成 b。\n\n**示例**：2, [[1,0]] → true",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function canFinish(numCourses: number, prerequisites: number[][]): boolean {\n  const graph: number[][] = Array.from({ length: numCourses }, () => []);\n  const indegree = Array(numCourses).fill(0), queue: number[] = [];\n  for (const [a, b] of prerequisites) { graph[b].push(a); indegree[a]++; }\n  for (let i = 0; i < numCourses; i++) if (indegree[i] === 0) queue.push(i);\n  // 拓扑排序能移除全部节点就没有环\n  for (let head = 0; head < queue.length; head++) {\n    for (const next of graph[queue[head]]) if (--indegree[next] === 0) queue.push(next);\n  }\n  return queue.length === numCourses;\n}"
+      },
+      {
+        "language": "python",
+        "code": "from collections import deque\n\ndef canFinish(numCourses: int, prerequisites: list[list[int]]) -> bool:\n    graph, indegree = [[] for _ in range(numCourses)], [0] * numCourses\n    for a, b in prerequisites:\n        graph[b].append(a)\n        indegree[a] += 1\n    queue = deque(i for i in range(numCourses) if indegree[i] == 0)\n    completed = 0\n    while queue:\n        node = queue.popleft()\n        completed += 1\n        for nxt in graph[node]:\n            indegree[nxt] -= 1\n            if indegree[nxt] == 0:\n                queue.append(nxt)\n    return completed == numCourses"
+      }
+    ],
+    "testCases": []
+  },
+  "implement-trie-prefix-tree": {
+    "statement": "实现前缀树，支持插入单词、完整单词查询与前缀查询。\n\n单词仅含小写字母；完整查询需要命中单词结尾标记。\n\n**示例**：insert(\"apple\"), search(\"apple\"), search(\"app\"), startsWith(\"app\") → true, false, true",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "class TrieNode {\n  children = new Map<string, TrieNode>();\n  terminal = false;\n}\nclass Trie {\n  private root = new TrieNode();\n  insert(word: string): void {\n    let node = this.root;\n    for (const ch of word) {\n      if (!node.children.has(ch)) node.children.set(ch, new TrieNode());\n      node = node.children.get(ch)!;\n    }\n    node.terminal = true;\n  }\n  private find(word: string): TrieNode | undefined {\n    let node: TrieNode | undefined = this.root;\n    for (const ch of word) { node = node.children.get(ch); if (!node) return undefined; }\n    return node;\n  }\n  search(word: string): boolean { return this.find(word)?.terminal ?? false; }\n  startsWith(prefix: string): boolean { return this.find(prefix) !== undefined; }\n}"
+      },
+      {
+        "language": "python",
+        "code": "class Trie:\n    def __init__(self):\n        self.root = {}\n    def insert(self, word: str) -> None:\n        node = self.root\n        for ch in word:\n            node = node.setdefault(ch, {})\n        node[\"#\"] = True\n    def _find(self, word: str):\n        node = self.root\n        for ch in word:\n            if ch not in node:\n                return None\n            node = node[ch]\n        return node\n    def search(self, word: str) -> bool:\n        node = self._find(word)\n        return node is not None and \"#\" in node\n    def startsWith(self, prefix: str) -> bool:\n        return self._find(prefix) is not None"
+      }
+    ],
+    "testCases": []
+  },
+  "permutations": {
+    "statement": "列出数组中所有数字的全部排列。\n\n输入数字互不相同；结果顺序不限，每个排列必须使用所有元素。\n\n**示例**：[1,2] → [[1,2],[2,1]]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function permute(nums: number[]): number[][] {\n  const result: number[][] = [], path: number[] = [], used = Array(nums.length).fill(false);\n  const dfs = (): void => {\n    if (path.length === nums.length) { result.push([...path]); return; }\n    for (let i = 0; i < nums.length; i++) {\n      if (used[i]) continue;\n      used[i] = true; path.push(nums[i]);\n      dfs();\n      path.pop(); used[i] = false;\n    }\n  };\n  dfs(); return result;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def permute(nums: list[int]) -> list[list[int]]:\n    result, path, used = [], [], [False] * len(nums)\n    def dfs():\n        if len(path) == len(nums):\n            result.append(path[:])\n            return\n        for i, x in enumerate(nums):\n            if used[i]:\n                continue\n            used[i] = True\n            path.append(x)\n            dfs()\n            path.pop()\n            used[i] = False\n    dfs()\n    return result"
+      }
+    ],
+    "testCases": []
+  },
+  "subsets": {
+    "statement": "列出给定数组的所有子集，包括空集和全集。\n\n输入数字互不相同；每个元素可以选或不选，结果不能重复。\n\n**示例**：[1,2] → [[],[1],[2],[1,2]]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function subsets(nums: number[]): number[][] {\n  const result: number[][] = [[]];\n  for (const x of nums) {\n    const size = result.length;\n    // 给已有的每个子集追加当前元素，得到新的一半\n    for (let i = 0; i < size; i++) result.push([...result[i], x]);\n  }\n  return result;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def subsets(nums: list[int]) -> list[list[int]]:\n    result = [[]]\n    for x in nums:\n        result += [part + [x] for part in result]\n    return result"
+      }
+    ],
+    "testCases": []
+  },
+  "letter-combinations-of-a-phone-number": {
+    "statement": "返回电话键盘上数字串能够表示的全部字母组合。\n\n数字只包含 2 到 9；空输入返回空列表，每一位恰好选一个字母。\n\n**示例**：\"23\" → [\"ad\",\"ae\",\"af\",\"bd\",\"be\",\"bf\",\"cd\",\"ce\",\"cf\"]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function letterCombinations(digits: string): string[] {\n  if (!digits) return [];\n  const letters = [\"\", \"\", \"abc\", \"def\", \"ghi\", \"jkl\", \"mno\", \"pqrs\", \"tuv\", \"wxyz\"];\n  let result = [\"\"];\n  for (const digit of digits) {\n    const next: string[] = [];\n    for (const prefix of result) for (const ch of letters[Number(digit)]) next.push(prefix + ch);\n    result = next;\n  }\n  return result;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def letterCombinations(digits: str) -> list[str]:\n    if not digits:\n        return []\n    letters = [\"\", \"\", \"abc\", \"def\", \"ghi\", \"jkl\", \"mno\", \"pqrs\", \"tuv\", \"wxyz\"]\n    result = [\"\"]\n    for digit in digits:\n        result = [prefix + ch for prefix in result for ch in letters[int(digit)]]\n    return result"
+      }
+    ],
+    "testCases": []
+  },
+  "combination-sum": {
+    "statement": "从候选正整数中选出若干个数，使总和等于 target，返回全部不同组合。\n\n候选数互不相同，每个数可以重复选取；顺序不同但数量相同算一个组合。\n\n**示例**：[2,3,6,7], 7 → [[2,2,3],[7]]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function combinationSum(candidates: number[], target: number): number[][] {\n  candidates.sort((a, b) => a - b);\n  const result: number[][] = [], path: number[] = [];\n  const dfs = (start: number, remaining: number): void => {\n    if (remaining === 0) { result.push([...path]); return; }\n    for (let i = start; i < candidates.length && candidates[i] <= remaining; i++) {\n      path.push(candidates[i]);\n      dfs(i, remaining - candidates[i]);\n      path.pop();\n    }\n  };\n  dfs(0, target); return result;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def combinationSum(candidates: list[int], target: int) -> list[list[int]]:\n    candidates.sort()\n    result, path = [], []\n    def dfs(start, remaining):\n        if remaining == 0:\n            result.append(path[:])\n            return\n        for i in range(start, len(candidates)):\n            if candidates[i] > remaining:\n                break\n            path.append(candidates[i])\n            dfs(i, remaining - candidates[i])\n            path.pop()\n    dfs(0, target)\n    return result"
+      }
+    ],
+    "testCases": []
+  },
+  "generate-parentheses": {
+    "statement": "用 n 对括号构造所有合法的括号字符串。\n\n任何前缀中的右括号数量不能超过左括号，总数必须各为 n。\n\n**示例**：2 → [\"(())\",\"()()\"]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function generateParenthesis(n: number): string[] {\n  const result: string[] = [];\n  const dfs = (text: string, left: number, right: number): void => {\n    if (text.length === 2 * n) { result.push(text); return; }\n    if (left < n) dfs(text + \"(\", left + 1, right);\n    if (right < left) dfs(text + \")\", left, right + 1);\n  };\n  dfs(\"\", 0, 0);\n  return result;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def generateParenthesis(n: int) -> list[str]:\n    result = []\n    def dfs(text, left, right):\n        if len(text) == 2 * n:\n            result.append(text)\n            return\n        if left < n:\n            dfs(text + \"(\", left + 1, right)\n        if right < left:\n            dfs(text + \")\", left, right + 1)\n    dfs(\"\", 0, 0)\n    return result"
+      }
+    ],
+    "testCases": []
+  },
+  "word-search": {
+    "statement": "在字符棋盘中寻找由相邻格子依次拼成的指定单词。\n\n仅允许上下左右移动，同一条路径中每格最多使用一次；搜索后恢复棋盘。\n\n**示例**：[[\"A\",\"B\",\"C\",\"E\"],[\"S\",\"F\",\"C\",\"S\"],[\"A\",\"D\",\"E\",\"E\"]], \"ABCCED\" → true",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function exist(board: string[][], word: string): boolean {\n  const m = board.length, n = board[0].length;\n  const dfs = (r: number, c: number, i: number): boolean => {\n    if (r < 0 || r >= m || c < 0 || c >= n || board[r][c] !== word[i]) return false;\n    if (i === word.length - 1) return true;\n    const ch = board[r][c]; board[r][c] = \"#\";\n    const found = dfs(r + 1, c, i + 1) || dfs(r - 1, c, i + 1) || dfs(r, c + 1, i + 1) || dfs(r, c - 1, i + 1);\n    board[r][c] = ch;\n    return found;\n  };\n  for (let r = 0; r < m; r++) for (let c = 0; c < n; c++) if (dfs(r, c, 0)) return true;\n  return false;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def exist(board: list[list[str]], word: str) -> bool:\n    m, n = len(board), len(board[0])\n    def dfs(r, c, i):\n        if not (0 <= r < m and 0 <= c < n) or board[r][c] != word[i]:\n            return False\n        if i == len(word) - 1:\n            return True\n        ch, board[r][c] = board[r][c], \"#\"\n        found = any(dfs(r + dr, c + dc, i + 1) for dr, dc in ((1,0),(-1,0),(0,1),(0,-1)))\n        board[r][c] = ch\n        return found\n    return any(dfs(r, c, 0) for r in range(m) for c in range(n))"
+      }
+    ],
+    "testCases": []
+  },
+  "palindrome-partitioning": {
+    "statement": "把字符串切成若干连续片段，要求每段都是回文，返回全部切分方式。\n\n拼接片段必须还原原字符串；单个字符也是回文。\n\n**示例**：\"aab\" → [[\"a\",\"a\",\"b\"],[\"aa\",\"b\"]]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function partition(s: string): string[][] {\n  const n = s.length, palindrome: boolean[][] = Array.from({ length: n }, () => Array(n).fill(false));\n  for (let l = n - 1; l >= 0; l--) for (let r = l; r < n; r++) {\n    palindrome[l][r] = s[l] === s[r] && (r - l < 2 || palindrome[l + 1][r - 1]);\n  }\n  const result: string[][] = [], path: string[] = [];\n  const dfs = (start: number): void => {\n    if (start === n) { result.push([...path]); return; }\n    for (let end = start; end < n; end++) if (palindrome[start][end]) {\n      path.push(s.slice(start, end + 1)); dfs(end + 1); path.pop();\n    }\n  };\n  dfs(0); return result;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def partition(s: str) -> list[list[str]]:\n    n = len(s)\n    palindrome = [[False] * n for _ in range(n)]\n    for l in range(n - 1, -1, -1):\n        for r in range(l, n):\n            palindrome[l][r] = s[l] == s[r] and (r - l < 2 or palindrome[l + 1][r - 1])\n    result, path = [], []\n    def dfs(start):\n        if start == n:\n            result.append(path[:])\n            return\n        for end in range(start, n):\n            if palindrome[start][end]:\n                path.append(s[start:end + 1])\n                dfs(end + 1)\n                path.pop()\n    dfs(0)\n    return result"
+      }
+    ],
+    "testCases": []
+  },
+  "n-queens": {
+    "statement": "在 n×n 棋盘上放 n 个皇后，返回全部合法摆法。\n\n任意两个皇后不能同列、同行或同对角线；Q 表示皇后，. 表示空格。\n\n**示例**：4 → 两种摆法，其中一种为 [\".Q..\",\"...Q\",\"Q...\",\"..Q.\"]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function solveNQueens(n: number): string[][] {\n  const result: string[][] = [], path: number[] = [], cols = new Set<number>(), down = new Set<number>(), up = new Set<number>();\n  const dfs = (row: number): void => {\n    if (row === n) { result.push(path.map(c => \".\".repeat(c) + \"Q\" + \".\".repeat(n - c - 1))); return; }\n    for (let c = 0; c < n; c++) {\n      if (cols.has(c) || down.has(row - c) || up.has(row + c)) continue;\n      cols.add(c); down.add(row - c); up.add(row + c); path.push(c);\n      dfs(row + 1);\n      path.pop(); cols.delete(c); down.delete(row - c); up.delete(row + c);\n    }\n  };\n  dfs(0); return result;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def solveNQueens(n: int) -> list[list[str]]:\n    result, path, cols, down, up = [], [], set(), set(), set()\n    def dfs(row):\n        if row == n:\n            result.append([\".\" * c + \"Q\" + \".\" * (n - c - 1) for c in path])\n            return\n        for c in range(n):\n            if c in cols or row - c in down or row + c in up:\n                continue\n            cols.add(c)\n            down.add(row - c)\n            up.add(row + c)\n            path.append(c)\n            dfs(row + 1)\n            path.pop()\n            cols.remove(c)\n            down.remove(row - c)\n            up.remove(row + c)\n    dfs(0)\n    return result"
+      }
+    ],
+    "testCases": []
+  },
+  "search-insert-position": {
+    "statement": "在递增数组中找目标值的位置；不存在时返回保持顺序的插入位置。\n\n元素互不相同，使用 O(log n) 时间。\n\n**示例**：[1,3,5,6], 2 → 1",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function searchInsert(nums: number[], target: number): number {\n  let left = 0, right = nums.length;\n  // 半开区间寻找第一个不小于 target 的位置\n  while (left < right) {\n    const mid = Math.floor((left + right) / 2);\n    if (nums[mid] < target) left = mid + 1;\n    else right = mid;\n  }\n  return left;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def searchInsert(nums: list[int], target: int) -> int:\n    left, right = 0, len(nums)\n    while left < right:\n        mid = (left + right) // 2\n        if nums[mid] < target:\n            left = mid + 1\n        else:\n            right = mid\n    return left"
+      }
+    ],
+    "testCases": []
+  },
+  "search-a-2d-matrix": {
+    "statement": "判断目标数是否在按行展开后递增的二维矩阵中。\n\n每行递增，下一行首元素大于上一行尾元素；使用二分查找。\n\n**示例**：[[1,3,5],[7,9,11]], 9 → true",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function searchMatrix(matrix: number[][], target: number): boolean {\n  if (!matrix.length || !matrix[0].length) return false;\n  const n = matrix[0].length;\n  let left = 0, right = matrix.length * n - 1;\n  while (left <= right) {\n    const mid = Math.floor((left + right) / 2), value = matrix[Math.floor(mid / n)][mid % n];\n    if (value === target) return true;\n    if (value < target) left = mid + 1;\n    else right = mid - 1;\n  }\n  return false;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def searchMatrix(matrix: list[list[int]], target: int) -> bool:\n    if not matrix or not matrix[0]:\n        return False\n    n = len(matrix[0])\n    left, right = 0, len(matrix) * n - 1\n    while left <= right:\n        mid = (left + right) // 2\n        value = matrix[mid // n][mid % n]\n        if value == target:\n            return True\n        if value < target:\n            left = mid + 1\n        else:\n            right = mid - 1\n    return False"
+      }
+    ],
+    "testCases": []
+  },
+  "find-first-and-last-position-of-element-in-sorted-array": {
+    "statement": "返回递增数组中 target 首次和末次出现的位置。\n\n允许重复数，找不到返回 [-1,-1]；时间复杂度要求 O(log n)。\n\n**示例**：[5,7,7,8,8,10], 8 → [3,4]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function searchRange(nums: number[], target: number): number[] {\n  const bound = (strict: boolean): number => {\n    let left = 0, right = nums.length;\n    while (left < right) {\n      const mid = Math.floor((left + right) / 2);\n      if (nums[mid] < target || (strict && nums[mid] === target)) left = mid + 1;\n      else right = mid;\n    }\n    return left;\n  };\n  const first = bound(false);\n  return nums[first] === target ? [first, bound(true) - 1] : [-1, -1];\n}"
+      },
+      {
+        "language": "python",
+        "code": "def searchRange(nums: list[int], target: int) -> list[int]:\n    def bound(strict):\n        left, right = 0, len(nums)\n        while left < right:\n            mid = (left + right) // 2\n            if nums[mid] < target or (strict and nums[mid] == target):\n                left = mid + 1\n            else:\n                right = mid\n        return left\n    first = bound(False)\n    return [first, bound(True) - 1] if first < len(nums) and nums[first] == target else [-1, -1]"
+      }
+    ],
+    "testCases": []
+  },
+  "search-in-rotated-sorted-array": {
+    "statement": "在经过一次循环旋转的递增数组中查找 target 的下标。\n\n元素互不相同；不存在返回 -1，时间复杂度 O(log n)。\n\n**示例**：[4,5,6,7,0,1,2], 0 → 4",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function search(nums: number[], target: number): number {\n  let left = 0, right = nums.length - 1;\n  while (left <= right) {\n    const mid = Math.floor((left + right) / 2);\n    if (nums[mid] === target) return mid;\n    // 至少有一半保持递增，可判断目标是否在其中\n    if (nums[left] <= nums[mid]) {\n      if (nums[left] <= target && target < nums[mid]) right = mid - 1;\n      else left = mid + 1;\n    } else {\n      if (nums[mid] < target && target <= nums[right]) left = mid + 1;\n      else right = mid - 1;\n    }\n  }\n  return -1;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def search(nums: list[int], target: int) -> int:\n    left, right = 0, len(nums) - 1\n    while left <= right:\n        mid = (left + right) // 2\n        if nums[mid] == target:\n            return mid\n        if nums[left] <= nums[mid]:\n            if nums[left] <= target < nums[mid]:\n                right = mid - 1\n            else:\n                left = mid + 1\n        else:\n            if nums[mid] < target <= nums[right]:\n                left = mid + 1\n            else:\n                right = mid - 1\n    return -1"
+      }
+    ],
+    "testCases": []
+  },
+  "find-minimum-in-rotated-sorted-array": {
+    "statement": "返回经过循环旋转的递增数组中的最小元素。\n\n数组非空且元素互不相同；要求 O(log n) 时间。\n\n**示例**：[3,4,5,1,2] → 1",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function findMin(nums: number[]): number {\n  let left = 0, right = nums.length - 1;\n  while (left < right) {\n    const mid = Math.floor((left + right) / 2);\n    if (nums[mid] > nums[right]) left = mid + 1;\n    else right = mid;\n  }\n  return nums[left];\n}"
+      },
+      {
+        "language": "python",
+        "code": "def findMin(nums: list[int]) -> int:\n    left, right = 0, len(nums) - 1\n    while left < right:\n        mid = (left + right) // 2\n        if nums[mid] > nums[right]:\n            left = mid + 1\n        else:\n            right = mid\n    return nums[left]"
+      }
+    ],
+    "testCases": []
+  },
+  "median-of-two-sorted-arrays": {
+    "statement": "求两个递增数组合并后的中位数，不实际合并数组。\n\n总长度至少为 1；偶数长度取中间两数平均，要求 O(log(m+n)) 时间。\n\n**示例**：[1,3], [2] → 2",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function findMedianSortedArrays(a: number[], b: number[]): number {\n  if (a.length > b.length) return findMedianSortedArrays(b, a);\n  const m = a.length, n = b.length, half = Math.floor((m + n + 1) / 2);\n  let low = 0, high = m;\n  while (low <= high) {\n    const i = Math.floor((low + high) / 2), j = half - i;\n    const al = i ? a[i - 1] : -Infinity, ar = i < m ? a[i] : Infinity;\n    const bl = j ? b[j - 1] : -Infinity, br = j < n ? b[j] : Infinity;\n    // 左半部的所有数都不能超过右半部\n    if (al <= br && bl <= ar) {\n      return (m + n) % 2 ? Math.max(al, bl) : (Math.max(al, bl) + Math.min(ar, br)) / 2;\n    }\n    if (al > br) high = i - 1;\n    else low = i + 1;\n  }\n  throw new Error(\"输入必须有序\");\n}"
+      },
+      {
+        "language": "python",
+        "code": "def findMedianSortedArrays(a: list[int], b: list[int]) -> float:\n    if len(a) > len(b):\n        return findMedianSortedArrays(b, a)\n    m, n = len(a), len(b)\n    half, low, high = (m + n + 1) // 2, 0, m\n    while low <= high:\n        i = (low + high) // 2\n        j = half - i\n        al, ar = a[i - 1] if i else float(\"-inf\"), a[i] if i < m else float(\"inf\")\n        bl, br = b[j - 1] if j else float(\"-inf\"), b[j] if j < n else float(\"inf\")\n        if al <= br and bl <= ar:\n            return max(al, bl) if (m + n) % 2 else (max(al, bl) + min(ar, br)) / 2\n        if al > br:\n            high = i - 1\n        else:\n            low = i + 1\n    raise ValueError(\"输入必须有序\")"
+      }
+    ],
+    "testCases": []
+  },
+  "valid-parentheses": {
+    "statement": "判断只含括号的字符串是否正确匹配并嵌套。\n\n包括 ()、[]、{}；右括号必须与最近尚未匹配的同类左括号对应。\n\n**示例**：\"([{}])\" → true",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function isValid(s: string): boolean {\n  const stack: string[] = [], pairs: Record<string, string> = { \")\": \"(\", \"]\": \"[\", \"}\": \"{\" };\n  for (const ch of s) {\n    if (ch in pairs) { if (stack.pop() !== pairs[ch]) return false; }\n    else stack.push(ch);\n  }\n  return stack.length === 0;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def isValid(s: str) -> bool:\n    stack, pairs = [], {\")\": \"(\", \"]\": \"[\", \"}\": \"{\"}\n    for ch in s:\n        if ch in pairs:\n            if not stack or stack.pop() != pairs[ch]:\n                return False\n        else:\n            stack.append(ch)\n    return not stack"
+      }
+    ],
+    "testCases": []
+  },
+  "min-stack": {
+    "statement": "实现栈，支持 push、pop、top 和读取当前最小值 getMin。\n\n每个操作都应为 O(1)；pop、top、getMin 只在非空栈上调用。\n\n**示例**：push(-2), push(0), push(-3), getMin(), pop(), top(), getMin() → -3, 0, -2",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "class MinStack {\n  private values: number[] = [];\n  private minima: number[] = [];\n  push(val: number): void {\n    this.values.push(val);\n    // 每一层记录截至该层的最小值，重复最小值也能正确弹出\n    this.minima.push(Math.min(val, this.minima[this.minima.length - 1] ?? Infinity));\n  }\n  pop(): void { this.values.pop(); this.minima.pop(); }\n  top(): number { return this.values[this.values.length - 1]; }\n  getMin(): number { return this.minima[this.minima.length - 1]; }\n}"
+      },
+      {
+        "language": "python",
+        "code": "class MinStack:\n    def __init__(self):\n        self.values, self.minima = [], []\n    def push(self, val: int) -> None:\n        self.values.append(val)\n        self.minima.append(min(val, self.minima[-1] if self.minima else val))\n    def pop(self) -> None:\n        self.values.pop()\n        self.minima.pop()\n    def top(self) -> int:\n        return self.values[-1]\n    def getMin(self) -> int:\n        return self.minima[-1]"
+      }
+    ],
+    "testCases": []
+  },
+  "decode-string": {
+    "statement": "将 k[片段] 形式的编码还原为重复 k 次的字符串。\n\n编码保证合法，支持嵌套与多位次数；原始字母中没有数字。\n\n**示例**：\"3[a2[c]]\" → \"accaccacc\"",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function decodeString(s: string): string {\n  const stack: [string, number][] = [];\n  let text = \"\", count = 0;\n  for (const ch of s) {\n    if (ch >= \"0\" && ch <= \"9\") count = count * 10 + Number(ch);\n    else if (ch === \"[\") { stack.push([text, count]); text = \"\"; count = 0; }\n    else if (ch === \"]\") { const [prefix, times] = stack.pop()!; text = prefix + text.repeat(times); }\n    else text += ch;\n  }\n  return text;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def decodeString(s: str) -> str:\n    stack, text, count = [], \"\", 0\n    for ch in s:\n        if ch.isdigit():\n            count = count * 10 + int(ch)\n        elif ch == \"[\":\n            stack.append((text, count))\n            text, count = \"\", 0\n        elif ch == \"]\":\n            prefix, times = stack.pop()\n            text = prefix + text * times\n        else:\n            text += ch\n    return text"
+      }
+    ],
+    "testCases": []
+  },
+  "daily-temperatures": {
+    "statement": "对每天的温度，计算还要等多少天才会遇到更高温度。\n\n只找严格更高的温度；之后没有更高温度时记 0。\n\n**示例**：[73,74,75,71,69,72,76,73] → [1,1,4,2,1,1,0,0]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function dailyTemperatures(temperatures: number[]): number[] {\n  const result = Array(temperatures.length).fill(0), stack: number[] = [];\n  for (let i = 0; i < temperatures.length; i++) {\n    // 当前温度为之前等待中的较低温度结算答案\n    while (stack.length && temperatures[stack[stack.length - 1]] < temperatures[i]) {\n      const prev = stack.pop()!; result[prev] = i - prev;\n    }\n    stack.push(i);\n  }\n  return result;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def dailyTemperatures(temperatures: list[int]) -> list[int]:\n    result, stack = [0] * len(temperatures), []\n    for i, value in enumerate(temperatures):\n        while stack and temperatures[stack[-1]] < value:\n            prev = stack.pop()\n            result[prev] = i - prev\n        stack.append(i)\n    return result"
+      }
+    ],
+    "testCases": []
+  },
+  "largest-rectangle-in-histogram": {
+    "statement": "柱状图每根柱子宽度为 1，求能放入图形内的最大矩形面积。\n\n高度非负，矩形必须连续且不能高于覆盖范围中的任一柱子。\n\n**示例**：[2,1,5,6,2,3] → 10",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function largestRectangleArea(heights: number[]): number {\n  const stack: number[] = [-1];\n  let best = 0;\n  for (let i = 0; i <= heights.length; i++) {\n    const current = i === heights.length ? 0 : heights[i];\n    while (stack.length > 1 && heights[stack[stack.length - 1]] > current) {\n      const height = heights[stack.pop()!];\n      // 弹出时左右第一个更低柱子都已确定\n      best = Math.max(best, height * (i - stack[stack.length - 1] - 1));\n    }\n    stack.push(i);\n  }\n  return best;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def largestRectangleArea(heights: list[int]) -> int:\n    stack, best = [-1], 0\n    for i in range(len(heights) + 1):\n        current = heights[i] if i < len(heights) else 0\n        while len(stack) > 1 and heights[stack[-1]] > current:\n            height = heights[stack.pop()]\n            best = max(best, height * (i - stack[-1] - 1))\n        stack.append(i)\n    return best"
+      }
+    ],
+    "testCases": []
+  },
+  "kth-largest-element-in-an-array": {
+    "statement": "返回数组按降序排列后的第 k 个元素。\n\n重复元素分别占用位置；1 ≤ k ≤ 数组长度，下方维护大小为 k 的最小堆。\n\n**示例**：[3,2,1,5,6,4], 2 → 5",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "// 二叉堆：优先级由 less 决定，push/pop 都是 O(log n)\nclass NumberHeap {\n  data: number[] = [];\n  constructor(private less: (a: number, b: number) => boolean) {}\n  push(value: number): void {\n    const a = this.data; a.push(value);\n    let i = a.length - 1;\n    while (i > 0) {\n      const p = Math.floor((i - 1) / 2);\n      if (!this.less(a[i], a[p])) break;\n      [a[i], a[p]] = [a[p], a[i]]; i = p;\n    }\n  }\n  pop(): number {\n    const a = this.data, root = a[0], last = a.pop()!;\n    if (a.length) {\n      a[0] = last;\n      let i = 0;\n      while (i * 2 + 1 < a.length) {\n        let child = i * 2 + 1;\n        if (child + 1 < a.length && this.less(a[child + 1], a[child])) child++;\n        if (!this.less(a[child], a[i])) break;\n        [a[i], a[child]] = [a[child], a[i]]; i = child;\n      }\n    }\n    return root;\n  }\n}\n\nfunction findKthLargest(nums: number[], k: number): number {\n  const heap = new NumberHeap((a, b) => a < b);\n  for (const x of nums) {\n    heap.push(x);\n    if (heap.data.length > k) heap.pop();\n  }\n  return heap.data[0];\n}"
+      },
+      {
+        "language": "python",
+        "code": "import heapq\n\ndef findKthLargest(nums: list[int], k: int) -> int:\n    heap = []\n    for x in nums:\n        heapq.heappush(heap, x)\n        if len(heap) > k:\n            heapq.heappop(heap)\n    return heap[0]"
+      }
+    ],
+    "testCases": []
+  },
+  "top-k-frequent-elements": {
+    "statement": "找出整数数组中出现次数最高的 k 个不同数字。\n\n答案集合保证唯一；顺序不限，下方使用频次桶实现 O(n) 时间。\n\n**示例**：[1,1,1,2,2,3], 2 → [1,2]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function topKFrequent(nums: number[], k: number): number[] {\n  const counts = new Map<number, number>();\n  for (const x of nums) counts.set(x, (counts.get(x) ?? 0) + 1);\n  const buckets: number[][] = Array.from({ length: nums.length + 1 }, () => []);\n  for (const [x, count] of counts) buckets[count].push(x);\n  const result: number[] = [];\n  for (let count = nums.length; count >= 1; count--) {\n    for (const x of buckets[count]) { result.push(x); if (result.length === k) return result; }\n  }\n  return result;\n}"
+      },
+      {
+        "language": "python",
+        "code": "from collections import Counter\n\ndef topKFrequent(nums: list[int], k: int) -> list[int]:\n    buckets = [[] for _ in range(len(nums) + 1)]\n    for x, count in Counter(nums).items():\n        buckets[count].append(x)\n    result = []\n    for count in range(len(nums), 0, -1):\n        for x in buckets[count]:\n            result.append(x)\n            if len(result) == k:\n                return result\n    return result"
+      }
+    ],
+    "testCases": []
+  },
+  "find-median-from-data-stream": {
+    "statement": "实现数据流结构，支持添加数字和查询已加入数字的中位数。\n\n查询时至少已有一个数字；偶数个数字取中间两数平均，添加为 O(log n)。\n\n**示例**：addNum(1), addNum(2), findMedian(), addNum(3), findMedian() → 1.5, 2",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "// 二叉堆：优先级由 less 决定，push/pop 都是 O(log n)\nclass NumberHeap {\n  data: number[] = [];\n  constructor(private less: (a: number, b: number) => boolean) {}\n  push(value: number): void {\n    const a = this.data; a.push(value);\n    let i = a.length - 1;\n    while (i > 0) {\n      const p = Math.floor((i - 1) / 2);\n      if (!this.less(a[i], a[p])) break;\n      [a[i], a[p]] = [a[p], a[i]]; i = p;\n    }\n  }\n  pop(): number {\n    const a = this.data, root = a[0], last = a.pop()!;\n    if (a.length) {\n      a[0] = last;\n      let i = 0;\n      while (i * 2 + 1 < a.length) {\n        let child = i * 2 + 1;\n        if (child + 1 < a.length && this.less(a[child + 1], a[child])) child++;\n        if (!this.less(a[child], a[i])) break;\n        [a[i], a[child]] = [a[child], a[i]]; i = child;\n      }\n    }\n    return root;\n  }\n}\n\nclass MedianFinder {\n  private lower = new NumberHeap((a, b) => a > b);\n  private upper = new NumberHeap((a, b) => a < b);\n  addNum(num: number): void {\n    this.lower.push(num);\n    this.upper.push(this.lower.pop());\n    if (this.upper.data.length > this.lower.data.length) this.lower.push(this.upper.pop());\n  }\n  findMedian(): number {\n    return this.lower.data.length > this.upper.data.length ? this.lower.data[0] : (this.lower.data[0] + this.upper.data[0]) / 2;\n  }\n}"
+      },
+      {
+        "language": "python",
+        "code": "import heapq\n\nclass MedianFinder:\n    def __init__(self):\n        self.lower, self.upper = [], []\n    def addNum(self, num: int) -> None:\n        heapq.heappush(self.lower, -num)\n        heapq.heappush(self.upper, -heapq.heappop(self.lower))\n        if len(self.upper) > len(self.lower):\n            heapq.heappush(self.lower, -heapq.heappop(self.upper))\n    def findMedian(self) -> float:\n        if len(self.lower) > len(self.upper):\n            return -self.lower[0]\n        return (-self.lower[0] + self.upper[0]) / 2"
+      }
+    ],
+    "testCases": []
+  },
+  "best-time-to-buy-and-sell-stock": {
+    "statement": "只进行一次先买后卖的交易，求可以获得的最大利润。\n\n必须先买入后卖出；允许不交易，不能盈利时返回 0。\n\n**示例**：[7,1,5,3,6,4] → 5",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function maxProfit(prices: number[]): number {\n  let lowest = Infinity, best = 0;\n  for (const price of prices) {\n    lowest = Math.min(lowest, price);\n    best = Math.max(best, price - lowest);\n  }\n  return best;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def maxProfit(prices: list[int]) -> int:\n    lowest, best = float(\"inf\"), 0\n    for price in prices:\n        lowest = min(lowest, price)\n        best = max(best, price - lowest)\n    return best"
+      }
+    ],
+    "testCases": []
+  },
+  "jump-game": {
+    "statement": "从数组第一个位置出发，判断是否能跳到最后一个位置。\n\n每个值表示从该位置可向右跳的最大距离；可以选择更短的距离。\n\n**示例**：[2,3,1,1,4] → true",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function canJump(nums: number[]): boolean {\n  let reach = 0;\n  for (let i = 0; i < nums.length; i++) {\n    if (i > reach) return false;\n    reach = Math.max(reach, i + nums[i]);\n  }\n  return true;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def canJump(nums: list[int]) -> bool:\n    reach = 0\n    for i, x in enumerate(nums):\n        if i > reach:\n            return False\n        reach = max(reach, i + x)\n    return True"
+      }
+    ],
+    "testCases": []
+  },
+  "jump-game-ii": {
+    "statement": "求从数组起点跳到最后一个位置的最少跳跃次数。\n\n每个值是最大可跳距离，输入保证终点可达；单元素数组不需要跳跃。\n\n**示例**：[2,3,1,1,4] → 2",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function jump(nums: number[]): number {\n  let end = 0, farthest = 0, steps = 0;\n  for (let i = 0; i < nums.length - 1; i++) {\n    farthest = Math.max(farthest, i + nums[i]);\n    // 到达本次跳跃的覆盖边界，才需要开启下一跳\n    if (i === end) { steps++; end = farthest; }\n  }\n  return steps;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def jump(nums: list[int]) -> int:\n    end = farthest = steps = 0\n    for i in range(len(nums) - 1):\n        farthest = max(farthest, i + nums[i])\n        if i == end:\n            steps += 1\n            end = farthest\n    return steps"
+      }
+    ],
+    "testCases": []
+  },
+  "partition-labels": {
+    "statement": "把字符串分成尽可能多的连续段，使每种字符只出现在其中一段。\n\n返回各段长度；输入只含小写英文字母。\n\n**示例**：\"ababcbacadefegdehijhklij\" → [9,7,8]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function partitionLabels(s: string): number[] {\n  const last = new Map<string, number>(), result: number[] = [];\n  for (let i = 0; i < s.length; i++) last.set(s[i], i);\n  let start = 0, end = 0;\n  for (let i = 0; i < s.length; i++) {\n    end = Math.max(end, last.get(s[i])!);\n    // 所有已出现字符的最后位置都已覆盖，才能切段\n    if (i === end) { result.push(end - start + 1); start = i + 1; }\n  }\n  return result;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def partitionLabels(s: str) -> list[int]:\n    last = {ch: i for i, ch in enumerate(s)}\n    start = end = 0\n    result = []\n    for i, ch in enumerate(s):\n        end = max(end, last[ch])\n        if i == end:\n            result.append(end - start + 1)\n            start = i + 1\n    return result"
+      }
+    ],
+    "testCases": []
+  },
+  "climbing-stairs": {
+    "statement": "每次爬 1 或 2 级台阶，求到达 n 级台阶顶部的不同方法数。\n\nn 为正整数；先走 1 再走 2 与先走 2 再走 1 属于不同方法。\n\n**示例**：3 → 3",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function climbStairs(n: number): number {\n  let prev = 1, curr = 1;\n  // 到第 i 级的方法来自第 i-1 和第 i-2 级\n  for (let i = 2; i <= n; i++) [prev, curr] = [curr, prev + curr];\n  return curr;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def climbStairs(n: int) -> int:\n    prev = curr = 1\n    for _ in range(2, n + 1):\n        prev, curr = curr, prev + curr\n    return curr"
+      }
+    ],
+    "testCases": []
+  },
+  "pascals-triangle": {
+    "statement": "生成杨辉三角的前 numRows 行。\n\n每行两端为 1，中间位置等于上一行相邻两数之和。\n\n**示例**：5 → [[1],[1,1],[1,2,1],[1,3,3,1],[1,4,6,4,1]]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function generate(numRows: number): number[][] {\n  const result: number[][] = [];\n  for (let row = 0; row < numRows; row++) {\n    const values = Array(row + 1).fill(1);\n    for (let j = 1; j < row; j++) values[j] = result[row - 1][j - 1] + result[row - 1][j];\n    result.push(values);\n  }\n  return result;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def generate(numRows: int) -> list[list[int]]:\n    result = []\n    for row in range(numRows):\n        values = [1] * (row + 1)\n        for j in range(1, row):\n            values[j] = result[row - 1][j - 1] + result[row - 1][j]\n        result.append(values)\n    return result"
+      }
+    ],
+    "testCases": []
+  },
+  "house-robber": {
+    "statement": "从一排房屋中选择若干间，求可以取得的最大金额。\n\n相邻房屋不能同时选择；金额非负，可以一间也不选。\n\n**示例**：[2,7,9,3,1] → 12",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function rob(nums: number[]): number {\n  let twoBack = 0, oneBack = 0;\n  for (const money of nums) {\n    // 当前房屋：选择则加上隔一间的最优解，否则沿用前一间\n    [twoBack, oneBack] = [oneBack, Math.max(oneBack, twoBack + money)];\n  }\n  return oneBack;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def rob(nums: list[int]) -> int:\n    two_back = one_back = 0\n    for money in nums:\n        two_back, one_back = one_back, max(one_back, two_back + money)\n    return one_back"
+      }
+    ],
+    "testCases": []
+  },
+  "perfect-squares": {
+    "statement": "将正整数 n 写成若干完全平方数之和，求最少需要几个数。\n\n平方数可以重复使用；1 也是完全平方数。\n\n**示例**：12 → 3，因为 12=4+4+4",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function numSquares(n: number): number {\n  const dp = Array(n + 1).fill(Infinity); dp[0] = 0;\n  for (let value = 1; value <= n; value++) {\n    for (let root = 1; root * root <= value; root++) {\n      dp[value] = Math.min(dp[value], dp[value - root * root] + 1);\n    }\n  }\n  return dp[n];\n}"
+      },
+      {
+        "language": "python",
+        "code": "def numSquares(n: int) -> int:\n    dp = [0] + [n + 1] * n\n    for value in range(1, n + 1):\n        root = 1\n        while root * root <= value:\n            dp[value] = min(dp[value], dp[value - root * root] + 1)\n            root += 1\n    return dp[n]"
+      }
+    ],
+    "testCases": []
+  },
+  "coin-change": {
+    "statement": "用给定面值的硬币凑出 amount，求最少硬币数量。\n\n每种面值数量无限，面值为正整数；无法凑出时返回 -1，amount 为 0 时返回 0。\n\n**示例**：[1,2,5], 11 → 3",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function coinChange(coins: number[], amount: number): number {\n  const dp = Array(amount + 1).fill(amount + 1); dp[0] = 0;\n  for (let value = 1; value <= amount; value++) {\n    for (const coin of coins) if (coin <= value) dp[value] = Math.min(dp[value], dp[value - coin] + 1);\n  }\n  return dp[amount] > amount ? -1 : dp[amount];\n}"
+      },
+      {
+        "language": "python",
+        "code": "def coinChange(coins: list[int], amount: int) -> int:\n    dp = [0] + [amount + 1] * amount\n    for value in range(1, amount + 1):\n        for coin in coins:\n            if coin <= value:\n                dp[value] = min(dp[value], dp[value - coin] + 1)\n    return -1 if dp[amount] > amount else dp[amount]"
+      }
+    ],
+    "testCases": []
+  },
+  "word-break": {
+    "statement": "判断字符串是否可以拆成字典中若干单词的连续拼接。\n\n单词可以重复使用，必须覆盖完整字符串，字典中的单词非空。\n\n**示例**：\"leetcode\", [\"leet\",\"code\"] → true",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function wordBreak(s: string, wordDict: string[]): boolean {\n  const words = new Set(wordDict), dp = Array(s.length + 1).fill(false);\n  const maxLength = Math.max(0, ...wordDict.map(w => w.length));\n  dp[0] = true;\n  for (let end = 1; end <= s.length; end++) {\n    for (let start = end - 1; start >= Math.max(0, end - maxLength); start--) {\n      if (dp[start] && words.has(s.slice(start, end))) { dp[end] = true; break; }\n    }\n  }\n  return dp[s.length];\n}"
+      },
+      {
+        "language": "python",
+        "code": "def wordBreak(s: str, wordDict: list[str]) -> bool:\n    words = set(wordDict)\n    max_length = max(map(len, wordDict), default=0)\n    dp = [True] + [False] * len(s)\n    for end in range(1, len(s) + 1):\n        for start in range(end - 1, max(-1, end - max_length - 1), -1):\n            if dp[start] and s[start:end] in words:\n                dp[end] = True\n                break\n    return dp[-1]"
+      }
+    ],
+    "testCases": []
+  },
+  "longest-increasing-subsequence": {
+    "statement": "返回数组中最长严格递增子序列的长度。\n\n子序列允许跳过元素，但保持原顺序；相等元素不能连续选入递增序列。\n\n**示例**：[10,9,2,5,3,7,101,18] → 4",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function lengthOfLIS(nums: number[]): number {\n  const tails: number[] = [];\n  for (const x of nums) {\n    let left = 0, right = tails.length;\n    while (left < right) {\n      const mid = Math.floor((left + right) / 2);\n      if (tails[mid] < x) left = mid + 1;\n      else right = mid;\n    }\n    // tails[i] 是长度 i+1 的递增子序列的最小尾值\n    tails[left] = x;\n  }\n  return tails.length;\n}"
+      },
+      {
+        "language": "python",
+        "code": "from bisect import bisect_left\n\ndef lengthOfLIS(nums: list[int]) -> int:\n    tails = []\n    for x in nums:\n        i = bisect_left(tails, x)\n        if i == len(tails):\n            tails.append(x)\n        else:\n            tails[i] = x\n    return len(tails)"
+      }
+    ],
+    "testCases": []
+  },
+  "maximum-product-subarray": {
+    "statement": "求非空连续子数组能得到的最大乘积。\n\n数组至少包含一个整数；可能有负数和零，负数会交换最大与最小状态。\n\n**示例**：[2,3,-2,4] → 6",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function maxProduct(nums: number[]): number {\n  let high = nums[0], low = nums[0], best = nums[0];\n  for (let i = 1; i < nums.length; i++) {\n    const x = nums[i], a = high * x, b = low * x;\n    high = Math.max(x, a, b);\n    low = Math.min(x, a, b);\n    best = Math.max(best, high);\n  }\n  return best;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def maxProduct(nums: list[int]) -> int:\n    high = low = best = nums[0]\n    for x in nums[1:]:\n        a, b = high * x, low * x\n        high, low = max(x, a, b), min(x, a, b)\n        best = max(best, high)\n    return best"
+      }
+    ],
+    "testCases": []
+  },
+  "partition-equal-subset-sum": {
+    "statement": "判断能否将数组分为两个元素和相等的子集。\n\n输入为正整数，每个位置必须且只能归入一侧。\n\n**示例**：[1,5,11,5] → true",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function canPartition(nums: number[]): boolean {\n  const sum = nums.reduce((a, b) => a + b, 0);\n  if (sum % 2) return false;\n  const target = sum / 2, dp = Array(target + 1).fill(false); dp[0] = true;\n  for (const x of nums) {\n    // 倒序更新保证每个数字只使用一次\n    for (let value = target; value >= x; value--) dp[value] ||= dp[value - x];\n  }\n  return dp[target];\n}"
+      },
+      {
+        "language": "python",
+        "code": "def canPartition(nums: list[int]) -> bool:\n    total = sum(nums)\n    if total % 2:\n        return False\n    target = total // 2\n    dp = [True] + [False] * target\n    for x in nums:\n        for value in range(target, x - 1, -1):\n            dp[value] = dp[value] or dp[value - x]\n    return dp[target]"
+      }
+    ],
+    "testCases": []
+  },
+  "longest-valid-parentheses": {
+    "statement": "找出括号字符串中最长的连续合法括号片段长度。\n\n仅包含左括号和右括号；片段必须连续，没有合法片段时返回 0。\n\n**示例**：\")()())\" → 4",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function longestValidParentheses(s: string): number {\n  const stack: number[] = [-1];\n  let best = 0;\n  for (let i = 0; i < s.length; i++) {\n    if (s[i] === \"(\") stack.push(i);\n    else {\n      stack.pop();\n      if (!stack.length) stack.push(i);\n      else best = Math.max(best, i - stack[stack.length - 1]);\n    }\n  }\n  return best;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def longestValidParentheses(s: str) -> int:\n    stack, best = [-1], 0\n    for i, ch in enumerate(s):\n        if ch == \"(\":\n            stack.append(i)\n        else:\n            stack.pop()\n            if not stack:\n                stack.append(i)\n            else:\n                best = max(best, i - stack[-1])\n    return best"
+      }
+    ],
+    "testCases": []
+  },
+  "unique-paths": {
+    "statement": "机器人从 m×n 网格左上角走到右下角，求不同路径数。\n\n每一步只能向右或向下移动，网格中没有障碍。\n\n**示例**：3, 7 → 28",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function uniquePaths(m: number, n: number): number {\n  const dp = Array(n).fill(1);\n  for (let row = 1; row < m; row++) {\n    for (let col = 1; col < n; col++) dp[col] += dp[col - 1];\n  }\n  return dp[n - 1];\n}"
+      },
+      {
+        "language": "python",
+        "code": "def uniquePaths(m: int, n: int) -> int:\n    dp = [1] * n\n    for _ in range(1, m):\n        for col in range(1, n):\n            dp[col] += dp[col - 1]\n    return dp[-1]"
+      }
+    ],
+    "testCases": []
+  },
+  "minimum-path-sum": {
+    "statement": "在非负整数网格中从左上角走到右下角，使沿途数字之和最小。\n\n每次只能向右或向下；起点和终点都计入路径和。\n\n**示例**：[[1,3,1],[1,5,1],[4,2,1]] → 7",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function minPathSum(grid: number[][]): number {\n  const dp = Array(grid[0].length).fill(Infinity); dp[0] = 0;\n  for (const row of grid) {\n    for (let col = 0; col < row.length; col++) {\n      dp[col] = row[col] + Math.min(dp[col], col ? dp[col - 1] : Infinity);\n    }\n  }\n  return dp[dp.length - 1];\n}"
+      },
+      {
+        "language": "python",
+        "code": "def minPathSum(grid: list[list[int]]) -> int:\n    dp = [float(\"inf\")] * len(grid[0])\n    dp[0] = 0\n    for row in grid:\n        for col, value in enumerate(row):\n            dp[col] = value + min(dp[col], dp[col - 1] if col else float(\"inf\"))\n    return dp[-1]"
+      }
+    ],
+    "testCases": []
+  },
+  "longest-palindromic-substring": {
+    "statement": "返回字符串中最长的连续回文片段。\n\n回文从两端读取一致；多个最长答案时返回任意一个。\n\n**示例**：\"babad\" → \"bab\" 或 \"aba\"",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function longestPalindrome(s: string): string {\n  let start = 0, length = 0;\n  const expand = (left: number, right: number): void => {\n    while (left >= 0 && right < s.length && s[left] === s[right]) { left--; right++; }\n    if (right - left - 1 > length) { start = left + 1; length = right - left - 1; }\n  };\n  for (let i = 0; i < s.length; i++) { expand(i, i); expand(i, i + 1); }\n  return s.slice(start, start + length);\n}"
+      },
+      {
+        "language": "python",
+        "code": "def longestPalindrome(s: str) -> str:\n    start = length = 0\n    def expand(left, right):\n        nonlocal start, length\n        while left >= 0 and right < len(s) and s[left] == s[right]:\n            left, right = left - 1, right + 1\n        if right - left - 1 > length:\n            start, length = left + 1, right - left - 1\n    for i in range(len(s)):\n        expand(i, i)\n        expand(i, i + 1)\n    return s[start:start + length]"
+      }
+    ],
+    "testCases": []
+  },
+  "longest-common-subsequence": {
+    "statement": "求两个字符串的最长公共子序列长度。\n\n子序列可以删除部分字符但保持原顺序，不要求连续；没有公共字符时返回 0。\n\n**示例**：\"abcde\", \"ace\" → 3",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function longestCommonSubsequence(a: string, b: string): number {\n  const dp = Array(b.length + 1).fill(0);\n  for (const ch of a) {\n    let diagonal = 0;\n    for (let j = 1; j <= b.length; j++) {\n      const above = dp[j];\n      dp[j] = ch === b[j - 1] ? diagonal + 1 : Math.max(dp[j], dp[j - 1]);\n      diagonal = above;\n    }\n  }\n  return dp[b.length];\n}"
+      },
+      {
+        "language": "python",
+        "code": "def longestCommonSubsequence(a: str, b: str) -> int:\n    dp = [0] * (len(b) + 1)\n    for ch in a:\n        diagonal = 0\n        for j in range(1, len(b) + 1):\n            above = dp[j]\n            dp[j] = diagonal + 1 if ch == b[j - 1] else max(dp[j], dp[j - 1])\n            diagonal = above\n    return dp[-1]"
+      }
+    ],
+    "testCases": []
+  },
+  "edit-distance": {
+    "statement": "将 word1 转成 word2，求最少的单字符编辑次数。\n\n每次允许插入、删除或替换一个字符；字符串可以为空。\n\n**示例**：\"horse\", \"ros\" → 3",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function minDistance(word1: string, word2: string): number {\n  const dp = Array.from({ length: word2.length + 1 }, (_, j) => j);\n  for (let i = 1; i <= word1.length; i++) {\n    let diagonal = dp[0]; dp[0] = i;\n    for (let j = 1; j <= word2.length; j++) {\n      const above = dp[j];\n      dp[j] = word1[i - 1] === word2[j - 1] ? diagonal : 1 + Math.min(diagonal, above, dp[j - 1]);\n      diagonal = above;\n    }\n  }\n  return dp[word2.length];\n}"
+      },
+      {
+        "language": "python",
+        "code": "def minDistance(word1: str, word2: str) -> int:\n    dp = list(range(len(word2) + 1))\n    for i, ch in enumerate(word1, 1):\n        diagonal, dp[0] = dp[0], i\n        for j in range(1, len(word2) + 1):\n            above = dp[j]\n            dp[j] = diagonal if ch == word2[j - 1] else 1 + min(diagonal, above, dp[j - 1])\n            diagonal = above\n    return dp[-1]"
+      }
+    ],
+    "testCases": []
+  },
+  "single-number": {
+    "statement": "数组中除了一个整数只出现一次，其他整数都出现两次，找出这个整数。\n\n使用 O(n) 时间和常数额外空间；整数在 32 位有符号范围内。\n\n**示例**：[4,1,2,1,2] → 4",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function singleNumber(nums: number[]): number {\n  let result = 0;\n  // 相同数异或为零，留下只出现一次的数\n  for (const x of nums) result ^= x;\n  return result;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def singleNumber(nums: list[int]) -> int:\n    result = 0\n    for x in nums:\n        result ^= x\n    return result"
+      }
+    ],
+    "testCases": []
+  },
+  "majority-element": {
+    "statement": "找出数组中出现次数严格超过一半的元素。\n\n数组非空且保证存在多数元素；使用常数额外空间。\n\n**示例**：[2,2,1,1,1,2,2] → 2",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function majorityElement(nums: number[]): number {\n  let candidate = 0, votes = 0;\n  for (const x of nums) {\n    if (votes === 0) candidate = x;\n    // 不同元素两两抵消，多数元素必然幸存\n    votes += x === candidate ? 1 : -1;\n  }\n  return candidate;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def majorityElement(nums: list[int]) -> int:\n    candidate = votes = 0\n    for x in nums:\n        if votes == 0:\n            candidate = x\n        votes += 1 if x == candidate else -1\n    return candidate"
+      }
+    ],
+    "testCases": []
+  },
+  "sort-colors": {
+    "statement": "把只含 0、1、2 的数组原地排成所有 0、所有 1、所有 2 的顺序。\n\n不能调用通用排序；要求一次扫描并使用常数额外空间。\n\n**示例**：[2,0,2,1,1,0] → [0,0,1,1,2,2]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function sortColors(nums: number[]): void {\n  let left = 0, cur = 0, right = nums.length - 1;\n  while (cur <= right) {\n    if (nums[cur] === 0) { [nums[left], nums[cur]] = [nums[cur], nums[left]]; left++; cur++; }\n    else if (nums[cur] === 2) {\n      [nums[cur], nums[right]] = [nums[right], nums[cur]]; right--;\n      // 换来的元素尚未检查，cur 保持不动\n    } else cur++;\n  }\n}"
+      },
+      {
+        "language": "python",
+        "code": "def sortColors(nums: list[int]) -> None:\n    left, cur, right = 0, 0, len(nums) - 1\n    while cur <= right:\n        if nums[cur] == 0:\n            nums[left], nums[cur] = nums[cur], nums[left]\n            left, cur = left + 1, cur + 1\n        elif nums[cur] == 2:\n            nums[cur], nums[right] = nums[right], nums[cur]\n            right -= 1\n        else:\n            cur += 1"
+      }
+    ],
+    "testCases": []
+  },
+  "next-permutation": {
+    "statement": "把当前排列原地修改为字典序中紧邻其后的排列。\n\n可以有重复元素；若已是最大排列则恢复最小排列，额外空间为常数。\n\n**示例**：[1,2,3] → [1,3,2]",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function nextPermutation(nums: number[]): void {\n  let pivot = nums.length - 2;\n  while (pivot >= 0 && nums[pivot] >= nums[pivot + 1]) pivot--;\n  if (pivot >= 0) {\n    let next = nums.length - 1;\n    while (nums[next] <= nums[pivot]) next--;\n    [nums[pivot], nums[next]] = [nums[next], nums[pivot]];\n  }\n  // 后缀原本递减，翻转后成为最小可用后缀\n  let left = pivot + 1, right = nums.length - 1;\n  while (left < right) { [nums[left], nums[right]] = [nums[right], nums[left]]; left++; right--; }\n}"
+      },
+      {
+        "language": "python",
+        "code": "def nextPermutation(nums: list[int]) -> None:\n    pivot = len(nums) - 2\n    while pivot >= 0 and nums[pivot] >= nums[pivot + 1]:\n        pivot -= 1\n    if pivot >= 0:\n        nxt = len(nums) - 1\n        while nums[nxt] <= nums[pivot]:\n            nxt -= 1\n        nums[pivot], nums[nxt] = nums[nxt], nums[pivot]\n    left, right = pivot + 1, len(nums) - 1\n    while left < right:\n        nums[left], nums[right] = nums[right], nums[left]\n        left, right = left + 1, right - 1"
+      }
+    ],
+    "testCases": []
+  },
+  "find-the-duplicate-number": {
+    "statement": "长度为 n+1 的数组只含 1 到 n 的整数，找出唯一重复的数。\n\n同一个重复数可出现多次；不能修改数组，使用常数额外空间。\n\n**示例**：[1,3,4,2,2] → 2",
+    "solutions": [
+      {
+        "language": "typescript",
+        "code": "function findDuplicate(nums: number[]): number {\n  let slow = 0, fast = 0;\n  // 将下标到数值的映射看作带环链表\n  do { slow = nums[slow]; fast = nums[nums[fast]]; } while (slow !== fast);\n  let entry = 0;\n  while (entry !== slow) { entry = nums[entry]; slow = nums[slow]; }\n  return entry;\n}"
+      },
+      {
+        "language": "python",
+        "code": "def findDuplicate(nums: list[int]) -> int:\n    slow = fast = 0\n    while True:\n        slow, fast = nums[slow], nums[nums[fast]]\n        if slow == fast:\n            break\n    entry = 0\n    while entry != slow:\n        entry, slow = nums[entry], nums[slow]\n    return entry"
+      }
+    ],
+    "testCases": []
+  }
+}
