@@ -38,6 +38,7 @@ export default function JudgeControls({ detail, code, language, onLanguage, disa
         }),
       });
       const saved = await response.json();
+      if (response.status === 429) { setMessage("判题繁忙，请稍后再试"); return; }
       if (!response.ok) throw new Error(saved.message ?? "保存结果失败，请重试。");
       if (needsVerification) judged = saved.result as JudgeResult;
       if (abort.signal.aborted) return;
