@@ -38,6 +38,7 @@ jobs:
       - run: npm run typecheck
       # Run the complete suite once, with the core coverage gate enabled.
       - run: npm test -- --coverage
+      - run: node --import tsx scripts/check-core-coverage.ts
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e

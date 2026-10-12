@@ -13,7 +13,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:coverage": "vitest run --coverage",
+    "test:coverage": "vitest run --coverage && node --import tsx scripts/check-core-coverage.ts",
     "pretest:coverage": "npm run build:judge",
     "test:e2e": "playwright test",
     "build:judge": "node node_modules/tsx/dist/cli.mjs scripts/build-judge.ts",

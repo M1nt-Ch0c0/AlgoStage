@@ -17,7 +17,7 @@ npm run test:e2e
 
 测试文件用独立 fork 隔离，文件之间顺序运行，避免环境变量和 Prisma 单例相互污染。API 测试使用临时 SQLite 与本地假模型服务，判题矩阵使用本地构建的 Worker 和真实 Pyodide，不需要 API Key。
 
-`npm run test:coverage` 使用 V8，对 schema、provider/request、讲课路由（含缓存键）、local-source、anchors、判题模块及进度写入路由设置**逐文件** statements/branches/functions/lines 均不低于 60% 的门槛，包括未导入的目标文件。报告在 `coverage/index.html` 和 `coverage/lcov.info`。判题 Worker 的协议与输出限制测试直接执行源模块，真实 Worker 矩阵继续验证终止、超时及两种语言的全部判题结果。
+`npm run test:coverage` 使用 V8，对 schema、provider/request、讲解生成及工具校验（`lib/agent/lecture-*.ts`）、提示词、上游重试、连接绑定、播放器状态机及流读取（`lib/player/*.ts`）、讲课路由（含缓存键）、local-source、anchors、判题模块及进度写入路由设置**逐文件** statements/branches/functions/lines 均不低于 60% 的门槛，包括未导入的目标文件。报告在 `coverage/index.html` 和 `coverage/lcov.info`。`scripts/check-core-coverage.ts` 还会按磁盘文件核对报告：新增的讲解和播放器文件若未被报告收录也会失败，不能用总覆盖率代替逐文件门槛。CI 在完整覆盖率测试后执行同一检查。判题 Worker 的协议与输出限制测试直接执行源模块，真实 Worker 矩阵继续验证终止、超时及两种语言的全部判题结果。
 
 客户端上报 AC 会被拒绝，不产生任何写入。`POST /api/judge` 根据服务端内置用例在独立 Node 进程中复跑 JS/TS，只有真实 AC 才能设置 solved；Python 暂返回“服务端无法判定”，不会记录 AC。`lib/progress.ts` 在同一事务中记录提交、保持 solved/mastered 状态，并按 docs/04 的简版 SM-2 更新复习卡（AC 5 分、失败 2 分；失败回到一天后）。无用例的题和讲解上报不会创建复习卡。
 

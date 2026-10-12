@@ -25,6 +25,10 @@ export default defineConfig({
       include: [
         "lib/teaching/{schema,validated-script}.ts",
         "lib/agent/{provider,request}.ts",
+        "lib/agent/lecture-*.ts",
+        "lib/agent/{saved-endpoint,upstream-retry}.ts",
+        "lib/agent/modes/lecture.ts",
+        "lib/player/*.ts",
         "app/api/lecture/route.ts",
         "app/api/progress/route.ts",
         "lib/content/local-source.ts",
