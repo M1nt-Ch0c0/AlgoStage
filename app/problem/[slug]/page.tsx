@@ -7,7 +7,7 @@
 "use client";
 
 import { LECTURE_TIMEOUT_MS } from "@/lib/agent/defaults";
-import { apiPath, REPO_URL } from "@/lib/runtime";
+import { apiPath } from "@/lib/runtime";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -315,11 +315,9 @@ export default function ProblemPage() {
         };
         if (!res.ok) {
           throw new Error(
-            j.error === "DEMO"
-              ? "在线体验版里还不能要提示。装到自己电脑上接上 AI，就能一级一级地问老师。"
-              : j.error === "NO_BYOK"
-                ? "提示要老师现场想，先在设置里接上你的 AI 吧。"
-                : (j.message ?? "这条提示没想出来，稍等一会儿再试吧。"),
+            j.error === "NO_BYOK"
+              ? "提示要老师现场想，先在设置里接上你的 AI 吧。"
+              : (j.message ?? "这条提示没想出来，稍等一会儿再试吧。"),
           );
         }
         setHints((h) => [
@@ -363,7 +361,6 @@ export default function ProblemPage() {
     ? (HOT100_CATEGORIES as readonly string[]).indexOf(detail.category) + 1
     : 0;
   const hasBuiltIn = slug === "two-sum";
-  const lectureLocked = false;
   const inLecture = status !== "idle";
   const playbackStarted = stepCount > 0 && status !== "idle" && status !== "finished";
   const playing = status === "playing" || status === "streaming";
@@ -483,7 +480,7 @@ export default function ProblemPage() {
             type="button"
             // 已有完整教案时「从头再讲」只本地重播，不再请求；重新生成走单独入口。
             onClick={() => playbackStarted ? (playing ? pause() : play()) : canReplay ? replay() : startLecture()}
-            disabled={(!playbackStarted && lectureBusy) || !detail || lectureLocked}
+            disabled={(!playbackStarted && lectureBusy) || !detail}
             className="flex items-center gap-1.5 rounded-full bg-beam-gold px-4 py-2 text-sm font-semibold text-on-accent transition-transform hover:scale-[1.03] disabled:pointer-events-none disabled:opacity-50"
           >
             {playbackStarted ? (
@@ -497,7 +494,7 @@ export default function ProblemPage() {
             )}
             {playbackStarted ? (playing ? "暂停" : "继续讲课") : lectureBusy ? "备课中…" : inLecture ? "从头再讲" : "开始讲课"}
           </button>
-          {(status === "paused" || status === "finished") && stepCount > 0 && !lectureBusy && !lectureLocked && (
+          {(status === "paused" || status === "finished") && stepCount > 0 && !lectureBusy && (
             <button
               type="button"
               onClick={() => startLecture(true)}
@@ -541,7 +538,7 @@ export default function ProblemPage() {
           <button
             type="button"
             onClick={() => startLecture()}
-            disabled={lectureBusy || lectureLocked || !detail}
+            disabled={lectureBusy || !detail}
             className="rounded-full border border-beam-rose px-3 py-1 disabled:opacity-40"
           >
             重试讲课
@@ -683,7 +680,7 @@ export default function ProblemPage() {
               AI 导师
             </ColumnLabel>
 
-            <NarrationBar problemSlug={slug} />
+            <NarrationBar />
 
             {inLecture ? (
               <LessonPlan />
@@ -700,30 +697,6 @@ export default function ProblemPage() {
                     <p className="text-xs text-chalk-700">
                       ← → 切换步骤 · 空格 暂停/继续
                     </p>
-                  </>
-                ) : lectureLocked ? (
-                  <>
-                    <p>
-                      在线体验版里，老师只备好了「两数之和」这一课。这道题可以先读题、自己动手练。
-                    </p>
-                    <p>
-                      想听老师讲这道题？
-                      <a
-                        href={REPO_URL}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-beam-gold hover:underline"
-                      >
-                        把 AlgoStage 装到自己电脑上
-                      </a>
-                      ，接上你的 AI 就行。
-                    </p>
-                    <Link
-                      href="/problem/two-sum"
-                      className="text-beam-gold hover:underline"
-                    >
-                      先去听「两数之和」 →
-                    </Link>
                   </>
                 ) : (
                   <>

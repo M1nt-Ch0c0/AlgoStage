@@ -14,7 +14,7 @@ import { usePrefersReducedMotion } from "@/components/effects/fx-context";
 
 const BASE_CHARS_PER_SEC = 24;
 
-export default function NarrationBar(_props: { problemSlug?: string } = {}) {
+export default function NarrationBar() {
   const step = usePlayerStore((s) => s.steps[s.currentIndex]);
   const status = usePlayerStore((s) => s.status);
   const speed = usePlayerStore((s) => s.speed);
