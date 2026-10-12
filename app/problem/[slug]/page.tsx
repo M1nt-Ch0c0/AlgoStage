@@ -683,7 +683,7 @@ export default function ProblemPage() {
               AI 导师
             </ColumnLabel>
 
-            <NarrationBar problemSlug={slug} />
+            <NarrationBar />
 
             {inLecture ? (
               <LessonPlan />
