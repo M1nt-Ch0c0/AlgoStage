@@ -17,6 +17,8 @@ ENV NEXT_PUBLIC_BASE_PATH=$BASE_PATH \
 
 COPY package.json package-lock.json ./
 COPY prisma ./prisma
+COPY prisma.config.ts ./
+COPY lib/db/database-url.ts ./lib/db/database-url.ts
 RUN npm ci --no-audit --no-fund
 
 COPY . .

@@ -9,3 +9,6 @@ next-env.d.ts
 .env.local
 prisma/algostage.db
 prisma/algostage.db-journal
+
+# Prisma 7 客户端由 postinstall 生成
+lib/db/generated/

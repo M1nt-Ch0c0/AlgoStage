@@ -2,12 +2,13 @@
  * 种子脚本：Hot 100 元数据 + 默认用户 + 旗舰讲解脚本缓存
  * 运行：pnpm db:push && pnpm db:seed
  */
-import { PrismaClient } from "@prisma/client";
+import nextEnv from "@next/env";
 import { HOT100 } from "../lib/content/hot100";
 import { TWO_SUM_SCRIPT } from "../lib/content/scripts/two-sum";
 import { createHash } from "crypto";
 
-const prisma = new PrismaClient();
+nextEnv.loadEnvConfig(process.cwd());
+const { prisma } = await import("../lib/db/prisma");
 
 async function main() {
   const user = await prisma.user.upsert({

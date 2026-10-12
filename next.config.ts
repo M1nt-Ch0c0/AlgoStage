@@ -6,9 +6,8 @@ const basePath = process.env.NEXT_PUBLIC_BASE_PATH || undefined;
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   basePath,
-  // sshfs 网关拒绝解析 .next 内的 ../ symlink（见 AGENTS.md），
-  // 强制将 prisma 打包进 bundle 而非外置，绕过外部化产生的链接
-  transpilePackages: ["@prisma/client", "prisma"],
+  // SQLite 驱动含原生模块，由 Node 在服务端加载。
+  serverExternalPackages: ["@prisma/adapter-better-sqlite3", "better-sqlite3"],
 };
 
 export default nextConfig;

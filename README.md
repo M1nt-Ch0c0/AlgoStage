@@ -17,6 +17,8 @@ AlgoStage 是一个**纯本地运行**的 LeetCode Hot 100 AI 学习系统：内
 
 ## 快速开始
 
+需要 Node.js 22.12+（22.x）或 24+。
+
 ```bash
 npm install
 cp .env.example .env          # 可选：也可以启动后在设置页填 Key
