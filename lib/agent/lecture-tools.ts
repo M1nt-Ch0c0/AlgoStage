@@ -1,5 +1,6 @@
 /** 工具参数与执行共用 schema，代码行号严格约束在本题参考题解内。 */
 import { z } from "zod";
+import { highlightProblem } from "./lecture-highlights";
 import { tool } from "ai";
 import { arrayVizFrameSchema, teachingStepSchema } from "@/lib/teaching/schema";
 import { EFFECT_WHITELIST, type TeachingStep } from "@/lib/teaching/types";
@@ -116,12 +117,12 @@ export function createLectureTools(referenceCode: string) {
   const tools = {
     add_step: tool({
       description:
-        "增加并立即播放一步。id 顺序编号 s1/s2；narration 是字幕；target 指向题面段落或本题代码行；effect 可选白名单特效；viz 可选数组全量帧；dwellMs 可调停留。行号必须对准本步讲的语句：3sum 讲『先排序』应指向 sort 那行，不能指函数签名。结果 highlightedCode 回显带行号的代码，请自检与字幕是否一致；不一致时用 highlight_lines 修正。尽量一次给齐本步内容，已成功步骤不要重复添加。",
+        "增加并立即播放一步。id 顺序编号 s1/s2；narration 是字幕；target 指向题面段落或本题代码行；effect 可选白名单特效；viz 可选数组全量帧；dwellMs 可调停留。行号必须对准本步讲的语句：3sum 讲『先排序』应指向 sort 那行，不能指函数签名。服务端本地校验行号；成功后直接继续，不需要自检或重复高亮。尽量一次给齐本步内容，已成功步骤不要重复添加。",
       inputSchema: schemas.add_step,
     }),
     highlight_lines: tool({
       description:
-        "修改已存在步骤的代码高亮。stepId 指定步骤，start/end 是含首尾的代码行范围，end 可省略。必须对准该步字幕所讲的代码，使用最小必要范围：3sum 的『先排序』指向 sort 那行，不能指函数签名。结果 highlightedCode 回显对应代码文本，请核对一致后继续。保留本步已有题面锚点，替换本步代码锚点。",
+        "修改已存在步骤的代码高亮。stepId 指定步骤，start/end 是含首尾的代码行范围，end 可省略。必须对准该步字幕所讲的代码，使用最小必要范围：3sum 的『先排序』指向 sort 那行，不能指函数签名。服务端本地校验行号，仅错误回执要求修正时才重试。保留本步已有题面锚点，替换本步代码锚点。",
       inputSchema: schemas.highlight_lines,
     }),
     set_effect: tool({
@@ -141,17 +142,14 @@ export function createLectureTools(referenceCode: string) {
     }),
   };
   const steps: TeachingStep[] = [];
-  const highlightedCode = (step: TeachingStep) => step.targets.flatMap(target => {
-    if (target.kind !== "code-line") return [];
-    return Array.from({ length: (target.end ?? target.start) - target.start + 1 }, (_, i) => {
-      const line = target.start + i;
-      return `${line}: ${referenceLines[line - 1]}`;
-    });
-  });
+  const checkHighlight = (narration: string, target: TeachingStep["targets"][number], prefix = "") => {
+    const issue = highlightProblem(referenceLines, narration, target);
+    if (issue) throw new ToolStateError(issue.field === "target" ? "target" : `${prefix}${issue.field}`, issue.type, issue.reason);
+  };
   const apply = (
     name: keyof typeof schemas,
     value: unknown,
-  ): { step?: TeachingStep; added?: boolean; finished?: boolean; highlightedCode?: string[] } => {
+  ): { step?: TeachingStep; added?: boolean; finished?: boolean } => {
     const data = schemas[name].parse(value);
     if (name === "finish") {
       if (!steps.length) throw new ToolStateError("steps", "empty_script");
@@ -162,6 +160,7 @@ export function createLectureTools(referenceCode: string) {
       if (steps.length >= 12) throw new ToolStateError("id", "step_limit");
       if (args.id !== `s${steps.length + 1}`)
         throw new ToolStateError("id", "step_sequence");
+      checkHighlight(args.narration, args.target, "target.");
       const step = teachingStepSchema.parse({
         id: args.id,
         narration: args.narration,
@@ -179,7 +178,7 @@ export function createLectureTools(referenceCode: string) {
         dwellMs: args.dwellMs,
       });
       steps.push(step);
-      return { step, added: true, highlightedCode: highlightedCode(step) };
+      return { step, added: true };
     }
     const args = data as { stepId: string };
     const index = steps.findIndex((s) => s.id === args.stepId);
@@ -187,6 +186,7 @@ export function createLectureTools(referenceCode: string) {
     let step = { ...steps[index] };
     if (name === "highlight_lines") {
       const a = data as z.infer<typeof schemas.highlight_lines>;
+      checkHighlight(step.narration, { kind: "code-line", start: a.start, end: a.end });
       step = {
         ...step,
         targets: [
@@ -216,7 +216,7 @@ export function createLectureTools(referenceCode: string) {
       step = { ...step, viz: (data as z.infer<typeof schemas.set_viz>).viz };
     step = teachingStepSchema.parse(step);
     steps[index] = step;
-    return { step, added: false, highlightedCode: highlightedCode(step) };
+    return { step, added: false };
   };
   return { tools, schemas, steps, apply };
 }
@@ -224,7 +224,8 @@ export class ToolStateError extends Error {
   constructor(
     public field: string,
     public failureType: string,
+    public reason = failureType,
   ) {
-    super(failureType);
+    super(reason);
   }
 }

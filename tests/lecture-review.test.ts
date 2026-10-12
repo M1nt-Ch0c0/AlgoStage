@@ -63,7 +63,7 @@ test("工具行号忽略末尾空行，仍保留中间空行的真实位置", ()
   const kit = createLectureTools("第一行\n\n第三行\n\n  \n");
   expect(() => kit.apply("add_step", add("s1", 3).input)).not.toThrow();
   expect(() => kit.apply("highlight_lines", { stepId: "s1", start: 4 })).toThrow();
-  expect(() => kit.apply("highlight_lines", { stepId: "s1", start: 2 })).not.toThrow();
+  expect(() => kit.apply("highlight_lines", { stepId: "s1", start: 2 })).toThrow("空白行");
 });
 
 test("缓存按提供商和接口地址隔离，同名模型换接口必须重新生成", async () => {

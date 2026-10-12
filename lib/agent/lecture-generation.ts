@@ -149,7 +149,7 @@ export async function generateLecture(input: {
     const messages: ModelMessage[] = [
       {
         role: "user",
-        content: "请按教案规范调用工具开始讲课，最后调用 finish。",
+        content: "先立即调用一次 add_step：s1 用 35 字以内概括题意，target 指向 intro，结束首轮响应让学生先听。之后一轮给齐其余步骤和 finish；无需模型自检。",
       },
     ];
     const repairs: {
@@ -282,7 +282,6 @@ export async function generateLecture(input: {
               ok: true,
               stepId: applied.step?.id ?? null,
               stepCount: kit.steps.length,
-              ...(applied.highlightedCode ? { highlightedCode: applied.highlightedCode } : {}),
             };
             if (applied.finished) finished = true;
           } catch (error) {
@@ -328,7 +327,7 @@ export async function generateLecture(input: {
                           `${i.path.filter((p) => typeof p === "string" && safeFields.has(p)).join(".")}: ${i.code}${"expected" in i ? ` expected=${i.expected}` : ""}${"maximum" in i ? ` maximum=${i.maximum}` : ""}${"minimum" in i ? ` minimum=${i.minimum}` : ""}`,
                       )
                       .join("; ")
-                  : info.type,
+                  : error instanceof ToolStateError ? error.reason : info.type,
               instruction: `只重新调用 ${name}，retryOf 填原始失败调用 ID，修正这些字段，不要重复已成功步骤。`,
             };
           }
@@ -410,6 +409,8 @@ export async function generateLecture(input: {
           { role: "assistant", content: assistant },
           { role: "tool", content: results },
         );
+        if (round === 1 && kit.steps.length === 1 && !repairs.length)
+          messages.push({ role: "user", content: "首步已开始播放，请在本轮一次给齐 s2 起的其余步骤，最后调用 finish；服务端会本地检查行号，不要再做高亮自检。" });
         if (repairs[0])
           messages.push({
             role: "user",

@@ -14,6 +14,7 @@ import { NextRequest } from "next/server";
 import { IS_DEMO } from "@/lib/runtime";
 import { resolveByok, ByokConfigurationError, type ByokConfig } from "@/lib/agent/provider";
 import { buildLecturePrompt } from "@/lib/agent/modes/lecture";
+import { highlightProblem } from "@/lib/agent/lecture-highlights";
 import { validateScript } from "@/lib/teaching/validated-script";
 import { lectureRequestSchema, badRequest, configurationError } from "@/lib/agent/request";
 import { localSeedSource } from "@/lib/content/local-source";
@@ -98,6 +99,14 @@ export async function POST(req: NextRequest) {
       script.solutionLanguage !== solutionLanguage
     ) {
       throw new InvalidLectureScriptError();
+    }
+    // 同样检查旧缓存；不能继续复用只高亮空行或签名的旧教案。
+    const lines = referenceCode.trimEnd().split("\n");
+    for (const step of script.steps) {
+      const codeTargets = step.targets.filter(target => target.kind === "code-line" || target.kind === "code-token");
+      for (const target of codeTargets.length ? codeTargets : step.targets) {
+        if (highlightProblem(lines, step.narration, target)) throw new InvalidLectureScriptError();
+      }
     }
     return script;
   };

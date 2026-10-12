@@ -14,6 +14,8 @@ const flashFailure = process.argv.includes("--flash-failure");
 const flash = flashFailure || process.argv.includes("--flash");
 process.env.AI_MODEL = flash ? "deepseek-flash" : "gpt-6.1-sol";
 const smoke = process.argv.includes("--smoke");
+const checkLatency = process.argv.includes("--latency");
+const firstStepTimes: number[] = [];
 const directory = mkdtempSync(join(tmpdir(), "algostage-live-"));
 process.env.DATABASE_URL = `file:${join(directory, "test.db")}`;
 delete process.env.NEXT_PUBLIC_ALGOSTAGE_DEMO;
@@ -154,6 +156,7 @@ try {
       const totalMs = performance.now() - start;
       const cacheCount = await prisma.lectureScriptCache.count();
       if (success) successes++;
+      if (success && firstMs !== null) firstStepTimes.push(firstMs);
       console.log(
         JSON.stringify({
           model: process.env.AI_MODEL,
@@ -184,6 +187,13 @@ try {
   if (!flash) {
     console.log(`gpt-6.1-sol 成功 ${successes}/${slugs.length * repetitions}`);
     if (successes !== slugs.length * repetitions) process.exitCode = 1;
+    if (checkLatency) {
+      const times = firstStepTimes.sort((a, b) => a - b);
+      const median = times.length ? (times[Math.floor((times.length - 1) / 2)] + times[Math.floor(times.length / 2)]) / 2 : Infinity;
+      const passed = successes === slugs.length * repetitions && median <= 15000;
+      console.log(JSON.stringify({ metric: "首步中位数", seconds: Number.isFinite(median) ? Math.round(median / 100) / 10 : null, limitSeconds: 15, passed }));
+      if (!passed) process.exitCode = 1;
+    }
   }
 } catch {
   console.log("验收执行失败（未输出原始错误）");

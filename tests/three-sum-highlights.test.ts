@@ -37,6 +37,7 @@ test("3sum 生成、流式传输、缓存与回看均保留每个代码步骤的
       expect(lines[anchors[0].start - 1]).toContain(code);
     }
     expect(script.steps[1].targets).toContainEqual({ kind: "code-line", start: 4 });
+    expect(f.requests).toHaveLength(1); // 正确的一批工具调用不再追加模型自检往返。
     expect(JSON.parse((await f.prisma.lectureScriptCache.findFirstOrThrow()).script).steps).toEqual(script.steps);
     store.completeStream(script); store.goto(1);
     expect(usePlayerStore.getState().status).toBe("paused");

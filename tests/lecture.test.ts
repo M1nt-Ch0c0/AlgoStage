@@ -68,7 +68,7 @@ test("S2/S4：单调用重试、422 不缓存及语言缓存隔离", async () =>
               {
                 id: "s1",
                 narration: "先排序",
-                targets: [{ kind: "code-line", start: 1 }],
+                targets: [{ kind: "code-line", start: 4 }],
                 effects: [],
               },
             ],
@@ -80,10 +80,10 @@ test("S2/S4：单调用重试、422 不缓存及语言缓存隔离", async () =>
     const result = await ok.json();
     assert.equal(result.cached, false);
     assert.ok(teachingScriptSchema.safeParse(result.script).success);
-    assert.equal(result.script.steps[0].targets[0].start, 1);
+    assert.equal(result.script.steps[0].targets[0].start, 4);
     assert.ok(
       result.script.steps[0].targets[0].end === undefined ||
-        result.script.steps[0].targets[0].end === 1,
+        result.script.steps[0].targets[0].end === 4,
     );
 
     assert.equal(result.script.steps[0].effects[0].effect, "spotlight-beam");
