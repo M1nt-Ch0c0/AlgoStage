@@ -60,7 +60,7 @@ docker compose -f deploy/compose.yaml logs --tail=100 web
 docker compose -f deploy/compose.yaml stop
 ```
 
-更新前可记录旧镜像 ID：`docker inspect algostage-demo-algostage --format '{{.Image}}'`。需要回滚时把该镜像标记回 `algostage-demo:20261008`，再执行 `up -d --force-recreate --wait`。停止或回滚容器不会删除学习数据；不要运行带 `-v` 的 `down` 命令。
+更新前可记录旧镜像 ID：`docker inspect algostage-demo-algostage --format '{{.Image}}'`。需要回滚时把该镜像标记回 `algostage-demo:0.2.0`，再执行 `up -d --force-recreate --wait`。停止或回滚容器不会删除学习数据；不要运行带 `-v` 的 `down` 命令。
 
 ## 本次上线验证（2026-10-08）
 

@@ -2,7 +2,7 @@ name: algostage-demo
 
 services:
   web:
-    image: algostage-demo:20261008
+    image: algostage-demo:0.2.0
     build:
       context: ..
       network: host
