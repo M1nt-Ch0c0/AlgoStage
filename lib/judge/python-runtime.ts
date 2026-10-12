@@ -8,10 +8,18 @@ export interface PythonRuntime {
   runPython(code: string, options?: { globals: PythonGlobals }): unknown;
 }
 
+/** 只有 harness 完成清理后返回的用户异常，才携带复用许可。 */
+export class PythonUserCodeError extends Error {
+  constructor(message: string, readonly reusable: boolean) {
+    super(message);
+    this.name = "PythonError";
+  }
+}
+
 /** 清理用的对象与函数保存在局部变量中，用户修改 builtins 后仍能恢复。 */
 export const PYTHON_CASE_HARNESS = `
 def _run_case():
-    import builtins, json, sys
+    import builtins, json, sys, traceback
     _builtins = builtins.__dict__
     _modules = sys.modules
     _saved_modules = _modules.copy()
@@ -22,7 +30,9 @@ def _run_case():
     _module_type = _type(sys)
     _module_dict = _module_type.__getattribute__
     _base_error, _runtime_error, _value_error = BaseException, RuntimeError, ValueError
+    _isinstance, _fatal_errors = isinstance, (RecursionError, MemoryError)
     _loads, _dumps = json.loads, json.dumps
+    _format_exception = traceback.format_exception
     def _snapshot(_namespace):
         # 同时保留原对象和 id：只恢复浅层属性绑定，不复制模块内可变对象。
         return {_key: (_value, _id(_value)) for _key, _value in _namespace.items()}
@@ -68,30 +78,39 @@ def _run_case():
                         raise _runtime_error('模块属性未恢复')
         except _base_error:
             raise _runtime_error('Python 运行状态清理失败，执行环境将被替换') from None
+    def _user_failure(_error):
+        _restore()
+        return _dumps({'error': ''.join(_format_exception(_error)), 'reusable': not _isinstance(_error, _fatal_errors)}, ensure_ascii=False)
     try:
         _args = _loads(__args_json)
         _names = _loads(__names_json)
         _namespace = {'__name__': '__main__', '__builtins__': _builtins}
-        _exec(__source, _namespace)
-        _fn = None
-        for _name in _names:
-            if _callable(_namespace.get(_name)):
-                _fn = _namespace[_name]
-                break
-        if _fn is None and _callable(_namespace.get('Solution')):
-            _solution = _namespace['Solution']()
+        try:
+            _exec(__source, _namespace)
+            _fn = None
             for _name in _names:
-                _candidate = _getattr(_solution, _name, None)
-                if _callable(_candidate):
-                    _fn = _candidate
+                if _callable(_namespace.get(_name)):
+                    _fn = _namespace[_name]
                     break
-        if _fn is None:
-            raise _value_error('没有找到题目入口函数')
-        _returned = _fn(*_args)
-        _actual = _args[__mutates] if __mutates >= 0 else _returned
+            if _fn is None and _callable(_namespace.get('Solution')):
+                _solution = _namespace['Solution']()
+                for _name in _names:
+                    _candidate = _getattr(_solution, _name, None)
+                    if _callable(_candidate):
+                        _fn = _candidate
+                        break
+            if _fn is None:
+                raise _value_error('没有找到题目入口函数')
+            _returned = _fn(*_args)
+            _actual = _args[__mutates] if __mutates >= 0 else _returned
+        except _base_error as _error:
+            return _user_failure(_error)
         # 序列化依赖标准 builtins；自定义返回对象的迭代也可能再次污染状态。
         _restore()
-        return _dumps(_actual, ensure_ascii=False, allow_nan=False)
+        try:
+            return _dumps({'actual': _actual}, ensure_ascii=False, allow_nan=False)
+        except _base_error as _error:
+            return _user_failure(_error)
     finally:
         _restore()
 _run_case()
@@ -106,6 +125,8 @@ export function runPythonCase(pyodide: PythonRuntime, code: string, args: unknow
     globals.set("__args_json", JSON.stringify(args));
     globals.set("__names_json", JSON.stringify(pythonEntryPoints(names)));
     globals.set("__mutates", mutatesArg);
-    return JSON.parse(pyodide.runPython(PYTHON_CASE_HARNESS, { globals }) as string);
+    const result = JSON.parse(pyodide.runPython(PYTHON_CASE_HARNESS, { globals }) as string) as { actual: unknown } | { error: string; reusable: boolean };
+    if ("error" in result) throw new PythonUserCodeError(result.error, result.reusable);
+    return result.actual;
   } finally { globals.destroy(); }
 }

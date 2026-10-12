@@ -1,7 +1,7 @@
 /** Pyodide 314 module Worker；默认递归限制防止 Wasm 栈损坏，超时由主线程硬终止。 */
 import { compareAnswer } from "./compare";
 import { display, outputCollector, postResult, scope } from "./worker-common";
-import { runPythonCase, type PythonRuntime } from "./python-runtime";
+import { PythonUserCodeError, runPythonCase, type PythonRuntime } from "./python-runtime";
 import type { JudgeInput } from "./types";
 interface Pyodide extends PythonRuntime {
   setStdout(options: { write(buffer: Uint8Array): number }): void;
@@ -45,7 +45,7 @@ scope.onmessage = async event => {
       postResult({ caseId, verdict, runtimeMs: performance.now()-started, input: display(item.args), expected: display(item.expected), actual: display(actual), stdout: output.text() });
       if (verdict !== "AC") break;
     } catch (error) {
-      reusable = false;
+      reusable = error instanceof PythonUserCodeError && error.reusable;
       postResult({ caseId, verdict: "RE", runtimeMs: performance.now()-started, input: display(item.args), expected: display(item.expected), stderr: String(error).slice(0,2000), stdout: output.text() });
       break;
     }
