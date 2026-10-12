@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { IS_DEMO } from "@/lib/runtime";
 
 export function SiteFooter() {
   const pathname = usePathname();
@@ -14,7 +13,7 @@ export function SiteFooter() {
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-6 text-xs text-chalk-500 sm:px-6">
         <p>
           <span className="chalk mr-2 text-base text-chalk-300">AlgoStage</span>
-          {IS_DEMO ? "体验版不记录学习进度 · 开源免费" : "学习记录只留在你的电脑上 · 开源免费"}
+          学习记录只留在你的电脑上 · 开源免费
         </p>
         <nav className="flex gap-4">
           <Link href="/roadmap" className="hover:text-chalk-100">

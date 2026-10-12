@@ -1,6 +1,6 @@
 "use client";
 
-import { apiPath, IS_DEMO } from "@/lib/runtime";
+import { apiPath } from "@/lib/runtime";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { animate, motion } from "motion/react";
@@ -209,7 +209,6 @@ export default function DashboardPage() {
   const [unavailable, setUnavailable] = useState(false);
 
   useEffect(() => {
-    if (IS_DEMO) return;
     Promise.all(["/api/dashboard", "/api/problems"].map((path) =>
       fetch(apiPath(path)).then((r) => r.ok ? r.json() : undefined),
     ))
@@ -236,7 +235,7 @@ export default function DashboardPage() {
       .slice(0, 8);
   }, [data]);
 
-  if (IS_DEMO || unavailable) {
+  if (unavailable) {
     return (
       <div className="mx-auto max-w-6xl px-4 pt-10 pb-24 sm:px-6">
         <PageHeader eyebrow="成绩单" title="个人看板" desc="体验版没有学习看板" />

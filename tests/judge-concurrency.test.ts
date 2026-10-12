@@ -31,7 +31,6 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   delete process.env.JUDGE_MAX_CONCURRENCY;
-  delete process.env.NEXT_PUBLIC_ALGOSTAGE_DEMO;
   for (let i = 0; i < 64; i++) judgeServer.release();
   await f.prisma.submission.deleteMany();
   await f.prisma.problemProgress.deleteMany();
@@ -40,7 +39,6 @@ beforeEach(async () => {
 
 afterEach(() => {
   delete process.env.JUDGE_MAX_CONCURRENCY;
-  delete process.env.NEXT_PUBLIC_ALGOSTAGE_DEMO;
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   for (let i = 0; i < 64; i++) judgeServer.release();
@@ -84,9 +82,7 @@ test("环境变量非法、0、负数或未设置时回退为 4，正整数生�
   }
 });
 
-test.each([false, true])("同时 5 个请求第 5 个立即返回 429 BUSY（demo=%s），前面跑完后新请求正常判题", async isDemo => {
-  if (isDemo) process.env.NEXT_PUBLIC_ALGOSTAGE_DEMO = "1";
-  else delete process.env.NEXT_PUBLIC_ALGOSTAGE_DEMO;
+test("同时 5 个请求第 5 个立即返回 429 BUSY，前面跑完后新请求正常判题", async () => {
   vi.resetModules();
 
   const serverMod = await import("../lib/judge/server");

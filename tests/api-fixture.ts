@@ -22,7 +22,6 @@ export function fixturePaths(): {
 export async function createFixture({ modelServer = true } = {}) {
   const directory = mkdtempSync(join(tmpdir(), "algostage-m1-"));
   process.env.DATABASE_URL = `file:${join(directory, "test.db")}`;
-  delete process.env.NEXT_PUBLIC_ALGOSTAGE_DEMO;
   for (const key of ["AI_API_KEY", "AI_MODEL", "AI_PROVIDER", "AI_BASE_URL"])
     delete process.env[key];
   const { repoRoot, schema, prismaCli } = fixturePaths();

@@ -5,11 +5,12 @@ import { describe, expect, it } from "vitest";
 const root = path.resolve(__dirname, "..");
 const read = (f: string) => readFileSync(path.join(root, f), "utf8");
 
-describe("S12 Demo 文案", () => {
-  it("首页 Demo 文案不再承诺记住进度", () => {
+describe("S12 首页文案", () => {
+  it("首页保留本地文案且不含体验版文案", () => {
     const page = read("app/page.tsx");
     expect(page).not.toContain("记住进度");
-    expect(page).toContain("体验版不记进度，没有看板");
+    expect(page).not.toContain("体验版");
+    expect(page).toContain("你的电脑，就是教室");
   });
 });
 

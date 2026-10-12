@@ -7,7 +7,7 @@
 "use client";
 
 import { LECTURE_TIMEOUT_MS } from "@/lib/agent/defaults";
-import { apiPath, IS_DEMO, REPO_URL } from "@/lib/runtime";
+import { apiPath, REPO_URL } from "@/lib/runtime";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -139,7 +139,7 @@ export default function ProblemPage() {
   const lastReportedRef = useRef(-1);
   useEffect(() => {
     // 本地重播的步骤已上报过，读 store 快照而不订阅，避免重复写入进度。
-    if (IS_DEMO || !step || status === "idle" || usePlayerStore.getState().replaying) return;
+    if (!step || status === "idle" || usePlayerStore.getState().replaying) return;
     const idx = usePlayerStore.getState().currentIndex;
     if (idx === lastReportedRef.current) return;
     lastReportedRef.current = idx;
@@ -363,8 +363,7 @@ export default function ProblemPage() {
     ? (HOT100_CATEGORIES as readonly string[]).indexOf(detail.category) + 1
     : 0;
   const hasBuiltIn = slug === "two-sum";
-  // 在线体验版只有内置的那一课能听
-  const lectureLocked = IS_DEMO && !hasBuiltIn;
+  const lectureLocked = false;
   const inLecture = status !== "idle";
   const playbackStarted = stepCount > 0 && status !== "idle" && status !== "finished";
   const playing = status === "playing" || status === "streaming";
@@ -744,7 +743,7 @@ export default function ProblemPage() {
               <Lightbulb size={14} className="text-beam-gold" />
               提示阶梯
               <span className="ml-auto text-[11px] font-normal text-chalk-700">
-                {IS_DEMO ? "体验版不记录提示用量" : "用了几级会记在看板上"}
+                用了几级会记在看板上
               </span>
             </h3>
             <div className="mt-3 flex items-end gap-1.5">

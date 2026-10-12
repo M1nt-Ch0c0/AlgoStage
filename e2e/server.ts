@@ -3,13 +3,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-// The production build must also use NEXT_PUBLIC_ALGOSTAGE_DEMO=1.
 // Never use the developer's SQLite database or model credentials for E2E.
 const directory = mkdtempSync(join(tmpdir(), "algostage-e2e-"));
 const env = {
   ...process.env,
   DATABASE_URL: `file:${join(directory, "smoke.db")}`,
-  NEXT_PUBLIC_ALGOSTAGE_DEMO: "1",
   NEXT_PUBLIC_BASE_PATH: "",
   NEXT_TELEMETRY_DISABLED: "1",
   AI_API_KEY: "",

@@ -4,7 +4,6 @@ import { prisma } from "@/lib/db/prisma";
 import { JUDGING_SPECS } from "@/lib/judge/specs";
 import { judgeOnServer, release, tryAcquire } from "@/lib/judge/server";
 import { recordSubmission } from "@/lib/progress";
-import { IS_DEMO } from "@/lib/runtime";
 import { currentUserId } from "@/lib/visitor";
 
 export const runtime = "nodejs";
@@ -42,9 +41,7 @@ export async function POST(req: NextRequest) {
     if (result.error) {
       return Response.json({ error: "UNAVAILABLE", message: "服务端无法判定，执行环境未能启动；没有记录提交，请重试。" }, { status: 503 });
     }
-    if (!IS_DEMO) {
-      await recordSubmission(await currentUserId(), { ...body, verdict: result.verdict, runtimeMs: result.runtimeMs, judgedBy: "server" });
-    }
+    await recordSubmission(await currentUserId(), { ...body, verdict: result.verdict, runtimeMs: result.runtimeMs, judgedBy: "server" });
     return Response.json({ ok: true, result });
   } finally {
     release();

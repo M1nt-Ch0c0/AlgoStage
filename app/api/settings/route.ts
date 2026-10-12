@@ -5,7 +5,6 @@ import { z } from "zod";
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { byokFromEnv, savedKeySource } from "@/lib/agent/provider";
-import { IS_DEMO } from "@/lib/runtime";
 import { savedEndpoint } from "@/lib/agent/saved-endpoint";
 
 export const runtime = "nodejs";
@@ -24,8 +23,6 @@ const settingsRequestSchema = z.object({
 });
 
 export async function GET() {
-  // 在线体验版：访客之间不共享任何设置
-  if (IS_DEMO) return Response.json({ settings: {}, keySource: "none", envConfigured: false });
   const rows = await prisma.setting.findMany({ where: { userId: USER_ID } });
   const settings = Object.fromEntries(rows.map((r) => [r.key, r.value]));
   const envConfigured = Boolean(byokFromEnv());
@@ -41,9 +38,6 @@ export async function GET() {
 }
 
 export async function PUT(req: NextRequest) {
-  if (IS_DEMO) {
-    return Response.json({ error: "DEMO", message: "在线体验版不能保存设置。" }, { status: 403 });
-  }
   let input: unknown;
   try {
     input = await req.json();
