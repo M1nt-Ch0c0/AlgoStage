@@ -9,3 +9,6 @@ CLAUDE.md
 tsconfig.tsbuildinfo
 
 public/judge
+coverage
+playwright-report
+test-results
