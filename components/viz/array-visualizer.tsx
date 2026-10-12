@@ -42,7 +42,7 @@ export default function ArrayVisualizer({ frame }: { frame?: VizFrame }) {
 
   const glowColor = hit ? "var(--color-beam-mint)" : "var(--color-beam-gold)";
   const svgW = values.length * STRIDE - GAP + PAD * 2;
-  const svgH = CELL + PAD * 2 + FLAG_H;
+  const svgH = CELL + PAD * 2 + FLAG_H + 8; // +8：格子下方的下标文字
 
   return (
     <div className="flex flex-wrap items-start gap-4">

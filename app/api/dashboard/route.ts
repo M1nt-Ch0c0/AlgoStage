@@ -3,12 +3,13 @@
  */
 import { prisma } from "@/lib/db/prisma";
 import { HOT100 } from "@/lib/content/hot100";
+import { currentUserId } from "@/lib/visitor";
 
 export const runtime = "nodejs";
 
-const USER_ID = "local-default";
 
 export async function GET() {
+  const USER_ID = await currentUserId();
   const [submissions, progress, hints, reviewDue] = await Promise.all([
     prisma.submission.findMany({ where: { userId: USER_ID } }),
     prisma.problemProgress.findMany({ where: { userId: USER_ID } }),

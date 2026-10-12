@@ -1,358 +1,200 @@
-"use client";
-
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import {
-  animate,
-  motion,
-  useMotionValue,
-  useMotionValueEvent,
-  useTransform,
-  type Variants,
-} from "motion/react";
+import { ArrowRight, Map as MapIcon } from "lucide-react";
+import { DemoBoard } from "@/components/landing/demo-board";
+import { GestureCards } from "@/components/landing/gesture-cards";
+import { HOT100, HOT100_CATEGORIES } from "@/lib/content/hot100";
+import { EFFECT_WHITELIST } from "@/lib/teaching/types";
+import { IS_DEMO, REPO_URL } from "@/lib/runtime";
 
-/* ---------- 10 秒循环特效秀（docs/02 §5.2） ---------- */
-
-const CODE_LINES = [
-  "function twoSum(nums, target) {",
-  "  const seen = new Map();",
-  "  for (let i = 0; i < nums.length; i++) {",
-  "    if (seen.has(target - nums[i]))",
-  "      return [seen.get(target - nums[i]), i];",
+/* 一堂课的四个环节（真实顺序：备课 → 上课 → 练习 → 复习） */
+const LESSON_FLOW = [
+  {
+    name: "备课",
+    desc: "老师先把这道题吃透，想好分几步讲，每一步要指给你看哪里。",
+  },
+  {
+    name: "上课",
+    desc: "跟着光走就行。哪一步没听懂，暂停一下，倒回去再听一遍。",
+  },
+  {
+    name: "练习",
+    desc: "听懂了就自己上手写。卡住也别急，提示一级一级给，不会直接把答案甩给你。",
+  },
+  {
+    name: "复习",
+    desc: "做对的题，过几天老师会再考你一次，就挑你快要忘的时候。（即将上线）",
+  },
 ];
-const LINE_H = 24; // leading-6
-const SUBTITLE = "两数之和，我们从哈希表讲起…";
-const LOOP_S = 10;
 
-/** 光束在时间轴上依次照亮第 1~5 行；<0 表示灯灭 */
-function beamLineAt(t: number): number {
-  if (t < 0.06 || t >= 0.96) return -1;
-  if (t < 0.2) return 0;
-  if (t < 0.36) return 1;
-  if (t < 0.52) return 2;
-  if (t < 0.7) return 3;
-  return 4;
-}
-
-function EffectsShow() {
-  const progress = useMotionValue(0);
-  const [beamLine, setBeamLine] = useState(-1);
-  const [chars, setChars] = useState(0);
-
-  useEffect(() => {
-    const controls = animate(progress, 1, {
-      duration: LOOP_S,
-      ease: "linear",
-      repeat: Infinity,
-    });
-    return () => controls.stop();
-  }, [progress]);
-
-  useMotionValueEvent(progress, "change", (t) => {
-    setBeamLine(beamLineAt(t));
-    const typed =
-      t < 0.62
-        ? 0
-        : Math.min(
-            SUBTITLE.length,
-            Math.floor(((t - 0.62) / 0.26) * SUBTITLE.length),
-          );
-    setChars(t >= 0.96 ? 0 : typed);
-  });
-
-  // 粉笔下划线：第 4 行（seen.has…）在 t=0.52~0.64 画出，收尾时淡出
-  const underlineScale = useTransform(progress, [0.52, 0.64], [0, 1]);
-  const underlineOpacity = useTransform(progress, [0.92, 0.97], [1, 0]);
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 24 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1], delay: 0.3 }}
-      className="w-full max-w-2xl overflow-hidden rounded-2xl border border-board-700/60 bg-board-900/70 shadow-2xl backdrop-blur-md"
-    >
-      {/* 窗口栏 */}
-      <div className="flex items-center gap-1.5 border-b border-board-700/50 px-4 py-2.5">
-        <span className="size-2.5 rounded-full bg-beam-rose/70" />
-        <span className="size-2.5 rounded-full bg-beam-gold/70" />
-        <span className="size-2.5 rounded-full bg-beam-mint/70" />
-        <span className="ml-3 text-xs text-chalk-500">
-          学习页 · two-sum · 讲课模式
-        </span>
-      </div>
-
-      <div className="grid sm:grid-cols-5">
-        {/* 左：讲义（题面） */}
-        <div className="hidden border-r border-board-700/50 p-4 sm:col-span-2 sm:block">
-          <p className="font-chalk text-lg text-chalk-100">1. 两数之和</p>
-          <div className="mt-3 space-y-2">
-            {[88, 72, 80, 45].map((w, i) => (
-              <div
-                key={i}
-                className="h-2 rounded-full bg-board-700/70"
-                style={{ width: `${w}%` }}
-              />
-            ))}
-          </div>
-          <p className="mt-4 text-[11px] leading-relaxed text-chalk-500">
-            给定数组与 target，找出和为目标值的两个下标。
-          </p>
-        </div>
-
-        {/* 右：黑板（代码） */}
-        <div className="relative p-4 sm:col-span-3">
-          <pre className="relative text-[12px] leading-6 text-chalk-300">
-            {/* Spotlight Beam：滑动迁移的聚光灯 */}
-            <motion.div
-              className="pointer-events-none absolute inset-x-0 rounded-sm"
-              style={{
-                height: LINE_H,
-                background:
-                  "radial-gradient(ellipse 90% 100% at 30% 50%, rgba(255, 209, 102, 0.22), transparent 75%)",
-              }}
-              initial={false}
-              animate={{
-                y: beamLine < 0 ? 0 : beamLine * LINE_H,
-                opacity: beamLine < 0 ? 0 : 1,
-              }}
-              transition={{
-                y: { type: "spring", stiffness: 200, damping: 26 },
-                opacity: { duration: 0.25 },
-              }}
-            >
-              <span className="absolute inset-y-0 left-0 w-[2px] rounded-full bg-beam-gold" />
-            </motion.div>
-
-            {CODE_LINES.map((line, i) => (
-              <div key={i} className="relative whitespace-pre">
-                {line}
-                {i === 3 && (
-                  /* Chalk Underline：手绘粉笔下划线 */
-                  <motion.span
-                    className="absolute -bottom-0.5 left-4 h-[3px] w-40 origin-left -rotate-[0.8deg] rounded-full bg-beam-gold"
-                    style={{
-                      scaleX: underlineScale,
-                      opacity: underlineOpacity,
-                      filter:
-                        "drop-shadow(0 0 3px rgba(255, 209, 102, 0.55))",
-                    }}
-                  />
-                )}
-              </div>
-            ))}
-          </pre>
-        </div>
-      </div>
-
-      {/* 字幕条：打字机 */}
-      <div className="flex h-11 items-center border-t border-board-700/50 bg-board-950/60 px-4">
-        <span className="font-chalk text-lg text-chalk-100">
-          {SUBTITLE.slice(0, chars)}
-        </span>
-        {chars > 0 && (
-          <motion.span
-            className="ml-0.5 inline-block h-4 w-[2px] rounded-full bg-beam-gold"
-            animate={{ opacity: [1, 0.2, 1] }}
-            transition={{ duration: 0.9, repeat: Infinity, ease: "easeInOut" }}
-          />
-        )}
-        {chars === 0 && (
-          <span className="text-xs text-chalk-700">字幕待命中…</span>
-        )}
-      </div>
-    </motion.div>
-  );
-}
-
-/* ---------- 特性卡片 ---------- */
-
-const cardVariants: Variants = {
-  idle: {},
-  hover: {},
-};
-
-function FeatureCard({
-  title,
-  desc,
-  children,
-}: {
-  title: string;
-  desc: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <motion.div
-      variants={cardVariants}
-      initial="idle"
-      whileHover="hover"
-      whileTap="idle"
-      className="group rounded-xl border border-board-700/50 bg-board-900/60 p-5 backdrop-blur-sm transition-colors hover:border-beam-gold/40"
-    >
-      <div className="flex h-10 items-center">{children}</div>
-      <h3 className="mt-3 font-chalk text-xl text-chalk-100">{title}</h3>
-      <p className="mt-1 text-sm leading-relaxed text-chalk-500">{desc}</p>
-    </motion.div>
-  );
-}
-
-const rippleRing: Variants = {
-  idle: { scale: 1, opacity: 0 },
-  hover: {
-    scale: [1, 1.6],
-    opacity: [0.7, 0],
-    transition: { duration: 0.9, repeat: Infinity, ease: "easeOut" },
-  },
-};
-
-const playNudge: Variants = {
-  idle: { x: 0 },
-  hover: {
-    x: [0, 5, 0],
-    transition: { duration: 0.8, repeat: Infinity, ease: "easeInOut" },
-  },
-};
-
-const sparkle = (delay: number): Variants => ({
-  idle: { scale: 0, opacity: 0 },
-  hover: {
-    scale: [0, 1, 0.6],
-    opacity: [0, 1, 0.8],
-    transition: { duration: 0.9, repeat: Infinity, delay },
-  },
-});
-
-const barGrow = (i: number): Variants => ({
-  idle: { scaleY: 0.3 },
-  hover: {
-    scaleY: 1,
-    transition: { type: "spring", stiffness: 300, damping: 18, delay: i * 0.07 },
-  },
-});
-
-/* ---------- 页面 ---------- */
+/* 第一次来，按这个顺序走 */
+const GET_STARTED = [
+  { title: "先听一节试试", desc: "打开「两数之和」，跟着光走一遍，看看这种上课方式合不合你胃口。", href: "/problem/two-sum" },
+  IS_DEMO
+    ? { title: "装到自己电脑上", desc: "觉得好用，就把 AlgoStage 装到自己电脑上，接上你的 AI，100 道题都能听。", href: REPO_URL }
+    : { title: "接上你的 AI", desc: "在设置里填上 AI 账号的钥匙，老师就能给其余的题备课了。", href: "/settings" },
+  { title: "挑下一题", desc: "回到路线图，按章节一题一题往下学。", href: "/roadmap" },
+];
 
 export default function LandingPage() {
-  return (
-    <div className="mx-auto max-w-6xl px-6">
-      {/* 首屏 */}
-      <section className="flex flex-col items-center pb-20 pt-16 text-center sm:pt-24">
-        <motion.h1
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
-          className="font-chalk text-5xl text-chalk-100 [text-shadow:0_0_24px_rgba(244,241,232,0.2)] sm:text-7xl"
-        >
-          AlgoStage
-        </motion.h1>
-        <motion.p
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1], delay: 0.12 }}
-          className="mt-4 text-lg text-chalk-300 sm:text-xl"
-        >
-          像老师站在黑板前讲课一样学算法
-        </motion.p>
-        <motion.p
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.7, delay: 0.24 }}
-          className="mt-2 text-sm text-chalk-500"
-        >
-          AI 讲到哪，聚光灯就打到哪 · LeetCode Hot 100 · 纯本地运行
-        </motion.p>
+  const counts = new Map<string, number>();
+  for (const p of HOT100) counts.set(p.category, (counts.get(p.category) ?? 0) + 1);
 
-        <div className="mt-12 flex w-full justify-center">
-          <EffectsShow />
+  return (
+    <div className="mx-auto max-w-6xl px-4 sm:px-6">
+      {/* ── 首屏：论点 + 正在上课的黑板 ── */}
+      <section className="grid grid-cols-1 items-center gap-x-12 gap-y-12 pt-12 pb-20 sm:pt-16 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:pt-20">
+        <div>
+          <p className="font-mono text-[11px] tracking-[0.14em] text-chalk-500 uppercase">
+            LeetCode 热题 100 · 一题一堂课
+          </p>
+          <h1 className="chalk mt-4 text-[3.4rem] leading-[1.05] text-chalk-100 sm:text-7xl">
+            老师讲到哪，
+            <br />
+            <span className="text-beam-gold">光</span>就照到哪。
+          </h1>
+          <p className="mt-6 max-w-[34rem] text-[16px] leading-7 text-chalk-300">
+            刷题最难的往往不是写代码，而是看不懂别人为什么这么想。AlgoStage 请来一位 AI 老师，站在黑板前一步步讲给你听：讲到哪一行，光就照到哪一行；关键的地方，用粉笔给你划出来。
+          </p>
+          <div className="mt-8 flex flex-wrap items-center gap-3">
+            <Link
+              href="/problem/two-sum"
+              className="group inline-flex items-center gap-2 rounded-full bg-beam-gold px-6 py-3 text-sm font-semibold text-on-accent transition-transform duration-200 hover:scale-[1.03] active:scale-95"
+              style={{ filter: "drop-shadow(0 0 16px color-mix(in srgb, var(--color-beam-gold) 35%, transparent))" }}
+            >
+              听第一堂课：两数之和
+              <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
+            </Link>
+            <Link
+              href="/roadmap"
+              className="inline-flex items-center gap-2 rounded-full border border-board-600 px-5 py-3 text-sm text-chalk-300 transition-colors hover:border-chalk-500 hover:text-chalk-100"
+            >
+              <MapIcon size={15} />
+              看路线图
+            </Link>
+          </div>
+          <dl className="mt-10 grid max-w-sm grid-cols-3 gap-4 border-t border-board-700/60 pt-5">
+            {[
+              { k: "道题", v: HOT100.length },
+              { k: "个章节", v: HOT100_CATEGORIES.length },
+              { k: "种教学手势", v: EFFECT_WHITELIST.length },
+            ].map((s) => (
+              <div key={s.k}>
+                <dt className="sr-only">{s.k}</dt>
+                <dd>
+                  <span className="font-mono text-2xl text-chalk-100 tabular-nums">{s.v}</span>
+                  <span className="ml-1 text-xs text-chalk-500">{s.k}</span>
+                </dd>
+              </div>
+            ))}
+          </dl>
         </div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, delay: 0.5 }}
-          className="mt-12"
-        >
-          <Link
-            href="/roadmap"
-            className="inline-block rounded-full bg-beam-gold px-8 py-3 text-sm font-semibold text-board-950 transition-transform duration-200 hover:scale-105 active:scale-95"
-            style={{ filter: "drop-shadow(0 0 16px rgba(255, 209, 102, 0.35))" }}
-          >
-            开始刷题 →
-          </Link>
-        </motion.div>
+        <DemoBoard />
       </section>
 
-      {/* 特性卡片 */}
-      <section className="grid gap-4 pb-24 sm:grid-cols-2 lg:grid-cols-4">
-        <FeatureCard
-          title="教鞭特效讲解"
-          desc="聚光灯、粉笔划线、注意力涟漪——AI 的手指点到哪，你的眼睛就跟到哪。"
-        >
-          <span className="relative flex size-8 items-center justify-center">
-            <motion.span
-              variants={rippleRing}
-              className="absolute inset-0 rounded-full border-2 border-beam-gold"
-            />
-            <span
-              className="size-3 rounded-full bg-beam-gold"
-              style={{ filter: "drop-shadow(0 0 6px rgba(255,209,102,0.8))" }}
-            />
-          </span>
-        </FeatureCard>
+      {/* ── 六种教学手势 ── */}
+      <section className="border-t border-board-700/50 py-20" aria-labelledby="gestures">
+        <div className="mb-10 max-w-2xl">
+          <h2 id="gestures" className="chalk text-4xl text-chalk-100 sm:text-5xl">
+            六种教学手势
+          </h2>
+          <p className="mt-2 text-[15px] leading-7 text-chalk-500">
+            好老师讲课，手和粉笔都不会闲着。AlgoStage 把这些小动作搬到了屏幕上，每一下都是在帮你看清重点。把鼠标移到卡片上看看。
+          </p>
+        </div>
+        <GestureCards />
+      </section>
 
-        <FeatureCard
-          title="本地 Playground"
-          desc="浏览器沙箱里随时上台自己写代码，测试全过触发粉笔礼花。"
-        >
-          <span className="flex items-center gap-1 rounded-md border border-board-700/70 bg-board-950/80 px-3 py-1.5 font-mono text-sm text-beam-mint">
-            <motion.span variants={playNudge}>▶</motion.span> run
-          </span>
-        </FeatureCard>
+      {/* ── 一堂课怎么上 ── */}
+      <section className="border-t border-board-700/50 py-20" aria-labelledby="flow">
+        <h2 id="flow" className="chalk text-4xl text-chalk-100 sm:text-5xl">
+          一堂课怎么上
+        </h2>
+        <ol className="mt-10 grid gap-x-8 gap-y-10 sm:grid-cols-2 lg:grid-cols-4">
+          {LESSON_FLOW.map((s, i) => (
+            <li key={s.name} className="relative">
+              <div className="flex items-center gap-3">
+                <span className="chalk flex size-10 shrink-0 items-center justify-center rounded-full border border-chalk-500/50 text-2xl text-beam-gold">
+                  {i + 1}
+                </span>
+                <h3 className="text-lg font-semibold text-chalk-100">{s.name}</h3>
+                {i < LESSON_FLOW.length - 1 && (
+                  <span className="hidden h-px flex-1 border-t border-dashed border-chalk-700 lg:block" aria-hidden="true" />
+                )}
+              </div>
+              <p className="mt-3 text-sm leading-6 text-chalk-500">{s.desc}</p>
+            </li>
+          ))}
+        </ol>
+      </section>
 
-        <FeatureCard
-          title="BYOK 内嵌 AI"
-          desc="自带 API Key，DeepSeek / Claude / Gemini 随你选，Key 只存在本机。"
-        >
-          <span className="relative flex size-8 items-center justify-center">
-            <svg
-              viewBox="0 0 24 24"
-              className="size-5 text-beam-violet"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-            >
-              <circle cx="8" cy="8" r="4" />
-              <path d="M11 11l9 9m-3-3l2.5-2.5M16 16l2-2" />
-            </svg>
-            {[0, 0.3, 0.6].map((d, i) => (
-              <motion.span
-                key={i}
-                variants={sparkle(d)}
-                className="absolute size-1 rounded-full bg-beam-violet"
-                style={{
-                  top: `${[2, 24, 8][i]}px`,
-                  left: `${[26, 28, 0][i]}px`,
-                }}
-              />
+      {/* ── 课程表 ── */}
+      <section className="border-t border-board-700/50 py-20" aria-labelledby="syllabus">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h2 id="syllabus" className="chalk text-4xl text-chalk-100 sm:text-5xl">
+              课程表
+            </h2>
+            <p className="mt-2 text-[15px] text-chalk-500">
+              按 LeetCode 热题 100 的章节排课，从哈希一路讲到动态规划，由浅入深。
+            </p>
+          </div>
+          <Link href="/roadmap" className="inline-flex items-center gap-1.5 text-sm text-beam-gold hover:underline">
+            打开完整路线图 <ArrowRight size={14} />
+          </Link>
+        </div>
+        <ol className="mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-board-700/60 bg-board-700/60 sm:grid-cols-3 lg:grid-cols-6">
+          {HOT100_CATEGORIES.map((c, i) => (
+            <li key={c} className="bg-board-900">
+              <Link
+                href={`/roadmap#chapter-${i + 1}`}
+                className="flex h-full flex-col gap-1 px-4 py-4 transition-colors hover:bg-board-800"
+              >
+                <span className="font-mono text-[11px] text-chalk-700 tabular-nums">
+                  第 {i + 1} 章
+                </span>
+                <span className="chalk text-2xl leading-tight text-chalk-100">{c}</span>
+                <span className="text-xs text-chalk-500">{counts.get(c) ?? 0} 题</span>
+              </Link>
+            </li>
+          ))}
+          <li className="flex flex-col justify-center bg-board-900 px-4 py-4 text-xs leading-5 text-chalk-500">
+            共 {HOT100.length} 题
+            <br />
+            每题都能开课
+          </li>
+        </ol>
+      </section>
+
+      {/* ── 你的电脑就是教室 ── */}
+      <section className="grid items-center gap-10 border-t border-board-700/50 py-20 lg:grid-cols-2" aria-labelledby="setup">
+        <div>
+          <h2 id="setup" className="chalk text-4xl text-chalk-100 sm:text-5xl">
+            {IS_DEMO ? "先在这里，听一堂课" : "你的电脑，就是教室"}
+          </h2>
+          <p className="mt-3 max-w-[30rem] text-[15px] leading-7 text-chalk-500">
+            {IS_DEMO
+              ? "「两数之和」这一课已经备好，打开就能听。其他题目也可以先读题、练习，体验版会按浏览器记住你的学习进度。想让老师讲全部 100 道题，可以把 AlgoStage 装到自己电脑上，再接上你常用的 AI。"
+              : "做过的题、学习记录，都只留在你自己的电脑上，哪儿也不去。第一课「两数之和」老师已经备好了，打开就能听。想听其余 99 道题，在设置里接上你常用的 AI 就行，DeepSeek、Claude、Gemini 都可以。"}
+          </p>
+        </div>
+        <div className="board-surface board-frame rounded-xl p-[6px]">
+          <ol className="flex flex-col gap-5 px-6 py-6">
+            {GET_STARTED.map((s, i) => (
+              <li key={s.title} className="flex gap-4">
+                <span className="chalk flex size-9 shrink-0 items-center justify-center rounded-full border border-chalk-500/50 text-xl text-beam-gold">
+                  {i + 1}
+                </span>
+                <div className="min-w-0">
+                  <Link href={s.href} className="chalk text-2xl leading-tight text-chalk-100 hover:text-beam-gold">
+                    {s.title}
+                  </Link>
+                  <p className="mt-0.5 text-sm leading-6 text-chalk-500">{s.desc}</p>
+                </div>
+              </li>
             ))}
-          </span>
-        </FeatureCard>
-
-        <FeatureCard
-          title="个人看板"
-          desc="热力图、掌握度生长图、独立性指标——每一次 AC 都会开花。"
-        >
-          <span className="flex h-8 items-end gap-1">
-            {[0.5, 0.8, 0.6, 1].map((h, i) => (
-              <motion.span
-                key={i}
-                variants={barGrow(i)}
-                className="w-2 origin-bottom rounded-sm bg-beam-gold/80"
-                style={{ height: `${h * 100}%` }}
-              />
-            ))}
-          </span>
-        </FeatureCard>
+          </ol>
+        </div>
       </section>
     </div>
   );

@@ -253,7 +253,7 @@ export default function CodeEditor({
   return (
     <div
       ref={containerRef}
-      className="h-full w-full overflow-hidden rounded-xl border border-board-700 bg-board-900"
+      className="h-full w-full overflow-hidden bg-board-900"
       style={{ height }}
     />
   );

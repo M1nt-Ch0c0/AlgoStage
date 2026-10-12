@@ -1,0 +1,37 @@
+name: algostage-demo
+
+services:
+  web:
+    image: algostage-demo:20261008
+    build:
+      context: ..
+      network: host
+      args:
+        BASE_PATH: /algostage
+        DEMO: "1"
+    container_name: algostage-demo-algostage
+    restart: unless-stopped
+    init: true
+    ports:
+      - "127.0.0.1:3100:3000"
+    volumes:
+      - data:/data
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/algostage', {signal: AbortSignal.timeout(5000)}).then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  data:
+    name: algostage-demo-algostage-data

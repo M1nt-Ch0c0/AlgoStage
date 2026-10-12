@@ -6,6 +6,7 @@
 import { streamObject } from "ai";
 import { createHash } from "crypto";
 import { NextRequest } from "next/server";
+import { IS_DEMO } from "@/lib/runtime";
 import { createModel, byokFromEnv, type ByokConfig } from "@/lib/agent/provider";
 import { buildLecturePrompt } from "@/lib/agent/modes/lecture";
 import { teachingScriptSchema } from "@/lib/teaching/schema";
@@ -24,10 +25,17 @@ export async function POST(req: NextRequest) {
     byok?: ByokConfig;
     language?: "zh" | "en";
   };
+  // 在线体验版不调用任何 AI：不代用他人的 Key，也不做模型请求中转
+  if (IS_DEMO) {
+    return Response.json(
+      { error: "DEMO", message: "在线体验版只备好了「两数之和」这一课。把 AlgoStage 装到自己电脑上，接上你的 AI，就能听全部 100 题。" },
+      { status: 403 },
+    );
+  }
   const byok = body.byok ?? byokFromEnv();
   if (!byok) {
     return Response.json(
-      { error: "NO_BYOK", message: "请先在设置页配置 API Key 与模型" },
+      { error: "NO_BYOK", message: "老师还没接上 AI，先去设置里接一下吧。" },
       { status: 400 },
     );
   }

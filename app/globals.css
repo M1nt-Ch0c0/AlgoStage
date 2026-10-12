@@ -3,20 +3,21 @@
 /*
  * AlgoStage · Chalkboard Dark 设计 token
  * 详见 docs/02-frontend-design.md §2
+ * 字体变量（--font-inter 等）由 app/layout.tsx 的 next/font 注入。
  */
 @theme {
-  /* 黑板底色：带绿意的深灰 */
-  --color-board-950: #0b0f0e;
-  --color-board-900: #111716;
-  --color-board-800: #1a2220;
-  --color-board-700: #263231;
-  --color-board-600: #33403f;
+  /* 黑板底色：带绿意的石板灰，像真正的黑板 */
+  --color-board-950: #0c1311;
+  --color-board-900: #121b18;
+  --color-board-800: #1a2521;
+  --color-board-700: #26332e;
+  --color-board-600: #35443e;
 
   /* 粉笔色阶 */
   --color-chalk-100: #f4f1e8;
   --color-chalk-300: #cfc9b8;
-  --color-chalk-500: #8f887a;
-  --color-chalk-700: #5d594e;
+  --color-chalk-500: #918a7c;
+  --color-chalk-700: #5f5b50;
 
   /* 聚光灯光谱（特效专用荧光系） */
   --color-beam-gold: #ffd166;
@@ -27,26 +28,47 @@
 
   /* 功能色 */
   --color-accent: #ffd166;
+  --color-on-accent: #17130a; /* 金色实底按钮上的文字 */
   --color-success: #52e0a4;
   --color-danger: #ff5d8f;
 
+  /* 黑板木框与粉笔槽 */
+  --color-frame: #3a2c1f;
+  --color-frame-edge: #54402c;
+
   /* 字体 */
-  --font-sans: "Inter", "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", "Maple Mono NF", ui-monospace, monospace;
-  --font-chalk: "Caveat", "Zhi Mang Xing", "Long Cang", cursive;
+  --font-sans: var(--font-inter), "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), "Maple Mono NF", ui-monospace, "SFMono-Regular", monospace;
+  --font-chalk: var(--font-caveat), var(--font-longcang), "Kaiti SC", "STKaiti", cursive;
 }
 
-/* Paper Light 主题 */
+/* Paper Light 主题：米纸讲义。黑板（代码区）在两种主题下都保持黑板本色。 */
 [data-theme="light"] {
-  --color-board-950: #faf7f0;
-  --color-board-900: #f1ede2;
-  --color-board-800: #e4dfd1;
-  --color-board-700: #d2ccbc;
-  --color-board-600: #b8b2a2;
-  --color-chalk-100: #1c2321;
-  --color-chalk-300: #3a4441;
-  --color-chalk-500: #6a736f;
-  --color-chalk-700: #9aa19d;
+  color-scheme: light;
+  --color-board-950: #f7f3ea;
+  --color-board-900: #fffcf5;
+  --color-board-800: #efe9dc;
+  --color-board-700: #ddd5c4;
+  --color-board-600: #c4bba8;
+  --color-chalk-100: #1b2220;
+  --color-chalk-300: #39433f;
+  --color-chalk-500: #646d68;
+  --color-chalk-700: #949b96;
+
+  /* 光谱压深一档，保证在纸面上可读 */
+  --color-beam-gold: #b97c00;
+  --color-beam-cyan: #0b7fa8;
+  --color-beam-violet: #7446d6;
+  --color-beam-rose: #cc2f63;
+  --color-beam-mint: #10875a;
+  --color-accent: #b97c00;
+  --color-on-accent: #fffaf0;
+  --color-success: #10875a;
+  --color-danger: #cc2f63;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
 }
 
 html,
@@ -55,16 +77,107 @@ body {
 }
 
 body {
-  background: var(--color-board-950);
+  background-color: var(--color-board-950);
   color: var(--color-chalk-100);
   font-family: var(--font-sans);
-  /* 粉笔灰噪点质感（docs/02 §2.2） */
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+  /*
+   * 粉笔灰质感（docs/02 §2.2）：一层细噪点 + 几团被板擦抹过的淡粉笔灰。
+   * 固定在视口上，滚动时黑板不动，像真的挂在墙上。
+   */
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E"),
+    radial-gradient(ellipse 38% 22% at 18% 12%, color-mix(in srgb, var(--color-chalk-100) 3.5%, transparent), transparent 70%),
+    radial-gradient(ellipse 30% 18% at 82% 38%, color-mix(in srgb, var(--color-chalk-100) 2.5%, transparent), transparent 70%),
+    radial-gradient(ellipse 45% 20% at 40% 88%, color-mix(in srgb, var(--color-chalk-100) 3%, transparent), transparent 70%);
+  background-attachment: fixed;
 }
 
 code,
 pre {
   font-family: var(--font-mono);
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-beam-gold) 35%, transparent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-beam-gold);
+  outline-offset: 2px;
+}
+
+/* ===== 粉笔字（docs/02 §2.2）===== */
+
+/*
+ * .chalk：手写粉笔字。噪点蒙版让笔画有颗粒感（粉笔在板面上跳过的空隙），
+ * 再加一层极淡的光晕。蒙版只影响字形透明度，不影响布局。
+ */
+.chalk {
+  font-family: var(--font-chalk);
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='90' height='90'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.4' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -2.2 1.75'/%3E%3C/filter%3E%3Crect width='90' height='90' filter='url(%23g)'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='90' height='90'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.4' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -2.2 1.75'/%3E%3C/filter%3E%3Crect width='90' height='90' filter='url(%23g)'/%3E%3C/svg%3E");
+  text-shadow: 0 0 18px color-mix(in srgb, currentColor 18%, transparent);
+}
+
+[data-theme="light"] .chalk {
+  /* 纸面上是墨迹，不发光 */
+  text-shadow: none;
+}
+
+/* 板书标题统一用平衡换行 */
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+
+/* ===== 黑板实物：木框 + 粉笔槽 ===== */
+
+/* 代码黑板在两种主题下都保持黑板本色 */
+.board-surface {
+  --color-board-950: #0c1311;
+  --color-board-900: #121b18;
+  --color-board-800: #1a2521;
+  --color-board-700: #26332e;
+  --color-board-600: #35443e;
+  --color-chalk-100: #f4f1e8;
+  --color-chalk-300: #cfc9b8;
+  --color-chalk-500: #918a7c;
+  --color-chalk-700: #5f5b50;
+  --color-beam-gold: #ffd166;
+  --color-beam-cyan: #4cc9f0;
+  --color-beam-violet: #b388ff;
+  --color-beam-rose: #ff5d8f;
+  --color-beam-mint: #52e0a4;
+  color: var(--color-chalk-100);
+  background-color: var(--color-board-900);
+}
+
+.board-frame {
+  border: 1px solid var(--color-frame-edge);
+  box-shadow:
+    inset 0 0 0 5px var(--color-frame),
+    inset 0 0 0 6px rgba(0, 0, 0, 0.35),
+    0 18px 40px -18px rgba(0, 0, 0, 0.6);
+}
+
+/* 粉笔槽：黑板下沿的木条，放几截粉笔 */
+.chalk-tray {
+  position: relative;
+  height: 14px;
+  background: linear-gradient(to bottom, var(--color-frame-edge), var(--color-frame));
+  border-radius: 0 0 6px 6px;
+  box-shadow: 0 6px 14px -8px rgba(0, 0, 0, 0.7);
+}
+
+.chalk-stick {
+  position: absolute;
+  top: 2px;
+  height: 6px;
+  border-radius: 3px;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.18);
 }
 
 /* ===== 特效系统关键帧（docs/02 §4）===== */
@@ -119,6 +232,12 @@ pre {
   50% {
     transform: translateY(-2px);
   }
+}
+
+/* 细滚动条，别让系统滚动条破坏黑板 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-board-600) transparent;
 }
 
 /* 降级：尊重系统减少动效偏好（docs/02 §7） */

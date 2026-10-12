@@ -1,24 +1,29 @@
 "use client";
 
+import { apiPath, IS_DEMO, REPO_URL } from "@/lib/runtime";
 import { useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
+import { Eye, EyeOff } from "lucide-react";
+import { PageHeader, Panel } from "@/components/ui/page-header";
+import { applyTheme as persistTheme, readTheme } from "@/lib/theme";
 
 /* 与 lib/agent/provider.ts 的 PROVIDER_PRESETS 保持一致（静态文案，客户端内联避免打包服务端 SDK） */
 const PROVIDER_OPTIONS = [
   {
     id: "openai-compatible",
-    label: "OpenAI 兼容（DeepSeek / 通义 / Moonshot / OpenAI…）",
+    label: "DeepSeek 等",
+    hint: "DeepSeek · 通义 · Kimi · OpenAI",
     baseURL: "https://api.deepseek.com/v1",
     modelExample: "deepseek-chat",
   },
-  { id: "anthropic", label: "Anthropic Claude", modelExample: "claude-sonnet-4-5" },
-  { id: "google", label: "Google Gemini", modelExample: "gemini-2.5-flash" },
+  { id: "anthropic", label: "Anthropic", hint: "Claude 系列", modelExample: "claude-sonnet-4-5" },
+  { id: "google", label: "Google", hint: "Gemini 系列", modelExample: "gemini-2.5-flash" },
 ] as const;
 
 const EFFECT_LEVELS = [
-  { id: "full", label: "华丽", desc: "全部特效" },
-  { id: "calm", label: "克制", desc: "关闭压暗与激光教鞭" },
-  { id: "minimal", label: "极简", desc: "只留静态高亮" },
+  { id: "full", label: "华丽", desc: "所有特效都打开" },
+  { id: "calm", label: "克制", desc: "少一些特效，更安静" },
+  { id: "minimal", label: "极简", desc: "只标出正在讲的那一行" },
 ] as const;
 
 const SPEEDS = [
@@ -33,26 +38,8 @@ type TestState =
   | { kind: "ok"; message: string }
   | { kind: "fail"; message: string };
 
-function Card({
-  title,
-  desc,
-  children,
-}: {
-  title: string;
-  desc?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="rounded-2xl border border-board-700/50 bg-board-900/50 p-6 backdrop-blur-md">
-      <h2 className="font-chalk text-2xl text-chalk-100">{title}</h2>
-      {desc && <p className="mt-1 text-xs text-chalk-500">{desc}</p>}
-      <div className="mt-5">{children}</div>
-    </section>
-  );
-}
-
 const inputClass =
-  "w-full rounded-lg border border-board-700/70 bg-board-950/70 px-3 py-2 text-sm text-chalk-100 outline-none transition-colors placeholder:text-chalk-700 focus:border-beam-gold/60";
+  "w-full rounded-lg border border-board-700/70 bg-board-950/70 px-3 py-2.5 text-sm text-chalk-100 outline-none transition-colors placeholder:text-chalk-700 focus:border-beam-gold/60";
 
 const labelClass = "mb-1.5 block text-xs text-chalk-500";
 
@@ -63,24 +50,24 @@ export default function SettingsPage() {
   const [apiKeyMasked, setApiKeyMasked] = useState("");
   const [model, setModel] = useState("");
   const [theme, setTheme] = useState("dark");
+  const [showKey, setShowKey] = useState(false);
   const [effectLevel, setEffectLevel] = useState("full");
   const [narrationSpeed, setNarrationSpeed] = useState("22");
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const [testState, setTestState] = useState<TestState>({ kind: "idle" });
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // 主题以本机 localStorage 为准（导航栏也能切换），这里只读当前值
+  useEffect(() => setTheme(readTheme()), []);
+
   useEffect(() => {
-    fetch("/api/settings")
+    fetch(apiPath("/api/settings"))
       .then((r) => r.json())
       .then(({ settings }) => {
         if (settings.provider) setProvider(settings.provider);
         if (settings.baseURL) setBaseURL(settings.baseURL);
         if (settings.apiKeyMasked) setApiKeyMasked(settings.apiKeyMasked);
         if (settings.model) setModel(settings.model);
-        if (settings.theme) {
-          setTheme(settings.theme);
-          document.documentElement.dataset.theme = settings.theme;
-        }
         if (settings.effectLevel) setEffectLevel(settings.effectLevel);
         if (settings.narrationSpeed) setNarrationSpeed(settings.narrationSpeed);
       })
@@ -89,7 +76,7 @@ export default function SettingsPage() {
 
   function applyTheme(next: string) {
     setTheme(next);
-    document.documentElement.dataset.theme = next;
+    persistTheme(next === "light" ? "light" : "dark");
   }
 
   async function save() {
@@ -104,7 +91,7 @@ export default function SettingsPage() {
     if (provider === "openai-compatible") settings.baseURL = baseURL;
     if (apiKey) settings.apiKey = apiKey;
     try {
-      await fetch("/api/settings", {
+      await fetch(apiPath("/api/settings"), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ settings }),
@@ -135,20 +122,20 @@ export default function SettingsPage() {
           ...(provider === "openai-compatible" ? { baseURL } : {}),
         };
       }
-      const res = await fetch("/api/hint", {
+      const res = await fetch(apiPath("/api/hint"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
       const data = await res.json();
       if (res.ok && data.hint) {
-        setTestState({ kind: "ok", message: "连通成功，模型回复正常。" });
+        setTestState({ kind: "ok", message: "接通了，老师可以上课了。" });
       } else if (data.error === "NO_BYOK") {
         setTestState({
           kind: "fail",
           message: apiKey
-            ? "服务端未读到 Key，请先保存再试。"
-            : "请先输入 API Key 再测试（已保存的 Key 不回传给浏览器）。",
+            ? "还没保存，先点「保存设置」再测试。"
+            : "先填上 API Key 再测试。为了安全，之前存的钥匙不会显示出来，需要再输入一次。",
         });
       } else {
         setTestState({
@@ -157,61 +144,86 @@ export default function SettingsPage() {
         });
       }
     } catch {
-      setTestState({ kind: "fail", message: "网络错误，无法连接到本地服务。" });
+      setTestState({ kind: "fail", message: "连不上 AlgoStage，刷新页面再试一次。" });
     }
   }
 
   const preset = PROVIDER_OPTIONS.find((p) => p.id === provider);
 
-  return (
-    <div className="mx-auto max-w-3xl px-6 pb-24 pt-10">
-      <header>
-        <h1 className="font-chalk text-4xl text-chalk-100">设置</h1>
-        <p className="mt-1 text-sm text-chalk-500">
-          所有配置只写入本机 SQLite，不出你的电脑
-        </p>
-      </header>
+  const choice = (on: boolean) =>
+    `rounded-xl border px-4 py-3 text-left transition-colors ${
+      on ? "border-beam-gold/70 bg-beam-gold/[0.07]" : "border-board-700 hover:border-board-600"
+    }`;
 
-      <div className="mt-8 space-y-5">
-        {/* BYOK */}
-        <Card
-          title="BYOK · 自带模型"
-          desc="请求从本机直连厂商，Key 仅存本地数据库，服务端只回传掩码。"
+  return (
+    <div className="mx-auto max-w-3xl px-4 pt-10 pb-24 sm:px-6">
+      <PageHeader
+        eyebrow="本机设置"
+        title="设置"
+        desc={IS_DEMO ? "在线体验版里，这些设置只对你自己的浏览器生效。" : "这些设置只保存在你自己的电脑上。"}
+      />
+
+      <div className="mt-8 flex flex-col gap-5">
+        {/* BYOK：在线体验版不接 AI */}
+        {IS_DEMO ? (
+          <Panel title="接上你的 AI 老师" desc="这是在线体验版，暂时不能接 AI。">
+            <p className="max-w-[60ch] text-sm leading-6 text-chalk-300">
+              在线体验版里，「两数之和」这一课已经备好，可以完整地听。想让老师给其余 99 道题备课，把 AlgoStage 装到你自己的电脑上，再接上你常用的 AI 就行。你的 AI 钥匙只会存在你自己的电脑里。
+            </p>
+            <a
+              href={REPO_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-4 inline-block rounded-full bg-beam-gold px-5 py-2 text-sm font-semibold text-on-accent transition-transform hover:scale-105"
+            >
+              看看怎么装到自己电脑上
+            </a>
+          </Panel>
+        ) : (
+        <Panel
+          title="接上你的 AI 老师"
+          desc="AlgoStage 自己不带 AI，需要接上一个你自己的 AI 账号，老师才能给其余的题备课。账号的钥匙（API Key）只存在这台电脑上，不会发给任何人。"
         >
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className={labelClass} htmlFor="provider">
-                Provider
-              </label>
-              <select
-                id="provider"
-                value={provider}
-                onChange={(e) => setProvider(e.target.value)}
-                className={inputClass}
-              >
-                {PROVIDER_OPTIONS.map((p) => (
-                  <option key={p.id} value={p.id}>
+          <fieldset>
+            <legend className={labelClass}>用哪家的 AI</legend>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {PROVIDER_OPTIONS.map((p) => (
+                <label key={p.id} className={`${choice(provider === p.id)} cursor-pointer`}>
+                  <input
+                    type="radio"
+                    name="provider"
+                    id={`provider-${p.id}`}
+                    value={p.id}
+                    checked={provider === p.id}
+                    onChange={() => setProvider(p.id)}
+                    className="sr-only"
+                  />
+                  <span className={`block text-sm font-medium ${provider === p.id ? "text-beam-gold" : "text-chalk-100"}`}>
                     {p.label}
-                  </option>
-                ))}
-              </select>
+                  </span>
+                  <span className="mt-0.5 block text-xs text-chalk-500">{p.hint}</span>
+                </label>
+              ))}
             </div>
-            <div>
+          </fieldset>
+
+          <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            <div className={provider === "openai-compatible" ? "" : "sm:col-span-2"}>
               <label className={labelClass} htmlFor="model">
-                Model Name
+                模型名
               </label>
               <input
                 id="model"
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
-                placeholder={preset?.modelExample ?? "model-name"}
-                className={inputClass}
+                placeholder={`例如 ${preset?.modelExample ?? "model-name"}`}
+                className={`${inputClass} font-mono`}
               />
             </div>
             {provider === "openai-compatible" && (
-              <div className="sm:col-span-2">
+              <div>
                 <label className={labelClass} htmlFor="baseURL">
-                  Base URL
+                  接口地址（一般不用改）
                 </label>
                 <input
                   id="baseURL"
@@ -225,26 +237,36 @@ export default function SettingsPage() {
             <div className="sm:col-span-2">
               <label className={labelClass} htmlFor="apiKey">
                 API Key
+                {apiKeyMasked && <span className="ml-2 text-beam-mint">已配置 {apiKeyMasked}</span>}
               </label>
-              <input
-                id="apiKey"
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder={
-                  apiKeyMasked ? `已配置（${apiKeyMasked}），输入以更换` : "sk-…"
-                }
-                className={`${inputClass} font-mono`}
-                autoComplete="off"
-              />
+              <div className="relative">
+                <input
+                  id="apiKey"
+                  type={showKey ? "text" : "password"}
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder={apiKeyMasked ? "输入新的 Key 以更换" : "sk-…"}
+                  className={`${inputClass} pr-10 font-mono`}
+                  autoComplete="off"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowKey((v) => !v)}
+                  aria-label={showKey ? "隐藏 Key" : "显示 Key"}
+                  className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-chalk-500 hover:text-chalk-100"
+                >
+                  {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </div>
             </div>
           </div>
 
-          <div className="mt-5 flex flex-wrap items-center gap-3">
+          <div className="mt-6 flex flex-wrap items-center gap-3 border-t border-board-700/60 pt-5">
             <button
+              type="button"
               onClick={save}
               disabled={saveState === "saving"}
-              className="inline-flex items-center gap-2 rounded-full bg-beam-gold px-5 py-2 text-sm font-semibold text-board-950 transition-transform duration-150 hover:scale-105 active:scale-95 disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-full bg-beam-gold px-5 py-2 text-sm font-semibold text-on-accent transition-transform duration-150 hover:scale-105 active:scale-95 disabled:opacity-60"
             >
               {saveState === "saved" ? (
                 <motion.svg
@@ -264,121 +286,105 @@ export default function SettingsPage() {
                   />
                 </motion.svg>
               ) : null}
-              {saveState === "saving"
-                ? "保存中…"
-                : saveState === "saved"
-                  ? "已保存"
-                  : "保存"}
+              {saveState === "saving" ? "保存中…" : saveState === "saved" ? "已保存" : "保存设置"}
             </button>
             <button
+              type="button"
               onClick={testConnection}
               disabled={testState.kind === "testing"}
-              className="rounded-full border border-board-700 px-5 py-2 text-sm text-chalk-300 transition-colors hover:border-beam-cyan/60 hover:text-beam-cyan disabled:opacity-60"
+              className="rounded-full border border-board-600 px-5 py-2 text-sm text-chalk-300 transition-colors hover:border-beam-cyan/60 hover:text-beam-cyan disabled:opacity-60"
             >
-              {testState.kind === "testing" ? "测试请求中…" : "测一下"}
+              {testState.kind === "testing" ? "正在试着连一下…" : "测试连接"}
             </button>
             {testState.kind === "ok" && (
-              <motion.span
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="text-sm text-beam-mint"
-              >
+              <motion.span initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-sm text-beam-mint">
                 ✓ {testState.message}
               </motion.span>
             )}
             {testState.kind === "fail" && (
-              <motion.span
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="text-sm text-beam-rose"
-              >
+              <motion.span initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-sm text-beam-rose">
                 ✗ {testState.message}
               </motion.span>
             )}
           </div>
-        </Card>
+        </Panel>
+        )}
 
         {/* 外观 */}
-        <Card title="外观与动效" desc="动效强度是与系统减少动效偏好取更保守者生效。">
-          <div className="space-y-5">
-            <div>
-              <span className={labelClass}>主题</span>
-              <div className="flex gap-2">
+        <Panel title="外观与动效" desc="主题点一下就换。如果系统里开了「减少动态效果」，特效也会跟着收敛。">
+          <div className="flex flex-col gap-6">
+            <fieldset>
+              <legend className={labelClass}>主题</legend>
+              <div className="grid grid-cols-2 gap-2">
                 {[
-                  { id: "dark", label: "Chalkboard Dark" },
-                  { id: "light", label: "Paper Light" },
+                  { id: "dark", label: "Chalkboard Dark", desc: "墨绿黑板，光束最亮", bg: "#121b18", ink: "#f4f1e8", accent: "#ffd166" },
+                  { id: "light", label: "Paper Light", desc: "米色讲义纸，适合白天", bg: "#fffcf5", ink: "#1b2220", accent: "#b97c00" },
                 ].map((t) => (
-                  <button
-                    key={t.id}
-                    onClick={() => applyTheme(t.id)}
-                    className={`rounded-full border px-4 py-1.5 text-sm transition-colors ${
-                      theme === t.id
-                        ? "border-beam-gold/70 text-beam-gold"
-                        : "border-board-700 text-chalk-500 hover:text-chalk-300"
-                    }`}
-                  >
-                    {t.label}
+                  <button key={t.id} type="button" aria-pressed={theme === t.id} onClick={() => applyTheme(t.id)} className={choice(theme === t.id)}>
+                    <span
+                      className="mb-3 flex h-12 items-end gap-1.5 rounded-lg border border-black/10 px-3 pb-2.5"
+                      style={{ background: t.bg }}
+                      aria-hidden="true"
+                    >
+                      <span className="h-1.5 w-10 rounded-full" style={{ background: t.ink, opacity: 0.8 }} />
+                      <span className="h-1.5 w-6 rounded-full" style={{ background: t.accent }} />
+                      <span className="h-1.5 w-8 rounded-full" style={{ background: t.ink, opacity: 0.35 }} />
+                    </span>
+                    <span className={`block text-sm font-medium ${theme === t.id ? "text-beam-gold" : "text-chalk-100"}`}>{t.label}</span>
+                    <span className="mt-0.5 block text-xs text-chalk-500">{t.desc}</span>
                   </button>
                 ))}
               </div>
-            </div>
+            </fieldset>
 
-            <div>
-              <span className={labelClass}>特效强度</span>
+            {/* 特效和语速随「保存设置」写入，在线体验版不保存 */}
+            {!IS_DEMO && (
+              <>
+            <fieldset>
+              <legend className={labelClass}>特效强度</legend>
               <div className="grid gap-2 sm:grid-cols-3">
                 {EFFECT_LEVELS.map((l) => (
-                  <button
-                    key={l.id}
-                    onClick={() => setEffectLevel(l.id)}
-                    className={`rounded-xl border p-3 text-left transition-colors ${
-                      effectLevel === l.id
-                        ? "border-beam-gold/70 bg-beam-gold/5"
-                        : "border-board-700 hover:border-chalk-700"
-                    }`}
-                  >
-                    <span
-                      className={`block text-sm ${effectLevel === l.id ? "text-beam-gold" : "text-chalk-100"}`}
-                    >
-                      {l.label}
-                    </span>
-                    <span className="mt-0.5 block text-xs text-chalk-500">
-                      {l.desc}
-                    </span>
+                  <button key={l.id} type="button" aria-pressed={effectLevel === l.id} onClick={() => setEffectLevel(l.id)} className={choice(effectLevel === l.id)}>
+                    <span className={`block text-sm font-medium ${effectLevel === l.id ? "text-beam-gold" : "text-chalk-100"}`}>{l.label}</span>
+                    <span className="mt-0.5 block text-xs text-chalk-500">{l.desc}</span>
                   </button>
                 ))}
               </div>
-            </div>
+            </fieldset>
 
-            <div>
-              <span className={labelClass}>字幕语速</span>
+            <fieldset>
+              <legend className={labelClass}>字幕语速</legend>
               <div className="flex flex-wrap gap-2">
-                {SPEEDS.map((s) => (
+                {SPEEDS.map((sp) => (
                   <button
-                    key={s.id}
-                    onClick={() => setNarrationSpeed(s.id)}
+                    key={sp.id}
+                    type="button"
+                    aria-pressed={narrationSpeed === sp.id}
+                    onClick={() => setNarrationSpeed(sp.id)}
                     className={`rounded-full border px-4 py-1.5 text-sm transition-colors ${
-                      narrationSpeed === s.id
+                      narrationSpeed === sp.id
                         ? "border-beam-gold/70 text-beam-gold"
                         : "border-board-700 text-chalk-500 hover:text-chalk-300"
                     }`}
                   >
-                    {s.label}
+                    {sp.label}
                   </button>
                 ))}
               </div>
-            </div>
+            </fieldset>
 
-            <p className="text-xs text-chalk-700">
-              外观与动效改动随「保存」一并写入本地设置。
-            </p>
+            <p className="text-xs text-chalk-700">特效和语速要点「保存设置」才会记住。</p>
+              </>
+            )}
           </div>
-        </Card>
+        </Panel>
 
         {/* 数据 */}
-        <Card title="数据" desc="所有数据仅存在本机 SQLite（prisma/algostage.db），不经过任何云服务器。">
+        <Panel title="数据" desc={IS_DEMO ? "你在体验版里的学习记录只跟着这个浏览器走，可以导出一份留着。" : "你的学习记录只存在这台电脑上。想备份或者换电脑，可以先导出一份。"}>
           <button
+            type="button"
             onClick={async () => {
-              const res = await fetch("/api/dashboard");
+              const res = await fetch(apiPath("/api/dashboard"));
               const data = await res.json();
               const blob = new Blob([JSON.stringify(data, null, 2)], {
                 type: "application/json",
@@ -390,11 +396,11 @@ export default function SettingsPage() {
               a.click();
               URL.revokeObjectURL(url);
             }}
-            className="rounded-full border border-board-700 px-5 py-2 text-sm text-chalk-300 transition-colors hover:border-beam-gold/60 hover:text-beam-gold"
+            className="rounded-full border border-board-600 px-5 py-2 text-sm text-chalk-300 transition-colors hover:border-beam-gold/60 hover:text-beam-gold"
           >
-            导出看板数据（JSON）
+            导出学习记录
           </button>
-        </Card>
+        </Panel>
       </div>
     </div>
   );

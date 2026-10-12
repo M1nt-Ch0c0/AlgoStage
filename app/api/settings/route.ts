@@ -3,6 +3,7 @@
  */
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db/prisma";
+import { IS_DEMO } from "@/lib/runtime";
 
 export const runtime = "nodejs";
 
@@ -18,6 +19,8 @@ const ALLOWED_KEYS = new Set([
 ]);
 
 export async function GET() {
+  // 在线体验版：访客之间不共享任何设置
+  if (IS_DEMO) return Response.json({ settings: {} });
   const rows = await prisma.setting.findMany({ where: { userId: USER_ID } });
   const settings = Object.fromEntries(rows.map((r) => [r.key, r.value]));
   // 不回传完整 Key，只回掩码
@@ -30,6 +33,9 @@ export async function GET() {
 }
 
 export async function PUT(req: NextRequest) {
+  if (IS_DEMO) {
+    return Response.json({ error: "DEMO", message: "在线体验版不能保存设置。" }, { status: 403 });
+  }
   const body = (await req.json()) as { settings: Record<string, string> };
   for (const [key, value] of Object.entries(body.settings ?? {})) {
     if (!ALLOWED_KEYS.has(key)) continue;

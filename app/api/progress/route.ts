@@ -4,12 +4,13 @@
  */
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db/prisma";
+import { currentUserId } from "@/lib/visitor";
 
 export const runtime = "nodejs";
 
-const USER_ID = "local-default";
 
 export async function POST(req: NextRequest) {
+  const USER_ID = await currentUserId();
   const body = (await req.json()) as
     | {
         type: "submission";

@@ -50,17 +50,22 @@ export default function PlayerControls() {
   }, [hasScript, playing, play, pause, next, prev]);
 
   const btn =
-    "flex h-8 w-8 items-center justify-center rounded-full text-chalk-300 transition-colors hover:bg-board-700 hover:text-chalk-100 disabled:pointer-events-none disabled:opacity-30";
+    "flex size-8 items-center justify-center rounded-full text-chalk-300 transition-colors hover:bg-board-700 hover:text-chalk-100 disabled:pointer-events-none disabled:opacity-30";
+  const pill = (on: boolean) =>
+    `rounded-full px-2.5 py-0.5 text-xs transition-colors ${
+      on ? "bg-board-700 text-beam-gold" : "text-chalk-500 hover:text-chalk-300"
+    }`;
 
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-board-700 bg-board-800/70 px-4 py-2 backdrop-blur">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-board-700/70 bg-board-900/90 px-3 py-2 backdrop-blur-md">
       {/* 步进控制 */}
       <div className="flex items-center gap-1">
-        <button className={btn} onClick={prev} disabled={!hasScript || currentIndex === 0} aria-label="上一步">
+        <button type="button" className={btn} onClick={prev} disabled={!hasScript || currentIndex === 0} aria-label="上一步">
           <SkipBack size={16} />
         </button>
         <button
-          className={`${btn} bg-board-700 text-beam-gold hover:text-beam-gold`}
+          type="button"
+          className="flex size-9 items-center justify-center rounded-full bg-beam-gold text-on-accent transition-transform hover:scale-105 disabled:pointer-events-none disabled:bg-board-700 disabled:text-chalk-700"
           onClick={() => (playing ? pause() : play())}
           disabled={!hasScript}
           aria-label={playing ? "暂停" : "播放"}
@@ -68,6 +73,7 @@ export default function PlayerControls() {
           {playing ? <Pause size={16} /> : <Play size={16} className="ml-0.5" />}
         </button>
         <button
+          type="button"
           className={btn}
           onClick={next}
           disabled={!hasScript || currentIndex >= steps.length - 1}
@@ -77,61 +83,59 @@ export default function PlayerControls() {
         </button>
       </div>
 
-      {/* 步骤指示 + 时间线 */}
-      {hasScript && (
-        <div className="flex min-w-0 flex-1 items-center gap-3">
-          <span className="shrink-0 font-mono text-xs text-chalk-500">
-            {Math.min(currentIndex + 1, steps.length)}/{steps.length}
-          </span>
-          <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-1">
-            {steps.map((s, i) => (
-              <button
-                key={s.id}
-                onClick={() => goto(i)}
-                aria-label={`跳到第 ${i + 1} 步`}
-                className="group shrink-0 p-0.5"
-              >
-                <span
-                  className={`block h-2 w-2 rounded-full transition-transform group-hover:scale-150 ${
-                    i === currentIndex
-                      ? "scale-125 bg-beam-gold"
-                      : i < currentIndex
-                        ? "bg-chalk-500"
-                        : "bg-board-600"
-                  }`}
-                />
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* 步骤指示 + 时间线：每一步一段，可点击跳转 */}
+      <div className="flex min-w-[10rem] flex-1 items-center gap-3">
+        {hasScript ? (
+          <>
+            <span className="shrink-0 font-mono text-xs text-chalk-300 tabular-nums">
+              第 {Math.min(currentIndex + 1, steps.length)} / {steps.length} 步
+            </span>
+            <div className="flex min-w-0 flex-1 items-center gap-1">
+              {steps.map((s, i) => (
+                <button
+                  type="button"
+                  key={s.id}
+                  onClick={() => goto(i)}
+                  aria-label={`跳到第 ${i + 1} 步`}
+                  aria-current={i === currentIndex ? "step" : undefined}
+                  className="group flex h-5 min-w-0 flex-1 items-center"
+                >
+                  <span
+                    className={`block h-1.5 w-full rounded-full transition-colors ${
+                      i === currentIndex
+                        ? "bg-beam-gold"
+                        : i < currentIndex
+                          ? "bg-chalk-500 group-hover:bg-chalk-300"
+                          : "bg-board-600 group-hover:bg-chalk-700"
+                    }`}
+                  />
+                </button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <span className="text-xs text-chalk-700">还没开始上课</span>
+        )}
+      </div>
 
       {/* 语速 */}
-      <div className="flex items-center gap-1 rounded-full bg-board-900/60 p-0.5">
+      <div role="group" aria-label="语速" className="flex items-center gap-0.5 rounded-full border border-board-700/70 p-0.5">
         {SPEEDS.map((v) => (
-          <button
-            key={v}
-            onClick={() => setSpeed(v)}
-            className={`rounded-full px-2 py-0.5 font-mono text-xs transition-colors ${
-              speed === v ? "bg-board-700 text-beam-gold" : "text-chalk-500 hover:text-chalk-300"
-            }`}
-          >
+          <button type="button" key={v} onClick={() => setSpeed(v)} aria-pressed={speed === v} className={`${pill(speed === v)} font-mono`}>
             {v}x
           </button>
         ))}
       </div>
 
       {/* 特效强度档位（docs/02 §5.6） */}
-      <div className="flex items-center gap-1 rounded-full bg-board-900/60 p-0.5">
+      <div role="group" aria-label="特效强度" className="flex items-center gap-0.5 rounded-full border border-board-700/70 p-0.5">
         {LEVELS.map((l) => (
           <button
+            type="button"
             key={l.value}
             onClick={() => setEffectLevel(l.value)}
-            className={`rounded-full px-2.5 py-0.5 text-xs transition-colors ${
-              effectLevel === l.value
-                ? "bg-board-700 text-beam-gold"
-                : "text-chalk-500 hover:text-chalk-300"
-            }`}
+            aria-pressed={effectLevel === l.value}
+            className={pill(effectLevel === l.value)}
           >
             {l.label}
           </button>

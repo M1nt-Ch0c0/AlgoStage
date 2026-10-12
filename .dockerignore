@@ -1,0 +1,9 @@
+node_modules
+.next
+.git
+.env*
+prisma/*.db
+prisma/*.db-journal
+docs/assets
+CLAUDE.md
+tsconfig.tsbuildinfo

@@ -65,12 +65,15 @@ export default function NarrationBar() {
 
   return (
     <div
-      className="cursor-pointer rounded-xl border border-board-700 bg-board-800/70 px-4 py-3 backdrop-blur"
+      className={`rounded-xl border px-4 py-3 transition-colors ${
+        step ? "cursor-pointer border-beam-gold/25 bg-board-800/80" : "border-board-700 bg-board-800/50"
+      }`}
       onClick={() => setTyped(total)}
-      title={done ? undefined : "点击显示全文"}
+      title={step && !done ? "点击显示全文" : undefined}
     >
+      <p className="mb-1 font-mono text-[10px] tracking-widest text-chalk-700">字幕</p>
       {step ? (
-        <p className="min-h-6 text-[15px] leading-6 text-chalk-100">
+        <p className="min-h-12 text-[15px] leading-6 text-chalk-100">
           <InlinePartial segments={segments} count={typed} />
           {/* 粉笔光标 */}
           <span
@@ -85,8 +88,8 @@ export default function NarrationBar() {
           />
         </p>
       ) : (
-        <p className="min-h-6 text-[15px] leading-6 text-chalk-500">
-          点击顶栏「开始讲课」，AI 老师会指着黑板带你过一遍这题。
+        <p className="text-[15px] leading-6 text-chalk-500">
+          点「开始讲课」，老师说的每句话都会在这里一个字一个字出现。
         </p>
       )}
       {/* 隐藏全量文本供无障碍读取 */}
