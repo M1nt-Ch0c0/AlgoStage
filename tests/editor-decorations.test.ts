@@ -63,8 +63,12 @@ test("finished 回看排序步仍有 Monaco 装饰；异步加载和恢复代码
   try {
     await act(async () => root.render(createElement(CodeEditor, { value: code, readOnly: false, onChange: changed })));
     expect(container.querySelector(".beam-line")).toBeNull();
-    await act(async () => { loading.release(); await new Promise(resolve => setTimeout(resolve, 30)); });
-    expect(container.querySelector(".beam-line")?.getAttribute("data-line")).toBe("4");
+    await act(async () => { loading.release(); });
+    // Monaco 异步加载完成的时间不固定（高负载下可能远超 30ms），轮询等装饰出现，不依赖固定延时。
+    await vi.waitFor(async () => {
+      await act(async () => {});
+      expect(container.querySelector(".beam-line")?.getAttribute("data-line")).toBe("4");
+    }, { timeout: 5000, interval: 10 });
     await act(async () => root.render(createElement(CodeEditor, { value: code + "\n", readOnly: false, onChange: changed })));
     expect(container.querySelector(".beam-line")?.getAttribute("data-line")).toBe("4");
     expect(changed).not.toHaveBeenCalled(); // setValue 恢复全文不能冒充学生输入。
