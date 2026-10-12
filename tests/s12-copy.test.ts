@@ -55,11 +55,12 @@ describe("S12 版本号", () => {
     expect(lock.version).toBe("0.2.0-alpha.1");
     expect(lock.packages[""].version).toBe("0.2.0-alpha.1");
   });
-  it("deploy 镜像 tag 为 algostage-demo:0.2.0-alpha.1 且不残留裸 0.2.0 或 20261008", () => {
+  it("deploy 镜像 tag 为 algostage:0.2.0-alpha.1 且不残留裸 0.2.0 或 20261008", () => {
     for (const f of ["deploy/compose.yaml", "deploy/README.md"]) {
       const content = read(f);
-      expect(content).toContain("algostage-demo:0.2.0-alpha.1");
-      expect(content).not.toMatch(/algostage-demo:0\.2\.0(?!-alpha)/);
+      expect(content).toContain("algostage:0.2.0-alpha.1");
+      expect(content).not.toContain("algostage-demo:");
+      expect(content).not.toMatch(/algostage:0\.2\.0(?!-alpha)/);
       expect(content).not.toContain("20261008");
     }
   });
