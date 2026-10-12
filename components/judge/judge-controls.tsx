@@ -26,13 +26,14 @@ export default function JudgeControls({ detail, code, language, onLanguage, disa
       if (abort.signal.aborted) { setMessage("已取消运行，没有记录提交。"); return; }
       setResult(judged);
       if (judged.error) { setMessage("运行环境未能加载，请重试。"); return; }
-      const needsVerification = judged.verdict === "AC";
+      const needsVerification = judged.verdict === "AC" && language !== "python";
+      const clientAc = judged.verdict === "AC" && language === "python";
       setSaving(true);
       setMessage(needsVerification ? "本地用例通过，正在等待服务端判定…" : "正在保存提交…");
       const response = await fetch(apiPath(needsVerification ? "/api/judge" : "/api/progress"), {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(needsVerification ? { problemSlug: detail.slug, language, code } : {
-          type: "submission", problemSlug: detail.slug, language, code,
+          type: clientAc ? "client-ac" : "submission", problemSlug: detail.slug, language, code,
           verdict: judged.verdict, runtimeMs: Math.round(judged.runtimeMs),
         }),
       });

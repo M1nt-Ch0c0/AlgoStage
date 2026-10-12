@@ -51,6 +51,7 @@ model Submission {
   language    String
   verdict     String // AC | WA | RE | TLE
   runtimeMs   Int?
+  judgedBy    String   @default("server") // server | client（Python 只能浏览器判题）
   createdAt   DateTime @default(now())
   user        User     @relation(fields: [userId], references: [id])
 }
