@@ -42,6 +42,8 @@ docker exec cpa-nginx nginx -s reload
 
 只新增 Demo 的站点与代理片段。证书沿用现有 `certbot.timer` 自动续期，以及 `/etc/letsencrypt/renewal-hooks/deploy/reload-cpa-nginx` 的校验和重载钩子。
 
+讲解流使用 `application/x-ndjson`，响应带 `X-Accel-Buffering: no` 与 `Cache-Control: no-store, no-transform`。`/algostage/api/lecture` 使用独立 location，关闭代理缓冲、缓存及上下游压缩；共享代理片段的读超时为 300 秒，覆盖服务端 240 秒的生成上限并留出错误提示时间。更新时需同时安装 `nginx.conf` 和 `algostage-proxy.conf`；使用其他子路径时同步调整该 location。Demo 的 AI 禁用规则仍由应用执行。
+
 ## 检查与停止
 
 ```sh
