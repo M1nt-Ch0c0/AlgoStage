@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { apiPath } from "@/lib/runtime";
 import type { ProblemDetail } from "@/lib/content/types";
-import CodeEditor from "@/components/board/code-editor";
+import JudgeEditor from "@/components/judge/judge-editor";
+import JudgeSignature from "@/components/judge/judge-signature";
 import JudgeControls from "@/components/judge/judge-controls";
 export default function JudgePage() {
   const { slug } = useParams<{slug:string}>();
@@ -17,7 +18,10 @@ export default function JudgePage() {
   return <div className="mx-auto max-w-5xl space-y-4 px-4 py-8">
     <h1 className="chalk text-3xl text-chalk-100">{detail?.title ?? "正在加载题目…"} · 判题</h1>
     {error && <p role="alert">{error}</p>}
-    <div className="h-[32rem] overflow-hidden rounded-xl border border-board-700"><CodeEditor value={code} language={language} readOnly={false} onChange={setCode}/></div>
+    <div className="flex h-[32rem] flex-col overflow-hidden rounded-xl border border-board-700">
+      <JudgeSignature problem={detail?.judging} language={language}/>
+      <div className="min-h-0 flex-1"><JudgeEditor value={code} language={language} readOnly={false} onChange={setCode}/></div>
+    </div>
     <JudgeControls detail={detail} code={code} language={language} onLanguage={changeLanguage}/>
   </div>;
 }
