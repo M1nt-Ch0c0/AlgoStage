@@ -24,23 +24,38 @@ test("S1：请求 > 设置 > 环境变量；已保存 Key 可直接要提示且�
     assert.equal(settings.envConfigured, true);
     assert.equal(settings.settings.apiKey, undefined);
     assert.ok(!JSON.stringify(settings).includes("saved-test-key"));
-    // 保存了 Key 但模型名空白时，实际调用和页面展示都应回退到环境变量。
-    await f.save({ model: "  " });
-    assert.equal((await resolveByok())?.source, "env");
-    assert.equal((await (await GET()).json()).keySource, "env");
+    // 空白模型和地址逐字段回退，不能丢失设置页已保存的 Key。
+    await f.save({ model: "  ", baseURL: "" });
+    assert.deepEqual(await resolveByok(), { source: "settings", config: {
+      provider: "openai-compatible", apiKey: "saved-test-key", model: "env-model", baseURL: f.baseURL,
+    } });
+    assert.equal((await (await GET()).json()).keySource, "settings");
+    let response = await POST(request({ slug: "3sum", level: 1 }));
+    assert.equal(response.status, 200);
+    assert.deepEqual(f.calls.at(-1), { model: "env-model", key: "Bearer saved-test-key" });
     delete process.env.AI_MODEL;
     assert.equal((await resolveByok())?.config.model,"gpt-6.1-sol");
+    delete process.env.AI_API_KEY;
+    assert.equal((await resolveByok())?.source, "settings");
+    assert.equal((await (await GET()).json()).keySource, "settings");
+    // 设置页只指定模型与地址时，用环境 Key，来源仍为环境变量。
+    process.env.AI_API_KEY = "env-test-key";
+    process.env.AI_BASE_URL = "https://unused.invalid/v1";
+    await f.save({ apiKey: "  ", model: "saved-model", baseURL: f.baseURL });
+    assert.equal((await resolveByok())?.source, "env");
     assert.equal((await (await GET()).json()).keySource, "env");
+    response = await POST(request({ slug: "3sum", level: 1 }));
+    assert.equal(response.status, 200);
+    assert.deepEqual(f.calls.at(-1), { model: "saved-model", key: "Bearer env-test-key" });
     delete process.env.AI_API_KEY;
     assert.equal(await resolveByok(), null);
     assert.equal((await (await GET()).json()).keySource, "none");
-    await f.save({ model: "saved-model" });
-    assert.equal((await (await GET()).json()).keySource, "settings");
+    await f.save({ apiKey: "saved-test-key" });
     const incomplete = { provider: "google" as const, apiKey: "new-key", model: "" };
     assert.equal((await resolveByok(incomplete))?.source, "settings");
     const complete = { ...incomplete, model: "new-model" };
     assert.equal((await resolveByok(complete))?.source, "request");
-    const response = await POST(request({ slug: "3sum", level: 1 }));
+    response = await POST(request({ slug: "3sum", level: 1 }));
     assert.equal(response.status, 200);
     assert.ok((await response.json()).hint);
     assert.deepEqual(f.calls.at(-1), { model: "saved-model", key: "Bearer saved-test-key" });

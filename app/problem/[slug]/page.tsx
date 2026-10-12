@@ -14,7 +14,6 @@ import { useParams } from "next/navigation";
 import {
   ChevronRight,
   GraduationCap,
-  KeyRound,
   Lightbulb,
   Pencil,
   Play,
@@ -23,9 +22,10 @@ import {
 } from "lucide-react";
 import type { ProblemDetail } from "@/lib/content/types";
 import JudgeControls from "@/components/judge/judge-controls";
+import AiSetupPrompt from "@/components/settings/ai-setup-prompt";
 import { teachingScriptSchema } from "@/lib/teaching/schema";
 import { readLectureResponse } from "@/lib/player/lecture-response";
-import { loadLectureForPlayback } from "@/lib/player/load-lecture";
+import { cancelLectureForPlayback, loadLectureForPlayback } from "@/lib/player/load-lecture";
 import { TWO_SUM_SCRIPT } from "@/lib/content/scripts/two-sum";
 import { HOT100_CATEGORIES } from "@/lib/content/hot100";
 import {
@@ -65,6 +65,7 @@ export default function ProblemPage() {
   const { slug } = useParams<{ slug: string }>();
   const [detail, setDetail] = useState<ProblemDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [keySource, setKeySource] = useState<unknown>(null);
 
   const [practice, setPractice] = useState(false);
   const [code, setCode] = useState("");
@@ -85,6 +86,15 @@ export default function ProblemPage() {
   const status = usePlayerStore((s) => s.status);
   const stepCount = usePlayerStore((s) => s.steps.length);
   const { loadScript, play, reset } = usePlayerStore.getState();
+
+  useEffect(() => {
+    const abort = new AbortController();
+    setKeySource(null);
+    fetch(apiPath("/api/settings"), { signal: abort.signal })
+      .then(async res => { if (res.ok) setKeySource((await res.json()).keySource); })
+      .catch(() => {});
+    return () => abort.abort();
+  }, [slug]);
 
   useEffect(() => {
     setLectureBusy(false);
@@ -234,15 +244,25 @@ export default function ProblemPage() {
     }
   }, [slug, detail, language, loadScript, play]);
 
+  function cancelLecture(next = language) {
+    cancelLectureForPlayback(detail, next, {
+      abort: () => {
+        lectureAbort.current?.abort();
+        // 先解除旧请求所有权，晚到的回调不能覆盖 idle 或下一次备课。
+        lectureAbort.current = null;
+      },
+      reset,
+      setCode,
+    });
+    setLectureBusy(false);
+    setLectureProgress("");
+    setLectureError(null);
+    lastReportedRef.current = -1;
+  }
+
   function changeLanguage(next: "typescript" | "python") {
-    if (lectureAbort.current) {
-      lectureAbort.current.abort();
-      usePlayerStore.getState().stopStream();
-    }
+    cancelLecture(next);
     setLanguage(next);
-    setCode(
-      detail?.referenceSolutions?.find((s) => s.language === next)?.code ?? "",
-    );
   }
 
   // 提示阶梯
@@ -410,8 +430,7 @@ export default function ProblemPage() {
               aria-pressed={practice}
               onClick={() => {
                 // 上台自己写时，停止生成，避免后续步骤覆盖练习代码。
-                lectureAbort.current?.abort();
-                usePlayerStore.getState().stopStream();
+                if (!practice) cancelLecture();
                 setPractice(true);
               }}
               className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm transition-colors ${
@@ -451,9 +470,7 @@ export default function ProblemPage() {
             type="button"
             className="rounded-full border border-board-600 px-3 py-1"
             onClick={() => {
-              lectureAbort.current?.abort();
-              usePlayerStore.getState().stopStream();
-              setLectureProgress("备课已取消，未保存教案。");
+              cancelLecture();
             }}
           >
             取消备课
@@ -652,13 +669,7 @@ export default function ProblemPage() {
                     <p>
                       这道题老师还没备课。点「开始讲课」，老师会先花十几秒准备一下。
                     </p>
-                    <Link
-                      href="/settings"
-                      className="flex items-center gap-1.5 text-beam-gold hover:underline"
-                    >
-                      <KeyRound size={14} />
-                      还没接上 AI？去设置
-                    </Link>
+                    <AiSetupPrompt keySource={keySource} />
                   </>
                 )}
               </div>

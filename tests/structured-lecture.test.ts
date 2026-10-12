@@ -383,6 +383,28 @@ describe("工具教案：单调用修复、白名单、流式播放、失败不�
     assert.equal(f.calls.length - before, 2);
     assert.equal(await f.prisma.lectureScriptCache.count(), 0);
   });
+  test("工具修复与上游重试都计入进度，后续成功步骤不使 attempt 倒退", async () => {
+    let round = 0;
+    f.setStreamFailures(1);
+    f.setToolsReply(() => {
+      switch (++round) {
+        case 1: return [{ name: "add_step", input: step("s1") }];
+        case 2: return [{ name: "add_step", input: step("s2", 999) }];
+        case 3: return [{ name: "add_step", input: step("s2", 2) }];
+        default: return [{ name: "finish", input: {} }];
+      }
+    });
+    const attempts: number[] = [];
+    const result = await generateLecture({
+      config, prompt: "工具教案", metadata, referenceCode: "a\nb",
+      validate: value => validateScript(value, "a\nb"),
+      onEvent: event => { if (event.type === "progress") attempts.push(event.attempt); },
+    });
+    assert.equal(result.ok, true);
+    assert.ok(attempts.includes(2));
+    assert.equal(attempts.at(-1), 3);
+    for (let i = 1; i < attempts.length; i++) assert.ok(attempts[i] >= attempts[i - 1]);
+  });
   test("DeepSeek 直接工具模式关闭不兼容的默认推理，没有 response_format", async () => {
     f.setRequireNonThinkingTools(true);
     await f.save({ model: "deepseek-flash" });

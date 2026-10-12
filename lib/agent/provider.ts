@@ -50,15 +50,25 @@ export function byokFromEnv(): ByokConfig | null {
   });
 }
 
-/** 服务端调用和设置页来源展示共用解析逻辑，缺模型的保存配置不能覆盖环境配置。 */
+/** Key 来源只由实际使用的密钥决定，不受模型或接口地址来源影响。 */
+export function savedKeySource(settings: Record<string, string>): "settings" | "env" | "none" {
+  if (settings.apiKey?.trim()) return "settings";
+  return process.env.AI_API_KEY?.trim() ? "env" : "none";
+}
+
+/** 按字段合并：设置页非空值优先，空白字段才回退到环境变量或默认值。 */
 export function resolveSavedByok(settings: Record<string, string>): {
   config: ByokConfig;
   source: "settings" | "env";
 } | null {
-  const saved = completeByok({ ...settings, baseURL: settings.baseURL || undefined });
-  if (saved) return { config: saved, source: "settings" };
-  const config = byokFromEnv();
-  return config ? { config, source: "env" } : null;
+  const source = savedKeySource(settings);
+  const config = completeByok({
+    provider: settings.provider?.trim() || process.env.AI_PROVIDER?.trim() || "openai-compatible",
+    apiKey: settings.apiKey?.trim() || process.env.AI_API_KEY?.trim(),
+    model: settings.model?.trim() || process.env.AI_MODEL?.trim() || DEFAULT_MODEL,
+    baseURL: settings.baseURL?.trim() || process.env.AI_BASE_URL?.trim() || undefined,
+  });
+  return config && source !== "none" ? { config, source } : null;
 }
 
 /** 请求中的完整配置优先，其次使用本机保存的配置，最后回退到环境变量。 */

@@ -158,13 +158,15 @@ export async function generateLecture(input: {
       stepId?: string;
     }[] = [];
     let noCalls = 0,
-      upstreamRetries = 0;
+      upstreamRetries = 0,
+      toolRetries = 0;
     for (let round = 1; round <= 48; round++) {
       if (controller.signal.aborted) return cancelled;
       const repair = repairs[0];
+      if (repair) toolRetries++;
       input.onEvent?.({
         type: "progress",
-        attempt: repair?.attempt ?? 1,
+        attempt: 1 + toolRetries + upstreamRetries,
         phase: repair ? "retry" : "generating",
         message: repair
           ? `第 ${repair.step} 步调用未通过校验，正在重试该调用（${repair.attempt}/${TOOL_RETRY_LIMIT + 1}）；已生成步骤保留…`
@@ -247,7 +249,7 @@ export async function generateLecture(input: {
               if (applied.added)
                 input.onEvent?.({
                   type: "progress",
-                  attempt: activeRepair?.attempt ?? 1,
+                  attempt: 1 + toolRetries + upstreamRetries,
                   phase: "generating",
                   message: `已生成 ${kit.steps.length} 步，正在备课并播放…`,
                 });
@@ -328,7 +330,7 @@ export async function generateLecture(input: {
             type: "upstream_error",
             fields: ["connection"],
             step: kit.steps.length + 1,
-            attempt: upstreamRetries + 1,
+            attempt: 1 + toolRetries + upstreamRetries,
             status: status ?? null,
           }),
         );
@@ -342,7 +344,7 @@ export async function generateLecture(input: {
             );
           input.onEvent?.({
             type: "progress",
-            attempt: upstreamRetries + 1,
+            attempt: 1 + toolRetries + upstreamRetries,
             phase: "retry",
             message: "模型连接中断，正在重试本轮调用；已生成步骤保留…",
           });

@@ -4,6 +4,17 @@ import type { TeachingScript } from "@/lib/teaching/types";
 import { teachingScriptSchema } from "@/lib/teaching/schema";
 import { validateScript } from "@/lib/teaching/validated-script";
 
+/** 取消、切换语言和进入练习共用：停止请求、清空所有锚点，再恢复相应题解。 */
+export function cancelLectureForPlayback(detail: ProblemDetail | null, language: "typescript" | "python", controls: {
+  abort: () => void;
+  reset: () => void;
+  setCode: (code: string) => void;
+}) {
+  controls.abort();
+  controls.reset();
+  controls.setCode(detail?.referenceSolutions?.find(s => s.language === language)?.code ?? "");
+}
+
 export function loadLectureForPlayback(value: unknown, detail: ProblemDetail, controls: {
   setCode: (code: string) => void;
   loadScript: (script: TeachingScript) => void;

@@ -4,7 +4,7 @@
 import { z } from "zod";
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { byokFromEnv, resolveSavedByok } from "@/lib/agent/provider";
+import { byokFromEnv, savedKeySource } from "@/lib/agent/provider";
 import { IS_DEMO } from "@/lib/runtime";
 
 export const runtime = "nodejs";
@@ -28,7 +28,7 @@ export async function GET() {
   const rows = await prisma.setting.findMany({ where: { userId: USER_ID } });
   const settings = Object.fromEntries(rows.map((r) => [r.key, r.value]));
   const envConfigured = Boolean(byokFromEnv());
-  const keySource = resolveSavedByok(settings)?.source ?? "none";
+  const keySource = savedKeySource(settings);
   // 不回传完整 Key，只回掩码
   if (settings.apiKey) {
     const k = settings.apiKey as string;
