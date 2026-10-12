@@ -1,6 +1,6 @@
 "use client";
 
-import { apiPath } from "@/lib/runtime";
+import { apiPath, IS_DEMO } from "@/lib/runtime";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { animate, motion } from "motion/react";
@@ -206,13 +206,15 @@ export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [problems, setProblems] = useState<ProblemWithStatus[] | null>(null);
   const [error, setError] = useState(false);
+  const [unavailable, setUnavailable] = useState(false);
 
   useEffect(() => {
-    Promise.all([
-      fetch(apiPath("/api/dashboard")).then((r) => r.json()),
-      fetch(apiPath("/api/problems")).then((r) => r.json()),
-    ])
+    if (IS_DEMO) return;
+    Promise.all(["/api/dashboard", "/api/problems"].map((path) =>
+      fetch(apiPath(path)).then((r) => r.ok ? r.json() : undefined),
+    ))
       .then(([d, p]) => {
+        if (!d || !p) { setUnavailable(true); return; }
         setData(d);
         setProblems(p.problems);
       })
@@ -228,15 +230,22 @@ export default function DashboardPage() {
   }, [problems]);
 
   const masteryTop = useMemo(() => {
-    if (!data) return [];
-    return Object.entries(data.mastery)
+    return Object.entries(data?.mastery ?? {})
       .filter(([, v]) => v > 0)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 8);
   }, [data]);
 
+  if (IS_DEMO || unavailable) {
+    return (
+      <div className="mx-auto max-w-6xl px-4 pt-10 pb-24 sm:px-6">
+        <PageHeader eyebrow="成绩单" title="个人看板" desc="体验版没有学习看板" />
+      </div>
+    );
+  }
+
   const nextUp = problems?.slice().sort((a, b) => a.order - b.order).find((p) => !isSolved(p.status));
-  const isEmpty = data !== null && data.totalSubmissions === 0;
+  const isEmpty = data?.totalSubmissions === 0;
 
   return (
     <div className="mx-auto max-w-6xl px-4 pt-10 pb-24 sm:px-6">
