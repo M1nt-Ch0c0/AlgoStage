@@ -18,7 +18,7 @@ afterAll(() => vi.unstubAllGlobals());
 async function run(input: JudgeInput) {
   messages.length = 0;
   await scope.onmessage!({ data: input } as MessageEvent);
-  expect(messages.at(-1)).toEqual({ type: "done" });
+  expect(messages.at(-1)).toMatchObject({ type: "done" });
   return messages.filter(message => message.type === "case-result").map(message => message.result);
 }
 
@@ -61,11 +61,16 @@ test("Python worker loads real local Pyodide and reports output, mutations and i
   await scope.onmessage!({ data: { type: "init", indexURL: "/missing-pyodide/" } } as MessageEvent);
   expect(messages).toEqual([{ type: "unavailable" }]);
   messages.length = 0;
-  await scope.onmessage!({ data: { type: "init", indexURL: pythonIndexURL } } as MessageEvent);
+  const interruptBuffer = new Uint8Array(new SharedArrayBuffer(1));
+  await scope.onmessage!({ data: { type: "init", indexURL: pythonIndexURL, interruptBuffer } } as MessageEvent);
   expect(messages).toEqual([{ type: "ready" }]);
   const input = { language: "python" as const, problem: JUDGING_SPECS["two-sum"] };
+  Atomics.store(interruptBuffer, 0, 2);
   expect(await run({ ...input, code: "def twoSum(*args):\n    return None" })).toMatchObject([{ verdict: "WA" }]);
+  expect(messages.at(-1)).toEqual({ type: "done", reusable: true });
+  expect(interruptBuffer[0]).toBe(0);
   expect(await run({ ...input, code: "raise RuntimeError('broken')" })).toMatchObject([{ verdict: "RE" }]);
+  expect(messages.at(-1)).toEqual({ type: "done", reusable: false });
   const problem = { ...input.problem, comparison: "exact" as const, mutatesArg: 0,
     cases: [{ args: [[1, 2]], expected: [2, 1] }, { args: [[3, 4]], expected: [4, 3] }] };
   const results = await run({ ...input, problem, code: "def twoSum(nums):\n    print('汉')\n    nums.reverse()" });
