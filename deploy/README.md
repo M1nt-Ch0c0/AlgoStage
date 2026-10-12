@@ -67,6 +67,10 @@ docker compose -f deploy/compose.yaml stop
 
 更新前可记录旧镜像 ID：`docker inspect algostage --format '{{.Image}}'`。需要回滚时把该镜像标记回 `algostage:0.2.0-alpha.1`，再执行 `up -d --force-recreate --wait`。停止或回滚容器不会删除学习数据；不要运行带 `-v` 的 `down` 命令。
 
+## 环境变量（自托管）
+
+`HINT_TIMEOUT_MS` 控制提示接口上游超时（毫秒，默认 60000）。
+
 ## 上线验证
 
 生产构建与 TypeScript 检查通过，容器健康，nginx 配置检查通过。真实 HTTPS 站点的浏览器检查覆盖内置讲课、学习进度记录、学习看板、设置（BYOK）、页面导航、移动端与减少动效模式，浏览器错误数为 0。证书到期日为 2027-01-06，自动续期已启用。
