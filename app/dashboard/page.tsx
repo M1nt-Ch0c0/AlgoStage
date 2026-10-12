@@ -238,7 +238,7 @@ export default function DashboardPage() {
   if (unavailable) {
     return (
       <div className="mx-auto max-w-6xl px-4 pt-10 pb-24 sm:px-6">
-        <PageHeader eyebrow="成绩单" title="个人看板" desc="体验版没有学习看板" />
+        <PageHeader eyebrow="成绩单" title="个人看板" desc="暂时打不开学习看板" />
       </div>
     );
   }
