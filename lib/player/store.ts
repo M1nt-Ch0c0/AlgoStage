@@ -32,6 +32,8 @@ interface PlayerState {
   stopStream: () => void;
   play: () => void;
   pause: () => void;
+  /** 完成态从第 0 步本地重播已生成的教案，不发起任何请求 */
+  replay: () => void;
   next: () => void;
   prev: () => void;
   goto: (index: number) => void;
@@ -114,6 +116,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   pause: () => set({ status: "paused" }),
+
+  replay: () => {
+    const { steps, receiving } = get();
+    // 只重播完整教案；流式中或无步骤时不动，重新生成走页面的备课流程。
+    if (!steps.length || receiving) return;
+    set({ currentIndex: 0, status: "playing" });
+  },
 
   next: () =>
     set((s) => {
