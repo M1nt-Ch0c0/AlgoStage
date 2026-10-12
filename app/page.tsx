@@ -4,7 +4,6 @@ import { DemoBoard } from "@/components/landing/demo-board";
 import { GestureCards } from "@/components/landing/gesture-cards";
 import { HOT100, HOT100_CATEGORIES } from "@/lib/content/hot100";
 import { EFFECT_WHITELIST } from "@/lib/teaching/types";
-import { IS_DEMO, REPO_URL } from "@/lib/runtime";
 
 /* 一堂课的四个环节（真实顺序：备课 → 上课 → 练习 → 复习） */
 const LESSON_FLOW = [
@@ -22,16 +21,14 @@ const LESSON_FLOW = [
   },
   {
     name: "复习",
-    desc: `做对的题，过几天老师会再考你一次，就挑你快要忘的时候。（即将上线）${IS_DEMO ? "体验版不记录学习进度，不会安排复习。" : ""}`,
+    desc: "做对的题，过几天老师会再考你一次，就挑你快要忘的时候。（即将上线）",
   },
 ];
 
 /* 第一次来，按这个顺序走 */
 const GET_STARTED = [
   { title: "先听一节试试", desc: "打开「两数之和」，跟着光走一遍，看看这种上课方式合不合你胃口。", href: "/problem/two-sum" },
-  IS_DEMO
-    ? { title: "装到自己电脑上", desc: "觉得好用，就把 AlgoStage 装到自己电脑上，接上你的 AI，100 道题都能听。", href: REPO_URL }
-    : { title: "接上你的 AI", desc: "在设置里填上 AI 账号的钥匙，老师就能给其余的题备课了。", href: "/settings" },
+  { title: "接上你的 AI", desc: "在设置里填上 AI 账号的钥匙，老师就能给其余的题备课了。", href: "/settings" },
   { title: "挑下一题", desc: "回到路线图，按章节一题一题往下学。", href: "/roadmap" },
 ];
 
@@ -170,12 +167,10 @@ export default function LandingPage() {
       <section className="grid items-center gap-10 border-t border-board-700/50 py-20 lg:grid-cols-2" aria-labelledby="setup">
         <div>
           <h2 id="setup" className="chalk text-4xl text-chalk-100 sm:text-5xl">
-            {IS_DEMO ? "先在这里，听一堂课" : "你的电脑，就是教室"}
+            你的电脑，就是教室
           </h2>
           <p className="mt-3 max-w-[30rem] text-[15px] leading-7 text-chalk-500">
-            {IS_DEMO
-              ? "「两数之和」这一课已经备好，打开就能听。其他题目也可以先读题、练习，体验版不记进度，没有看板。想让老师讲全部 100 道题，可以把 AlgoStage 装到自己电脑上，再接上你常用的 AI。"
-              : "做过的题、学习记录，都只留在你自己的电脑上，哪儿也不去。第一课「两数之和」老师已经备好了，打开就能听。想听其余 99 道题，在设置里接上你常用的 AI 就行，DeepSeek、Claude、Gemini 都可以。"}
+            做过的题、学习记录，都只留在你自己的电脑上，哪儿也不去。第一课「两数之和」老师已经备好了，打开就能听。想听其余 99 道题，在设置里接上你常用的 AI 就行，DeepSeek、Claude、Gemini 都可以。
           </p>
         </div>
         <div className="board-surface board-frame rounded-xl p-[6px]">

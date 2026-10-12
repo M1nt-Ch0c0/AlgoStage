@@ -3,7 +3,7 @@
 import { KeySourceBadge, type KeySource } from "@/components/settings/key-source-badge";
 import { DEFAULT_MODEL } from "@/lib/agent/defaults";
 import { savedEndpoint } from "@/lib/agent/saved-endpoint";
-import { apiPath, IS_DEMO, REPO_URL } from "@/lib/runtime";
+import { apiPath } from "@/lib/runtime";
 import { useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
 import { Eye, EyeOff } from "lucide-react";
@@ -169,26 +169,11 @@ export default function SettingsPage() {
       <PageHeader
         eyebrow="本机设置"
         title="设置"
-        desc={IS_DEMO ? "在线体验版里，这里只能切换主题，主题只在你这个浏览器里生效。" : "这些设置只保存在你自己的电脑上。"}
+        desc="这些设置只保存在你自己的电脑上。"
       />
 
       <div className="mt-8 flex flex-col gap-5">
-        {/* BYOK：在线体验版不接 AI */}
-        {IS_DEMO ? (
-          <Panel title="接上你的 AI 老师" desc="这是在线体验版，暂时不能接 AI。">
-            <p className="max-w-[60ch] text-sm leading-6 text-chalk-300">
-              在线体验版里，「两数之和」这一课已经备好，可以完整地听。想让老师给其余 99 道题备课，把 AlgoStage 装到你自己的电脑上，再接上你常用的 AI 就行。你的 AI 钥匙只会存在你自己的电脑里。
-            </p>
-            <a
-              href={REPO_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-4 inline-block rounded-full bg-beam-gold px-5 py-2 text-sm font-semibold text-on-accent transition-transform hover:scale-105"
-            >
-              看看怎么装到自己电脑上
-            </a>
-          </Panel>
-        ) : (
+        {/* BYOK */}
         <Panel
           title="接上你的 AI 老师"
           desc="AlgoStage 自己不带 AI，需要接上一个你自己的 AI 账号，老师才能给其余的题备课。账号的钥匙（API Key）只存在这台电脑上，不会发给任何人。"
@@ -333,7 +318,6 @@ export default function SettingsPage() {
             )}
           </div>
         </Panel>
-        )}
 
         {/* 外观 */}
         <Panel title="外观与动效" desc="主题点一下就换。如果系统里开了「减少动态效果」，特效也会跟着收敛。">
@@ -362,9 +346,6 @@ export default function SettingsPage() {
               </div>
             </fieldset>
 
-            {/* 特效和语速随「保存设置」写入，在线体验版不保存 */}
-            {!IS_DEMO && (
-              <>
             <fieldset>
               <legend className={labelClass}>特效强度</legend>
               <div className="grid gap-2 sm:grid-cols-3">
@@ -399,14 +380,12 @@ export default function SettingsPage() {
             </fieldset>
 
             <p className="text-xs text-chalk-700">特效和语速要点「保存设置」才会记住。</p>
-              </>
-            )}
           </div>
         </Panel>
 
         {/* 数据 */}
-        <Panel title="数据" desc={IS_DEMO ? "在线体验版不记录学习进度，也不提供学习数据导出。安装到自己电脑上后，即可记录和导出。" : "你的学习记录只存在这台电脑上。想备份或者换电脑，可以先导出一份。"}>
-          {!IS_DEMO && <button
+        <Panel title="数据" desc="你的学习记录只存在这台电脑上。想备份或者换电脑，可以先导出一份。">
+          <button
             type="button"
             onClick={async () => {
               const res = await fetch(apiPath("/api/dashboard"));
@@ -424,7 +403,7 @@ export default function SettingsPage() {
             className="rounded-full border border-board-600 px-5 py-2 text-sm text-chalk-300 transition-colors hover:border-beam-gold/60 hover:text-beam-gold"
           >
             导出学习记录
-          </button>}
+          </button>
         </Panel>
       </div>
     </div>

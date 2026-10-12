@@ -6,7 +6,6 @@ import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { Moon, Sun } from "lucide-react";
 import { applyTheme, readTheme, type Theme } from "@/lib/theme";
-import { IS_DEMO } from "@/lib/runtime";
 
 const LINKS = [
   { href: "/roadmap", label: "路线图" },
@@ -85,7 +84,6 @@ export function SiteNav() {
         <div className="flex items-center gap-1">
           <ul className="flex items-center">
             {LINKS.map((link) => {
-              if (IS_DEMO && link.href === "/dashboard") return null;
               const active = pathname === link.href || pathname.startsWith(link.href + "/");
               return (
                 <li key={link.href}>
