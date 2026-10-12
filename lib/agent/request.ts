@@ -15,6 +15,7 @@ const common = {
 
 export const lectureRequestSchema = z.object({
   ...common,
+  regenerate: z.boolean().default(false),
   language: z.enum(["zh", "en"]).default("zh"),
   solutionLanguage: z.enum(["typescript", "python"]).default("typescript"),
 });
