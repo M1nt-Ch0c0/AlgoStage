@@ -27,7 +27,7 @@ test("完成→重播：不发请求，从第 0 步播放已有步骤", () => {
   finishStreamed();
   const before = usePlayerStore.getState().steps;
   usePlayerStore.getState().replay();
-  expect(usePlayerStore.getState()).toMatchObject({ status: "playing", currentIndex: 0, receiving: false });
+  expect(usePlayerStore.getState()).toMatchObject({ status: "playing", currentIndex: 0, receiving: false, replaying: true });
   expect(usePlayerStore.getState().steps).toBe(before);
   usePlayerStore.getState().next();
   usePlayerStore.getState().next();
@@ -63,6 +63,8 @@ test("流式中或无步骤时 replay 不生效", () => {
 test("完成→重新生成：beginStream 清空旧步骤，从新流开始", () => {
   finishStreamed();
   const store = usePlayerStore.getState();
+  store.replay();
+  expect(usePlayerStore.getState().replaying).toBe(true);
   store.beginStream(script);
-  expect(usePlayerStore.getState()).toMatchObject({ status: "streaming", steps: [], currentIndex: 0, receiving: true });
+  expect(usePlayerStore.getState()).toMatchObject({ status: "streaming", steps: [], currentIndex: 0, receiving: true, replaying: false });
 });

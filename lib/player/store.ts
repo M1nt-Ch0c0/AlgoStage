@@ -16,6 +16,8 @@ export type PlayerStatus =
 interface PlayerState {
   status: PlayerStatus;
   receiving: boolean;
+  /** 本地重播已有教案；为 true 时不重复上报讲解进度 */
+  replaying: boolean;
   script: TeachingScript | null;
   /** 已收到的步骤（流式期间逐步增长） */
   steps: TeachingStep[];
@@ -47,6 +49,7 @@ interface PlayerState {
 const initial = {
   status: "idle" as PlayerStatus,
   receiving: false,
+  replaying: false,
   script: null,
   steps: [] as TeachingStep[],
   currentIndex: 0,
@@ -61,6 +64,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     set({
       script,
       receiving: false,
+      replaying: false,
       steps: script.steps,
       currentIndex: 0,
       status: "paused",
@@ -73,6 +77,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       currentIndex: 0,
       status: "streaming",
       receiving: true,
+      replaying: false,
     }),
   appendStep: (step) =>
     set((s) => {
@@ -121,7 +126,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const { steps, receiving } = get();
     // 只重播完整教案；流式中或无步骤时不动，重新生成走页面的备课流程。
     if (!steps.length || receiving) return;
-    set({ currentIndex: 0, status: "playing" });
+    set({ currentIndex: 0, status: "playing", replaying: true });
   },
 
   next: () =>

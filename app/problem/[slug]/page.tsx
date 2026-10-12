@@ -138,7 +138,7 @@ export default function ProblemPage() {
   // 讲解进度埋点（看板数据源）
   const lastReportedRef = useRef(-1);
   useEffect(() => {
-    if (IS_DEMO || !step || status === "idle") return;
+    if (IS_DEMO || !step || status === "idle" || usePlayerStore.getState().replaying) return;
     const idx = usePlayerStore.getState().currentIndex;
     if (idx === lastReportedRef.current) return;
     lastReportedRef.current = idx;
@@ -154,7 +154,7 @@ export default function ProblemPage() {
   }, [step, status, slug]);
 
   // 参考代码先恢复；每个已校验步骤到达即播放，完成时不重置播放位置。
-  const startLecture = useCallback(async () => {
+  const startLecture = useCallback(async (regenerate = false) => {
     setLectureError(null);
     setLectureComplete(false);
     if (practice) saveDraft(slug, language, code);
@@ -191,7 +191,7 @@ export default function ProblemPage() {
           Accept: "application/x-ndjson",
         },
         signal: abort.signal,
-        body: JSON.stringify({ slug, solutionLanguage: language }),
+        body: JSON.stringify({ slug, solutionLanguage: language, ...(regenerate ? { regenerate: true } : {}) }),
       });
       let streaming = false;
       const reference =
@@ -497,10 +497,10 @@ export default function ProblemPage() {
             )}
             {playbackStarted ? (playing ? "暂停" : "继续讲课") : lectureBusy ? "备课中…" : inLecture ? "从头再讲" : "开始讲课"}
           </button>
-          {stepCount > 0 && !lectureBusy && !lectureLocked && (
+          {(status === "paused" || status === "finished") && stepCount > 0 && !lectureBusy && !lectureLocked && (
             <button
               type="button"
-              onClick={() => startLecture()}
+              onClick={() => startLecture(true)}
               disabled={!detail}
               className="flex items-center gap-1.5 rounded-full border border-board-600 px-3 py-2 text-sm text-chalk-300 hover:text-chalk-100 disabled:opacity-40"
             >
@@ -540,7 +540,7 @@ export default function ProblemPage() {
           <p>{lectureError}</p>
           <button
             type="button"
-            onClick={startLecture}
+            onClick={() => startLecture()}
             disabled={lectureBusy || lectureLocked || !detail}
             className="rounded-full border border-beam-rose px-3 py-1 disabled:opacity-40"
           >
