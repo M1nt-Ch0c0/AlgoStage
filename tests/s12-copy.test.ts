@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -11,6 +11,33 @@ describe("S12 首页文案", () => {
     expect(page).not.toContain("记住进度");
     expect(page).not.toContain("体验版");
     expect(page).toContain("你的电脑，就是教室");
+  });
+});
+
+describe("D2 Demo UI 拆解", () => {
+  it("移除 DemoBanner 组件与根布局挂载", () => {
+    expect(existsSync(path.join(root, "components/demo-banner.tsx"))).toBe(false);
+    const layout = read("app/layout.tsx");
+    expect(layout).not.toContain("DemoBanner");
+    expect(layout).not.toContain("demo-banner");
+  });
+
+  it("移除 NarrationBar 废弃的 problemSlug prop", () => {
+    const narrationBar = read("components/board/narration-bar.tsx");
+    expect(narrationBar).not.toContain("problemSlug");
+    const problemPage = read("app/problem/[slug]/page.tsx");
+    expect(problemPage).not.toMatch(/<NarrationBar[^>]*problemSlug=/);
+  });
+
+  it("清理学习页与看板页的体验版文案及死分支", () => {
+    const problemPage = read("app/problem/[slug]/page.tsx");
+    expect(problemPage).not.toContain("lectureLocked");
+    expect(problemPage).not.toContain("体验版");
+    expect(problemPage).not.toContain('j.error === "DEMO"');
+
+    const dashboardPage = read("app/dashboard/page.tsx");
+    expect(dashboardPage).not.toContain("体验版");
+    expect(dashboardPage).toContain("暂时打不开学习看板");
   });
 });
 
