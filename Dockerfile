@@ -1,5 +1,5 @@
-# AlgoStage 在线体验版镜像
-# 构建：docker build --build-arg BASE_PATH=/a1 -t algostage-demo .
+# AlgoStage 自托管镜像
+# 构建：docker build --build-arg BASE_PATH=/a1 -t algostage .
 FROM node:22-bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates \
@@ -7,11 +7,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-cert
 
 WORKDIR /app
 
-# 子路径与体验版开关在构建时写进前端代码
+# 子路径在构建时写进前端代码
 ARG BASE_PATH=""
-ARG DEMO="1"
 ENV NEXT_PUBLIC_BASE_PATH=$BASE_PATH \
-    NEXT_PUBLIC_ALGOSTAGE_DEMO=$DEMO \
     NEXT_TELEMETRY_DISABLED=1 \
     DATABASE_URL="file:/data/algostage.db"
 
