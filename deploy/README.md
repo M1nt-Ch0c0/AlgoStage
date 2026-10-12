@@ -7,7 +7,7 @@
 - 数据卷：`algostage-demo-algostage-data`，SQLite 位于 `/data/algostage.db`
 - DNS：`demo.m1ntch0c0.com` 的 A 记录指向 `43.255.156.149`，DNS only
 
-构建时启用 Demo 模式并设定 `/algostage` 子路径。体验版可完整播放「两数之和」的内置课程，其他题目可读题和练习；AI 接口和设置写入均被禁用。学习记录按浏览器匿名 Cookie 隔离。上传源码时排除 `.env*`、本地数据库、`.git`、`node_modules` 和 `.next`。
+构建时启用 Demo 模式并设定 `/algostage` 子路径。体验版可完整播放「两数之和」的内置课程，其他题目可读题和练习；AI 接口和设置写入均被禁用。体验版不记进度，没有看板。上传源码时排除 `.env*`、本地数据库、`.git`、`node_modules` 和 `.next`。
 
 当前练习页的「运行」使用模拟通过结果，尚未接入真实判题；此部署不改变这一既有演示行为。
 
