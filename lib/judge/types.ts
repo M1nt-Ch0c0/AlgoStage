@@ -1,4 +1,4 @@
-/** 浏览器判题契约：Python 仅复用正常完成且已清理的 Worker。 */
+/** 判题契约：浏览器执行用于即时反馈，只有服务端复判可以持久化 AC。 */
 export type JudgeLanguage = "typescript" | "javascript" | "python";
 export type Verdict = "AC" | "WA" | "RE" | "TLE";
 export type Comparison = "exact" | "unordered" | "groups" | "two-sum" | "min-window";
@@ -23,7 +23,7 @@ export interface JudgeCaseResult {
 }
 export interface JudgeResult {
   verdict: Verdict;
-  backend: "browser";
+  backend: "browser" | "node";
   cases: JudgeCaseResult[];
   runtimeMs: number;
   error?: "UNAVAILABLE" | "CANCELLED";

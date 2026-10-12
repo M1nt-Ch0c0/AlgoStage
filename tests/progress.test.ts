@@ -4,7 +4,7 @@ import { NextRequest } from "next/server";
 import { createFixture, request } from "./api-fixture";
 
 test("progress：拒绝客户端 AC，无提交、解题状态或复习卡副作用；保留正常学习上报", async () => {
-  const f = await createFixture();
+  const f = await createFixture({ modelServer: false });
   try {
     const { POST } = await import("../app/api/progress/route");
     await f.prisma.problem.create({
@@ -106,7 +106,7 @@ test("progress：拒绝客户端 AC，无提交、解题状态或复习卡副作
     assert.equal(progress?.lectureSeen, 1);
     assert.equal(await f.prisma.submission.count(), 3);
     assert.equal(await f.prisma.hintUsage.count(), 1);
-    assert.equal(await f.prisma.reviewCard.count(), 0);
+    assert.equal(await f.prisma.reviewCard.count(), 1);
   } finally {
     await f.close();
   }

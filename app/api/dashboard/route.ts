@@ -4,6 +4,7 @@
 import { prisma } from "@/lib/db/prisma";
 import { HOT100 } from "@/lib/content/hot100";
 import { currentUserId } from "@/lib/visitor";
+import { isSolved } from "@/lib/content/pattern-labels";
 
 export const runtime = "nodejs";
 
@@ -36,8 +37,8 @@ export async function GET() {
       const entry = byPattern.get(pattern) ?? { total: 0, score: 0 };
       entry.total += 1;
       const prog = progressMap.get(p.slug);
-      if (prog?.status === "solved" || prog?.status === "mastered") {
-        const base = prog.status === "mastered" ? 1 : 0.6;
+      if (isSolved(prog?.status)) {
+        const base = prog?.status === "mastered" ? 1 : 0.6;
         const penalty = Math.min(0.4, (hintsByProblem.get(p.slug) ?? 0) * 0.1);
         entry.score += Math.max(0.1, base - penalty);
       }
@@ -60,10 +61,10 @@ export async function GET() {
     cursor.setDate(cursor.getDate() - 1);
   }
 
-  const acCount = progress.filter((p) => p.status === "solved" || p.status === "mastered").length;
+  const acCount = progress.filter((p) => isSolved(p.status)).length;
   const independentAc = progress.filter(
     (p) =>
-      (p.status === "solved" || p.status === "mastered") &&
+      isSolved(p.status) &&
       !hintsByProblem.has(p.problemSlug),
   ).length;
 
