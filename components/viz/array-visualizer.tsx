@@ -7,15 +7,10 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
+import { arrayVizFrameSchema } from "@/lib/teaching/schema";
 import type { VizFrame } from "@/lib/teaching/types";
 
-export interface ArrayVizState {
-  values: number[];
-  highlight?: number[];
-  map?: Record<string, number>;
-  scan?: number;
-  hit?: boolean;
-}
+export type { ArrayVizState } from "@/lib/teaching/schema";
 
 const CELL = 48;
 const GAP = 8;
@@ -31,14 +26,15 @@ function flagIndex(nodeId: string): number | null {
 }
 
 export default function ArrayVisualizer({ frame }: { frame?: VizFrame }) {
-  if (!frame || frame.type !== "array") return null;
-  const state = (frame.state ?? {}) as Partial<ArrayVizState>;
-  const values = state.values ?? [];
+  const parsed = arrayVizFrameSchema.safeParse(frame);
+  if (!parsed.success) return null;
+  const state = parsed.data.state;
+  const values = state.values;
   const highlight = new Set(state.highlight ?? []);
   const scan = state.scan ?? -1;
   const hit = state.hit === true;
   const mapEntries = Object.entries(state.map ?? {});
-  const captions = frame.captions ?? [];
+  const captions = parsed.data.captions ?? [];
 
   const glowColor = hit ? "var(--color-beam-mint)" : "var(--color-beam-gold)";
   const svgW = values.length * STRIDE - GAP + PAD * 2;

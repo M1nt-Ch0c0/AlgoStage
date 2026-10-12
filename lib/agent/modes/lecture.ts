@@ -27,7 +27,7 @@ export function buildLecturePrompt(input: {
    - chalk-underline 圈画关键条件；focus-dim 全场最多用 2 次（讲最关键的一段时才用）；
    - attention-ripple 用于轻提醒。
 5. 全程 6~10 步，最后一步总结可复用的算法模式。
-6. 如果题目适合数组可视化，给 step 附带 viz 帧（type: "array"，state 每帧全量：values/highlight/map/scan）。
+6. 如果题目适合数组可视化，给 step 附带 viz 帧（type: "array"，state 每帧全量：values 必须为数字数组；highlight 为合法下标数组；map 为数字到合法下标的映射；scan 为 -1 或合法下标；hit 为可选布尔值）。不要输出尚未实现的其他可视化类型。
 
 ## 题目
 ${input.statement ?? "（题面略，依据常识与题解讲解）"}
