@@ -12,8 +12,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ChevronRight, GraduationCap, KeyRound, Lightbulb, Pencil, Play, RotateCcw, Sparkles } from "lucide-react";
 import type { ProblemDetail } from "@/lib/content/types";
-import { validateScript } from "@/lib/teaching/validated-script";
-import type { TeachingScript } from "@/lib/teaching/types";
+import { loadLectureForPlayback } from "@/lib/player/load-lecture";
 import { TWO_SUM_SCRIPT } from "@/lib/content/scripts/two-sum";
 import { HOT100_CATEGORIES } from "@/lib/content/hot100";
 import { DIFFICULTY_DOT, DIFFICULTY_LABEL, DIFFICULTY_TEXT } from "@/lib/content/pattern-labels";
@@ -96,13 +95,16 @@ export default function ProblemPage() {
   const startLecture = useCallback(async () => {
     setLectureError(null);
     setPractice(false);
-    if (slug === "two-sum") {
-      loadScript(validateScript(TWO_SUM_SCRIPT, detail?.referenceSolutions?.find((s) => s.language === "typescript")?.code ?? ""));
-      play();
+    if (!detail) {
+      setLectureError("题目和参考代码还没加载好，请稍后再试。");
       return;
     }
     setLectureBusy(true);
     try {
+      if (slug === "two-sum") {
+        loadLectureForPlayback(TWO_SUM_SCRIPT, detail, { setCode, loadScript, play });
+        return;
+      }
       const res = await fetch(apiPath("/api/lecture"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -113,19 +115,14 @@ export default function ProblemPage() {
         throw new Error(j?.message ?? "老师这次没备好课，稍等一会儿再试吧。");
       }
       const ct = res.headers.get("content-type") ?? "";
-      let script: TeachingScript;
+      let script: unknown;
       if (ct.includes("application/json")) {
-        script = ((await res.json()) as { script: TeachingScript }).script;
+        script = ((await res.json()) as { script: unknown }).script;
       } else {
         // 流式 JSON 文本：拼接完整后整体 parse（流式增量解析二期接入）
-        script = JSON.parse(await res.text()) as TeachingScript;
+        script = JSON.parse(await res.text());
       }
-      const referenceCode = detail?.referenceSolutions?.find((s) => s.language === script.solutionLanguage)?.code ?? "";
-      const validated = validateScript(script, referenceCode);
-      if (validated.problemSlug !== slug) throw new Error("教案与当前题目不匹配，请重试。");
-      setCode(referenceCode);
-      loadScript(validated);
-      play();
+      loadLectureForPlayback(script, detail, { setCode, loadScript, play });
     } catch (e) {
       setLectureError(e instanceof Error ? e.message : "老师这次没备好课，稍等一会儿再试吧。");
     } finally {
