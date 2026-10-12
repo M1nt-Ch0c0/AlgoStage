@@ -10,15 +10,7 @@ export function buildLecturePrompt(input: {
   referenceCode: string;
   language: "zh" | "en";
 }): string {
-  // 示例锚点以哈希表写入行展示，内置脚本修复另行提交。
-  const example = {
-    ...TWO_SUM_SCRIPT,
-    steps: TWO_SUM_SCRIPT.steps.map((step) =>
-      step.id === "s6"
-        ? { ...step, targets: [{ kind: "code-line", start: 10, end: 10 }] }
-        : step,
-    ),
-  };
+  const example = TWO_SUM_SCRIPT;
   return `你是 AlgoStage 的算法老师，使用教学工具边讲边播放。以下是教案规范。
 
 【输出规范】

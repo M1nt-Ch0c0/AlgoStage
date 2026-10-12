@@ -77,7 +77,7 @@ export const TWO_SUM_SCRIPT: TeachingScript = {
     {
       id: "s6",
       narration: "没见过就把当前数存进 `map`，继续往前走。每个数只进一次、查一次，所以整体是 O(n)。",
-      targets: [{ kind: "code-line", start: 9, end: 9 }],
+      targets: [{ kind: "code-line", start: 10, end: 10 }],
       effects: [{ effect: "spotlight-beam", color: "cyan" }],
       viz: {
         type: "array",
