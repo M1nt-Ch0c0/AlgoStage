@@ -20,7 +20,7 @@ AlgoStage 是一个**纯本地运行**的 LeetCode Hot 100 AI 学习系统：内
 开发和验证请使用 **Node.js 22**（最低 22.12）；也支持 Node.js 24+。
 
 ```bash
-npm install
+npm ci                        # 按 package-lock.json 安装，与 CI 一致
 cp .env.example .env          # 可选：也可以启动后在设置页填 Key
 npm run db:push && npm run db:seed   # 初始化本地 SQLite + 灌入 Hot 100
 npm run dev                   # http://localhost:3000
@@ -32,7 +32,7 @@ npm run dev                   # http://localhost:3000
 
 使用环境变量 Key 时，请同时填写 `AI_BASE_URL`，并按服务商配置 `AI_PROVIDER`；设置页可单独覆盖模型名，接口和 Key 必须保持同一来源。设置页只保存实际修改的字段；保存新 Key 时请同时填写对应接口地址和服务商，来源混用会被拒绝，不会发出模型请求。
 
-验证命令：`npm test`、`npx tsc --noEmit`、`npm run build`。
+验证命令：`npm run lint`、`npx tsc --noEmit`、`npm test`、`npm run build`。
 
 ## 文档
 
