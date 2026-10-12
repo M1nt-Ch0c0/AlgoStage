@@ -1,11 +1,23 @@
 /** 只调用本机假模型，使用独立 SQLite 库，不接触用户 Key 或学习记录。 */
 import { closeSync, mkdtempSync, openSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { NextRequest } from "next/server";
+
+export function fixturePaths(): {
+  repoRoot: string;
+  schema: string;
+  prismaCli: string;
+} {
+  const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+  const schema = join(repoRoot, "prisma", "schema.prisma");
+  const prismaCli = join(repoRoot, "node_modules", "prisma", "build", "index.js");
+  return { repoRoot, schema, prismaCli };
+}
 
 export async function createFixture({ modelServer = true } = {}) {
   const directory = mkdtempSync(join(tmpdir(), "algostage-m1-"));
@@ -13,11 +25,17 @@ export async function createFixture({ modelServer = true } = {}) {
   delete process.env.NEXT_PUBLIC_ALGOSTAGE_DEMO;
   for (const key of ["AI_API_KEY", "AI_MODEL", "AI_PROVIDER", "AI_BASE_URL"])
     delete process.env[key];
+  const { repoRoot, schema, prismaCli } = fixturePaths();
   const schemaLog = openSync(join(directory, "schema.log"), "w");
   try {
-    execFileSync(process.execPath, ["node_modules/prisma/build/index.js", "db", "push"], {
-      stdio: ["ignore", schemaLog, schemaLog],
-    });
+    execFileSync(
+      process.execPath,
+      [prismaCli, "db", "push", "--schema", schema],
+      {
+        cwd: repoRoot,
+        stdio: ["ignore", schemaLog, schemaLog],
+      },
+    );
   } finally { closeSync(schemaLog); }
   const { prisma } = await import("../lib/db/prisma");
   await prisma.user.create({ data: { id: "local-default" } });
