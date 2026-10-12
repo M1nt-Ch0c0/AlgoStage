@@ -34,7 +34,7 @@ npm run dev                   # http://localhost:3000
 
 验证命令：`npm run lint`、`npm run typecheck`、`npm test`、`npm run test:e2e`、`npm run build`。
 
-### 从旧版本升级
+## 从旧版本升级
 
 ```bash
 npm ci
@@ -43,7 +43,7 @@ npm run db:push
 
 v0.2.0 给 `Submission` 加了 `judgedBy`。保留旧库却不跑 `db:push` 时，学习看板会 500。补列不丢记录。Docker 启动会自动 `db push`。
 
-### 判题
+## 判题
 
 - 覆盖：Hot 100 前 20 题；2 秒超时；输出超 32 KiB → RE；支持 `class Solution`；Python 打开题目页预热。
 - JS/TS：浏览器先跑 → `/api/judge` 服务端复判 → 仅服务端 AC 写进度。
@@ -52,7 +52,7 @@ v0.2.0 给 `Submission` 加了 `judgedBy`。保留旧库却不跑 `db:push` 时�
 - 构建自动 `build:judge`；`/judge/*` 需 COOP/COEP（Next 已加）。
 - 可选环境变量 `JUDGE_MAX_CONCURRENCY`（默认 4，最大 64，按进程计）。
 
-### Docker 自托管
+## Docker 自托管
 
 ```bash
 docker build --build-arg BASE_PATH=/algostage -t algostage:0.2.0-alpha.1 .
@@ -60,13 +60,13 @@ docker build --build-arg BASE_PATH=/algostage -t algostage:0.2.0-alpha.1 .
 docker compose -f deploy/compose.yaml up -d --wait
 ```
 
-无 Demo；需自备 API Key。数据卷 `/data/algostage.db`。详见 deploy/README.md。
+无 Demo；需自备 API Key。数据卷 `/data/algostage.db`。详见 [deploy/README.md](deploy/README.md)。
 
-### 子路径 + nginx
+## 子路径 + nginx
 
-构建时设 `NEXT_PUBLIC_BASE_PATH`。讲解流 `application/x-ndjson`，需关代理缓冲（应用已发 `X-Accel-Buffering: no`）；`/algostage/api/lecture` 独立 location，读超时 300 秒。【S8：deploy 已有回归测试说明；正式发布验收仍以 Quinn 结论为准】
+构建时设 `NEXT_PUBLIC_BASE_PATH`。讲解流 `application/x-ndjson`，需关代理缓冲（应用已发 `X-Accel-Buffering: no`）；`/algostage/api/lecture` 独立 location，读超时 300 秒。
 
-### 提示超时
+## 提示超时
 
 `.env` 可设 `HINT_TIMEOUT_MS`（默认 60000）。
 
