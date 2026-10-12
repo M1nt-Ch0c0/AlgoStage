@@ -2,6 +2,7 @@
 
 import { KeySourceBadge, type KeySource } from "@/components/settings/key-source-badge";
 import { DEFAULT_MODEL } from "@/lib/agent/defaults";
+import { savedEndpoint } from "@/lib/agent/saved-endpoint";
 import { apiPath, IS_DEMO, REPO_URL } from "@/lib/runtime";
 import { useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
@@ -78,7 +79,7 @@ export default function SettingsPage() {
       .then(({ settings, keySource }) => {
         setKeySource(keySource ?? "none");
         if (settings.provider) setProvider(settings.provider);
-        if (settings.baseURL) setBaseURL(settings.baseURL);
+        setBaseURL(savedEndpoint(settings) ?? "");
         if (settings.apiKeyMasked) setApiKeyMasked(settings.apiKeyMasked);
         if (settings.model) setModel(settings.model);
         if (settings.effectLevel) setEffectLevel(settings.effectLevel);
@@ -203,7 +204,11 @@ export default function SettingsPage() {
                     id={`provider-${p.id}`}
                     value={p.id}
                     checked={provider === p.id}
-                    onChange={() => edit("provider", p.id, setProvider)}
+                    onChange={() => {
+                      edit("provider", p.id, setProvider);
+                      edit("baseURL", "", setBaseURL);
+                      setTestState({ kind: "idle" });
+                    }}
                     className="sr-only"
                   />
                   <span className={`block text-sm font-medium ${provider === p.id ? "text-beam-gold" : "text-chalk-100"}`}>
@@ -229,7 +234,7 @@ export default function SettingsPage() {
               />
               <p className="mt-2 text-xs leading-5 text-chalk-500">讲解推荐 gpt-6.1-sol。较弱模型可能无法完成教案或正确调用教学工具；失败时请重试或更换模型。</p>
             </div>
-            {provider === "openai-compatible" && (
+            {(
               <div>
                 <label className={labelClass} htmlFor="baseURL">
                   接口地址（使用对应服务商的地址）
@@ -238,7 +243,7 @@ export default function SettingsPage() {
                   id="baseURL"
                   value={baseURL}
                   onChange={(e) => edit("baseURL", e.target.value, setBaseURL)}
-                  placeholder="留空使用环境变量中的接口地址"
+                  placeholder={provider === "openai-compatible" ? "环境变量 Key 沿用环境地址；新 Key 留空使用默认地址" : "留空使用该服务商官方接口"}
                   className={`${inputClass} font-mono`}
                 />
               </div>

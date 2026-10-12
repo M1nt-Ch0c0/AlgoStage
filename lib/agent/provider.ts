@@ -4,6 +4,7 @@
  * 配置存本地 Setting 表 / 环境变量，请求从本机直连厂商。
  */
 import { DEFAULT_MODEL } from "./defaults";
+import { savedEndpoint } from "./saved-endpoint";
 import { byokRequestSchema } from "./request";
 import { prisma } from "@/lib/db/prisma";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
@@ -82,16 +83,20 @@ export function resolveSavedByok(settings: Record<string, string>): {
 } | null {
   const source = savedKeySource(settings);
   const useSaved = source === "settings";
+  const provider = (useSaved ? settings.provider?.trim() : "") || process.env.AI_PROVIDER?.trim() || "openai-compatible";
+  const savedURL = savedEndpoint(settings);
+  // 原生厂商没有专属地址时使用其官方默认地址，绝不接上旧代理或环境地址。
+  const nativeDefault = useSaved && provider !== "openai-compatible" && !savedURL;
   const config = completeByok({
-    provider: (useSaved ? settings.provider?.trim() : "") || process.env.AI_PROVIDER?.trim() || "openai-compatible",
+    provider,
     apiKey: settings.apiKey?.trim() || process.env.AI_API_KEY?.trim(),
     model: settings.model?.trim() || process.env.AI_MODEL?.trim() || DEFAULT_MODEL,
-    baseURL: (useSaved ? settings.baseURL?.trim() : "") || process.env.AI_BASE_URL?.trim() || undefined,
+    baseURL: nativeDefault ? undefined : (useSaved ? savedURL : undefined) || process.env.AI_BASE_URL?.trim() || undefined,
   });
   if (!config || source === "none") return null;
   origins.set(config, {
     key: source,
-    baseURL: useSaved && (settings.baseURL?.trim() || !process.env.AI_BASE_URL?.trim()) ? "settings" : "env",
+    baseURL: useSaved && (nativeDefault || savedURL || !process.env.AI_BASE_URL?.trim()) ? "settings" : "env",
     provider: useSaved && (settings.provider?.trim() || !process.env.AI_PROVIDER?.trim()) ? "settings" : "env",
   });
   assertCredentialDestination(config);

@@ -6,6 +6,7 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { byokFromEnv, savedKeySource } from "@/lib/agent/provider";
 import { IS_DEMO } from "@/lib/runtime";
+import { savedEndpoint } from "@/lib/agent/saved-endpoint";
 
 export const runtime = "nodejs";
 
@@ -35,6 +36,7 @@ export async function GET() {
     settings.apiKeyMasked = k.length > 8 ? `${k.slice(0, 4)}…${k.slice(-4)}` : "已配置";
   }
   delete settings.apiKey;
+  if (settings.baseURL) settings.baseURL = savedEndpoint(settings) ?? "";
   return Response.json({ settings, keySource, envConfigured });
 }
 
@@ -53,12 +55,21 @@ export async function PUT(req: NextRequest) {
     // 不回传 zod 原始错误或输入，避免 Key 出现在响应与日志中。
     return Response.json({ error: "BAD_REQUEST", message: "设置参数不正确，请检查 Key、模型和偏好设置。" }, { status: 400 });
   }
-  await prisma.$transaction(Object.entries(parsed.data.settings).map(([key, value]) =>
-    prisma.setting.upsert({
-      where: { key_userId: { key, userId: USER_ID } },
-      update: { value },
-      create: { key, value, userId: USER_ID },
-    }),
-  ));
+  await prisma.$transaction(async tx => {
+    const rows = await tx.setting.findMany({ where: { userId: USER_ID } });
+    const previous = Object.fromEntries(rows.map(row => [row.key, row.value]));
+    const updates: Record<string, string> = { ...parsed.data.settings };
+    const provider = updates.provider ?? previous.provider ?? "openai-compatible";
+    if (updates.provider !== undefined && provider !== (previous.provider ?? "openai-compatible") && updates.baseURL === undefined) {
+      updates.baseURL = "";
+    }
+    if (updates.baseURL !== undefined) updates.baseURLProvider = provider;
+    for (const [key, value] of Object.entries(updates)) {
+      await tx.setting.upsert({
+        where: { key_userId: { key, userId: USER_ID } },
+        update: { value }, create: { key, value, userId: USER_ID },
+      });
+    }
+  });
   return Response.json({ ok: true });
 }
