@@ -12,7 +12,7 @@ import {
 import { createHash } from "crypto";
 import { NextRequest } from "next/server";
 import { IS_DEMO } from "@/lib/runtime";
-import { resolveByok } from "@/lib/agent/provider";
+import { resolveByok, type ByokConfig } from "@/lib/agent/provider";
 import { buildLecturePrompt } from "@/lib/agent/modes/lecture";
 import { validateScript } from "@/lib/teaching/validated-script";
 import { lectureRequestSchema, badRequest } from "@/lib/agent/request";
@@ -23,12 +23,13 @@ export const runtime = "nodejs";
 
 function cacheKeyOf(
   slug: string,
-  model: string,
+  config: ByokConfig,
   solutionLanguage: string,
   narrationLanguage: string,
 ) {
   return createHash("sha1")
-    .update(`${slug}|${model}|${solutionLanguage}|${narrationLanguage}|lecture`)
+    // 隔离厂商与兼容接口，同名模型不能串缓存；密钥不参与键或元数据。
+    .update(JSON.stringify([slug, config.provider, config.baseURL ?? "", config.model, solutionLanguage, narrationLanguage, "lecture"]))
     .digest("hex");
 }
 
@@ -76,7 +77,7 @@ export async function POST(req: NextRequest) {
   const narrationLanguage = body.language ?? "zh";
   const key = cacheKeyOf(
     body.slug,
-    byok.model,
+    byok,
     solutionLanguage,
     narrationLanguage,
   );

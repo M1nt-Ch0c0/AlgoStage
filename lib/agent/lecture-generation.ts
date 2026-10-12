@@ -127,11 +127,11 @@ export async function generateLecture(input: {
     else input.signal?.addEventListener("abort", cancel, { once: true });
   });
   const run = async (): Promise<GenerationResult> => {
-    const kit = createLectureTools(
-      Math.max(1, input.referenceCode.split("\n").length),
-    );
+    const kit = createLectureTools(input.referenceCode);
     type Name = keyof typeof kit.tools;
     const stepOf = (name: Name, args: unknown) => {
+      // finish 面向整份教案，使用固定编号，避免新增步骤后失去队列匹配。
+      if (name === "finish") return 0;
       const parsed = z
         .object({ id: z.string().optional(), stepId: z.string().optional() })
         .safeParse(args);
@@ -204,9 +204,18 @@ export async function generateLecture(input: {
           if (controller.signal.aborted) return cancelled;
           if (part.type === "error") throw part.error;
           if (part.type !== "tool-call") continue;
+          if (finished) {
+            console.warn("lecture_validation", JSON.stringify({
+              type: "call_after_finish", fields: ["tool"], step: kit.steps.length,
+              attempt: 1 + toolRetries + upstreamRetries,
+            }));
+            return invalid;
+          }
           const name = part.toolName as Name;
+          const callStep = stepOf(name, part.input);
           const activeRepair =
-            repair && repairs.includes(repair) ? repair : undefined;
+            repairs.find(item => item.name === name && item.step === callStep) ??
+            (repair && repairs.includes(repair) ? repair : undefined);
           assistant.push({
             type: "tool-call",
             toolCallId: part.toolCallId,
@@ -240,7 +249,10 @@ export async function generateLecture(input: {
             // finish 的完整校验成功之后才能消费修复队列，失败仍计入同一次调用。
             if (applied.finished)
               input.validate({ ...input.metadata, steps: kit.steps });
-            if (activeRepair) repairs.shift();
+            // 同一批可修复多条调用；按工具与步骤移除，而非只消费轮首那一条。
+            for (let i = repairs.length - 1; i >= 0; i--) {
+              if (repairs[i].name === name && repairs[i].step === callStep) repairs.splice(i, 1);
+            }
             if (applied.step) {
               input.onEvent?.({
                 type: applied.added ? "step" : "step-update",
@@ -311,7 +323,7 @@ export async function generateLecture(input: {
             toolName: part.toolName,
             output: { type: "json", value: output },
           });
-          if (finished) break;
+          // finish 之后仍须读完本轮，确认没有额外调用且上游正常结束。
         }
       } catch (error) {
         if (controller.signal.aborted) return cancelled;

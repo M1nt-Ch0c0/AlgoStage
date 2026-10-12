@@ -260,7 +260,7 @@ describe("工具教案：单调用修复、白名单、流式播放、失败不�
   });
   test("未知 viz、逆序/越界行号、非法下标均拒绝且不修改成功步骤", async () => {
     const { createLectureTools } = await import("../lib/agent/lecture-tools");
-    const kit = createLectureTools(3);
+    const kit = createLectureTools("a\nb\nc\n\n  \n");
     kit.apply("add_step", step("s1"));
     for (const input of [
       { stepId: "s1", start: 4 },

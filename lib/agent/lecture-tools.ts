@@ -4,7 +4,9 @@ import { tool } from "ai";
 import { arrayVizFrameSchema, teachingStepSchema } from "@/lib/teaching/schema";
 import { EFFECT_WHITELIST, type TeachingStep } from "@/lib/teaching/types";
 
-export function createLectureTools(lineCount: number) {
+export function createLectureTools(referenceCode: string) {
+  // 文件末尾的空行不属于可高亮的代码；中间空行仍保留原行号。
+  const lineCount = referenceCode.trimEnd().split("\n").length;
   const line = z
     .number()
     .int()
