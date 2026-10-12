@@ -90,7 +90,7 @@ export default function ProblemPage() {
   const step = usePlayerStore((s) => s.steps[s.currentIndex]);
   const status = usePlayerStore((s) => s.status);
   const stepCount = usePlayerStore((s) => s.steps.length);
-  const { loadScript, play, pause, reset } = usePlayerStore.getState();
+  const { loadScript, play, pause, replay, reset } = usePlayerStore.getState();
 
   useEffect(() => {
     const abort = new AbortController();
@@ -367,6 +367,7 @@ export default function ProblemPage() {
   const inLecture = status !== "idle";
   const playbackStarted = stepCount > 0 && status !== "idle" && status !== "finished";
   const playing = status === "playing" || status === "streaming";
+  const canReplay = status === "finished" && stepCount > 0 && !lectureBusy;
 
   if (loadError) {
     return (
@@ -480,7 +481,8 @@ export default function ProblemPage() {
           </div>
           <button
             type="button"
-            onClick={() => playbackStarted ? (playing ? pause() : play()) : startLecture()}
+            // 已有完整教案时「从头再讲」只本地重播，不再请求；重新生成走单独入口。
+            onClick={() => playbackStarted ? (playing ? pause() : play()) : canReplay ? replay() : startLecture()}
             disabled={(!playbackStarted && lectureBusy) || !detail || lectureLocked}
             className="flex items-center gap-1.5 rounded-full bg-beam-gold px-4 py-2 text-sm font-semibold text-on-accent transition-transform hover:scale-[1.03] disabled:pointer-events-none disabled:opacity-50"
           >
@@ -495,6 +497,17 @@ export default function ProblemPage() {
             )}
             {playbackStarted ? (playing ? "暂停" : "继续讲课") : lectureBusy ? "备课中…" : inLecture ? "从头再讲" : "开始讲课"}
           </button>
+          {stepCount > 0 && !lectureBusy && !lectureLocked && (
+            <button
+              type="button"
+              onClick={() => startLecture()}
+              disabled={!detail}
+              className="flex items-center gap-1.5 rounded-full border border-board-600 px-3 py-2 text-sm text-chalk-300 hover:text-chalk-100 disabled:opacity-40"
+            >
+              <Sparkles size={14} />
+              重新生成
+            </button>
+          )}
         </div>
       </header>
 
