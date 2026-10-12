@@ -9,6 +9,7 @@ import {
 import { z, ZodError } from "zod";
 import { createModel, type ByokConfig } from "./provider";
 import { createLectureTools, ToolStateError } from "./lecture-tools";
+import { isTransientUpstreamError, UPSTREAM_RETRY_LIMIT, waitForUpstreamRetry } from "./upstream-retry";
 import type { TeachingScript, TeachingStep } from "@/lib/teaching/types";
 
 import { LECTURE_TIMEOUT_MS } from "./defaults";
@@ -330,11 +331,6 @@ export async function generateLecture(input: {
         const status = APICallError.isInstance(error)
           ? error.statusCode
           : undefined;
-        const transient =
-          status === undefined ||
-          (status >= 200 && status < 300) ||
-          ([408, 429, 500, 502, 503, 504].includes(status) &&
-            kit.steps.length > 0);
         // 只记录固定分类、状态码与进度。原始错误可能包含 Key，绝不打印。
         console.warn(
           "lecture_upstream",
@@ -346,7 +342,7 @@ export async function generateLecture(input: {
             status: status ?? null,
           }),
         );
-        if (transient && upstreamRetries < 1) {
+        if (isTransientUpstreamError(error) && upstreamRetries < UPSTREAM_RETRY_LIMIT) {
           upstreamRetries++;
           // 部分工具已经成功时，将它们的回执带入下一轮，避免从头重生成。
           if (assistant.length)
@@ -360,6 +356,8 @@ export async function generateLecture(input: {
             phase: "retry",
             message: "模型连接中断，正在重试本轮调用；已生成步骤保留…",
           });
+          try { await waitForUpstreamRetry(controller.signal); }
+          catch { return cancelled; }
           continue;
         }
         return {

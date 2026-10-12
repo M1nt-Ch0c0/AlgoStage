@@ -39,7 +39,7 @@ test("S1 review：上游 401/503 固定返回 502，响应与全部日志不泄�
         assert.ok(!raw.includes(apiKey));
         assert.ok(!logs.includes(apiKey));
         assert.ok(!logs.includes("Incorrect API key provided"));
-        assert.equal(f.calls.length - before, 1, "上游异常不作为非法教案重试");
+        assert.equal(f.calls.length - before, status >= 500 ? 2 : 1, "只重试 5xx，401 不重试且错误不泄露 Key");
       }
     }
     assert.equal(await f.prisma.lectureScriptCache.count(), 0);

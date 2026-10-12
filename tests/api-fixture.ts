@@ -25,8 +25,9 @@ export async function createFixture() {
     requireNonThinkingTools = false,
     delayMs = 0;
   let streamFailures = 0;
+  let disconnects = 0;
   const calls: { model: string; key: string | undefined }[] = [];
-  let errorResponse: { status: number; body: unknown } | undefined;
+  let errorResponse: { status: number; body: unknown; remaining: number } | undefined;
   let toolsReply:
     | ((body: Record<string, unknown>) => { name: string; input: unknown }[])
     | undefined;
@@ -40,6 +41,7 @@ export async function createFixture() {
     if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
     if (res.destroyed) return;
     calls.push({ model: body.model as string, key: req.headers.authorization });
+    if (disconnects > 0) { disconnects--; res.destroy(); return; }
     if (rejectStructured && body.response_format) {
       res.statusCode = 400;
       res.setHeader("Content-Type", "application/json");
@@ -65,9 +67,11 @@ export async function createFixture() {
       return;
     }
     if (errorResponse) {
-      res.statusCode = errorResponse.status;
+      const failure = errorResponse;
+      if (--failure.remaining <= 0) errorResponse = undefined;
+      res.statusCode = failure.status;
       res.setHeader("Content-Type", "application/json");
-      res.end(JSON.stringify(errorResponse.body));
+      res.end(JSON.stringify(failure.body));
       return;
     }
     const content = toolsReply && body.tools ? undefined : reply(body);
@@ -216,8 +220,11 @@ export async function createFixture() {
       toolsReply = undefined;
       errorResponse = undefined;
     },
-    setError(status: number, body: unknown) {
-      errorResponse = { status, body };
+    setError(status: number, body: unknown, remaining = Infinity) {
+      errorResponse = { status, body, remaining };
+    },
+    setDisconnects(count: number) {
+      disconnects = count;
     },
     async save(settings: Record<string, string>) {
       for (const [key, value] of Object.entries(settings)) {

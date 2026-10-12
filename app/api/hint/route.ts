@@ -5,9 +5,23 @@
 import { generateText } from "ai";
 import { NextRequest } from "next/server";
 import { IS_DEMO } from "@/lib/runtime";
-import { createModel, resolveByok, ByokConfigurationError } from "@/lib/agent/provider";
-import { hintRequestSchema, badRequest, upstreamError, configurationError } from "@/lib/agent/request";
+import {
+  createModel,
+  resolveByok,
+  ByokConfigurationError,
+} from "@/lib/agent/provider";
+import {
+  hintRequestSchema,
+  badRequest,
+  upstreamError,
+  configurationError,
+} from "@/lib/agent/request";
 import { localSeedSource } from "@/lib/content/local-source";
+import {
+  isTransientUpstreamError,
+  UPSTREAM_RETRY_LIMIT,
+  waitForUpstreamRetry,
+} from "@/lib/agent/upstream-retry";
 
 export const runtime = "nodejs";
 
@@ -24,12 +38,19 @@ export async function POST(req: NextRequest) {
   try {
     input = await req.json();
   } catch {
-    return Response.json({ error: "BAD_JSON", message: "请求内容不是有效的 JSON 对象，请重试。" }, { status: 400 });
+    return Response.json(
+      { error: "BAD_JSON", message: "请求内容不是有效的 JSON 对象，请重试。" },
+      { status: 400 },
+    );
   }
   // 在线体验版不调用任何 AI：不代用他人的 Key，也不做模型请求中转
   if (IS_DEMO) {
     return Response.json(
-      { error: "DEMO", message: "在线体验版只备好了「两数之和」这一课。把 AlgoStage 装到自己电脑上，接上你的 AI，就能听全部 100 题。" },
+      {
+        error: "DEMO",
+        message:
+          "在线体验版只备好了「两数之和」这一课。把 AlgoStage 装到自己电脑上，接上你的 AI，就能听全部 100 题。",
+      },
       { status: 403 },
     );
   }
@@ -38,11 +59,18 @@ export async function POST(req: NextRequest) {
   const body = parsed.data;
   const meta = (await localSeedSource.list()).find((p) => p.slug === body.slug);
   if (!meta) {
-    return Response.json({ error: "NOT_FOUND", message: "没找到这道题，请回路线图重新选择。" }, { status: 404 });
+    return Response.json(
+      { error: "NOT_FOUND", message: "没找到这道题，请回路线图重新选择。" },
+      { status: 404 },
+    );
   }
   let resolved;
-  try { resolved = await resolveByok(body.byok); }
-  catch (error) { if (error instanceof ByokConfigurationError) return configurationError(); throw error; }
+  try {
+    resolved = await resolveByok(body.byok);
+  } catch (error) {
+    if (error instanceof ByokConfigurationError) return configurationError();
+    throw error;
+  }
   const byok = resolved?.config;
   if (!byok) {
     return Response.json(
@@ -53,20 +81,46 @@ export async function POST(req: NextRequest) {
   const level = body.level;
   const detail = await localSeedSource.detail(body.slug);
 
+  const timeout = AbortSignal.timeout(30_000);
+  const signal = AbortSignal.any([req.signal, timeout]);
   try {
-    const { text } = await generateText({
-      model: createModel(byok),
-      maxRetries: 0,
-      prompt: `你是苏格拉底式算法导师，学生正在做「${detail.title}」，请求第 ${level} 级提示。
+    for (let attempt = 0; ; attempt++) {
+      signal.throwIfAborted();
+      try {
+        const { text } = await generateText({
+          model: createModel(byok),
+          maxRetries: 0,
+          abortSignal: signal,
+          prompt: `你是苏格拉底式算法导师，学生正在做「${detail.title}」，请求第 ${level} 级提示。
 规则：${LEVEL_GUIDE[level]}
 严格只给这一级的信息，绝不越级剧透更深层答案，绝不给完整题解。80 字以内，中文。
 ${detail.statement ? `题面：${detail.statement}` : ""}
 ${body.userCode ? `学生当前代码：\n${body.userCode}` : ""}`,
-    });
+        });
 
-    return Response.json({ level, hint: text });
+        return Response.json({ level, hint: text });
+      } catch (error) {
+        if (
+          signal.aborted ||
+          attempt >= UPSTREAM_RETRY_LIMIT ||
+          !isTransientUpstreamError(error)
+        )
+          throw error;
+        await waitForUpstreamRetry(signal);
+      }
+    }
   } catch {
     // 上游错误体可能回显完整 Key；不记录、不透传原始异常。
+    if (signal.aborted)
+      return Response.json(
+        {
+          error: timeout.aborted ? "TIMEOUT" : "CANCELLED",
+          message: timeout.aborted
+            ? "提示请求超时，请重试。"
+            : "提示请求已取消。",
+        },
+        { status: timeout.aborted ? 504 : 499 },
+      );
     return upstreamError();
   }
 }
