@@ -110,7 +110,8 @@ export async function POST(req: NextRequest) {
     }
     return script;
   };
-  const cached = await prisma.lectureScriptCache.findUnique({ where: { key } });
+  // 显式重新生成跳过缓存读取；仅在生成成功并校验后 upsert 覆盖，失败或取消保留旧缓存。
+  const cached = body.regenerate ? null : await prisma.lectureScriptCache.findUnique({ where: { key } });
   if (cached) {
     try {
       const script = matchesRequest(

@@ -19,6 +19,10 @@ test("Demo：请求 Key 和环境 Key 均不能绕过 AI 禁用与设置隔离",
       assert.equal(response.status, 403);
       assert.equal((await response.json()).error, "DEMO");
     }
+    const lecture = await import("../app/api/lecture/route");
+    const regenerate = await lecture.POST(request({ slug: "two-sum", regenerate: true }));
+    assert.equal(regenerate.status, 403);
+    assert.equal((await regenerate.json()).error, "DEMO");
     const settings = await import("../app/api/settings/route");
     assert.deepEqual(await (await settings.GET()).json(), { settings: {}, keySource: "none", envConfigured: false });
     assert.equal((await settings.PUT(request({ settings: { apiKey: "new-key" } }))).status, 403);

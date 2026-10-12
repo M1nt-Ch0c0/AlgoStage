@@ -90,7 +90,7 @@ export default function ProblemPage() {
   const step = usePlayerStore((s) => s.steps[s.currentIndex]);
   const status = usePlayerStore((s) => s.status);
   const stepCount = usePlayerStore((s) => s.steps.length);
-  const { loadScript, play, pause, reset } = usePlayerStore.getState();
+  const { loadScript, play, pause, replay, reset } = usePlayerStore.getState();
 
   useEffect(() => {
     const abort = new AbortController();
@@ -138,7 +138,7 @@ export default function ProblemPage() {
   // 讲解进度埋点（看板数据源）
   const lastReportedRef = useRef(-1);
   useEffect(() => {
-    if (IS_DEMO || !step || status === "idle") return;
+    if (IS_DEMO || !step || status === "idle" || usePlayerStore.getState().replaying) return;
     const idx = usePlayerStore.getState().currentIndex;
     if (idx === lastReportedRef.current) return;
     lastReportedRef.current = idx;
@@ -154,7 +154,7 @@ export default function ProblemPage() {
   }, [step, status, slug]);
 
   // 参考代码先恢复；每个已校验步骤到达即播放，完成时不重置播放位置。
-  const startLecture = useCallback(async () => {
+  const startLecture = useCallback(async (regenerate = false) => {
     setLectureError(null);
     setLectureComplete(false);
     if (practice) saveDraft(slug, language, code);
@@ -191,7 +191,7 @@ export default function ProblemPage() {
           Accept: "application/x-ndjson",
         },
         signal: abort.signal,
-        body: JSON.stringify({ slug, solutionLanguage: language }),
+        body: JSON.stringify({ slug, solutionLanguage: language, ...(regenerate ? { regenerate: true } : {}) }),
       });
       let streaming = false;
       const reference =
@@ -367,6 +367,7 @@ export default function ProblemPage() {
   const inLecture = status !== "idle";
   const playbackStarted = stepCount > 0 && status !== "idle" && status !== "finished";
   const playing = status === "playing" || status === "streaming";
+  const canReplay = status === "finished" && stepCount > 0 && !lectureBusy;
 
   if (loadError) {
     return (
@@ -480,7 +481,8 @@ export default function ProblemPage() {
           </div>
           <button
             type="button"
-            onClick={() => playbackStarted ? (playing ? pause() : play()) : startLecture()}
+            // 已有完整教案时「从头再讲」只本地重播，不再请求；重新生成走单独入口。
+            onClick={() => playbackStarted ? (playing ? pause() : play()) : canReplay ? replay() : startLecture()}
             disabled={(!playbackStarted && lectureBusy) || !detail || lectureLocked}
             className="flex items-center gap-1.5 rounded-full bg-beam-gold px-4 py-2 text-sm font-semibold text-on-accent transition-transform hover:scale-[1.03] disabled:pointer-events-none disabled:opacity-50"
           >
@@ -495,6 +497,17 @@ export default function ProblemPage() {
             )}
             {playbackStarted ? (playing ? "暂停" : "继续讲课") : lectureBusy ? "备课中…" : inLecture ? "从头再讲" : "开始讲课"}
           </button>
+          {(status === "paused" || status === "finished") && stepCount > 0 && !lectureBusy && !lectureLocked && (
+            <button
+              type="button"
+              onClick={() => startLecture(true)}
+              disabled={!detail}
+              className="flex items-center gap-1.5 rounded-full border border-board-600 px-3 py-2 text-sm text-chalk-300 hover:text-chalk-100 disabled:opacity-40"
+            >
+              <Sparkles size={14} />
+              重新生成
+            </button>
+          )}
         </div>
       </header>
 
@@ -527,7 +540,7 @@ export default function ProblemPage() {
           <p>{lectureError}</p>
           <button
             type="button"
-            onClick={startLecture}
+            onClick={() => startLecture()}
             disabled={lectureBusy || lectureLocked || !detail}
             className="rounded-full border border-beam-rose px-3 py-1 disabled:opacity-40"
           >
