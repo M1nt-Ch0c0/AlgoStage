@@ -7,7 +7,7 @@
 - 数据卷：`algostage-demo-algostage-data`，SQLite 位于 `/data/algostage.db`
 - DNS：`demo.m1ntch0c0.com` 的 A 记录指向 `43.255.156.149`，DNS only
 
-构建时启用 Demo 模式并设定 `/algostage` 子路径。体验版可完整播放「两数之和」的内置课程，其他题目可读题和练习；AI 接口和设置写入均被禁用。学习记录按浏览器匿名 Cookie 隔离。上传源码时排除 `.env*`、本地数据库、`.git`、`node_modules` 和 `.next`。
+构建时启用 Demo 模式并设定 `/algostage` 子路径。体验版可完整播放「两数之和」的内置课程，其他题目可读题和练习；AI 接口和设置写入均被禁用。体验版不记进度，没有看板。上传源码时排除 `.env*`、本地数据库、`.git`、`node_modules` 和 `.next`。
 
 当前练习页的「运行」使用模拟通过结果，尚未接入真实判题；此部署不改变这一既有演示行为。
 
@@ -60,7 +60,7 @@ docker compose -f deploy/compose.yaml logs --tail=100 web
 docker compose -f deploy/compose.yaml stop
 ```
 
-更新前可记录旧镜像 ID：`docker inspect algostage-demo-algostage --format '{{.Image}}'`。需要回滚时把该镜像标记回 `algostage-demo:20261008`，再执行 `up -d --force-recreate --wait`。停止或回滚容器不会删除学习数据；不要运行带 `-v` 的 `down` 命令。
+更新前可记录旧镜像 ID：`docker inspect algostage-demo-algostage --format '{{.Image}}'`。需要回滚时把该镜像标记回 `algostage-demo:0.2.0-alpha.1`，再执行 `up -d --force-recreate --wait`。停止或回滚容器不会删除学习数据；不要运行带 `-v` 的 `down` 命令。
 
 ## 本次上线验证（2026-10-08）
 

@@ -169,7 +169,7 @@ export default function SettingsPage() {
       <PageHeader
         eyebrow="本机设置"
         title="设置"
-        desc={IS_DEMO ? "在线体验版里，这些设置只对你自己的浏览器生效。" : "这些设置只保存在你自己的电脑上。"}
+        desc={IS_DEMO ? "在线体验版里，这里只能切换主题，主题只在你这个浏览器里生效。" : "这些设置只保存在你自己的电脑上。"}
       />
 
       <div className="mt-8 flex flex-col gap-5">

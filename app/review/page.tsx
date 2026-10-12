@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/ui/page-header";
 import { isSolved } from "@/lib/content/pattern-labels";
-import { apiPath } from "@/lib/runtime";
+import { apiPath, IS_DEMO } from "@/lib/runtime";
 
 interface ReviewCard {
   id: string;
@@ -33,7 +33,7 @@ export default function ReviewPage() {
       {!cards && !error && <p role="status" className="mt-10 text-chalk-500">正在加载复习记录…</p>}
       {cards?.length === 0 && <div className="mt-10 rounded-2xl border border-dashed border-board-600 px-6 py-12 text-center">
         <p className="chalk text-3xl text-chalk-300">今天没有到期的复习题</p>
-        <p className="mt-2 text-sm text-chalk-500">判题后会安排复习，做对的题会逐渐延长间隔。</p>
+        <p className="mt-2 text-sm text-chalk-500">判题后会安排复习，做对的题会逐渐延长间隔。{IS_DEMO ? "体验版不记录学习进度，复习安排需要装到自己电脑上使用。" : ""}</p>
         <Link href="/roadmap" className="mt-6 inline-block text-beam-cyan">去路线图练习 →</Link>
       </div>}
       {cards && cards.length > 0 && <ul className="mt-10 flex flex-col gap-3">

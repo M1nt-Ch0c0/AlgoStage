@@ -684,7 +684,7 @@ export default function ProblemPage() {
               AI 导师
             </ColumnLabel>
 
-            <NarrationBar />
+            <NarrationBar problemSlug={slug} />
 
             {inLecture ? (
               <LessonPlan />
@@ -744,7 +744,7 @@ export default function ProblemPage() {
               <Lightbulb size={14} className="text-beam-gold" />
               提示阶梯
               <span className="ml-auto text-[11px] font-normal text-chalk-700">
-                用了几级会记在看板上
+                {IS_DEMO ? "体验版不记录提示用量" : "用了几级会记在看板上"}
               </span>
             </h3>
             <div className="mt-3 flex items-end gap-1.5">
