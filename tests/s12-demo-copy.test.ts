@@ -14,13 +14,14 @@ vi.mock("next/navigation", () => ({
 const rootDir = path.resolve(__dirname, "..");
 const read = (f: string) => readFileSync(path.join(rootDir, f), "utf8");
 
-async function renderText(Comp: ComponentType) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function renderText(Comp: ComponentType<any>, props?: Record<string, unknown>) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
   try {
-    await act(async () => root.render(createElement(Comp)));
+    await act(async () => root.render(createElement(Comp, props ?? null)));
     return container.textContent ?? "";
   } finally {
     await act(async () => root.unmount());
@@ -60,7 +61,7 @@ test("2. ProblemPage 提示阶梯标题在 IS_DEMO 下改为体验版不记录�
   );
 });
 
-test("3. NarrationBar 空态在 IS_DEMO 下提示仅内置两数之和，非 Demo 保持原样", async () => {
+test("3. NarrationBar 空态在 IS_DEMO 下按题目区分两数之和与其他题目，非 Demo 保持原样", async () => {
   usePlayerStore.getState().reset();
 
   vi.resetModules();
@@ -68,11 +69,23 @@ test("3. NarrationBar 空态在 IS_DEMO 下提示仅内置两数之和，非 Dem
   const { default: DemoNarrationBar } = await import(
     "../components/board/narration-bar"
   );
-  const demoText = await renderText(DemoNarrationBar);
-  expect(demoText).toContain(
+  const twoSumText = await renderText(DemoNarrationBar, {
+    problemSlug: "two-sum",
+  });
+  expect(twoSumText).toContain(
+    "点「开始讲课」，老师说的每句话都会在这里一个字一个字出现。",
+  );
+  expect(twoSumText).not.toContain(
     "体验版只内置了「两数之和」这一课；其他题目可以先读题、练习，装到自己电脑上接上 AI 就能听讲。",
   );
-  expect(demoText).not.toContain(
+
+  const otherText = await renderText(DemoNarrationBar, {
+    problemSlug: "group-anagrams",
+  });
+  expect(otherText).toContain(
+    "体验版只内置了「两数之和」这一课；其他题目可以先读题、练习，装到自己电脑上接上 AI 就能听讲。",
+  );
+  expect(otherText).not.toContain(
     "点「开始讲课」，老师说的每句话都会在这里一个字一个字出现。",
   );
 
@@ -81,7 +94,9 @@ test("3. NarrationBar 空态在 IS_DEMO 下提示仅内置两数之和，非 Dem
   const { default: LocalNarrationBar } = await import(
     "../components/board/narration-bar"
   );
-  const localText = await renderText(LocalNarrationBar);
+  const localText = await renderText(LocalNarrationBar, {
+    problemSlug: "group-anagrams",
+  });
   expect(localText).toContain(
     "点「开始讲课」，老师说的每句话都会在这里一个字一个字出现。",
   );

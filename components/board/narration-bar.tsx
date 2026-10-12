@@ -15,7 +15,7 @@ import { usePrefersReducedMotion } from "@/components/effects/fx-context";
 
 const BASE_CHARS_PER_SEC = 24;
 
-export default function NarrationBar() {
+export default function NarrationBar({ problemSlug }: { problemSlug?: string } = {}) {
   const step = usePlayerStore((s) => s.steps[s.currentIndex]);
   const status = usePlayerStore((s) => s.status);
   const speed = usePlayerStore((s) => s.speed);
@@ -96,7 +96,7 @@ export default function NarrationBar() {
         </p>
       ) : (
         <p className="text-[15px] leading-6 text-chalk-500">
-          {IS_DEMO
+          {IS_DEMO && problemSlug !== "two-sum"
             ? "体验版只内置了「两数之和」这一课；其他题目可以先读题、练习，装到自己电脑上接上 AI 就能听讲。"
             : "点「开始讲课」，老师说的每句话都会在这里一个字一个字出现。"}
         </p>
