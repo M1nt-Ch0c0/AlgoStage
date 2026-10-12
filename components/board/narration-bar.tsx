@@ -23,20 +23,26 @@ export default function NarrationBar() {
 
   const segments = useMemo(
     () => parseInline(step?.narration ?? ""),
-    [step?.id], // eslint-disable-line react-hooks/exhaustive-deps
+    [step?.narration],
   );
   const total = totalChars(segments);
-  const [typed, setTyped] = useState(0);
+  const stepKey = `${step?.id ?? ""}\0${step?.narration ?? ""}`;
+  const [typing, setTyping] = useState({ key: "", count: 0 });
+  // 非播放态直接显示全文；新步骤首帧也不能沿用上一句的打字进度。
+  const typed = reduced || status !== "playing" ? total : typing.key === stepKey ? typing.count : 0;
   const accRef = useRef(0);
   const done = total === 0 || typed >= total;
 
-  // 步骤切换：重置打字进度
+  // 仅播放中的新步骤从零开始；暂停/追问补全当前句，恢复播放时保留全文。
   useEffect(() => {
     accRef.current = 0;
-    setTyped(reduced ? total : 0);
-  }, [step?.id, total, reduced]);
+    setTyping(previous => {
+      if (reduced || status !== "playing") return { key: stepKey, count: total };
+      return previous.key === stepKey ? previous : { key: stepKey, count: 0 };
+    });
+  }, [stepKey, total, reduced, status]);
 
-  // 打字机推进（仅在播放中走字；暂停即冻结）
+  // 打字机仅在播放中推进。
   useEffect(() => {
     if (done || reduced || status !== "playing") return;
     const perTick = (BASE_CHARS_PER_SEC * speed) / 20; // 50ms 一拍
@@ -45,11 +51,11 @@ export default function NarrationBar() {
       const n = Math.floor(accRef.current);
       if (n > 0) {
         accRef.current -= n;
-        setTyped((t) => Math.min(total, t + n));
+        setTyping(t => ({ key: stepKey, count: Math.min(total, (t.key === stepKey ? t.count : 0) + n) }));
       }
     }, 50);
     return () => clearInterval(timer);
-  }, [done, reduced, status, speed, total]);
+  }, [done, reduced, status, speed, total, stepKey]);
 
   // 打完 + 停留 → 自动推进下一步（awaitNarration 默认 true）
   useEffect(() => {
@@ -68,7 +74,7 @@ export default function NarrationBar() {
       className={`rounded-xl border px-4 py-3 transition-colors ${
         step ? "cursor-pointer border-beam-gold/25 bg-board-800/80" : "border-board-700 bg-board-800/50"
       }`}
-      onClick={() => setTyped(total)}
+      onClick={() => setTyping({ key: stepKey, count: total })}
       title={step && !done ? "点击显示全文" : undefined}
     >
       <p className="mb-1 font-mono text-[10px] tracking-widest text-chalk-700">字幕</p>

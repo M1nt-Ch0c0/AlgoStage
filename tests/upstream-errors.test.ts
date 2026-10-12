@@ -27,7 +27,7 @@ test("S1 review：上游 401/503 固定返回 502，响应与全部日志不泄�
     const routes = [await import("../app/api/hint/route"), await import("../app/api/lecture/route")];
     const apiKey = "fake-secret-key-M1-review-401";
     const byok = { provider: "openai-compatible", model: "review-model", apiKey, baseURL: f.baseURL };
-    for (const status of [401, 503]) {
+    for (const status of [401, 403, 503]) {
       // 故意模拟供应商把完整 Key 放进错误体的情况。
       f.setError(status, { error: { message: `Incorrect API key provided: ${apiKey}`, type: "authentication_error" } });
       for (const route of routes) {
@@ -36,6 +36,7 @@ test("S1 review：上游 401/503 固定返回 502，响应与全部日志不泄�
         assert.equal(response.status, 502);
         const raw = await response.text();
         assert.equal(JSON.parse(raw).error, "UPSTREAM_ERROR");
+        if (status === 401 || status === 403) assert.match(JSON.parse(raw).message, /Key 无效或没有权限，请检查设置/);
         assert.ok(!raw.includes(apiKey));
         assert.ok(!logs.includes(apiKey));
         assert.ok(!logs.includes("Incorrect API key provided"));

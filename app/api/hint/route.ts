@@ -2,7 +2,7 @@
  * POST /api/hint · 5 级渐进提示（docs/03 §6）
  * 每次请求只升一级；消耗记录由客户端调 /api/progress 写入 HintUsage。
  */
-import { generateText } from "ai";
+import { APICallError, generateText } from "ai";
 import { NextRequest } from "next/server";
 import { IS_DEMO } from "@/lib/runtime";
 import {
@@ -109,7 +109,7 @@ ${body.userCode ? `学生当前代码：\n${body.userCode}` : ""}`,
         await waitForUpstreamRetry(signal);
       }
     }
-  } catch {
+  } catch (error) {
     // 上游错误体可能回显完整 Key；不记录、不透传原始异常。
     if (signal.aborted)
       return Response.json(
@@ -121,6 +121,6 @@ ${body.userCode ? `学生当前代码：\n${body.userCode}` : ""}`,
         },
         { status: timeout.aborted ? 504 : 499 },
       );
-    return upstreamError();
+    return upstreamError(APICallError.isInstance(error) ? error.statusCode : undefined);
   }
 }

@@ -364,7 +364,9 @@ export async function generateLecture(input: {
           ok: false,
           status: 502,
           error: "UPSTREAM_ERROR",
-          message: `暂时连不上模型或模型不支持工具调用。${recommendation}`,
+          message: status === 401 || status === 403
+            ? "Key 无效或没有权限，请检查设置。"
+            : `暂时连不上模型或模型不支持工具调用。${recommendation}`,
         };
       }
       if (finished)

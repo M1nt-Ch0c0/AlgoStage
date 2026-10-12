@@ -226,13 +226,13 @@ export default function ProblemPage() {
         loadLectureForPlayback(script, detail, { setCode, loadScript, play });
     } catch (e) {
       if (lectureAbort.current === abort) {
-        usePlayerStore.getState().stopStream();
-        if (timedOut)
-          setLectureError("备课超时，请点击重试或换用推荐模型 gpt-6.1-sol。");
-        else if (!abort.signal.aborted)
-          setLectureError(
-            e instanceof Error ? e.message : "老师这次没备好课，请重试。",
-          );
+        const message = timedOut
+          ? "备课超时，请点击重试或换用推荐模型 gpt-6.1-sol。"
+          : !abort.signal.aborted ? (e instanceof Error ? e.message : "老师这次没备好课，请重试。") : null;
+        // 失败也清空半份教案，避免残留字幕与代码锚点；错误提示独立保留。
+        cancelLectureForPlayback(detail, language, { abort: () => abort.abort(), reset, setCode });
+        lastReportedRef.current = -1;
+        if (message) setLectureError(message);
       }
     } finally {
       clearTimeout(deadline);
@@ -242,7 +242,7 @@ export default function ProblemPage() {
         lectureAbort.current = null;
       }
     }
-  }, [slug, detail, language, loadScript, play]);
+  }, [slug, detail, language, loadScript, play, reset]);
 
   function cancelLecture(next = language) {
     cancelLectureForPlayback(detail, next, {
@@ -491,6 +491,7 @@ export default function ProblemPage() {
           >
             重试讲课
           </button>
+          <Link href="/settings" className="underline hover:text-chalk-100">去设置</Link>
         </div>
       )}
 

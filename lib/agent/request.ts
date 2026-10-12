@@ -32,9 +32,9 @@ export function badRequest() {
   );
 }
 
-export function upstreamError() {
+export function upstreamError(status?: number) {
   return Response.json(
-    { error: "UPSTREAM_ERROR", message: "暂时连不上模型，请检查设置中的接口地址、Key 和模型名后重试。" },
+    { error: "UPSTREAM_ERROR", message: status === 401 || status === 403 ? "Key 无效或没有权限，请检查设置。" : "暂时连不上模型，请检查设置中的接口地址、Key 和模型名后重试。" },
     { status: 502 },
   );
 }
