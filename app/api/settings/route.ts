@@ -1,6 +1,7 @@
 /**
  * GET/PUT /api/settings · BYOK 与偏好设置（仅存本地 SQLite）
  */
+import { z } from "zod";
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { byokFromEnv, resolveSavedByok } from "@/lib/agent/provider";
@@ -9,15 +10,17 @@ import { IS_DEMO } from "@/lib/runtime";
 export const runtime = "nodejs";
 
 const USER_ID = "local-default";
-const ALLOWED_KEYS = new Set([
-  "provider",
-  "model",
-  "apiKey",
-  "baseURL",
-  "theme",
-  "effectLevel",
-  "narrationSpeed",
-]);
+const settingsRequestSchema = z.object({
+  settings: z.object({
+    provider: z.enum(["openai-compatible", "anthropic", "google"]).optional(),
+    model: z.string().trim().optional(),
+    apiKey: z.string().trim().optional(),
+    baseURL: z.union([z.url(), z.literal("")]).optional(),
+    theme: z.enum(["dark", "light"]).optional(),
+    effectLevel: z.enum(["full", "calm", "minimal"]).optional(),
+    narrationSpeed: z.enum(["15", "22", "30"]).optional(),
+  }),
+});
 
 export async function GET() {
   // 在线体验版：访客之间不共享任何设置
@@ -39,14 +42,23 @@ export async function PUT(req: NextRequest) {
   if (IS_DEMO) {
     return Response.json({ error: "DEMO", message: "在线体验版不能保存设置。" }, { status: 403 });
   }
-  const body = (await req.json()) as { settings: Record<string, string> };
-  for (const [key, value] of Object.entries(body.settings ?? {})) {
-    if (!ALLOWED_KEYS.has(key)) continue;
-    await prisma.setting.upsert({
+  let input: unknown;
+  try {
+    input = await req.json();
+  } catch {
+    return Response.json({ error: "BAD_JSON", message: "设置请求不是有效的 JSON。" }, { status: 400 });
+  }
+  const parsed = settingsRequestSchema.safeParse(input);
+  if (!parsed.success) {
+    // 不回传 zod 原始错误或输入，避免 Key 出现在响应与日志中。
+    return Response.json({ error: "BAD_REQUEST", message: "设置参数不正确，请检查 Key、模型和偏好设置。" }, { status: 400 });
+  }
+  await prisma.$transaction(Object.entries(parsed.data.settings).map(([key, value]) =>
+    prisma.setting.upsert({
       where: { key_userId: { key, userId: USER_ID } },
       update: { value },
       create: { key, value, userId: USER_ID },
-    });
-  }
+    }),
+  ));
   return Response.json({ ok: true });
 }
