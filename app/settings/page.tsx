@@ -47,7 +47,7 @@ const labelClass = "mb-1.5 block text-xs text-chalk-500";
 
 export default function SettingsPage() {
   const [provider, setProvider] = useState<string>("openai-compatible");
-  const [baseURL, setBaseURL] = useState("https://api.openai.com/v1");
+  const [baseURL, setBaseURL] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [apiKeyMasked, setApiKeyMasked] = useState("");
   const [keySource, setKeySource] = useState<KeySource>("none");
@@ -59,6 +59,15 @@ export default function SettingsPage() {
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const [testState, setTestState] = useState<TestState>({ kind: "idle" });
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 只记录真实编辑；预填文案和从服务端读到的旧值都不能隐式写回。
+  const edits = useRef<Record<string, string>>({});
+  useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current); }, []);
+  function edit(field: string, value: string, setter: (value: string) => void) {
+    edits.current[field] = value;
+    setter(value);
+    setSaveState("idle");
+  }
+
 
   // 主题以本机 localStorage 为准（导航栏也能切换），这里只读当前值
   useEffect(() => setTheme(readTheme()), []);
@@ -79,21 +88,13 @@ export default function SettingsPage() {
   }, []);
 
   function applyTheme(next: string) {
-    setTheme(next);
+    edit("theme", next, setTheme);
     persistTheme(next === "light" ? "light" : "dark");
   }
 
   async function save() {
     setSaveState("saving");
-    const settings: Record<string, string> = {
-      provider,
-      model,
-      theme,
-      effectLevel,
-      narrationSpeed,
-    };
-    if (provider === "openai-compatible") settings.baseURL = baseURL;
-    if (apiKey) settings.apiKey = apiKey;
+    const settings = { ...edits.current };
     try {
       const res = await fetch(apiPath("/api/settings"), {
         method: "PUT",
@@ -103,11 +104,11 @@ export default function SettingsPage() {
       if (!res.ok) throw new Error("设置保存失败");
       const saved = await fetch(apiPath("/api/settings")).then((r) => r.json());
       setKeySource(saved.keySource ?? "none");
-      if (apiKey) {
-        setApiKeyMasked(
-          apiKey.length > 8 ? `${apiKey.slice(0, 4)}…${apiKey.slice(-4)}` : "已配置",
-        );
-        setApiKey("");
+      setApiKeyMasked(saved.settings?.apiKeyMasked ?? "");
+      for (const [field, value] of Object.entries(settings)) {
+        if (edits.current[field] !== value) continue;
+        delete edits.current[field];
+        if (field === "apiKey") setApiKey("");
       }
       setSaveState("saved");
       if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -126,7 +127,7 @@ export default function SettingsPage() {
           provider,
           model,
           apiKey,
-          ...(provider === "openai-compatible" ? { baseURL } : {}),
+          ...(baseURL.trim() ? { baseURL: baseURL.trim() } : {}),
         };
       }
       const res = await fetch(apiPath("/api/hint"), {
@@ -190,6 +191,7 @@ export default function SettingsPage() {
           desc="AlgoStage 自己不带 AI，需要接上一个你自己的 AI 账号，老师才能给其余的题备课。账号的钥匙（API Key）只存在这台电脑上，不会发给任何人。"
         >
           <div className="mb-4"><KeySourceBadge source={keySource} /></div>
+          <p className="mb-4 text-xs text-chalk-500">只保存你改动的字段。使用环境变量 Key 时，接口地址和服务商也沿用环境变量；可单独修改模型名。保存新 Key 时，请同时填写对应接口地址和服务商。</p>
           <fieldset>
             <legend className={labelClass}>用哪家的 AI</legend>
             <div className="grid gap-2 sm:grid-cols-3">
@@ -201,7 +203,7 @@ export default function SettingsPage() {
                     id={`provider-${p.id}`}
                     value={p.id}
                     checked={provider === p.id}
-                    onChange={() => setProvider(p.id)}
+                    onChange={() => edit("provider", p.id, setProvider)}
                     className="sr-only"
                   />
                   <span className={`block text-sm font-medium ${provider === p.id ? "text-beam-gold" : "text-chalk-100"}`}>
@@ -221,7 +223,7 @@ export default function SettingsPage() {
               <input
                 id="model"
                 value={model}
-                onChange={(e) => setModel(e.target.value)}
+                onChange={(e) => edit("model", e.target.value, setModel)}
                 placeholder={`例如 ${preset?.modelExample ?? DEFAULT_MODEL}`}
                 className={`${inputClass} font-mono`}
               />
@@ -235,8 +237,8 @@ export default function SettingsPage() {
                 <input
                   id="baseURL"
                   value={baseURL}
-                  onChange={(e) => setBaseURL(e.target.value)}
-                  placeholder="https://api.deepseek.com/v1"
+                  onChange={(e) => edit("baseURL", e.target.value, setBaseURL)}
+                  placeholder="留空使用环境变量中的接口地址"
                   className={`${inputClass} font-mono`}
                 />
               </div>
@@ -251,7 +253,7 @@ export default function SettingsPage() {
                   id="apiKey"
                   type={showKey ? "text" : "password"}
                   value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
+                  onChange={(e) => edit("apiKey", e.target.value, setApiKey)}
                   placeholder={apiKeyMasked ? "输入新的 Key 以更换" : "sk-…"}
                   className={`${inputClass} pr-10 font-mono`}
                   autoComplete="off"
@@ -265,6 +267,7 @@ export default function SettingsPage() {
                   {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
               </div>
+              {apiKeyMasked && <button type="button" className="mt-2 text-xs text-beam-cyan" onClick={() => edit("apiKey", "", setApiKey)}>清除已保存 Key，改用环境变量（保存后生效）</button>}
             </div>
           </div>
 
@@ -351,7 +354,7 @@ export default function SettingsPage() {
               <legend className={labelClass}>特效强度</legend>
               <div className="grid gap-2 sm:grid-cols-3">
                 {EFFECT_LEVELS.map((l) => (
-                  <button key={l.id} type="button" aria-pressed={effectLevel === l.id} onClick={() => setEffectLevel(l.id)} className={choice(effectLevel === l.id)}>
+                  <button key={l.id} type="button" aria-pressed={effectLevel === l.id} onClick={() => edit("effectLevel", l.id, setEffectLevel)} className={choice(effectLevel === l.id)}>
                     <span className={`block text-sm font-medium ${effectLevel === l.id ? "text-beam-gold" : "text-chalk-100"}`}>{l.label}</span>
                     <span className="mt-0.5 block text-xs text-chalk-500">{l.desc}</span>
                   </button>
@@ -367,7 +370,7 @@ export default function SettingsPage() {
                     key={sp.id}
                     type="button"
                     aria-pressed={narrationSpeed === sp.id}
-                    onClick={() => setNarrationSpeed(sp.id)}
+                    onClick={() => edit("narrationSpeed", sp.id, setNarrationSpeed)}
                     className={`rounded-full border px-4 py-1.5 text-sm transition-colors ${
                       narrationSpeed === sp.id
                         ? "border-beam-gold/70 text-beam-gold"

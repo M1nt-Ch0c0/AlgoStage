@@ -24,8 +24,8 @@ test("S1：请求 > 设置 > 环境变量；已保存 Key 可直接要提示且�
     assert.equal(settings.envConfigured, true);
     assert.equal(settings.settings.apiKey, undefined);
     assert.ok(!JSON.stringify(settings).includes("saved-test-key"));
-    // 空白模型和地址逐字段回退，不能丢失设置页已保存的 Key。
-    await f.save({ model: "  ", baseURL: "" });
+    // 模型可独立回退；密钥和接口不能跨来源混用。
+    await f.save({ model: "  " });
     assert.deepEqual(await resolveByok(), { source: "settings", config: {
       provider: "openai-compatible", apiKey: "saved-test-key", model: "env-model", baseURL: f.baseURL,
     } });
@@ -40,8 +40,8 @@ test("S1：请求 > 设置 > 环境变量；已保存 Key 可直接要提示且�
     assert.equal((await (await GET()).json()).keySource, "settings");
     // 设置页只指定模型与地址时，用环境 Key，来源仍为环境变量。
     process.env.AI_API_KEY = "env-test-key";
-    process.env.AI_BASE_URL = "https://unused.invalid/v1";
-    await f.save({ apiKey: "  ", model: "saved-model", baseURL: f.baseURL });
+    process.env.AI_BASE_URL = f.baseURL;
+    await f.save({ apiKey: "  ", model: "saved-model", baseURL: "https://api.openai.com/v1" });
     assert.equal((await resolveByok())?.source, "env");
     assert.equal((await (await GET()).json()).keySource, "env");
     response = await POST(request({ slug: "3sum", level: 1 }));
@@ -50,7 +50,7 @@ test("S1：请求 > 设置 > 环境变量；已保存 Key 可直接要提示且�
     delete process.env.AI_API_KEY;
     assert.equal(await resolveByok(), null);
     assert.equal((await (await GET()).json()).keySource, "none");
-    await f.save({ apiKey: "saved-test-key" });
+    await f.save({ apiKey: "saved-test-key", baseURL: f.baseURL });
     const incomplete = { provider: "google" as const, apiKey: "new-key", model: "" };
     assert.equal((await resolveByok(incomplete))?.source, "settings");
     const complete = { ...incomplete, model: "new-model" };

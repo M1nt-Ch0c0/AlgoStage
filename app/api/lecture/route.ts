@@ -12,10 +12,10 @@ import {
 import { createHash } from "crypto";
 import { NextRequest } from "next/server";
 import { IS_DEMO } from "@/lib/runtime";
-import { resolveByok, type ByokConfig } from "@/lib/agent/provider";
+import { resolveByok, ByokConfigurationError, type ByokConfig } from "@/lib/agent/provider";
 import { buildLecturePrompt } from "@/lib/agent/modes/lecture";
 import { validateScript } from "@/lib/teaching/validated-script";
-import { lectureRequestSchema, badRequest } from "@/lib/agent/request";
+import { lectureRequestSchema, badRequest, configurationError } from "@/lib/agent/request";
 import { localSeedSource } from "@/lib/content/local-source";
 import { prisma } from "@/lib/db/prisma";
 
@@ -64,7 +64,9 @@ export async function POST(req: NextRequest) {
       { status: 404 },
     );
   }
-  const resolved = await resolveByok(body.byok);
+  let resolved;
+  try { resolved = await resolveByok(body.byok); }
+  catch (error) { if (error instanceof ByokConfigurationError) return configurationError(); throw error; }
   const byok = resolved?.config;
   if (!byok) {
     return Response.json(

@@ -18,6 +18,25 @@ export interface ByokConfig {
   baseURL?: string;
 }
 
+export class ByokConfigurationError extends Error {
+  constructor() { super("Key 与接口地址必须来自同一配置来源，请同时配置 Key、接口地址和服务商，或清空设置页 Key 后使用环境变量。"); }
+}
+type Origin = "settings" | "env";
+type CredentialOrigin = { key: Origin; baseURL: Origin; provider: Origin };
+const origins = new WeakMap<ByokConfig, CredentialOrigin>();
+
+/** 发送前硬校验；即使调用者复制配置或修改 URL，也不能把环境 Key 送往其他接口。 */
+export function assertCredentialDestination(config: ByokConfig) {
+  const origin = origins.get(config);
+  if (origin && (origin.key !== origin.baseURL || origin.key !== origin.provider)) throw new ByokConfigurationError();
+  const envKey = process.env.AI_API_KEY?.trim();
+  if (origin?.key === "env" || (envKey && config.apiKey === envKey)) {
+    const endpoint = process.env.AI_BASE_URL?.trim();
+    const provider = process.env.AI_PROVIDER?.trim() || "openai-compatible";
+    if (!endpoint || config.baseURL !== endpoint || config.provider !== provider) throw new ByokConfigurationError();
+  }
+}
+
 export const PROVIDER_PRESETS: {
   id: ByokConfig["provider"];
   label: string;
@@ -56,19 +75,27 @@ export function savedKeySource(settings: Record<string, string>): "settings" | "
   return process.env.AI_API_KEY?.trim() ? "env" : "none";
 }
 
-/** 按字段合并：设置页非空值优先，空白字段才回退到环境变量或默认值。 */
+/** 环境 Key 与环境接口成组使用，设置页只可覆盖模型；保存 Key 时拒绝混用其他来源。 */
 export function resolveSavedByok(settings: Record<string, string>): {
   config: ByokConfig;
   source: "settings" | "env";
 } | null {
   const source = savedKeySource(settings);
+  const useSaved = source === "settings";
   const config = completeByok({
-    provider: settings.provider?.trim() || process.env.AI_PROVIDER?.trim() || "openai-compatible",
+    provider: (useSaved ? settings.provider?.trim() : "") || process.env.AI_PROVIDER?.trim() || "openai-compatible",
     apiKey: settings.apiKey?.trim() || process.env.AI_API_KEY?.trim(),
     model: settings.model?.trim() || process.env.AI_MODEL?.trim() || DEFAULT_MODEL,
-    baseURL: settings.baseURL?.trim() || process.env.AI_BASE_URL?.trim() || undefined,
+    baseURL: (useSaved ? settings.baseURL?.trim() : "") || process.env.AI_BASE_URL?.trim() || undefined,
   });
-  return config && source !== "none" ? { config, source } : null;
+  if (!config || source === "none") return null;
+  origins.set(config, {
+    key: source,
+    baseURL: useSaved && (settings.baseURL?.trim() || !process.env.AI_BASE_URL?.trim()) ? "settings" : "env",
+    provider: useSaved && (settings.provider?.trim() || !process.env.AI_PROVIDER?.trim()) ? "settings" : "env",
+  });
+  assertCredentialDestination(config);
+  return { config, source };
 }
 
 /** 请求中的完整配置优先，其次使用本机保存的配置，最后回退到环境变量。 */
@@ -77,18 +104,30 @@ export async function resolveByok(bodyByok?: ByokConfig | null): Promise<{
   source: "request" | "settings" | "env";
 } | null> {
   const config = completeByok(bodyByok);
-  if (config) return { config, source: "request" };
+  if (config) { assertCredentialDestination(config); return { config, source: "request" }; }
   const rows = await prisma.setting.findMany({ where: { userId: "local-default" } });
   return resolveSavedByok(Object.fromEntries(rows.map((row) => [row.key, row.value])));
 }
 
 /** 由 BYOK 配置构造 AI SDK LanguageModel */
 export function createModel(config: ByokConfig) {
+  assertCredentialDestination(config);
+  const guardedFetch: typeof fetch = (input, init) => {
+    assertCredentialDestination(config);
+    if (origins.get(config)?.key === "env" || config.apiKey === process.env.AI_API_KEY?.trim()) {
+      const base = new URL(process.env.AI_BASE_URL!.trim());
+      const target = new URL(input instanceof Request ? input.url : String(input));
+      const prefix = base.pathname.replace(/\/$/, "");
+      if (target.origin !== base.origin || !(target.pathname === prefix || target.pathname.startsWith(`${prefix}/`))) throw new ByokConfigurationError();
+    }
+    // 禁止上游重定向携带凭据到另一地址；错误仍走固定错误码，不输出请求信息。
+    return globalThis.fetch(input, { ...init, redirect: "error" });
+  };
   switch (config.provider) {
     case "anthropic":
-      return createAnthropic({ apiKey: config.apiKey })(config.model);
+      return createAnthropic({ apiKey: config.apiKey, baseURL: config.baseURL, fetch: guardedFetch })(config.model);
     case "google":
-      return createGoogleGenerativeAI({ apiKey: config.apiKey })(config.model);
+      return createGoogleGenerativeAI({ apiKey: config.apiKey, baseURL: config.baseURL, fetch: guardedFetch })(config.model);
     case "openai-compatible":
     default: {
       const preset = PROVIDER_PRESETS.find(
@@ -98,6 +137,7 @@ export function createModel(config: ByokConfig) {
         name: "byok",
         supportsStructuredOutputs: true,
         apiKey: config.apiKey,
+        fetch: guardedFetch,
         baseURL: config.baseURL ?? preset.baseURL!,
       })(config.model);
     }

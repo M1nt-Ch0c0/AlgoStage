@@ -5,8 +5,8 @@
 import { generateText } from "ai";
 import { NextRequest } from "next/server";
 import { IS_DEMO } from "@/lib/runtime";
-import { createModel, resolveByok } from "@/lib/agent/provider";
-import { hintRequestSchema, badRequest, upstreamError } from "@/lib/agent/request";
+import { createModel, resolveByok, ByokConfigurationError } from "@/lib/agent/provider";
+import { hintRequestSchema, badRequest, upstreamError, configurationError } from "@/lib/agent/request";
 import { localSeedSource } from "@/lib/content/local-source";
 
 export const runtime = "nodejs";
@@ -40,7 +40,9 @@ export async function POST(req: NextRequest) {
   if (!meta) {
     return Response.json({ error: "NOT_FOUND", message: "没找到这道题，请回路线图重新选择。" }, { status: 404 });
   }
-  const resolved = await resolveByok(body.byok);
+  let resolved;
+  try { resolved = await resolveByok(body.byok); }
+  catch (error) { if (error instanceof ByokConfigurationError) return configurationError(); throw error; }
   const byok = resolved?.config;
   if (!byok) {
     return Response.json(
