@@ -62,6 +62,33 @@ test("同批同工具同一步两次失败，一次成功只能清掉一个原�
   expect((await response.json()).script.steps[0].targets).toContainEqual({ kind: "code-line", start: 6, end: 6 });
 });
 
+test("retryOf 对不上时不回退到 pending[0]：报 unknown_retry_call，原失败调用仍待修复", async () => {
+  let round = 0;
+  let original = "";
+  let mismatch: { error?: string; retryOf?: unknown } | undefined;
+  let choice: unknown;
+  const highlight = (start: number, retryOf?: string) => ({ name: "highlight_lines", input: { stepId: "s1", start, ...(retryOf ? { retryOf } : {}) } });
+  f.setToolsReply(body => {
+    round++;
+    if (round === 1) return [add("s1"), highlight(999)];
+    if (round === 2) {
+      original = failures(body)[0].retryOf;
+      return [highlight(4, "no-such-call")];
+    }
+    mismatch = failures(body).at(-1);
+    choice = body.tool_choice;
+    return [highlight(4, original), finish];
+  });
+  const response = await POST(request({ slug: "3sum" }));
+  expect(response.status).toBe(200);
+  expect(round).toBe(3);
+  expect(mismatch?.error).toBe("unknown_retry_call");
+  // 指回原始失败调用，而不是把错的 retryOf 当成它的修复
+  expect(mismatch?.retryOf).toBe(original);
+  expect(choice).toMatchObject({ function: { name: "highlight_lines" } });
+  expect((await response.json()).script.steps[0].targets).toContainEqual({ kind: "code-line", start: 4, end: 4 });
+});
+
 test("不存在的 retryOf 不能消费其他失败记录，失败不缓存", async () => {
   const before = f.requests.length;
   f.setToolsReply(() => [add("s1", "unknown-call")]);
