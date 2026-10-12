@@ -39,6 +39,13 @@ describe("D2 Demo UI 拆解", () => {
     expect(dashboardPage).not.toContain("体验版");
     expect(dashboardPage).toContain("暂时打不开学习看板");
   });
+
+  it("e2e 冒烟测试不再包含 DEMO 与在线体验版断言", () => {
+    const smoke = read("e2e/smoke.spec.ts");
+    expect(smoke).not.toContain("DEMO");
+    expect(smoke).not.toContain("在线体验版");
+    expect(smoke).not.toContain("这是在线体验版");
+  });
 });
 
 describe("S12 版本号", () => {
