@@ -13,16 +13,17 @@ afterEach(async () => {
 
 const problem = { ...JUDGING_SPECS["two-sum"], cases: [JUDGING_SPECS["two-sum"].cases[0]] };
 const correct = "def two_sum(nums, target):\n    return [0, 1]";
-function setup() {
-  const workers: { terminated: boolean; interruptBuffer?: Uint8Array }[] = [];
-  const pool = new PythonWorkerPool({ indexURL: pythonIndexURL, createWorker: () => {
+function setup(keepSpare = false) {
+  const workers: { terminated: boolean; runs: number; interruptBuffer?: Uint8Array }[] = [];
+  const pool = new PythonWorkerPool({ keepSpare, indexURL: pythonIndexURL, createWorker: () => {
     const worker = createNodeWorker(true);
-    const record: typeof workers[number] = { terminated: false };
+    const record: typeof workers[number] = { terminated: false, runs: 0 };
     workers.push(record);
     const post = worker.postMessage, terminate = worker.terminate;
     worker.postMessage = data => {
-      const message = data as { type?: string; interruptBuffer?: Uint8Array };
+      const message = data as { type?: string; language?: string; interruptBuffer?: Uint8Array };
       if (message.type === "init") record.interruptBuffer = message.interruptBuffer;
+      if (message.language === "python") record.runs++;
       post(data);
     };
     worker.terminate = () => {
@@ -74,6 +75,66 @@ ${correct}
   expect(workers[0].terminated).toBe(false);
 });
 
+test("真实 Pyodide 回归：json.X 与 math.inf 的修改不会带到下一次运行", async () => {
+  const { run } = setup();
+  const first = await run(`
+import json, math
+json.X = 1
+math.inf = 0
+${correct}
+`);
+  expect(first.verdict, JSON.stringify(first)).toBe("AC");
+  const next = await run(`
+import json, math
+assert not hasattr(json, 'X')
+assert math.inf == float('inf')
+${correct}
+`);
+  expect(next.verdict, JSON.stringify(next)).toBe("AC");
+});
+
+test("真实 Pyodide 恢复已有模块属性的新增、删除和对象替换，序列化污染也不会泄漏", async () => {
+  const { workers, run } = setup();
+  const identities = "print(id(json.loads), id(json.dumps), id(json.JSONDecodeError))";
+  const first = await run(`
+import json, sys, types
+${identities}
+json.QA_MOD_FLAG = 1
+json.dumps = lambda *args, **kwargs: 'null'
+del json.loads
+del json.JSONDecodeError
+sys.modules['json'] = types.ModuleType('json')
+sys.modules['_qa_added'] = types.ModuleType('_qa_added')
+del sys.modules['collections']
+sys.modules = dict(sys.modules)
+class Result(list):
+    def __iter__(self):
+        json.QA_SERIALIZE_FLAG = 1
+        return super().__iter__()
+def two_sum(nums, target):
+    return Result([0, 1])
+`);
+  expect(first.verdict, JSON.stringify(first)).toBe("AC");
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const next = await run(`
+import json, sys
+assert not hasattr(json, 'QA_MOD_FLAG')
+assert not hasattr(json, 'QA_SERIALIZE_FLAG')
+assert '_qa_added' not in sys.modules
+assert 'collections' in sys.modules
+assert json.loads('{"ok": true}') == {'ok': True}
+assert json.dumps([0, 1]) == '[0, 1]'
+assert json.JSONDecodeError is json.decoder.JSONDecodeError
+${identities}
+${correct}
+`);
+    expect(next.verdict, JSON.stringify(next)).toBe("AC");
+    expect(next.cases[0].stdout).toBe(first.cases[0].stdout);
+  }
+  expect(workers).toHaveLength(1);
+  expect(workers[0].terminated).toBe(false);
+});
+
 test("真实 Pyodide TLE 后后台预热替代 worker，下一次运行清空中断并 AC", async () => {
   const { pool, workers, run } = setup();
   const first = await run("while True:\n    pass", 80);
@@ -89,6 +150,27 @@ test("真实 Pyodide TLE 后后台预热替代 worker，下一次运行清空中
   expect(second.verdict, JSON.stringify(second)).toBe("AC");
   expect(workers).toHaveLength(2);
   expect(workers[1].interruptBuffer?.[0]).toBe(0);
+});
+
+test("真实 Pyodide TLE 后首次提交直接使用已预热备用，同时后台补齐实例", async () => {
+  const { pool, workers, run } = setup(true);
+  pool.preload();
+  const primary = pool.acquire(), spare = pool.acquire();
+  expect(await primary.ready).toBe(true);
+  expect(await spare.ready).toBe(true);
+  primary.release(true); spare.release(true);
+  const first = await run("while True:\n    pass", 80);
+  expect(first.verdict).toBe("TLE");
+  expect(workers[0].terminated).toBe(true);
+  expect(workers).toHaveLength(3);
+  expect(pool.getStatus()).toBe("ready");
+  Atomics.store(workers[1].interruptBuffer!, 0, 2);
+  const next = await run(correct);
+  expect(next.verdict, JSON.stringify(next)).toBe("AC");
+  expect(workers[1].runs).toBe(1);
+  expect(workers[1].interruptBuffer?.[0]).toBe(0);
+  expect(workers[2].runs).toBe(0);
+  expect(workers).toHaveLength(3);
 });
 
 test.each([
