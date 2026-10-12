@@ -16,12 +16,19 @@ export async function createFixture() {
   const { prisma } = await import("../lib/db/prisma");
   await prisma.user.create({ data: { id: "local-default" } });
   const calls: { model: string; key: string | undefined }[] = [];
+  let errorResponse: { status: number; body: unknown } | undefined;
   let reply: (body: Record<string, unknown>) => unknown = () => "请注意题目中的条件。";
   const server = createServer(async (req, res) => {
     let raw = "";
     for await (const chunk of req) raw += chunk;
     const body = JSON.parse(raw) as Record<string, unknown>;
     calls.push({ model: body.model as string, key: req.headers.authorization });
+    if (errorResponse) {
+      res.statusCode = errorResponse.status;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify(errorResponse.body));
+      return;
+    }
     const content = reply(body);
     res.setHeader("Content-Type", "application/json");
     res.end(JSON.stringify({
@@ -34,7 +41,8 @@ export async function createFixture() {
   const baseURL = `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`;
   return {
     prisma, calls, baseURL,
-    setReply(next: typeof reply) { reply = next; },
+    setReply(next: typeof reply) { reply = next; errorResponse = undefined; },
+    setError(status: number, body: unknown) { errorResponse = { status, body }; },
     async save(settings: Record<string, string>) {
       for (const [key, value] of Object.entries(settings)) {
         await prisma.setting.upsert({ where: { key_userId: { key, userId: "local-default" } }, update: { value }, create: { key, value, userId: "local-default" } });

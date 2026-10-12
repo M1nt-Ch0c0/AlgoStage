@@ -3,33 +3,31 @@
  * 链路：BYOK → generateObject → 校验后返回完整脚本（docs/01 §4、docs/03 §5）
  * 缓存：同题同模型只生成一次，落 LectureScriptCache。
  */
-import { generateObject } from "ai";
+import { generateObject, NoObjectGeneratedError } from "ai";
+import { ZodError } from "zod";
 import { createHash } from "crypto";
 import { NextRequest } from "next/server";
 import { IS_DEMO } from "@/lib/runtime";
-import { createModel, resolveByok, type ByokConfig } from "@/lib/agent/provider";
+import { createModel, resolveByok } from "@/lib/agent/provider";
 import { buildLecturePrompt } from "@/lib/agent/modes/lecture";
 import { validateScript } from "@/lib/teaching/validated-script";
 import { teachingScriptSchema } from "@/lib/teaching/schema";
+import { lectureRequestSchema, badRequest, upstreamError } from "@/lib/agent/request";
 import { localSeedSource } from "@/lib/content/local-source";
 import { prisma } from "@/lib/db/prisma";
 
 export const runtime = "nodejs";
+
+class ScriptMetadataError extends Error {}
 
 function cacheKeyOf(slug: string, model: string, solutionLanguage: string, narrationLanguage: string) {
   return createHash("sha1").update(`${slug}|${model}|${solutionLanguage}|${narrationLanguage}|lecture`).digest("hex");
 }
 
 export async function POST(req: NextRequest) {
-  let body: {
-    slug: string;
-    byok?: ByokConfig;
-    language?: "zh" | "en";
-    solutionLanguage?: "typescript" | "python";
-  };
+  let input: unknown;
   try {
-    body = await req.json();
-    if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Bad body");
+    input = await req.json();
   } catch {
     return Response.json({ error: "BAD_JSON", message: "请求内容不是有效的 JSON 对象，请重试。" }, { status: 400 });
   }
@@ -40,6 +38,9 @@ export async function POST(req: NextRequest) {
       { status: 403 },
     );
   }
+  const parsed = lectureRequestSchema.safeParse(input);
+  if (!parsed.success) return badRequest();
+  const body = parsed.data;
   const meta = (await localSeedSource.list()).find((p) => p.slug === body.slug);
   if (!meta) {
     return Response.json({ error: "NOT_FOUND", message: "没找到这道题，请回路线图重新选择。" }, { status: 404 });
@@ -65,7 +66,7 @@ export async function POST(req: NextRequest) {
   const matchesRequest = (script: ReturnType<typeof validateScript>) => {
     if (script.problemSlug !== body.slug || script.mode !== "lecture" ||
         script.language !== narrationLanguage || script.solutionLanguage !== solutionLanguage) {
-      throw new Error("Script metadata mismatch");
+      throw new ScriptMetadataError();
     }
     return script;
   };
@@ -99,8 +100,12 @@ export async function POST(req: NextRequest) {
       });
       script = matchesRequest(validateScript(result.object, referenceCode));
       break;
-    } catch {
-      // 包括模型输出格式错误；下一次从头生成，不能拼接坏脚本。
+    } catch (error) {
+      // 只重试解析、结构校验和教案元数据错误；认证或网络异常固定返回 502。
+      // 禁止打印或透传原始异常，上游响应可能包含完整 Key。
+      if (!NoObjectGeneratedError.isInstance(error) && !(error instanceof ZodError) && !(error instanceof ScriptMetadataError)) {
+        return upstreamError();
+      }
     }
   }
   if (!script) {

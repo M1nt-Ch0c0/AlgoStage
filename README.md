@@ -17,7 +17,7 @@ AlgoStage 是一个**纯本地运行**的 LeetCode Hot 100 AI 学习系统：内
 
 ## 快速开始
 
-需要 Node.js 22.12+（22.x）或 24+。
+开发和验证请使用 **Node.js 22**（最低 22.12）；也支持 Node.js 24+。
 
 ```bash
 npm install
@@ -27,6 +27,8 @@ npm run dev                   # http://localhost:3000
 ```
 
 首次打开进入设置页，填入 API Key 和模型名（如 `deepseek-chat`），即可让 AI 老师开课；不配置 Key 也能体验「两数之和」的内置旗舰讲解（含全部特效）。
+
+验证命令：`npm test`、`npx tsc --noEmit`、`npm run build`。
 
 ## 文档
 

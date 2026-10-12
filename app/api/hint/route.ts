@@ -5,7 +5,8 @@
 import { generateText } from "ai";
 import { NextRequest } from "next/server";
 import { IS_DEMO } from "@/lib/runtime";
-import { createModel, resolveByok, type ByokConfig } from "@/lib/agent/provider";
+import { createModel, resolveByok } from "@/lib/agent/provider";
+import { hintRequestSchema, badRequest, upstreamError } from "@/lib/agent/request";
 import { localSeedSource } from "@/lib/content/local-source";
 
 export const runtime = "nodejs";
@@ -19,15 +20,9 @@ const LEVEL_GUIDE: Record<number, string> = {
 };
 
 export async function POST(req: NextRequest) {
-  let body: {
-    slug: string;
-    level: number;
-    userCode?: string;
-    byok?: ByokConfig;
-  };
+  let input: unknown;
   try {
-    body = await req.json();
-    if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Bad body");
+    input = await req.json();
   } catch {
     return Response.json({ error: "BAD_JSON", message: "请求内容不是有效的 JSON 对象，请重试。" }, { status: 400 });
   }
@@ -38,6 +33,9 @@ export async function POST(req: NextRequest) {
       { status: 403 },
     );
   }
+  const parsed = hintRequestSchema.safeParse(input);
+  if (!parsed.success) return badRequest();
+  const body = parsed.data;
   const meta = (await localSeedSource.list()).find((p) => p.slug === body.slug);
   if (!meta) {
     return Response.json({ error: "NOT_FOUND", message: "没找到这道题，请回路线图重新选择。" }, { status: 404 });
@@ -50,17 +48,23 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     );
   }
-  const level = Math.min(5, Math.max(1, body.level));
+  const level = body.level;
   const detail = await localSeedSource.detail(body.slug);
 
-  const { text } = await generateText({
-    model: createModel(byok),
-    prompt: `你是苏格拉底式算法导师，学生正在做「${detail.title}」，请求第 ${level} 级提示。
+  try {
+    const { text } = await generateText({
+      model: createModel(byok),
+      maxRetries: 0,
+      prompt: `你是苏格拉底式算法导师，学生正在做「${detail.title}」，请求第 ${level} 级提示。
 规则：${LEVEL_GUIDE[level]}
 严格只给这一级的信息，绝不越级剧透更深层答案，绝不给完整题解。80 字以内，中文。
 ${detail.statement ? `题面：${detail.statement}` : ""}
 ${body.userCode ? `学生当前代码：\n${body.userCode}` : ""}`,
-  });
+    });
 
-  return Response.json({ level, hint: text });
+    return Response.json({ level, hint: text });
+  } catch {
+    // 上游错误体可能回显完整 Key；不记录、不透传原始异常。
+    return upstreamError();
+  }
 }

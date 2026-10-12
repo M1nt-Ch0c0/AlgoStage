@@ -9,7 +9,8 @@
     "start": "node node_modules/next/dist/bin/next start",
     "db:push": "node node_modules/prisma/build/index.js db push",
     "db:seed": "node node_modules/tsx/dist/cli.mjs prisma/seed.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "test": "node node_modules/tsx/dist/cli.mjs --test tests/*.test.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "4.0.53",

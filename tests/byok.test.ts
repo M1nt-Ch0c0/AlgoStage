@@ -24,6 +24,15 @@ test("S1：请求 > 设置 > 环境变量；已保存 Key 可直接要提示且�
     assert.equal(settings.envConfigured, true);
     assert.equal(settings.settings.apiKey, undefined);
     assert.ok(!JSON.stringify(settings).includes("saved-test-key"));
+    // 保存了 Key 但模型名空白时，实际调用和页面展示都应回退到环境变量。
+    await f.save({ model: "  " });
+    assert.equal((await resolveByok())?.source, "env");
+    assert.equal((await (await GET()).json()).keySource, "env");
+    delete process.env.AI_MODEL;
+    assert.equal(await resolveByok(), null);
+    assert.equal((await (await GET()).json()).keySource, "none");
+    await f.save({ model: "saved-model" });
+    assert.equal((await (await GET()).json()).keySource, "settings");
     const incomplete = { provider: "google" as const, apiKey: "new-key", model: "" };
     assert.equal((await resolveByok(incomplete))?.source, "settings");
     const complete = { ...incomplete, model: "new-model" };
