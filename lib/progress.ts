@@ -22,19 +22,21 @@ export async function recordSubmission(userId: string, input: SubmissionInput) {
       update: { attempts: { increment: 1 }, lastStepAt: now },
       create: { ...where, attempts: 1, lastStepAt: now, status: "learning" },
     });
+    const hasCases = Object.hasOwn(JUDGING_SPECS, input.problemSlug) && Boolean(JUDGING_SPECS[input.problemSlug]?.cases?.length);
+    const ac = input.verdict === "AC" && hasCases;
     // 条件写入不会覆盖另一个提交已经建立的 solved/mastered 状态。
     await tx.problemProgress.updateMany({
       where: { ...where, status: { in: ["untouched", "learning"] } },
-      data: { status: input.verdict === "AC" ? "solved" : "learning" },
+      data: { status: ac ? "solved" : "learning" },
     });
-    if (input.verdict === "AC") {
+    if (ac) {
       await tx.problemProgress.updateMany({
         where: { ...where, solvedAt: null }, data: { solvedAt: now },
       });
     }
 
     // 没有判题用例的题不进入复习队列；讲解上报也不产生复习卡。
-    if (Object.hasOwn(JUDGING_SPECS, input.problemSlug)) {
+    if (hasCases) {
       const card = await tx.reviewCard.findFirst({ where });
       const passed = input.verdict === "AC";
       // docs/04 §3 的简版 SM-2：AC 记 5 分，失败记 2 分并回到一天后。
