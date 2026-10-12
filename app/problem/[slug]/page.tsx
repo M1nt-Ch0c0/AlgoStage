@@ -12,6 +12,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ChevronRight, GraduationCap, KeyRound, Lightbulb, Pencil, Play, RotateCcw, Sparkles } from "lucide-react";
 import type { ProblemDetail } from "@/lib/content/types";
+import { validateScript } from "@/lib/teaching/validated-script";
 import type { TeachingScript } from "@/lib/teaching/types";
 import { TWO_SUM_SCRIPT } from "@/lib/content/scripts/two-sum";
 import { HOT100_CATEGORIES } from "@/lib/content/hot100";
@@ -99,7 +100,7 @@ export default function ProblemPage() {
     setLectureError(null);
     setPractice(false);
     if (slug === "two-sum") {
-      loadScript(TWO_SUM_SCRIPT);
+      loadScript(validateScript(TWO_SUM_SCRIPT, detail?.referenceSolutions?.find((s) => s.language === "typescript")?.code ?? ""));
       play();
       return;
     }
@@ -122,14 +123,18 @@ export default function ProblemPage() {
         // 流式 JSON 文本：拼接完整后整体 parse（流式增量解析二期接入）
         script = JSON.parse(await res.text()) as TeachingScript;
       }
-      loadScript(script);
+      const referenceCode = detail?.referenceSolutions?.find((s) => s.language === script.solutionLanguage)?.code ?? "";
+      const validated = validateScript(script, referenceCode);
+      if (validated.problemSlug !== slug) throw new Error("教案与当前题目不匹配，请重试。");
+      setCode(referenceCode);
+      loadScript(validated);
       play();
     } catch (e) {
       setLectureError(e instanceof Error ? e.message : "老师这次没备好课，稍等一会儿再试吧。");
     } finally {
       setLectureBusy(false);
     }
-  }, [slug, loadScript, play]);
+  }, [slug, detail, loadScript, play]);
 
   // 运行（执行沙箱二期接入：本期 mock AC → 礼花 + 进度落库）
   const run = useCallback(

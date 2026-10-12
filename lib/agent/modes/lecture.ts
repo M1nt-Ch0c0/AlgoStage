@@ -5,13 +5,18 @@
 import { EFFECT_WHITELIST } from "@/lib/teaching/types";
 
 export function buildLecturePrompt(input: {
+  slug: string;
   title: string;
+  solutionLanguage: "typescript" | "python";
   statement?: string;
   referenceCode: string;
   language: "zh" | "en";
 }): string {
   return `你是一位循循善诱的算法老师，正在给学生讲 LeetCode 题「${input.title}」。
 请基于给定参考题解，输出一份"讲课教案"（TeachingScript JSON），前端会照此逐步播放：讲到哪一步，页面就在对应位置打聚光灯、画粉笔线。
+
+顶层字段必须是：problemSlug="${input.slug}"，mode="lecture"，language="${input.language}"，solutionLanguage="${input.solutionLanguage}"。
+代码锚点用 {kind:"code-line",start:1,end:2} 或 {kind:"code-token",line:1,match:"文本"}；题面锚点 blockId 可用 intro/insight/summary。
 
 ## 教学要求
 1. 先讲直觉（为什么暴力解不够、关键洞察是什么），再讲代码；讲代码时一段一段推进。
