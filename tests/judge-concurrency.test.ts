@@ -106,7 +106,7 @@ test.each([false, true])("同时 5 个请求第 5 个立即返回 429 BUSY（dem
 
   const fifthRes = await POST(request(payload()));
   expect(fifthRes.status).toBe(429);
-  expect(await fifthRes.json()).toEqual({ error: "BUSY" });
+  expect(await fifthRes.json()).toEqual({ error: "BUSY", message: "判题繁忙，结果未保存，请稍后再试" });
 
   for (const releaseOne of resolvers.splice(0)) releaseOne();
   const responses = await Promise.all(firstFour);
