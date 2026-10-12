@@ -538,7 +538,7 @@
       },
       {
         "language": "python",
-        "code": "def maxDepth(root: \"TreeNode | None\") -> int:\n    if not root:\n        return 0\n    return 1 + max(maxDepth(root.left), maxDepth(root.right))"
+        "code": "def maxDepth(root: \"TreeNode | None\") -> int:\n    if not root:\n        return 0\n    stack, best = [(root, 1)], 0\n    while stack:\n        node, depth = stack.pop()\n        best = max(best, depth)\n        if node.left:\n            stack.append((node.left, depth + 1))\n        if node.right:\n            stack.append((node.right, depth + 1))\n    return best"
       }
     ],
     "testCases": []
@@ -552,7 +552,7 @@
       },
       {
         "language": "python",
-        "code": "def invertTree(root: \"TreeNode | None\") -> \"TreeNode | None\":\n    if not root:\n        return None\n    root.left, root.right = invertTree(root.right), invertTree(root.left)\n    return root"
+        "code": "def invertTree(root: \"TreeNode | None\") -> \"TreeNode | None\":\n    stack = [root] if root else []\n    while stack:\n        node = stack.pop()\n        node.left, node.right = node.right, node.left\n        if node.left:\n            stack.append(node.left)\n        if node.right:\n            stack.append(node.right)\n    return root"
       }
     ],
     "testCases": []
@@ -566,7 +566,7 @@
       },
       {
         "language": "python",
-        "code": "def isSymmetric(root: \"TreeNode | None\") -> bool:\n    def mirror(a, b):\n        if not a or not b:\n            return a is b\n        return a.val == b.val and mirror(a.left, b.right) and mirror(a.right, b.left)\n    return not root or mirror(root.left, root.right)"
+        "code": "def isSymmetric(root: \"TreeNode | None\") -> bool:\n    if not root:\n        return True\n    stack = [(root.left, root.right)]\n    while stack:\n        a, b = stack.pop()\n        if not a or not b:\n            if a is not b:\n                return False\n            continue\n        if a.val != b.val:\n            return False\n        stack.append((a.left, b.right))\n        stack.append((a.right, b.left))\n    return True"
       }
     ],
     "testCases": []
@@ -580,7 +580,7 @@
       },
       {
         "language": "python",
-        "code": "def diameterOfBinaryTree(root: \"TreeNode | None\") -> int:\n    best = 0\n    def height(node):\n        nonlocal best\n        if not node:\n            return 0\n        left, right = height(node.left), height(node.right)\n        best = max(best, left + right)\n        return 1 + max(left, right)\n    height(root)\n    return best"
+        "code": "def diameterOfBinaryTree(root: \"TreeNode | None\") -> int:\n    stack, heights, best = [(root, False)] if root else [], {}, 0\n    while stack:\n        node, visited = stack.pop()\n        if not visited:\n            # 出栈事件模拟递归返回，孩子先计算高度\n            stack.append((node, True))\n            if node.right:\n                stack.append((node.right, False))\n            if node.left:\n                stack.append((node.left, False))\n        else:\n            left, right = heights.get(node.left, 0), heights.get(node.right, 0)\n            best = max(best, left + right)\n            heights[node] = 1 + max(left, right)\n    return best"
       }
     ],
     "testCases": []
@@ -594,7 +594,7 @@
       },
       {
         "language": "python",
-        "code": "from collections import deque\n\ndef levelOrder(root: \"TreeNode | None\") -> list[list[int]]:\n    if not root:\n        return []\n    queue, result = deque([root]), []\n    while queue:\n        level = []\n        for _ in range(len(queue)):\n            node = queue.popleft()\n            level.append(node.val)\n            if node.left:\n                queue.append(node.left)\n            if node.right:\n                queue.append(node.right)\n        result.append(level)\n    return result"
+        "code": "def levelOrder(root: \"TreeNode | None\") -> list[list[int]]:\n    result, stack = [], [(root, 0)] if root else []\n    while stack:\n        node, depth = stack.pop()\n        if depth == len(result):\n            result.append([])\n        result[depth].append(node.val)\n        # 右侧先入栈，左侧先访问，保留每层从左到右顺序\n        if node.right:\n            stack.append((node.right, depth + 1))\n        if node.left:\n            stack.append((node.left, depth + 1))\n    return result"
       }
     ],
     "testCases": []
@@ -608,7 +608,7 @@
       },
       {
         "language": "python",
-        "code": "def sortedArrayToBST(nums: list[int]) -> \"TreeNode | None\":\n    def build(left, right):\n        if left > right:\n            return None\n        mid = (left + right) // 2\n        return TreeNode(nums[mid], build(left, mid - 1), build(mid + 1, right))\n    return build(0, len(nums) - 1)"
+        "code": "def sortedArrayToBST(nums: list[int]) -> \"TreeNode | None\":\n    dummy = TreeNode(0)\n    stack = [(0, len(nums) - 1, dummy, \"left\")]\n    while stack:\n        left, right, parent, side = stack.pop()\n        if left > right:\n            continue\n        mid = (left + right) // 2\n        node = TreeNode(nums[mid])\n        setattr(parent, side, node)\n        stack.append((mid + 1, right, node, \"right\"))\n        stack.append((left, mid - 1, node, \"left\"))\n    return dummy.left"
       }
     ],
     "testCases": []
@@ -622,7 +622,7 @@
       },
       {
         "language": "python",
-        "code": "def isValidBST(root: \"TreeNode | None\") -> bool:\n    def check(node, low, high):\n        if not node:\n            return True\n        if not low < node.val < high:\n            return False\n        return check(node.left, low, node.val) and check(node.right, node.val, high)\n    return check(root, float(\"-inf\"), float(\"inf\"))"
+        "code": "def isValidBST(root: \"TreeNode | None\") -> bool:\n    stack = [(root, float(\"-inf\"), float(\"inf\"))] if root else []\n    while stack:\n        node, low, high = stack.pop()\n        if not low < node.val < high:\n            return False\n        if node.right:\n            stack.append((node.right, node.val, high))\n        if node.left:\n            stack.append((node.left, low, node.val))\n    return True"
       }
     ],
     "testCases": []
@@ -650,7 +650,7 @@
       },
       {
         "language": "python",
-        "code": "def rightSideView(root: \"TreeNode | None\") -> list[int]:\n    result = []\n    def visit(node, depth):\n        if not node:\n            return\n        if depth == len(result):\n            result.append(node.val)\n        visit(node.right, depth + 1)\n        visit(node.left, depth + 1)\n    visit(root, 0)\n    return result"
+        "code": "def rightSideView(root: \"TreeNode | None\") -> list[int]:\n    result, stack = [], [(root, 0)] if root else []\n    while stack:\n        node, depth = stack.pop()\n        if depth == len(result):\n            result.append(node.val)\n        # 右侧先访问，每层首次出现的就是可见节点\n        if node.left:\n            stack.append((node.left, depth + 1))\n        if node.right:\n            stack.append((node.right, depth + 1))\n    return result"
       }
     ],
     "testCases": []
@@ -678,7 +678,7 @@
       },
       {
         "language": "python",
-        "code": "def buildTree(preorder: list[int], inorder: list[int]) -> \"TreeNode | None\":\n    index = {value: i for i, value in enumerate(inorder)}\n    pos = 0\n    def build(left, right):\n        nonlocal pos\n        if left > right:\n            return None\n        value = preorder[pos]\n        pos += 1\n        mid = index[value]\n        return TreeNode(value, build(left, mid - 1), build(mid + 1, right))\n    return build(0, len(inorder) - 1)"
+        "code": "def buildTree(preorder: list[int], inorder: list[int]) -> \"TreeNode | None\":\n    if not preorder:\n        return None\n    root = TreeNode(preorder[0])\n    stack, pos = [root], 0\n    for value in preorder[1:]:\n        node = TreeNode(value)\n        if stack[-1].val != inorder[pos]:\n            stack[-1].left = node\n        else:\n            # 中序已经经过的节点出栈，新节点接到最后一个的右侧\n            parent = None\n            while stack and stack[-1].val == inorder[pos]:\n                parent = stack.pop()\n                pos += 1\n            parent.right = node\n        stack.append(node)\n    return root"
       }
     ],
     "testCases": []
@@ -692,7 +692,7 @@
       },
       {
         "language": "python",
-        "code": "def pathSum(root: \"TreeNode | None\", targetSum: int) -> int:\n    counts = {0: 1}\n    def visit(node, prefix):\n        if not node:\n            return 0\n        prefix += node.val\n        result = counts.get(prefix - targetSum, 0)\n        counts[prefix] = counts.get(prefix, 0) + 1\n        result += visit(node.left, prefix) + visit(node.right, prefix)\n        counts[prefix] -= 1\n        return result\n    return visit(root, 0)"
+        "code": "def pathSum(root: \"TreeNode | None\", targetSum: int) -> int:\n    counts, result = {0: 1}, 0\n    stack = [(root, 0, False)] if root else []\n    while stack:\n        node, prefix, leaving = stack.pop()\n        if leaving:\n            counts[prefix] -= 1\n            continue\n        prefix += node.val\n        result += counts.get(prefix - targetSum, 0)\n        counts[prefix] = counts.get(prefix, 0) + 1\n        # 离开事件回滚前缀，兄弟分支不能互相拼接\n        stack.append((node, prefix, True))\n        if node.right:\n            stack.append((node.right, prefix, False))\n        if node.left:\n            stack.append((node.left, prefix, False))\n    return result"
       }
     ],
     "testCases": []
@@ -706,7 +706,7 @@
       },
       {
         "language": "python",
-        "code": "def lowestCommonAncestor(root: \"TreeNode | None\", p: \"TreeNode\", q: \"TreeNode\") -> \"TreeNode | None\":\n    if root is None or root is p or root is q:\n        return root\n    left = lowestCommonAncestor(root.left, p, q)\n    right = lowestCommonAncestor(root.right, p, q)\n    if left and right:\n        return root\n    return left or right"
+        "code": "def lowestCommonAncestor(root: \"TreeNode | None\", p: \"TreeNode\", q: \"TreeNode\") -> \"TreeNode | None\":\n    if not root:\n        return None\n    parents, stack = {root: None}, [root]\n    while stack and (p not in parents or q not in parents):\n        node = stack.pop()\n        for child in (node.left, node.right):\n            if child:\n                parents[child] = node\n                stack.append(child)\n    ancestors = set()\n    while p:\n        ancestors.add(p)\n        p = parents[p]\n    while q not in ancestors:\n        q = parents[q]\n    return q"
       }
     ],
     "testCases": []
@@ -720,7 +720,7 @@
       },
       {
         "language": "python",
-        "code": "def maxPathSum(root: \"TreeNode | None\") -> int:\n    best = float(\"-inf\")\n    def gain(node):\n        nonlocal best\n        if not node:\n            return 0\n        left, right = max(0, gain(node.left)), max(0, gain(node.right))\n        best = max(best, node.val + left + right)\n        return node.val + max(left, right)\n    gain(root)\n    return best"
+        "code": "def maxPathSum(root: \"TreeNode | None\") -> int:\n    stack, gains, best = [(root, False)], {}, float(\"-inf\")\n    while stack:\n        node, visited = stack.pop()\n        if not visited:\n            stack.append((node, True))\n            if node.right:\n                stack.append((node.right, False))\n            if node.left:\n                stack.append((node.left, False))\n        else:\n            left, right = max(0, gains.get(node.left, 0)), max(0, gains.get(node.right, 0))\n            best = max(best, node.val + left + right)\n            gains[node] = node.val + max(left, right)\n    return best"
       }
     ],
     "testCases": []
