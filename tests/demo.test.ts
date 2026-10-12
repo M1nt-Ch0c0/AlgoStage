@@ -92,5 +92,37 @@ test("Demo 下 /api/judge 照常判题并返回 200，但不写任何记录；�
     assert.equal(await f.prisma.reviewCard.count(), 1);
   } finally {
     await f.close();
+    delete (globalThis as { prisma?: unknown }).prisma;
+  }
+});
+
+test("Demo 下 GET /api/review 返回 403，非 Demo 下照常", async () => {
+  delete (globalThis as { prisma?: unknown }).prisma;
+  vi.resetModules();
+  const f = await createFixture({ modelServer: false });
+  try {
+    await f.prisma.reviewCard.create({
+      data: { userId: "local-default", problemSlug: "two-sum", dueAt: new Date(0), interval: 1, reps: 1, lapses: 0 },
+    });
+
+    process.env.NEXT_PUBLIC_ALGOSTAGE_DEMO = "1";
+    vi.resetModules();
+    const demoReview = await import("../app/api/review/route");
+    const demoRes = await demoReview.GET();
+    assert.equal(demoRes.status, 403);
+    assert.equal((await demoRes.json()).error, "DEMO");
+    assert.equal(demoRes.headers.get("set-cookie"), null);
+
+    delete process.env.NEXT_PUBLIC_ALGOSTAGE_DEMO;
+    vi.resetModules();
+    const localReview = await import("../app/api/review/route");
+    const localRes = await localReview.GET();
+    assert.equal(localRes.status, 200);
+    const localBody = await localRes.json();
+    assert.equal(localBody.cards.length, 1);
+    assert.equal(localBody.cards[0].problemSlug, "two-sum");
+  } finally {
+    await f.close();
+    delete (globalThis as { prisma?: unknown }).prisma;
   }
 });
