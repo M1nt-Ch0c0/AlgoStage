@@ -28,8 +28,6 @@ npm run dev                   # http://localhost:3000
 
 首次打开进入设置页，填入 API Key 和模型名（如 `deepseek-chat`），即可让 AI 老师开课；不配置 Key 也能体验「两数之和」的内置旗舰讲解（含全部特效）。
 
-> 环境说明：若项目目录在 sshfs 等限制 symlink 的挂载上，依赖安装需走「本地暂存 + 去引用同步」流程，见 [AGENTS.md](AGENTS.md)。
-
 ## 文档
 
 | 文档 | 内容 |

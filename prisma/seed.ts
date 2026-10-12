@@ -42,7 +42,7 @@ async function main() {
 
   // 旗舰脚本入缓存：无 API Key 也能立即体验讲课
   const cacheKey = createHash("sha1")
-    .update("two-sum|builtin|typescript|lecture")
+    .update("two-sum|builtin|typescript|zh|lecture")
     .digest("hex");
   await prisma.lectureScriptCache.upsert({
     where: { key: cacheKey },
