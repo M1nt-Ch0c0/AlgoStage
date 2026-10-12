@@ -51,6 +51,7 @@ const safeFields = new Set([
   "start",
   "end",
   "stepId",
+  "retryOf",
   "effect",
   "targetIndex",
   "color",
@@ -152,6 +153,7 @@ export async function generateLecture(input: {
       },
     ];
     const repairs: {
+      toolCallId: string;
       name: Name;
       attempt: number;
       step: number;
@@ -164,6 +166,8 @@ export async function generateLecture(input: {
     for (let round = 1; round <= 48; round++) {
       if (controller.signal.aborted) return cancelled;
       const repair = repairs[0];
+      // 本轮只消费已有失败调用，后续新失败不会冒充同批中另一条修复。
+      const roundRepairs = [...repairs];
       if (repair) toolRetries++;
       input.onEvent?.({
         type: "progress",
@@ -214,9 +218,13 @@ export async function generateLecture(input: {
           }
           const name = part.toolName as Name;
           const callStep = stepOf(name, part.input);
-          const activeRepair =
-            repairs.find(item => item.name === name && item.step === callStep) ??
-            (repair && repairs.includes(repair) ? repair : undefined);
+          const retryOf = (part.input as { retryOf?: unknown } | null)?.retryOf;
+          const pending = roundRepairs.filter(item => repairs.includes(item));
+          const activeRepair = typeof retryOf === "string"
+            ? pending.find(item => item.toolCallId === retryOf) ?? pending[0]
+            : pending.find(item => item.name === name && item.step === callStep)
+              ?? pending.find(item => item.name === name)
+              ?? (name === "finish" ? undefined : pending[0]);
           assistant.push({
             type: "tool-call",
             toolCallId: part.toolCallId,
@@ -230,6 +238,8 @@ export async function generateLecture(input: {
           try {
             if (!Object.hasOwn(kit.tools, name))
               throw new ToolStateError("tool", "unknown_tool");
+            if (retryOf !== undefined && activeRepair?.toolCallId !== retryOf)
+              throw new ToolStateError("retryOf", "unknown_retry_call");
             if (activeRepair && name !== activeRepair.name)
               throw new ToolStateError("tool", "retry_only_failed_call");
             if (
@@ -250,9 +260,10 @@ export async function generateLecture(input: {
             // finish 的完整校验成功之后才能消费修复队列，失败仍计入同一次调用。
             if (applied.finished)
               input.validate({ ...input.metadata, steps: kit.steps });
-            // 同一批可修复多条调用；按工具与步骤移除，而非只消费轮首那一条。
-            for (let i = repairs.length - 1; i >= 0; i--) {
-              if (repairs[i].name === name && repairs[i].step === callStep) repairs.splice(i, 1);
+            // 步骤编号本身也可能有错；仅移除本次对应的原始调用 ID，绝不批量清同名项。
+            if (activeRepair) {
+              const index = repairs.findIndex(item => item.toolCallId === activeRepair.toolCallId);
+              if (index >= 0) repairs.splice(index, 1);
             }
             if (applied.step) {
               input.onEvent?.({
@@ -295,6 +306,7 @@ export async function generateLecture(input: {
               activeRepair.fields = info.fields;
             } else
               repairs.push({
+                toolCallId: part.toolCallId,
                 name,
                 attempt: 2,
                 step,
@@ -305,6 +317,7 @@ export async function generateLecture(input: {
               });
             output = {
               ok: false,
+              retryOf: activeRepair?.toolCallId ?? part.toolCallId,
               error: info.type,
               fields: info.fields,
               reason:
@@ -316,7 +329,7 @@ export async function generateLecture(input: {
                       )
                       .join("; ")
                   : info.type,
-              instruction: `只重新调用 ${name}，修正这些字段，不要重复已成功步骤。`,
+              instruction: `只重新调用 ${name}，retryOf 填原始失败调用 ID，修正这些字段，不要重复已成功步骤。`,
             };
           }
           results.push({
@@ -400,7 +413,7 @@ export async function generateLecture(input: {
         if (repairs[0])
           messages.push({
             role: "user",
-            content: `仅重试失败的 ${repairs[0].name} 调用（步骤 s${repairs[0].step}），出错字段 ${repairs[0].fields.join(",")}。其他成功调用已经保留，禁止重新添加。`,
+            content: `仅重试失败的 ${repairs[0].name} 调用（原始调用 ID ${repairs[0].toolCallId}，原步骤 s${repairs[0].step}），retryOf 填该原始 ID，出错字段 ${repairs[0].fields.join(",")}。其他成功调用已经保留，禁止重新添加。`,
           });
       }
     }

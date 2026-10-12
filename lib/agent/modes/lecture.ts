@@ -18,7 +18,7 @@ export function buildLecturePrompt(input: {
 add_step 的 id 按 s1、s2 顺序递增，narration 是学生实际看到的字幕，target 必须指向当前题的题面或代码。
 每一步用 add_step 一次给齐 narration、target、可选 effect 和可选 viz，首步生成即播放。代码默认聚光灯、题面默认涟漪，不需要再调用 set_effect 添加默认特效。highlight_lines、set_effect、set_viz 只在确实需要修改已存在步骤时调用，不要逐步重复调用它们。成功步骤不可重复添加。
 必须尽量在同一轮响应内按顺序连续调用工具：add_step(s1)、add_step(s2)…，一直到 finish；不必等待每个成功结果再生成下一步。不要每轮只调用一个工具，这会让学生等太久。步骤编号由你确定，可在同轮直接引用。所有工具修改完成之后调用 finish，最后一条必须 finish。
-若工具返回 ok=false，只修正并重新调用出错的那一次工具，其他成功步骤保持不变。
+若工具返回 ok=false，只修正并重新调用出错的那一次工具，retryOf 填错误回执中的原始调用 ID；步骤编号本身有错时修正编号，其他成功步骤保持不变。每个失败调用都必须分别修复，不能用一次成功替代多次失败。
 
 【教学要求】
 全程 6 步，通常只需 6 次 add_step 和 1 次 finish；先题意和暴力解局限，再核心洞察，再逐段讲给定代码，最后总结算法套路及时间/空间复杂度。

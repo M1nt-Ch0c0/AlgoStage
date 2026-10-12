@@ -40,9 +40,11 @@ export function createLectureTools(referenceCode: string) {
       }),
     ])
     .describe("本步先标注的一个锚点；代码行号必须对准 narration 正在讲的那条语句，不能只选附近行或函数签名");
+  const retryOf = z.string().min(1).optional().describe("仅重试失败调用时填写：工具错误回执中的原始 toolCallId（retryOf），与步骤编号无关；正常调用省略");
   const schemas = {
     add_step: z
       .object({
+        retryOf,
         id,
         narration: z
           .string()
@@ -71,7 +73,7 @@ export function createLectureTools(referenceCode: string) {
       })
       .strict(),
     highlight_lines: z
-      .object({ stepId: id, ...range.shape })
+      .object({ retryOf, stepId: id, ...range.shape })
       .strict()
       .refine((v) => v.end === undefined || v.end >= v.start, {
         path: ["end"],
@@ -79,6 +81,7 @@ export function createLectureTools(referenceCode: string) {
       }),
     set_effect: z
       .object({
+        retryOf,
         stepId: id,
         effect: z
           .enum(EFFECT_WHITELIST)
@@ -101,13 +104,14 @@ export function createLectureTools(referenceCode: string) {
       .strict(),
     set_viz: z
       .object({
+        retryOf,
         stepId: id,
         viz: arrayVizFrameSchema.describe(
           "数组全量帧：type 必须 array；state.values 数字数组；highlight 下标数组；map 数字到下标；scan -1 或合法下标；hit 布尔；captions 标注 nodeId 与 text",
         ),
       })
       .strict(),
-    finish: z.object({}).strict(),
+    finish: z.object({ retryOf }).strict(),
   };
   const tools = {
     add_step: tool({
@@ -132,7 +136,7 @@ export function createLectureTools(referenceCode: string) {
     }),
     finish: tool({
       description:
-        "全部步骤和修改成功后完成教案。不传参数。至少已有一步，推荐 6–10 步；最后一步总结方法、时间及空间复杂度。未完成或存在未修复调用时不能 finish。",
+        "全部步骤和修改成功后完成教案。正常不传参数；修复失败的 finish 时仅带 retryOf。至少已有一步，推荐 6–10 步；最后一步总结方法、时间及空间复杂度。未完成或存在未修复调用时不能 finish。",
       inputSchema: schemas.finish,
     }),
   };
