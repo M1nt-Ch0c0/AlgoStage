@@ -68,3 +68,37 @@ test("切换 provider 清空旧代理，测试连接不会把新 Key 送到旧�
     expect(writes[0]).toMatchObject({ provider: "google", baseURL: "" });
   } finally { await act(async () => root.unmount()); }
 });
+
+test.each([
+  {},
+  { provider: "openai-compatible", model: "saved-model", baseURL: "https://saved-proxy.invalid/v1" },
+  { provider: "google", model: "saved-native", baseURL: "https://native-proxy.invalid/v1beta", baseURLProvider: "google" },
+])("只填新 Key 也会保存完整连接组，保存与测试采用相同字段：%j", async initial => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const writes: Record<string, string>[] = [];
+  const hints: { byok?: Record<string, string> }[] = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+    if (String(input).endsWith("/api/hint")) { hints.push(JSON.parse(String(init?.body))); return Response.json({ hint: "mock" }); }
+    if (init?.method === "PUT") { writes.push(JSON.parse(String(init.body)).settings); return Response.json({ ok: true }); }
+    return Response.json({ settings: { ...initial, ...(writes.length ? { apiKeyMasked: "已配置" } : {}) }, keySource: writes.length ? "settings" : "env" });
+  });
+  const container = document.createElement("div"); document.body.append(container);
+  const root = createRoot(container);
+  const click = async (text: string) => act(async () => Array.from(container.querySelectorAll("button")).find(b => b.textContent?.includes(text))!.click());
+  try {
+    await act(async () => root.render(createElement(SettingsPage)));
+    await act(async () => {
+      const input = container.querySelector<HTMLInputElement>("#apiKey")!;
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "  fake-new-key  ");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await click("测试连接");
+    await click("保存设置");
+    expect(writes[0]).toEqual({ ...hints[0].byok, baseURL: hints[0].byok?.baseURL ?? "" });
+    expect(writes[0].provider).toBe(initial.provider ?? "openai-compatible");
+    expect(writes[0].apiKey).toBe("fake-new-key");
+    expect(container.querySelector<HTMLInputElement>("#apiKey")!.value).toBe("");
+    await click("测试连接");
+    expect(hints[1].byok).toBeUndefined();
+  } finally { await act(async () => root.unmount()); }
+});

@@ -93,9 +93,15 @@ export default function SettingsPage() {
     persistTheme(next === "light" ? "light" : "dark");
   }
 
+  // 新 Key 的测试和保存共用整组字段，避免保存后换用另一个接口或模型。
+  function credentialFields() {
+    return { provider, model: model.trim() || DEFAULT_MODEL, apiKey: apiKey.trim(), baseURL: baseURL.trim() };
+  }
+
   async function save() {
     setSaveState("saving");
-    const settings = { ...edits.current };
+    const pending = { ...edits.current };
+    const settings = { ...pending, ...(apiKey.trim() ? credentialFields() : {}) };
     try {
       const res = await fetch(apiPath("/api/settings"), {
         method: "PUT",
@@ -106,7 +112,7 @@ export default function SettingsPage() {
       const saved = await fetch(apiPath("/api/settings")).then((r) => r.json());
       setKeySource(saved.keySource ?? "none");
       setApiKeyMasked(saved.settings?.apiKeyMasked ?? "");
-      for (const [field, value] of Object.entries(settings)) {
+      for (const [field, value] of Object.entries(pending)) {
         if (edits.current[field] !== value) continue;
         delete edits.current[field];
         if (field === "apiKey") setApiKey("");
@@ -123,13 +129,9 @@ export default function SettingsPage() {
     setTestState({ kind: "testing" });
     try {
       const body: Record<string, unknown> = { slug: "two-sum", level: 1 };
-      if (apiKey) {
-        body.byok = {
-          provider,
-          model,
-          apiKey,
-          ...(baseURL.trim() ? { baseURL: baseURL.trim() } : {}),
-        };
+      if (apiKey.trim()) {
+        const fields = credentialFields();
+        body.byok = { ...fields, baseURL: fields.baseURL || undefined };
       }
       const res = await fetch(apiPath("/api/hint"), {
         method: "POST",

@@ -85,18 +85,18 @@ export function resolveSavedByok(settings: Record<string, string>): {
   const useSaved = source === "settings";
   const provider = (useSaved ? settings.provider?.trim() : "") || process.env.AI_PROVIDER?.trim() || "openai-compatible";
   const savedURL = savedEndpoint(settings);
-  // 原生厂商没有专属地址时使用其官方默认地址，绝不接上旧代理或环境地址。
-  const nativeDefault = useSaved && provider !== "openai-compatible" && !savedURL;
+  // 明确保存的空地址使用该服务商默认接口；旧的缺失字段不能混用环境地址。
+  const savedDefault = useSaved && !savedURL && (provider !== "openai-compatible" || settings.baseURLProvider === provider);
   const config = completeByok({
     provider,
     apiKey: settings.apiKey?.trim() || process.env.AI_API_KEY?.trim(),
     model: settings.model?.trim() || process.env.AI_MODEL?.trim() || DEFAULT_MODEL,
-    baseURL: nativeDefault ? undefined : (useSaved ? savedURL : undefined) || process.env.AI_BASE_URL?.trim() || undefined,
+    baseURL: savedDefault ? undefined : (useSaved ? savedURL : undefined) || process.env.AI_BASE_URL?.trim() || undefined,
   });
   if (!config || source === "none") return null;
   origins.set(config, {
     key: source,
-    baseURL: useSaved && (nativeDefault || savedURL || !process.env.AI_BASE_URL?.trim()) ? "settings" : "env",
+    baseURL: useSaved && (savedDefault || savedURL || !process.env.AI_BASE_URL?.trim()) ? "settings" : "env",
     provider: useSaved && (settings.provider?.trim() || !process.env.AI_PROVIDER?.trim()) ? "settings" : "env",
   });
   assertCredentialDestination(config);
