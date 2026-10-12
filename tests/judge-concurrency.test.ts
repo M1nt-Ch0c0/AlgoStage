@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import { act, createElement, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -171,4 +173,11 @@ test("UI 收到 429 时显示「判题繁忙，结果未保存，请稍后再试
     container.remove();
   }
 });
+
+test("deploy/README.md 注明 JUDGE_MAX_CONCURRENCY 为单进程并发上限", () => {
+  const readme = readFileSync(resolve(__dirname, "../deploy/README.md"), "utf8");
+  expect(readme).toContain("JUDGE_MAX_CONCURRENCY");
+  expect(readme).toContain("单个进程");
+});
+
 
