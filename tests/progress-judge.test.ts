@@ -109,8 +109,8 @@ test("拒绝伪造判定/用例；Python、无用例和未知题均不产生提�
     expect((await judge(request({ problemSlug: "two-sum", language: "typescript", code, ...extra }))).status).toBe(400);
   }
   const python = await submit("def twoSum(nums, target): return [0, 1]", "python");
-  expect(python.status).toBe(503);
-  expect((await python.json()).message).toContain("服务端无法判定");
+  expect(python.status).toBe(422);
+  expect((await python.json()).error).toBe("CLIENT_JUDGED");
   for (const slug of [HOT100[20].slug, "unknown", "__proto__", "toString"]) {
     expect((await judge(request({ problemSlug: slug, language: "javascript", code: "" }))).status).toBe(422);
   }
@@ -122,4 +122,37 @@ test("拒绝伪造判定/用例；Python、无用例和未知题均不产生提�
   expect(await f.prisma.reviewCard.count()).toBe(0);
   const { GET } = await import("../app/api/dashboard/route");
   expect((await (await GET()).json()).acCount).toBe(0);
+});
+
+const clientAc = (extra: Record<string, unknown> = {}) => progress(request({
+  type: "client-ac", problemSlug: "two-sum", language: "python", code: "def twoSum(n, t): return [0, 1]", verdict: "AC", runtimeMs: 3, ...extra,
+}));
+
+test("Python 浏览器 AC 记为 solved，提交带 judgedBy: client；JS/TS 不能走这条路", async () => {
+  expect((await clientAc()).status).toBe(200);
+  expect(await f.prisma.submission.findFirstOrThrow()).toMatchObject({ verdict: "AC", language: "python", judgedBy: "client" });
+  const solved = await f.prisma.problemProgress.findUniqueOrThrow({ where: key });
+  expect(solved).toMatchObject({ status: "solved", attempts: 1 });
+  expect(solved.solvedAt).toBeInstanceOf(Date);
+  expect(await f.prisma.reviewCard.findFirstOrThrow()).toMatchObject({ reps: 1, lapses: 0 });
+  // 之后的 Python WA 不会把 solved 降级。
+  expect((await progress(request({ type: "submission", problemSlug: "two-sum", language: "python", code: "x", verdict: "WA" }))).status).toBe(200);
+  expect(await f.prisma.problemProgress.findUniqueOrThrow({ where: key })).toMatchObject({ status: "solved", attempts: 2 });
+  for (const language of ["typescript", "javascript"]) expect((await clientAc({ language })).status).toBe(400);
+  for (const extra of [{ verdict: "WA" }, { judgedBy: "server" }, { type: "submission" }]) expect((await clientAc(extra)).status).toBe(400);
+  expect(await f.prisma.submission.count()).toBe(2);
+});
+
+test("服务端判出的提交带 judgedBy: server", async () => {
+  expect((await submit()).status).toBe(200);
+  expect(await f.prisma.submission.findFirstOrThrow()).toMatchObject({ verdict: "AC", judgedBy: "server" });
+});
+
+test("浏览器上报的 WA/RE/TLE 记为 judgedBy: client", async () => {
+  for (const verdict of ["WA", "RE", "TLE"]) {
+    expect((await progress(request({ type: "submission", problemSlug: "two-sum", language: "typescript", code: "x", verdict }))).status).toBe(200);
+  }
+  const rows = await f.prisma.submission.findMany();
+  expect(rows).toHaveLength(3);
+  expect(rows.every(row => row.judgedBy === "client")).toBe(true);
 });

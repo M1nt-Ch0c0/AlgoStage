@@ -27,7 +27,8 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "UNJUDGED", message: "这道题未配置判题用例，服务端无法判定。" }, { status: 422 });
   }
   if (body.language === "python") {
-    return Response.json({ error: "UNAVAILABLE", message: "服务端无法判定 Python；本地通过结果未记为 AC，也不会更新已解题状态。" }, { status: 503 });
+    // Python 无法在服务端判题；浏览器结果经 /api/progress 上报并带 judgedBy: "client"。
+    return Response.json({ error: "CLIENT_JUDGED", message: "服务端不判 Python；请通过学习记录上报浏览器判题结果。" }, { status: 422 });
   }
   if (!await prisma.problem.findUnique({ where: { slug: body.problemSlug }, select: { slug: true } })) {
     return Response.json({ error: "NOT_FOUND", message: "题库中没有这道题，请先初始化题库。" }, { status: 404 });
@@ -36,6 +37,6 @@ export async function POST(req: NextRequest) {
   if (result.error) {
     return Response.json({ error: "UNAVAILABLE", message: "服务端无法判定，执行环境未能启动；没有记录提交，请重试。" }, { status: 503 });
   }
-  await recordSubmission(await currentUserId(), { ...body, verdict: result.verdict, runtimeMs: result.runtimeMs });
+  await recordSubmission(await currentUserId(), { ...body, verdict: result.verdict, runtimeMs: result.runtimeMs, judgedBy: "server" });
   return Response.json({ ok: true, result });
 }

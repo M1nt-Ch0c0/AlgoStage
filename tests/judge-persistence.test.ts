@@ -22,9 +22,7 @@ test.each(["AC", "WA", "python", "save-error"])("判题控件持久化并使用�
   vi.spyOn(pythonWorkerPool, "preload").mockImplementation(() => {});
   vi.mocked(judgeInBrowser).mockResolvedValue(localResult(scenario === "WA" ? "WA" : "AC"));
   const authoritative = { ...localResult(scenario === "AC" ? "WA" : "AC"), backend: "node" };
-  const fetcher = vi.spyOn(globalThis, "fetch").mockImplementation(async () => scenario === "python"
-    ? Response.json({ message: "服务端无法判定 Python，未记录 AC。" }, { status: 503 })
-    : scenario === "save-error"
+  const fetcher = vi.spyOn(globalThis, "fetch").mockImplementation(async () => scenario === "save-error"
       ? Response.json({ message: "保存失败，请重试。" }, { status: 500 })
       : Response.json({ ok: true, result: authoritative }));
   const detail = await localSeedSource.detail("two-sum"), onResult = vi.fn();
@@ -40,7 +38,13 @@ test.each(["AC", "WA", "python", "save-error"])("判题控件持久化并使用�
     const [url, options] = fetcher.mock.calls[0];
     const body = JSON.parse(String(options?.body));
     expect(body).toMatchObject({ problemSlug: "two-sum", code: "exact submitted source" });
-    if (scenario === "WA") {
+    if (scenario === "python") {
+      expect(url).toBe("/api/progress");
+      expect(body).toMatchObject({ type: "client-ac", language: "python", verdict: "AC", runtimeMs: 1 });
+      expect(onResult).toHaveBeenCalledWith(localResult("AC"));
+      expect(container.textContent).toContain("AC · ");
+      expect(container.textContent).toContain("已保存");
+    } else if (scenario === "WA") {
       expect(url).toBe("/api/progress");
       expect(body).toMatchObject({ type: "submission", verdict: "WA", runtimeMs: 1 });
       expect(onResult).toHaveBeenCalledWith(localResult("WA"));

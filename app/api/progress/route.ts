@@ -1,6 +1,7 @@
 /**
  * POST /api/progress · 学习行为写入（提交/提示消耗/讲解进度）
- * 客户端上报不具备证明 AC 的资格；AC 必须经过 /api/judge 服务端复判。
+ * JS/TS 的 AC 必须经过 /api/judge 服务端复判；Python 服务端判不了，接受浏览器 AC 并标记 judgedBy: "client"。
+ * 进度只在本地自部署版记录（Demo 下 403），伪造 Python AC 只影响自己。
  */
 import { z } from "zod";
 import { NextRequest } from "next/server";
@@ -19,6 +20,16 @@ const progressRequestSchema = z.discriminatedUnion("type", [
       code: z.string(),
       language: z.enum(["typescript", "python", "javascript"]),
       verdict: z.enum(["WA", "RE", "TLE"]),
+      runtimeMs: z.number().int().min(0).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("client-ac"),
+      problemSlug: z.string().min(1),
+      code: z.string(),
+      language: z.literal("python"),
+      verdict: z.literal("AC"),
       runtimeMs: z.number().int().min(0).optional(),
     })
     .strict(),
@@ -66,10 +77,10 @@ export async function POST(req: NextRequest) {
   }
   const body = parsed.data;
   const userId = await currentUserId();
-  if (body.type === "submission") {
+  if (body.type === "submission" || body.type === "client-ac") {
     await recordSubmission(userId, {
       problemSlug: body.problemSlug, code: body.code, language: body.language,
-      verdict: body.verdict, runtimeMs: body.runtimeMs,
+      verdict: body.verdict, runtimeMs: body.runtimeMs, judgedBy: "client", // 浏览器判的结果；只有 /api/judge 写入 server
     });
     return Response.json({ ok: true });
   }

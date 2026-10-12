@@ -8,9 +8,10 @@ interface SubmissionInput {
   language: JudgeLanguage;
   verdict: Verdict;
   runtimeMs?: number;
+  judgedBy?: "server" | "client";
 }
 
-/** AC 仅供服务端判题调用；/api/progress 在解析时排除客户端 AC。 */
+/** AC 只来自服务端判题，或 Python 的浏览器判题（judgedBy: "client"）。 */
 export async function recordSubmission(userId: string, input: SubmissionInput) {
   const now = new Date();
   return prisma.$transaction(async tx => {
