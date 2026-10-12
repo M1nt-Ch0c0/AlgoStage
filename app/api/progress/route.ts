@@ -6,6 +6,7 @@
 import { z } from "zod";
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db/prisma";
+import { JUDGING_SPECS } from "@/lib/judge/specs";
 import { currentUserId } from "@/lib/visitor";
 import { recordLectureStep, recordSubmission } from "@/lib/progress";
 import { IS_DEMO } from "@/lib/runtime";
@@ -78,6 +79,9 @@ export async function POST(req: NextRequest) {
   const body = parsed.data;
   if (!await prisma.problem.findUnique({ where: { slug: body.problemSlug }, select: { slug: true } })) {
     return Response.json({ error: "NOT_FOUND", message: "题库中没有这道题，请先初始化题库。" }, { status: 404 });
+  }
+  if (body.type === "client-ac" && (!Object.hasOwn(JUDGING_SPECS, body.problemSlug) || !JUDGING_SPECS[body.problemSlug]?.cases?.length)) {
+    return Response.json({ error: "UNJUDGED", message: "这道题未配置判题用例，服务端无法判定。" }, { status: 422 });
   }
   const userId = await currentUserId();
   if (body.type === "submission" || body.type === "client-ac") {

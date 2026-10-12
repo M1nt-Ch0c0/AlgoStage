@@ -143,6 +143,24 @@ test("Python 浏览器 AC 记为 solved，提交带 judgedBy: client；JS/TS 不
   expect(await f.prisma.submission.count()).toBe(2);
 });
 
+test("无判题用例的题上报 client-ac 返回 422 UNJUDGED，不写库且不计入看板 AC", async () => {
+  const slug = HOT100[20].slug;
+  const response = await clientAc({ problemSlug: slug });
+  expect(response.status).toBe(422);
+  expect(await response.json()).toEqual({ error: "UNJUDGED", message: "这道题未配置判题用例，服务端无法判定。" });
+  expect(await f.prisma.submission.count()).toBe(0);
+  expect(await f.prisma.problemProgress.count()).toBe(0);
+  expect(await f.prisma.reviewCard.count()).toBe(0);
+  const { GET } = await import("../app/api/dashboard/route");
+  expect((await (await GET()).json()).acCount).toBe(0);
+  const { recordSubmission } = await import("../lib/progress");
+  await recordSubmission("local-default", { problemSlug: slug, code: "pass", language: "python", verdict: "AC", judgedBy: "client" });
+  expect(await f.prisma.problemProgress.findUniqueOrThrow({ where: { userId_problemSlug: { userId: "local-default", problemSlug: slug } } }))
+    .toMatchObject({ status: "learning", attempts: 1, solvedAt: null });
+  expect(await f.prisma.reviewCard.count()).toBe(0);
+  expect((await (await GET()).json()).acCount).toBe(0);
+});
+
 test("服务端判出的提交带 judgedBy: server", async () => {
   expect((await submit()).status).toBe(200);
   expect(await f.prisma.submission.findFirstOrThrow()).toMatchObject({ verdict: "AC", judgedBy: "server" });
