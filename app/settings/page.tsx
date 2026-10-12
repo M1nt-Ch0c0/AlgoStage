@@ -397,8 +397,8 @@ export default function SettingsPage() {
         </Panel>
 
         {/* 数据 */}
-        <Panel title="数据" desc={IS_DEMO ? "你在体验版里的学习记录只跟着这个浏览器走，可以导出一份留着。" : "你的学习记录只存在这台电脑上。想备份或者换电脑，可以先导出一份。"}>
-          <button
+        <Panel title="数据" desc={IS_DEMO ? "在线体验版不记录学习进度，也不提供学习数据导出。安装到自己电脑上后，即可记录和导出。" : "你的学习记录只存在这台电脑上。想备份或者换电脑，可以先导出一份。"}>
+          {!IS_DEMO && <button
             type="button"
             onClick={async () => {
               const res = await fetch(apiPath("/api/dashboard"));
@@ -416,7 +416,7 @@ export default function SettingsPage() {
             className="rounded-full border border-board-600 px-5 py-2 text-sm text-chalk-300 transition-colors hover:border-beam-gold/60 hover:text-beam-gold"
           >
             导出学习记录
-          </button>
+          </button>}
         </Panel>
       </div>
     </div>

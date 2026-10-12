@@ -27,21 +27,22 @@ test("a problem renders its statement, reference code and editor", async ({ page
 
 test("Demo plays the built-in lesson and disables model requests", async ({ page, request }) => {
   const modelRequests: string[] = [];
+  const progressRequests: string[] = [];
   page.on("request", (request) => {
     if (/\/api\/(lecture|hint)$/.test(new URL(request.url()).pathname)) modelRequests.push(request.url());
+    if (new URL(request.url()).pathname.endsWith("/api/progress")) progressRequests.push(request.url());
   });
   await page.goto("/problem/two-sum");
   await expect(page.getByText("这是在线体验版", { exact: false })).toBeVisible();
   await expect(page.locator(".monaco-editor .view-lines")).toContainText("function twoSum");
-  const progress = page.waitForResponse((response) => response.url().endsWith("/api/progress") && response.request().method() === "POST");
   await page.getByRole("button", { name: "开始讲课", exact: true }).click();
-  expect((await progress).ok()).toBe(true);
   await page.locator("header").getByRole("button", { name: "暂停", exact: true }).click();
   await expect(page.getByRole("button", { name: "播放", exact: true })).toBeEnabled();
   await page.getByRole("button", { name: "跳到第 3 步", exact: true }).click();
   await expect(page.getByRole("button", { name: "跳到第 3 步", exact: true })).toHaveAttribute("aria-current", "step");
   await expect(page.locator(".monaco-editor .beam-line").first()).toBeVisible();
   expect(modelRequests).toEqual([]);
+  expect(progressRequests).toEqual([]);
 
   await page.goto("/problem/3sum");
   await expect(page.getByRole("heading", { level: 1 })).toContainText("三数之和");
@@ -51,6 +52,15 @@ test("Demo plays the built-in lesson and disables model requests", async ({ page
     expect(response.status()).toBe(403);
     expect(await response.json()).toMatchObject({ error: "DEMO" });
   }
+  const progress = await request.post("/api/progress", { data: { type: "lecture-step", problemSlug: "two-sum", stepIndex: 0 } });
+  expect(progress.status()).toBe(403);
+  expect(await progress.json()).toMatchObject({ error: "DEMO" });
+  const dashboard = await request.get("/api/dashboard");
+  expect(dashboard.status()).toBe(403);
+  expect(await dashboard.json()).toMatchObject({ error: "DEMO" });
+  await page.goto("/settings");
+  await expect(page.getByText("在线体验版不记录学习进度", { exact: false })).toBeVisible();
+  await expect(page.getByRole("button", { name: "导出学习记录" })).toHaveCount(0);
 });
 
 test("student draft survives browser tabs, lecture mode and page reload", async ({ page, context }) => {

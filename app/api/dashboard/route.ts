@@ -5,11 +5,17 @@ import { prisma } from "@/lib/db/prisma";
 import { HOT100 } from "@/lib/content/hot100";
 import { currentUserId } from "@/lib/visitor";
 import { isSolved } from "@/lib/content/pattern-labels";
+import { IS_DEMO } from "@/lib/runtime";
 
 export const runtime = "nodejs";
 
 
 export async function GET() {
+  // 不解析访客或读取学习数据，避免 Demo 展示、导出无效进度。
+  if (IS_DEMO) return Response.json(
+    { error: "DEMO", message: "在线体验版不记录学习进度，学习看板仅在本机版提供。" },
+    { status: 403 },
+  );
   const USER_ID = await currentUserId();
   const [submissions, progress, hints, reviewDue] = await Promise.all([
     prisma.submission.findMany({ where: { userId: USER_ID } }),

@@ -138,7 +138,7 @@ export default function ProblemPage() {
   // 讲解进度埋点（看板数据源）
   const lastReportedRef = useRef(-1);
   useEffect(() => {
-    if (!step || status === "idle") return;
+    if (IS_DEMO || !step || status === "idle") return;
     const idx = usePlayerStore.getState().currentIndex;
     if (idx === lastReportedRef.current) return;
     lastReportedRef.current = idx;

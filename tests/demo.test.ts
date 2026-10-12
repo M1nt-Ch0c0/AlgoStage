@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { existsSync } from "node:fs";
+import { NextRequest } from "next/server";
 import { request } from "./api-fixture";
 
 test("Demo：请求 Key 和环境 Key 均不能绕过 AI 禁用与设置隔离", async () => {
@@ -22,7 +23,25 @@ test("Demo：请求 Key 和环境 Key 均不能绕过 AI 禁用与设置隔离",
     assert.deepEqual(await (await settings.GET()).json(), { settings: {}, keySource: "none", envConfigured: false });
     assert.equal((await settings.PUT(request({ settings: { apiKey: "new-key" } }))).status, 403);
     const progress = await import("../app/api/progress/route");
-    assert.equal((await progress.POST(request({ type: "submission", problemSlug: "two-sum", code: "", language: "typescript", verdict: "AC" }))).status, 400);
+    for (const body of [
+      ...["AC", "WA", "RE", "TLE"].map(verdict => ({ type: "submission", problemSlug: "two-sum", code: "", language: "typescript", verdict })),
+      { type: "hint", problemSlug: "two-sum", level: 1 },
+      { type: "lecture-step", problemSlug: "two-sum", stepIndex: 0 },
+      { type: "unknown" },
+    ]) {
+      const response = await progress.POST(request(body));
+      assert.equal(response.status, 403);
+      assert.equal((await response.json()).error, "DEMO");
+      assert.equal(response.headers.get("set-cookie"), null);
+    }
+    const badJson = new NextRequest("http://localhost/api/progress", { method: "POST", body: "{" });
+    assert.equal((await progress.POST(badJson)).status, 403);
+    assert.equal(badJson.bodyUsed, false, "Demo 拦截应先于请求解析");
+    const dashboard = await import("../app/api/dashboard/route");
+    const response = await dashboard.GET();
+    assert.equal(response.status, 403);
+    assert.equal((await response.json()).error, "DEMO");
+    assert.equal(response.headers.get("set-cookie"), null);
     assert.equal(calls, 0);
     assert.equal(existsSync(databasePath), false);
   } finally { globalThis.fetch = originalFetch; }
