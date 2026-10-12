@@ -93,7 +93,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       script,
       steps: script.steps,
       receiving: false,
-      status: s.status === "streaming" ? "finished" : s.status,
+      // 已追上最后一步时停在当前步；生成完成不等于播放器不可再操作。
+      status: s.status === "streaming" || s.status === "finished" ? "paused" : s.status,
     })),
   stopStream: () =>
     set((s) => ({
@@ -103,8 +104,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   play: () => {
     const { status } = get();
-    if (status === "paused" || status === "idle" || status === "interrupted") {
-      set({ status: get().steps.length ? "playing" : "streaming" });
+    if (status === "paused" || status === "idle" || status === "interrupted" || status === "finished") {
+      const { steps, currentIndex } = get();
+      set({
+        status: steps.length ? "playing" : "streaming",
+        currentIndex: steps[currentIndex] ? currentIndex : 0,
+      });
     }
   },
 
@@ -123,13 +128,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   prev: () =>
     set((s) => ({
       currentIndex: Math.max(0, s.currentIndex - 1),
-      status: s.status === "streaming" && s.steps.length ? "playing" : s.status,
+      status: s.status === "finished" ? "paused" : s.status === "streaming" && s.steps.length ? "playing" : s.status,
     })),
 
   goto: (index) =>
     set((s) => ({
       currentIndex: Math.max(0, Math.min(index, s.steps.length - 1)),
-      status: s.status === "streaming" && s.steps.length ? "playing" : s.status,
+      status: s.status === "finished" ? "paused" : s.status === "streaming" && s.steps.length ? "playing" : s.status,
     })),
 
   interrupt: () => set({ status: "interrupted" }),

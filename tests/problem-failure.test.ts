@@ -44,3 +44,42 @@ test.each(["Key 无效或没有权限，请检查设置。", "备课超时，请
     expect(container.textContent).not.toContain("还没接上 AI？去设置");
   } finally { await act(async () => root.unmount()); }
 });
+
+test("生成期间主按钮可暂停并补全字幕，完成提示独立于播放状态", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const detail = await localSeedSource.detail("3sum");
+  let stream!: ReadableStreamDefaultController;
+  const response = new Response(new ReadableStream({ start(c) { stream = c; } }), { headers: { "Content-Type": "application/x-ndjson" } });
+  vi.spyOn(globalThis, "fetch").mockImplementation(async input => {
+    const path = String(input);
+    if (path.endsWith("/api/lecture")) return response;
+    if (path.endsWith("/api/settings")) return Response.json({ keySource: "env" });
+    if (path.endsWith("/api/problems/3sum")) return Response.json({ problem: detail });
+    return Response.json({ ok: true });
+  });
+  const container = document.createElement("div"); document.body.append(container);
+  const root = createRoot(container);
+  const send = (event: unknown) => stream.enqueue(new TextEncoder().encode(JSON.stringify(event) + "\n"));
+  const primary = (label: string) => Array.from(container.querySelectorAll("header button")).find(button => button.textContent === label) as HTMLButtonElement;
+  const step = { id: "s1", narration: "先排序，让左右指针可以根据和的大小决定移动方向。", targets: [{ kind: "code-line", start: 4 }], effects: [], dwellMs: 5000 };
+  try {
+    await act(async () => root.render(createElement(ProblemPage)));
+    await act(async () => primary("开始讲课").click());
+    await act(async () => send({ type: "step", step }));
+    expect(primary("暂停").disabled).toBe(false);
+    await act(async () => primary("暂停").click());
+    expect(usePlayerStore.getState().status).toBe("paused");
+    expect(Array.from(container.querySelectorAll("p")).some(p => p.textContent === step.narration)).toBe(true);
+    expect(container.textContent).not.toContain("教案已生成完成");
+    await act(async () => {
+      send({ type: "result", script: { problemSlug: "3sum", mode: "lecture", solutionLanguage: "typescript", language: "zh", steps: [step] } });
+      stream.close();
+    });
+    expect(usePlayerStore.getState().status).toBe("paused");
+    expect(container.querySelector('[role="status"]')?.textContent).toContain("教案已生成完成，共 1 步");
+    await act(async () => primary("继续讲课").click());
+    expect(usePlayerStore.getState().status).toBe("playing");
+    expect(primary("暂停")).toBeDefined();
+    expect(container.textContent).toContain("教案已生成完成");
+  } finally { await act(async () => root.unmount()); }
+});

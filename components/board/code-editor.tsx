@@ -10,7 +10,7 @@
  */
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePlayerStore } from "@/lib/player/store";
 import { ANCHOR_REFRESH_EVENT } from "@/components/effects/use-anchor-rect";
 import type { TeachingStep } from "@/lib/teaching/types";
@@ -44,6 +44,7 @@ export default function CodeEditor({
   const containerRef = useRef<HTMLDivElement>(null);
   const monacoRef = useRef<MonacoApi | null>(null);
   const editorRef = useRef<IEditor | null>(null);
+  const [editorReady, setEditorReady] = useState(false);
   const decorationsRef = useRef<ReturnType<IEditor["createDecorationsCollection"]> | null>(
     null,
   );
@@ -159,6 +160,8 @@ export default function CodeEditor({
         decorationsRef.current?.clear();
         editor.dispose();
       };
+      // 首步可能先于 Monaco 到达，实例就绪后必须补应用当前步骤。
+      setEditorReady(true);
       } catch (err) {
         // monaco chunk 加载失败（如 HMR 期间）：静默降级为空黑板，不产生 unhandledRejection
         if (!disposed) console.warn("[CodeEditor] monaco 加载失败", err);
@@ -177,11 +180,11 @@ export default function CodeEditor({
   useEffect(() => {
     const editor = editorRef.current;
     if (editor && editor.getValue() !== value) editor.setValue(value);
-  }, [value]);
+  }, [value, editorReady]);
 
   useEffect(() => {
     editorRef.current?.updateOptions({ readOnly });
-  }, [readOnly]);
+  }, [readOnly, editorReady]);
 
   useEffect(() => {
     const monaco = monacoRef.current;
@@ -190,7 +193,7 @@ export default function CodeEditor({
       const model = editor.getModel();
       if (model) monaco.editor.setModelLanguage(model, language);
     }
-  }, [language]);
+  }, [language, editorReady]);
 
   // 订阅播放器：注入光束 decorations + 平滑滚动跟随
   useEffect(() => {
@@ -202,7 +205,7 @@ export default function CodeEditor({
       const model = editor.getModel();
       if (!model) return;
 
-      if (!step || status === "idle" || status === "finished") {
+      if (!step || status === "idle") {
         collection.clear();
         return;
       }
@@ -248,7 +251,8 @@ export default function CodeEditor({
       apply(s.steps[s.currentIndex], s.status),
     );
     return unsub;
-  }, []);
+  // 恢复参考代码会清掉 Monaco 装饰，代码同步后也要重新应用当前步骤。
+  }, [editorReady, value]);
 
   return (
     <div

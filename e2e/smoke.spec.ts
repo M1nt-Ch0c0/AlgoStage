@@ -36,7 +36,7 @@ test("Demo plays the built-in lesson and disables model requests", async ({ page
   const progress = page.waitForResponse((response) => response.url().endsWith("/api/progress") && response.request().method() === "POST");
   await page.getByRole("button", { name: "开始讲课", exact: true }).click();
   expect((await progress).ok()).toBe(true);
-  await page.getByRole("button", { name: "暂停", exact: true }).click();
+  await page.locator("header").getByRole("button", { name: "暂停", exact: true }).click();
   await expect(page.getByRole("button", { name: "播放", exact: true })).toBeEnabled();
   await page.getByRole("button", { name: "跳到第 3 步", exact: true }).click();
   await expect(page.getByRole("button", { name: "跳到第 3 步", exact: true })).toHaveAttribute("aria-current", "step");

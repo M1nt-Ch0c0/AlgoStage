@@ -16,6 +16,7 @@ import {
   GraduationCap,
   Lightbulb,
   Pencil,
+  Pause,
   Play,
   RotateCcw,
   Sparkles,
@@ -75,6 +76,7 @@ export default function ProblemPage() {
 
   const [lectureBusy, setLectureBusy] = useState(false);
   const [lectureProgress, setLectureProgress] = useState("");
+  const [lectureComplete, setLectureComplete] = useState(false);
   const lectureAbort = useRef<AbortController | null>(null);
   const [lectureError, setLectureError] = useState<string | null>(null);
 
@@ -85,7 +87,7 @@ export default function ProblemPage() {
   const step = usePlayerStore((s) => s.steps[s.currentIndex]);
   const status = usePlayerStore((s) => s.status);
   const stepCount = usePlayerStore((s) => s.steps.length);
-  const { loadScript, play, reset } = usePlayerStore.getState();
+  const { loadScript, play, pause, reset } = usePlayerStore.getState();
 
   useEffect(() => {
     const abort = new AbortController();
@@ -100,6 +102,7 @@ export default function ProblemPage() {
     setLectureBusy(false);
     setLectureProgress("");
     setLectureError(null);
+    setLectureComplete(false);
     return () => {
       lectureAbort.current?.abort();
       lectureAbort.current = null;
@@ -147,6 +150,7 @@ export default function ProblemPage() {
   // 参考代码先恢复；每个已校验步骤到达即播放，完成时不重置播放位置。
   const startLecture = useCallback(async () => {
     setLectureError(null);
+    setLectureComplete(false);
     setPractice(false);
     if (!detail) {
       setLectureError("题目和参考代码还没加载好，请稍后再试。");
@@ -170,6 +174,7 @@ export default function ProblemPage() {
           loadScript,
           play,
         });
+        setLectureComplete(true);
         return;
       }
       const res = await fetch(apiPath("/api/lecture"), {
@@ -224,6 +229,7 @@ export default function ProblemPage() {
           .completeStream(teachingScriptSchema.parse(script));
       else
         loadLectureForPlayback(script, detail, { setCode, loadScript, play });
+      setLectureComplete(true);
     } catch (e) {
       if (lectureAbort.current === abort) {
         const message = timedOut
@@ -257,6 +263,7 @@ export default function ProblemPage() {
     setLectureBusy(false);
     setLectureProgress("");
     setLectureError(null);
+    setLectureComplete(false);
     lastReportedRef.current = -1;
   }
 
@@ -339,6 +346,8 @@ export default function ProblemPage() {
   // 在线体验版只有内置的那一课能听
   const lectureLocked = IS_DEMO && !hasBuiltIn;
   const inLecture = status !== "idle";
+  const playbackStarted = stepCount > 0 && status !== "idle" && status !== "finished";
+  const playing = status === "playing" || status === "streaming";
 
   if (loadError) {
     return (
@@ -445,18 +454,20 @@ export default function ProblemPage() {
           </div>
           <button
             type="button"
-            onClick={startLecture}
-            disabled={lectureBusy || !detail || lectureLocked}
+            onClick={() => playbackStarted ? (playing ? pause() : play()) : startLecture()}
+            disabled={(!playbackStarted && lectureBusy) || !detail || lectureLocked}
             className="flex items-center gap-1.5 rounded-full bg-beam-gold px-4 py-2 text-sm font-semibold text-on-accent transition-transform hover:scale-[1.03] disabled:pointer-events-none disabled:opacity-50"
           >
-            {lectureBusy ? (
+            {playbackStarted ? (
+              playing ? <Pause size={15} /> : <Play size={15} />
+            ) : lectureBusy ? (
               <Sparkles size={15} className="animate-pulse" />
             ) : inLecture ? (
               <RotateCcw size={15} />
             ) : (
               <Play size={15} />
             )}
-            {lectureBusy ? "备课中…" : inLecture ? "从头再讲" : "开始讲课"}
+            {playbackStarted ? (playing ? "暂停" : "继续讲课") : lectureBusy ? "备课中…" : inLecture ? "从头再讲" : "开始讲课"}
           </button>
         </div>
       </header>
@@ -476,6 +487,11 @@ export default function ProblemPage() {
             取消备课
           </button>
         </div>
+      )}
+      {lectureComplete && !lectureBusy && (
+        <p role="status" aria-live="polite" className="text-sm text-beam-mint">
+          教案已生成完成，共 {stepCount} 步。可以继续播放或选择步骤回看。
+        </p>
       )}
       {lectureError && (
         <div
