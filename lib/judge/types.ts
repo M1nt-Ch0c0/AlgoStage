@@ -1,10 +1,11 @@
-/** 浏览器判题契约：每次提交独立 Worker，错误后不复用。 */
+/** 浏览器判题契约：Python 仅复用正常完成且已清理的 Worker。 */
 export type JudgeLanguage = "typescript" | "javascript" | "python";
 export type Verdict = "AC" | "WA" | "RE" | "TLE";
 export type Comparison = "exact" | "unordered" | "groups" | "two-sum" | "min-window";
 export interface JudgeCase { args: unknown[]; expected: unknown }
 export interface ProblemJudgingSpec {
   entryPoints: Record<JudgeLanguage, string[]>;
+  parameters?: string[];
   cases: JudgeCase[];
   comparison: Comparison;
   mutatesArg?: number;
@@ -32,6 +33,13 @@ export type WorkerReply =
   | { type: "ready" }
   | { type: "case-start"; caseId: number }
   | { type: "case-result"; result: JudgeCaseResult }
-  | { type: "done" }
+  | { type: "done"; reusable?: boolean }
   | { type: "output-limit" }
   | { type: "unavailable" };
+export interface WorkerPort {
+  onmessage: ((event: { data: WorkerReply }) => void) | null;
+  onerror: ((event: unknown) => void) | null;
+  onmessageerror: ((event: unknown) => void) | null;
+  postMessage(data: unknown): void;
+  terminate(): unknown;
+}

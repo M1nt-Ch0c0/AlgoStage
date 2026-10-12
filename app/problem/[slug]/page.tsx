@@ -23,6 +23,8 @@ import {
 } from "lucide-react";
 import type { ProblemDetail } from "@/lib/content/types";
 import JudgeControls from "@/components/judge/judge-controls";
+import JudgeEditor from "@/components/judge/judge-editor";
+import JudgeSignature from "@/components/judge/judge-signature";
 import AiSetupPrompt from "@/components/settings/ai-setup-prompt";
 import { teachingScriptSchema } from "@/lib/teaching/schema";
 import { readLectureResponse } from "@/lib/player/lecture-response";
@@ -587,13 +589,18 @@ export default function ProblemPage() {
                 )}
               </span>
             </div>
+            {practice && <JudgeSignature problem={detail?.judging} language={language} />}
             <div className="min-h-0 flex-1 overflow-hidden rounded-md">
-              <CodeEditor
-                value={code}
-                readOnly={!practice}
-                onChange={setCode}
-                language={language}
-              />
+              {practice ? (
+                <JudgeEditor value={code} readOnly={false} onChange={setCode} language={language} />
+              ) : (
+                <CodeEditor
+                  value={code}
+                  readOnly={!practice}
+                  onChange={setCode}
+                  language={language}
+                />
+              )}
             </div>
           </div>
 
