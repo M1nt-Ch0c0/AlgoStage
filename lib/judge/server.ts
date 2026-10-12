@@ -8,7 +8,28 @@ import { NODE_RUNNER } from "./node-runner";
 import type { JudgeCase, JudgeCaseResult, JudgeInput, JudgeResult } from "./types";
 
 const OUTPUT_LIMIT = 32768;
+const DEFAULT_MAX_CONCURRENCY = 4;
 const unavailable = (): JudgeResult => ({ verdict: "RE", backend: "node", cases: [], runtimeMs: 0, error: "UNAVAILABLE" });
+
+let activeJudges = 0;
+
+export function maxJudgeConcurrency(raw = process.env.JUDGE_MAX_CONCURRENCY): number {
+  if (typeof raw !== "string") return DEFAULT_MAX_CONCURRENCY;
+  const trimmed = raw.trim();
+  if (!/^[1-9]\d*$/.test(trimmed)) return DEFAULT_MAX_CONCURRENCY;
+  const parsed = Number(trimmed);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_CONCURRENCY;
+}
+
+export function tryAcquire(): boolean {
+  if (activeJudges >= maxJudgeConcurrency()) return false;
+  activeJudges += 1;
+  return true;
+}
+
+export function release(): void {
+  activeJudges = Math.max(0, activeJudges - 1);
+}
 
 type Execution = {
   runtimeMs: number;

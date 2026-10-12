@@ -38,6 +38,7 @@ export default function JudgeControls({ detail, code, language, onLanguage, disa
             verdict: judged.verdict, runtimeMs: Math.round(judged.runtimeMs),
           }),
         });
+        if (response.status === 429) { setMessage("判题繁忙，结果未保存，请稍后再试"); return; }
         const saved = await response.json();
         if (!response.ok) throw new Error(saved.message ?? "保存结果失败，请重试。");
         if (needsVerification) judged = saved.result as JudgeResult;

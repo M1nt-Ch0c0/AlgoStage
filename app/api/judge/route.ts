@@ -2,8 +2,9 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import { JUDGING_SPECS } from "@/lib/judge/specs";
-import { judgeOnServer } from "@/lib/judge/server";
+import { judgeOnServer, release, tryAcquire } from "@/lib/judge/server";
 import { recordSubmission } from "@/lib/progress";
+import { IS_DEMO } from "@/lib/runtime";
 import { currentUserId } from "@/lib/visitor";
 
 export const runtime = "nodejs";
@@ -33,10 +34,19 @@ export async function POST(req: NextRequest) {
   if (!await prisma.problem.findUnique({ where: { slug: body.problemSlug }, select: { slug: true } })) {
     return Response.json({ error: "NOT_FOUND", message: "题库中没有这道题，请先初始化题库。" }, { status: 404 });
   }
-  const result = await judgeOnServer({ ...body, problem: JUDGING_SPECS[body.problemSlug] });
-  if (result.error) {
-    return Response.json({ error: "UNAVAILABLE", message: "服务端无法判定，执行环境未能启动；没有记录提交，请重试。" }, { status: 503 });
+  if (!tryAcquire()) {
+    return Response.json({ error: "BUSY" }, { status: 429 });
   }
-  await recordSubmission(await currentUserId(), { ...body, verdict: result.verdict, runtimeMs: result.runtimeMs, judgedBy: "server" });
-  return Response.json({ ok: true, result });
+  try {
+    const result = await judgeOnServer({ ...body, problem: JUDGING_SPECS[body.problemSlug] });
+    if (result.error) {
+      return Response.json({ error: "UNAVAILABLE", message: "服务端无法判定，执行环境未能启动；没有记录提交，请重试。" }, { status: 503 });
+    }
+    if (!IS_DEMO) {
+      await recordSubmission(await currentUserId(), { ...body, verdict: result.verdict, runtimeMs: result.runtimeMs, judgedBy: "server" });
+    }
+    return Response.json({ ok: true, result });
+  } finally {
+    release();
+  }
 }

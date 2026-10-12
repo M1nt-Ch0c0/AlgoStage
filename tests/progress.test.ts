@@ -67,6 +67,31 @@ test("progress：拒绝客户端 AC，无提交、解题状态或复习卡副作
     );
     assert.equal(badJSON.status, 400);
     assert.equal((await badJSON.json()).error, "BAD_JSON");
+    const longSlug = "a".repeat(201);
+    for (const body of [
+      { type: "submission", problemSlug: longSlug, code: "", language: "typescript", verdict: "WA" },
+      { type: "client-ac", problemSlug: longSlug, code: "", language: "python", verdict: "AC" },
+      { type: "hint", problemSlug: longSlug, level: 1 },
+      { type: "lecture-step", problemSlug: longSlug, stepIndex: 0 },
+    ]) {
+      const response = await POST(request(body));
+      assert.equal(response.status, 400);
+      assert.equal((await response.json()).error, "BAD_REQUEST");
+    }
+    for (const body of [
+      { type: "submission", problemSlug: "non-existent", code: "", language: "typescript", verdict: "WA" },
+      { type: "client-ac", problemSlug: "non-existent", code: "", language: "python", verdict: "AC" },
+      { type: "hint", problemSlug: "non-existent", level: 1 },
+      { type: "lecture-step", problemSlug: "non-existent", stepIndex: 0 },
+    ]) {
+      const response = await POST(request(body));
+      assert.equal(response.status, 404);
+      assert.equal((await response.json()).error, "NOT_FOUND");
+    }
+    assert.equal(await f.prisma.submission.count(), 0);
+    assert.equal(await f.prisma.problemProgress.count(), 0);
+    assert.equal(await f.prisma.reviewCard.count(), 0);
+    assert.equal(await f.prisma.hintUsage.count(), 0);
     for (const verdict of ["WA", "RE", "TLE"])
       assert.equal(
         (

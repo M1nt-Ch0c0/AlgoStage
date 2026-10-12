@@ -63,6 +63,36 @@ test.each(["AC", "WA", "python", "save-error"])("判题控件持久化并使用�
   } finally { await act(async () => root.unmount()); }
 });
 
+test("UI 收到 429 时显示繁忙提示、运行按钮保持可点、编辑器代码保留", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.spyOn(pythonWorkerPool, "preload").mockImplementation(() => {});
+  vi.mocked(judgeInBrowser).mockResolvedValue(localResult("AC"));
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ error: "BUSY" }, { status: 429 }));
+  const detail = await localSeedSource.detail("two-sum"), onResult = vi.fn();
+  const container = document.createElement("div"); document.body.append(container);
+  const root = createRoot(container);
+  function Harness() {
+    return createElement("div", {},
+      createElement("textarea", { "data-editor": true, value: "const keepMyCode = 1;", readOnly: true }),
+      createElement(JudgeControls, {
+        detail, code: "const keepMyCode = 1;", language: "typescript",
+        onLanguage: vi.fn(), onResult,
+      }),
+    );
+  }
+  try {
+    await act(async () => root.render(createElement(Harness)));
+    const runButton = () => Array.from(container.querySelectorAll("button")).find(button => button.textContent === "运行" || button.textContent === "判题中…")!;
+    await act(async () => runButton().click());
+    expect(container.textContent).toContain("判题繁忙，结果未保存，请稍后再试");
+    expect(container.textContent).not.toContain("已保存");
+    expect(runButton().disabled).toBe(false);
+    expect(runButton().textContent).toBe("运行");
+    expect(container.querySelector<HTMLTextAreaElement>("[data-editor]")!.value).toBe("const keepMyCode = 1;");
+    expect(onResult).not.toHaveBeenCalled();
+  } finally { await act(async () => root.unmount()); }
+});
+
 test("复习页按持久化状态识别 solved/mastered，直接链接到判题页", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ cards: [

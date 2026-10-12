@@ -16,7 +16,7 @@ const progressRequestSchema = z.discriminatedUnion("type", [
   z
     .object({
       type: z.literal("submission"),
-      problemSlug: z.string().min(1),
+      problemSlug: z.string().min(1).max(200),
       code: z.string(),
       language: z.enum(["typescript", "python", "javascript"]),
       verdict: z.enum(["WA", "RE", "TLE"]),
@@ -26,7 +26,7 @@ const progressRequestSchema = z.discriminatedUnion("type", [
   z
     .object({
       type: z.literal("client-ac"),
-      problemSlug: z.string().min(1),
+      problemSlug: z.string().min(1).max(200),
       code: z.string(),
       language: z.literal("python"),
       verdict: z.literal("AC"),
@@ -36,14 +36,14 @@ const progressRequestSchema = z.discriminatedUnion("type", [
   z
     .object({
       type: z.literal("hint"),
-      problemSlug: z.string().min(1),
+      problemSlug: z.string().min(1).max(200),
       level: z.number().int().min(1).max(5),
     })
     .strict(),
   z
     .object({
       type: z.literal("lecture-step"),
-      problemSlug: z.string().min(1),
+      problemSlug: z.string().min(1).max(200),
       stepIndex: z.number().int().min(0),
     })
     .strict(),
@@ -76,6 +76,9 @@ export async function POST(req: NextRequest) {
     );
   }
   const body = parsed.data;
+  if (!await prisma.problem.findUnique({ where: { slug: body.problemSlug }, select: { slug: true } })) {
+    return Response.json({ error: "NOT_FOUND", message: "题库中没有这道题，请先初始化题库。" }, { status: 404 });
+  }
   const userId = await currentUserId();
   if (body.type === "submission" || body.type === "client-ac") {
     await recordSubmission(userId, {
