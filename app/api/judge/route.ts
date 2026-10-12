@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "NOT_FOUND", message: "题库中没有这道题，请先初始化题库。" }, { status: 404 });
   }
   if (!tryAcquire()) {
-    return Response.json({ error: "BUSY" }, { status: 429 });
+    return Response.json({ error: "BUSY", message: "判题繁忙，结果未保存，请稍后再试" }, { status: 429 });
   }
   try {
     const result = await judgeOnServer({ ...body, problem: JUDGING_SPECS[body.problemSlug] });

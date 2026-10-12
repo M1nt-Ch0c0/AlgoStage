@@ -9,6 +9,7 @@ import type { JudgeCase, JudgeCaseResult, JudgeInput, JudgeResult } from "./type
 
 const OUTPUT_LIMIT = 32768;
 const DEFAULT_MAX_CONCURRENCY = 4;
+const MAX_CONCURRENCY_LIMIT = 64;
 const unavailable = (): JudgeResult => ({ verdict: "RE", backend: "node", cases: [], runtimeMs: 0, error: "UNAVAILABLE" });
 
 let activeJudges = 0;
@@ -18,7 +19,7 @@ export function maxJudgeConcurrency(raw = process.env.JUDGE_MAX_CONCURRENCY): nu
   const trimmed = raw.trim();
   if (!/^[1-9]\d*$/.test(trimmed)) return DEFAULT_MAX_CONCURRENCY;
   const parsed = Number(trimmed);
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_CONCURRENCY;
+  return Number.isSafeInteger(parsed) && parsed > 0 ? Math.min(parsed, MAX_CONCURRENCY_LIMIT) : DEFAULT_MAX_CONCURRENCY;
 }
 
 export function tryAcquire(): boolean {

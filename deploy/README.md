@@ -23,6 +23,8 @@ docker compose -f deploy/compose.yaml ps
 
 此服务器 Docker 默认桥接网络不能访问外网，构建使用 `network: host`。运行容器仍使用隔离网络和回环端口，数据卷在重建时保留。修改实例子路径需重新构建，并同步修改 nginx 路径和健康检查。
 
+`JUDGE_MAX_CONCURRENCY` 限制的是**单个进程**内同时进行的服务端判题数（默认 4，最大 64）；多实例部署时各进程各自计数。
+
 ## 首次配置 nginx 与证书
 
 现有 nginx 容器为 `cpa-nginx`，使用 host 网络并挂载宿主机 `/etc/nginx`、`/etc/letsencrypt` 和 `/var/www/html`。

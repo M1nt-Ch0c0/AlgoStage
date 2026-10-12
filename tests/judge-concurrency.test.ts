@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import { act, createElement, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -30,7 +32,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   delete process.env.JUDGE_MAX_CONCURRENCY;
   delete process.env.NEXT_PUBLIC_ALGOSTAGE_DEMO;
-  for (let i = 0; i < 20; i++) judgeServer.release();
+  for (let i = 0; i < 64; i++) judgeServer.release();
   await f.prisma.submission.deleteMany();
   await f.prisma.problemProgress.deleteMany();
   await f.prisma.reviewCard.deleteMany();
@@ -41,7 +43,7 @@ afterEach(() => {
   delete process.env.NEXT_PUBLIC_ALGOSTAGE_DEMO;
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
-  for (let i = 0; i < 20; i++) judgeServer.release();
+  for (let i = 0; i < 64; i++) judgeServer.release();
 });
 
 afterAll(async () => {
@@ -72,6 +74,14 @@ test("环境变量非法、0、负数或未设置时回退为 4，正整数生�
   expect(judgeServer.tryAcquire()).toBe(true);
   judgeServer.release();
   judgeServer.release();
+
+  for (const capped of ["64", "65", "100", "999"]) {
+    process.env.JUDGE_MAX_CONCURRENCY = capped;
+    expect(judgeServer.maxJudgeConcurrency()).toBe(64);
+    for (let i = 0; i < 64; i++) expect(judgeServer.tryAcquire()).toBe(true);
+    expect(judgeServer.tryAcquire()).toBe(false);
+    for (let i = 0; i < 64; i++) judgeServer.release();
+  }
 });
 
 test.each([false, true])("同时 5 个请求第 5 个立即返回 429 BUSY（demo=%s），前面跑完后新请求正常判题", async isDemo => {
@@ -98,7 +108,7 @@ test.each([false, true])("同时 5 个请求第 5 个立即返回 429 BUSY（dem
 
   const fifthRes = await POST(request(payload()));
   expect(fifthRes.status).toBe(429);
-  expect(await fifthRes.json()).toEqual({ error: "BUSY" });
+  expect(await fifthRes.json()).toEqual({ error: "BUSY", message: "判题繁忙，结果未保存，请稍后再试" });
 
   for (const releaseOne of resolvers.splice(0)) releaseOne();
   const responses = await Promise.all(firstFour);
@@ -163,4 +173,11 @@ test("UI 收到 429 时显示「判题繁忙，结果未保存，请稍后再试
     container.remove();
   }
 });
+
+test("deploy/README.md 注明 JUDGE_MAX_CONCURRENCY 为单进程并发上限", () => {
+  const readme = readFileSync(resolve(__dirname, "../deploy/README.md"), "utf8");
+  expect(readme).toContain("JUDGE_MAX_CONCURRENCY");
+  expect(readme).toContain("单个进程");
+});
+
 
