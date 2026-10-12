@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { existsSync } from "node:fs";
 import { NextRequest } from "next/server";
-import { request } from "./api-fixture";
+import { vi } from "vitest";
+import { createFixture, request } from "./api-fixture";
+import { HOT100 } from "../lib/content/hot100";
+import { localSeedSource } from "../lib/content/local-source";
 
 test("Demo：请求 Key 和环境 Key 均不能绕过 AI 禁用与设置隔离", async () => {
   const databasePath = `/tmp/algostage-demo-forbidden-${process.pid}.db`;
@@ -44,5 +47,50 @@ test("Demo：请求 Key 和环境 Key 均不能绕过 AI 禁用与设置隔离",
     assert.equal(response.headers.get("set-cookie"), null);
     assert.equal(calls, 0);
     assert.equal(existsSync(databasePath), false);
-  } finally { globalThis.fetch = originalFetch; }
+  } finally {
+    globalThis.fetch = originalFetch;
+    delete (globalThis as { prisma?: unknown }).prisma;
+  }
+});
+
+test("Demo 下 /api/judge 照常判题并返回 200，但不写任何记录；非 Demo 下照常写入", async () => {
+  vi.resetModules();
+  const f = await createFixture({ modelServer: false });
+  try {
+    const problem = HOT100[0];
+    await f.prisma.problem.create({
+      data: {
+        slug: problem.slug, title: problem.title, number: problem.number, difficulty: problem.difficulty,
+        order: problem.order, patterns: JSON.stringify(problem.patterns), prereqs: JSON.stringify(problem.prereqs),
+      },
+    });
+    const code = (await localSeedSource.detail("two-sum")).referenceSolutions!.find(item => item.language === "typescript")!.code;
+    const payload = { problemSlug: "two-sum", language: "typescript", code };
+
+    process.env.NEXT_PUBLIC_ALGOSTAGE_DEMO = "1";
+    vi.resetModules();
+    const demoJudge = await import("../app/api/judge/route");
+    const demoRes = await demoJudge.POST(request(payload));
+    assert.equal(demoRes.status, 200);
+    const demoBody = await demoRes.json();
+    assert.equal(demoBody.ok, true);
+    assert.equal(demoBody.result.verdict, "AC");
+    assert.equal(await f.prisma.submission.count(), 0);
+    assert.equal(await f.prisma.problemProgress.count(), 0);
+    assert.equal(await f.prisma.reviewCard.count(), 0);
+
+    delete process.env.NEXT_PUBLIC_ALGOSTAGE_DEMO;
+    vi.resetModules();
+    const localJudge = await import("../app/api/judge/route");
+    const localRes = await localJudge.POST(request(payload));
+    assert.equal(localRes.status, 200);
+    const localBody = await localRes.json();
+    assert.equal(localBody.ok, true);
+    assert.equal(localBody.result.verdict, "AC");
+    assert.equal(await f.prisma.submission.count(), 1);
+    assert.equal(await f.prisma.problemProgress.count(), 1);
+    assert.equal(await f.prisma.reviewCard.count(), 1);
+  } finally {
+    await f.close();
+  }
 });
