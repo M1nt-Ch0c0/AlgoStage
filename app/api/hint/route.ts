@@ -4,7 +4,6 @@
  */
 import { APICallError, generateText } from "ai";
 import { NextRequest } from "next/server";
-import { IS_DEMO } from "@/lib/runtime";
 import {
   createModel,
   resolveByok,
@@ -41,17 +40,6 @@ export async function POST(req: NextRequest) {
     return Response.json(
       { error: "BAD_JSON", message: "请求内容不是有效的 JSON 对象，请重试。" },
       { status: 400 },
-    );
-  }
-  // 在线体验版不调用任何 AI：不代用他人的 Key，也不做模型请求中转
-  if (IS_DEMO) {
-    return Response.json(
-      {
-        error: "DEMO",
-        message:
-          "在线体验版只备好了「两数之和」这一课。把 AlgoStage 装到自己电脑上，接上你的 AI，就能听全部 100 题。",
-      },
-      { status: 403 },
     );
   }
   const parsed = hintRequestSchema.safeParse(input);

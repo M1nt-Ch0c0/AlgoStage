@@ -1,7 +1,7 @@
 /**
  * POST /api/progress · 学习行为写入（提交/提示消耗/讲解进度）
  * JS/TS 的 AC 必须经过 /api/judge 服务端复判；Python 服务端判不了，接受浏览器 AC 并标记 judgedBy: "client"。
- * 进度只在本地自部署版记录（Demo 下 403），伪造 Python AC 只影响自己。
+ * 学习进度始终在本机记录，伪造 Python AC 只影响自己。
  */
 import { z } from "zod";
 import { NextRequest } from "next/server";
@@ -9,7 +9,6 @@ import { prisma } from "@/lib/db/prisma";
 import { JUDGING_SPECS } from "@/lib/judge/specs";
 import { currentUserId } from "@/lib/visitor";
 import { recordLectureStep, recordSubmission } from "@/lib/progress";
-import { IS_DEMO } from "@/lib/runtime";
 
 export const runtime = "nodejs";
 
@@ -51,11 +50,6 @@ const progressRequestSchema = z.discriminatedUnion("type", [
 ]);
 
 export async function POST(req: NextRequest) {
-  // Demo 不记录学习进度；在解析请求、识别访客和写库前直接拒绝。
-  if (IS_DEMO) return Response.json(
-    { error: "DEMO", message: "在线体验版不记录学习进度，请安装到本机后使用。" },
-    { status: 403 },
-  );
   let input: unknown;
   try {
     input = await req.json();

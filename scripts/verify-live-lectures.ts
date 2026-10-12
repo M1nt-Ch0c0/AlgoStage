@@ -18,7 +18,6 @@ const checkLatency = process.argv.includes("--latency");
 const firstStepTimes: number[] = [];
 const directory = mkdtempSync(join(tmpdir(), "algostage-live-"));
 process.env.DATABASE_URL = `file:${join(directory, "test.db")}`;
-delete process.env.NEXT_PUBLIC_ALGOSTAGE_DEMO;
 execFileSync(
   process.execPath,
   ["node_modules/prisma/build/index.js", "db", "push"],
