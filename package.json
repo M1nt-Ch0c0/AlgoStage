@@ -21,7 +21,7 @@
     "ai": "7.0.99",
     "lucide-react": "1.45.0",
     "motion": "13.2.0",
-    "next": "16.3.5",
+    "next": "16.4.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "zod": "4.6.5",
@@ -41,5 +41,8 @@
     "prisma@6.19.3": true,
     "@prisma/engines@6.19.3": true,
     "esbuild@0.28.2": true
+  },
+  "overrides": {
+    "deepmerge-ts": "^8.0.2"
   }
 }
