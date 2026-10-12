@@ -138,6 +138,7 @@ export default function ProblemPage() {
   // 讲解进度埋点（看板数据源）
   const lastReportedRef = useRef(-1);
   useEffect(() => {
+    // 本地重播的步骤已上报过，读 store 快照而不订阅，避免重复写入进度。
     if (IS_DEMO || !step || status === "idle" || usePlayerStore.getState().replaying) return;
     const idx = usePlayerStore.getState().currentIndex;
     if (idx === lastReportedRef.current) return;
