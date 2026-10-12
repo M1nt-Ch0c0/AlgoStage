@@ -29,6 +29,9 @@ test("S1：请求 > 设置 > 环境变量；已保存 Key 可直接要提示且�
     assert.equal((await resolveByok())?.source, "env");
     assert.equal((await (await GET()).json()).keySource, "env");
     delete process.env.AI_MODEL;
+    assert.equal((await resolveByok())?.config.model,"gpt-6.1-sol");
+    assert.equal((await (await GET()).json()).keySource, "env");
+    delete process.env.AI_API_KEY;
     assert.equal(await resolveByok(), null);
     assert.equal((await (await GET()).json()).keySource, "none");
     await f.save({ model: "saved-model" });

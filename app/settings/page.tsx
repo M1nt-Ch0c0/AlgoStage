@@ -1,5 +1,6 @@
 "use client";
 
+import { DEFAULT_MODEL } from "@/lib/agent/defaults";
 import { apiPath, IS_DEMO, REPO_URL } from "@/lib/runtime";
 import { useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
@@ -11,10 +12,10 @@ import { applyTheme as persistTheme, readTheme } from "@/lib/theme";
 const PROVIDER_OPTIONS = [
   {
     id: "openai-compatible",
-    label: "DeepSeek 等",
+    label: "OpenAI 兼容",
     hint: "DeepSeek · 通义 · Kimi · OpenAI",
-    baseURL: "https://api.deepseek.com/v1",
-    modelExample: "deepseek-chat",
+    baseURL: "https://api.openai.com/v1",
+    modelExample: DEFAULT_MODEL,
   },
   { id: "anthropic", label: "Anthropic", hint: "Claude 系列", modelExample: "claude-sonnet-4-5" },
   { id: "google", label: "Google", hint: "Gemini 系列", modelExample: "gemini-2.5-flash" },
@@ -45,11 +46,11 @@ const labelClass = "mb-1.5 block text-xs text-chalk-500";
 
 export default function SettingsPage() {
   const [provider, setProvider] = useState<string>("openai-compatible");
-  const [baseURL, setBaseURL] = useState("https://api.deepseek.com/v1");
+  const [baseURL, setBaseURL] = useState("https://api.openai.com/v1");
   const [apiKey, setApiKey] = useState("");
   const [apiKeyMasked, setApiKeyMasked] = useState("");
   const [keySource, setKeySource] = useState<"settings" | "env" | "none">("none");
-  const [model, setModel] = useState("");
+  const [model, setModel] = useState<string>(DEFAULT_MODEL);
   const [theme, setTheme] = useState("dark");
   const [showKey, setShowKey] = useState(false);
   const [effectLevel, setEffectLevel] = useState("full");
@@ -222,14 +223,15 @@ export default function SettingsPage() {
                 id="model"
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
-                placeholder={`例如 ${preset?.modelExample ?? "model-name"}`}
+                placeholder={`例如 ${preset?.modelExample ?? DEFAULT_MODEL}`}
                 className={`${inputClass} font-mono`}
               />
+              <p className="mt-2 text-xs leading-5 text-chalk-500">讲解推荐 gpt-6.1-sol。较弱模型可能无法完成教案或正确调用教学工具；失败时请重试或更换模型。</p>
             </div>
             {provider === "openai-compatible" && (
               <div>
                 <label className={labelClass} htmlFor="baseURL">
-                  接口地址（一般不用改）
+                  接口地址（使用对应服务商的地址）
                 </label>
                 <input
                   id="baseURL"

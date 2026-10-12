@@ -15,6 +15,7 @@ export type PlayerStatus =
 
 interface PlayerState {
   status: PlayerStatus;
+  receiving: boolean;
   script: TeachingScript | null;
   /** 已收到的步骤（流式期间逐步增长） */
   steps: TeachingStep[];
@@ -24,7 +25,11 @@ interface PlayerState {
   effectLevel: "full" | "calm" | "minimal";
 
   loadScript: (script: TeachingScript) => void;
+  beginStream: (metadata: Omit<TeachingScript, "steps">) => void;
   appendStep: (step: TeachingStep) => void;
+  updateStep: (step: TeachingStep) => void;
+  completeStream: (script: TeachingScript) => void;
+  stopStream: () => void;
   play: () => void;
   pause: () => void;
   next: () => void;
@@ -39,6 +44,7 @@ interface PlayerState {
 
 const initial = {
   status: "idle" as PlayerStatus,
+  receiving: false,
   script: null,
   steps: [] as TeachingStep[],
   currentIndex: 0,
@@ -50,15 +56,55 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   ...initial,
 
   loadScript: (script) =>
-    set({ script, steps: script.steps, currentIndex: 0, status: "paused" }),
+    set({
+      script,
+      receiving: false,
+      steps: script.steps,
+      currentIndex: 0,
+      status: "paused",
+    }),
 
+  beginStream: (metadata) =>
+    set({
+      script: { ...metadata, steps: [] },
+      steps: [],
+      currentIndex: 0,
+      status: "streaming",
+      receiving: true,
+    }),
   appendStep: (step) =>
-    set((s) => ({ steps: [...s.steps, step], status: "streaming" })),
+    set((s) => {
+      const steps = [...s.steps, step];
+      const waiting = s.status === "streaming";
+      return {
+        steps,
+        script: s.script ? { ...s.script, steps } : null,
+        currentIndex: waiting ? steps.length - 1 : s.currentIndex,
+        status: waiting ? "playing" : s.status,
+      };
+    }),
+  updateStep: (step) =>
+    set((s) => {
+      const steps = s.steps.map((old) => (old.id === step.id ? step : old));
+      return { steps, script: s.script ? { ...s.script, steps } : null };
+    }),
+  completeStream: (script) =>
+    set((s) => ({
+      script,
+      steps: script.steps,
+      receiving: false,
+      status: s.status === "streaming" ? "finished" : s.status,
+    })),
+  stopStream: () =>
+    set((s) => ({
+      receiving: false,
+      status: s.steps.length ? "paused" : "idle",
+    })),
 
   play: () => {
     const { status } = get();
     if (status === "paused" || status === "idle" || status === "interrupted") {
-      set({ status: "playing" });
+      set({ status: get().steps.length ? "playing" : "streaming" });
     }
   },
 
@@ -69,16 +115,21 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       const nextIndex = s.currentIndex + 1;
       if (nextIndex >= s.steps.length) {
         // 流式中后面可能还有步骤；非流式则结束
-        return { status: s.status === "streaming" ? "streaming" : "finished" };
+        return { status: s.receiving ? "streaming" : "finished" };
       }
       return { currentIndex: nextIndex };
     }),
 
-  prev: () => set((s) => ({ currentIndex: Math.max(0, s.currentIndex - 1) })),
+  prev: () =>
+    set((s) => ({
+      currentIndex: Math.max(0, s.currentIndex - 1),
+      status: s.status === "streaming" && s.steps.length ? "playing" : s.status,
+    })),
 
   goto: (index) =>
     set((s) => ({
       currentIndex: Math.max(0, Math.min(index, s.steps.length - 1)),
+      status: s.status === "streaming" && s.steps.length ? "playing" : s.status,
     })),
 
   interrupt: () => set({ status: "interrupted" }),

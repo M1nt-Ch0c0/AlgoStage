@@ -26,7 +26,9 @@ npm run db:push && npm run db:seed   # 初始化本地 SQLite + 灌入 Hot 100
 npm run dev                   # http://localhost:3000
 ```
 
-首次打开进入设置页，填入 API Key 和模型名（如 `deepseek-chat`），即可让 AI 老师开课；不配置 Key 也能体验「两数之和」的内置旗舰讲解（含全部特效）。
+首次打开进入设置页，填入 API Key 和模型名（默认并推荐 `gpt-6.1-sol`），即可让 AI 老师开课；不配置 Key 也能体验「两数之和」的内置旗舰讲解（含全部特效）。
+
+讲解通过五种教学工具逐步生成，收到步骤即可播放；只有完整教案校验成功才保存缓存。较弱模型可能无法完成讲解或正确调用工具，失败时建议重试或切换到 `gpt-6.1-sol`。备课总上限为 240 秒，非法工具参数最多重试该次调用 2 次，已完成步骤会保留。
 
 验证命令：`npm test`、`npx tsc --noEmit`、`npm run build`。
 

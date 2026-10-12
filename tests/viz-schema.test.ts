@@ -55,7 +55,7 @@ test("S2 review：非法可视化重试后返回 422 不缓存；非法旧缓存
       const response = await POST(request({ slug: "3sum" }));
       assert.equal(response.status, 422);
       assert.equal((await response.json()).error, "INVALID_SCRIPT");
-      assert.equal(f.calls.length - before, 2);
+      assert.equal(f.calls.length - before, 3);
       assert.equal(await f.prisma.lectureScriptCache.count(), 0);
     }
     f.setReply(() => scriptWithViz(validViz));

@@ -3,6 +3,7 @@
  * 用户只需提供 API Key + model name（+ 可选 baseURL），
  * 配置存本地 Setting 表 / 环境变量，请求从本机直连厂商。
  */
+import { DEFAULT_MODEL } from "./defaults";
 import { byokRequestSchema } from "./request";
 import { prisma } from "@/lib/db/prisma";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
@@ -26,8 +27,8 @@ export const PROVIDER_PRESETS: {
   {
     id: "openai-compatible",
     label: "OpenAI 兼容（DeepSeek / 通义 / Moonshot / OpenAI…）",
-    baseURL: "https://api.deepseek.com/v1",
-    modelExample: "deepseek-chat",
+    baseURL: "https://api.openai.com/v1",
+    modelExample: DEFAULT_MODEL,
   },
   { id: "anthropic", label: "Anthropic Claude", modelExample: "claude-sonnet-4-5" },
   { id: "google", label: "Google Gemini", modelExample: "gemini-2.5-flash" },
@@ -43,7 +44,7 @@ function completeByok(value: unknown): ByokConfig | null {
 export function byokFromEnv(): ByokConfig | null {
   return completeByok({
     provider: process.env.AI_PROVIDER || "openai-compatible",
-    model: process.env.AI_MODEL,
+    model: process.env.AI_MODEL || DEFAULT_MODEL,
     apiKey: process.env.AI_API_KEY,
     baseURL: process.env.AI_BASE_URL || undefined,
   });
@@ -85,6 +86,7 @@ export function createModel(config: ByokConfig) {
       )!;
       return createOpenAICompatible({
         name: "byok",
+        supportsStructuredOutputs: true,
         apiKey: config.apiKey,
         baseURL: config.baseURL ?? preset.baseURL!,
       })(config.model);

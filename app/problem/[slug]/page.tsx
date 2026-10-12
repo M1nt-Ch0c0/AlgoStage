@@ -6,17 +6,33 @@
  */
 "use client";
 
+import { LECTURE_TIMEOUT_MS } from "@/lib/agent/defaults";
 import { apiPath, IS_DEMO, REPO_URL } from "@/lib/runtime";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ChevronRight, GraduationCap, KeyRound, Lightbulb, Pencil, Play, RotateCcw, Sparkles } from "lucide-react";
+import {
+  ChevronRight,
+  GraduationCap,
+  KeyRound,
+  Lightbulb,
+  Pencil,
+  Play,
+  RotateCcw,
+  Sparkles,
+} from "lucide-react";
 import type { ProblemDetail } from "@/lib/content/types";
 import JudgeControls from "@/components/judge/judge-controls";
+import { teachingScriptSchema } from "@/lib/teaching/schema";
+import { readLectureResponse } from "@/lib/player/lecture-response";
 import { loadLectureForPlayback } from "@/lib/player/load-lecture";
 import { TWO_SUM_SCRIPT } from "@/lib/content/scripts/two-sum";
 import { HOT100_CATEGORIES } from "@/lib/content/hot100";
-import { DIFFICULTY_DOT, DIFFICULTY_LABEL, DIFFICULTY_TEXT } from "@/lib/content/pattern-labels";
+import {
+  DIFFICULTY_DOT,
+  DIFFICULTY_LABEL,
+  DIFFICULTY_TEXT,
+} from "@/lib/content/pattern-labels";
 import { usePlayerStore } from "@/lib/player/store";
 import EffectStage from "@/components/effects/effect-stage";
 import CodeEditor from "@/components/board/code-editor";
@@ -30,7 +46,13 @@ const STATEMENT_IDS = ["intro", "insight", "summary"] as const;
 const HINT_LEVELS = ["观察", "模式", "方向", "技巧", "骨架"];
 
 /** 栏目小标题：讲义 / 黑板 / 导师 */
-function ColumnLabel({ children, right }: { children: React.ReactNode; right?: React.ReactNode }) {
+function ColumnLabel({
+  children,
+  right,
+}: {
+  children: React.ReactNode;
+  right?: React.ReactNode;
+}) {
   return (
     <div className="flex items-center justify-between gap-2">
       <h2 className="chalk text-2xl leading-none text-chalk-300">{children}</h2>
@@ -46,9 +68,13 @@ export default function ProblemPage() {
 
   const [practice, setPractice] = useState(false);
   const [code, setCode] = useState("");
-  const [language, setLanguage] = useState<"typescript" | "python">("typescript");
+  const [language, setLanguage] = useState<"typescript" | "python">(
+    "typescript",
+  );
 
   const [lectureBusy, setLectureBusy] = useState(false);
+  const [lectureProgress, setLectureProgress] = useState("");
+  const lectureAbort = useRef<AbortController | null>(null);
   const [lectureError, setLectureError] = useState<string | null>(null);
 
   const [hintBusy, setHintBusy] = useState<number | null>(null);
@@ -59,6 +85,16 @@ export default function ProblemPage() {
   const status = usePlayerStore((s) => s.status);
   const stepCount = usePlayerStore((s) => s.steps.length);
   const { loadScript, play, reset } = usePlayerStore.getState();
+
+  useEffect(() => {
+    setLectureBusy(false);
+    setLectureProgress("");
+    setLectureError(null);
+    return () => {
+      lectureAbort.current?.abort();
+      lectureAbort.current = null;
+    };
+  }, [slug]);
 
   // 题面加载
   useEffect(() => {
@@ -71,8 +107,9 @@ export default function ProblemPage() {
         const j = (await res.json()) as { problem: ProblemDetail };
         setDetail(j.problem);
         const ref =
-          j.problem.referenceSolutions?.find((s) => s.language === "typescript") ??
-          j.problem.referenceSolutions?.[0];
+          j.problem.referenceSolutions?.find(
+            (s) => s.language === "typescript",
+          ) ?? j.problem.referenceSolutions?.[0];
         setCode(ref?.code ?? "");
         setLanguage("typescript");
       })
@@ -89,11 +126,15 @@ export default function ProblemPage() {
     fetch(apiPath("/api/progress"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "lecture-step", problemSlug: slug, stepIndex: idx }),
+      body: JSON.stringify({
+        type: "lecture-step",
+        problemSlug: slug,
+        stepIndex: idx,
+      }),
     }).catch(() => {});
   }, [step, status, slug]);
 
-  // 开始讲课：two-sum 用内置旗舰脚本；其余题调 AI 生成（支持 cached JSON 与流式文本容错解析）
+  // 参考代码先恢复；每个已校验步骤到达即播放，完成时不重置播放位置。
   const startLecture = useCallback(async () => {
     setLectureError(null);
     setPractice(false);
@@ -101,41 +142,107 @@ export default function ProblemPage() {
       setLectureError("题目和参考代码还没加载好，请稍后再试。");
       return;
     }
+    lectureAbort.current?.abort();
+    const abort = new AbortController();
+    lectureAbort.current = abort;
+    let timedOut = false;
+    const deadline = setTimeout(() => {
+      timedOut = true;
+      abort.abort();
+    }, LECTURE_TIMEOUT_MS + 5000);
     setLectureBusy(true);
+    setLectureProgress("正在生成首个讲解步骤…");
     try {
       if (slug === "two-sum") {
         setLanguage("typescript");
-        loadLectureForPlayback(TWO_SUM_SCRIPT, detail, { setCode, loadScript, play });
+        loadLectureForPlayback(TWO_SUM_SCRIPT, detail, {
+          setCode,
+          loadScript,
+          play,
+        });
         return;
       }
       const res = await fetch(apiPath("/api/lecture"), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/x-ndjson",
+        },
+        signal: abort.signal,
         body: JSON.stringify({ slug, solutionLanguage: language }),
       });
-      if (!res.ok) {
-        const j = (await res.json().catch(() => null)) as { message?: string } | null;
-        throw new Error(j?.message ?? "老师这次没备好课，稍等一会儿再试吧。");
-      }
-      const ct = res.headers.get("content-type") ?? "";
-      let script: unknown;
-      if (ct.includes("application/json")) {
-        script = ((await res.json()) as { script: unknown }).script;
-      } else {
-        // 流式 JSON 文本：拼接完整后整体 parse（流式增量解析二期接入）
-        script = JSON.parse(await res.text());
-      }
-      loadLectureForPlayback(script, detail, { setCode, loadScript, play });
+      let streaming = false;
+      const reference =
+        detail.referenceSolutions?.find((s) => s.language === language)?.code ??
+        "";
+      const script = await readLectureResponse(
+        res,
+        (message) => {
+          if (lectureAbort.current === abort) setLectureProgress(message);
+        },
+        (step, update) => {
+          if (abort.signal.aborted || lectureAbort.current !== abort) return;
+          if (!streaming) {
+            setCode(reference);
+            usePlayerStore.getState().beginStream({
+              problemSlug: slug,
+              mode: "lecture",
+              language: "zh",
+              solutionLanguage: language,
+            });
+            streaming = true;
+          }
+          const lineCount = reference.split("\n").length;
+          if (
+            step.targets.some(
+              (target) =>
+                (target.kind === "code-line" &&
+                  (target.start > lineCount ||
+                    (target.end ?? target.start) > lineCount)) ||
+                (target.kind === "code-token" && target.line > lineCount),
+            )
+          )
+            throw new Error("教案行号无效，请重试或换用 gpt-6.1-sol。");
+          if (update) usePlayerStore.getState().updateStep(step);
+          else usePlayerStore.getState().appendStep(step);
+        },
+      );
+      if (abort.signal.aborted) return;
+      if (streaming)
+        usePlayerStore
+          .getState()
+          .completeStream(teachingScriptSchema.parse(script));
+      else
+        loadLectureForPlayback(script, detail, { setCode, loadScript, play });
     } catch (e) {
-      setLectureError(e instanceof Error ? e.message : "老师这次没备好课，稍等一会儿再试吧。");
+      if (lectureAbort.current === abort) {
+        usePlayerStore.getState().stopStream();
+        if (timedOut)
+          setLectureError("备课超时，请点击重试或换用推荐模型 gpt-6.1-sol。");
+        else if (!abort.signal.aborted)
+          setLectureError(
+            e instanceof Error ? e.message : "老师这次没备好课，请重试。",
+          );
+      }
     } finally {
-      setLectureBusy(false);
+      clearTimeout(deadline);
+      if (lectureAbort.current === abort) {
+        setLectureBusy(false);
+        setLectureProgress("");
+        lectureAbort.current = null;
+      }
     }
   }, [slug, detail, language, loadScript, play]);
 
   function changeLanguage(next: "typescript" | "python") {
+    if (lectureAbort.current) {
+      lectureAbort.current.abort();
+      usePlayerStore.getState().stopStream();
+    }
     setLanguage(next);
-    setCode(detail?.referenceSolutions?.find(s => s.language === next)?.code ?? "");
+    setCode(
+      detail?.referenceSolutions?.find((s) => s.language === next)?.code ?? "",
+    );
   }
 
   // 提示阶梯
@@ -147,9 +254,18 @@ export default function ProblemPage() {
         const res = await fetch(apiPath("/api/hint"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ slug, level, userCode: practice ? code : undefined }),
+          body: JSON.stringify({
+            slug,
+            level,
+            userCode: practice ? code : undefined,
+          }),
         });
-        const j = (await res.json()) as { level?: number; hint?: string; message?: string; error?: string };
+        const j = (await res.json()) as {
+          level?: number;
+          hint?: string;
+          message?: string;
+          error?: string;
+        };
         if (!res.ok) {
           throw new Error(
             j.error === "DEMO"
@@ -159,14 +275,21 @@ export default function ProblemPage() {
                 : (j.message ?? "这条提示没想出来，稍等一会儿再试吧。"),
           );
         }
-        setHints((h) => [...h.filter((x) => x.level !== j.level), { level: j.level!, text: j.hint! }]);
+        setHints((h) => [
+          ...h.filter((x) => x.level !== j.level),
+          { level: j.level!, text: j.hint! },
+        ]);
         fetch(apiPath("/api/progress"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ type: "hint", problemSlug: slug, level }),
         }).catch(() => {});
       } catch (e) {
-        setHintError(e instanceof Error ? e.message : "这条提示没想出来，稍等一会儿再试吧。");
+        setHintError(
+          e instanceof Error
+            ? e.message
+            : "这条提示没想出来，稍等一会儿再试吧。",
+        );
       } finally {
         setHintBusy(null);
       }
@@ -183,10 +306,15 @@ export default function ProblemPage() {
   const vizFrame =
     step?.viz ??
     (detail?.vizType === "array"
-      ? { type: "array", state: { values: [2, 7, 11, 15], highlight: [], map: {}, scan: -1 } }
+      ? {
+          type: "array",
+          state: { values: [2, 7, 11, 15], highlight: [], map: {}, scan: -1 },
+        }
       : undefined);
 
-  const chapterIndex = detail ? (HOT100_CATEGORIES as readonly string[]).indexOf(detail.category) + 1 : 0;
+  const chapterIndex = detail
+    ? (HOT100_CATEGORIES as readonly string[]).indexOf(detail.category) + 1
+    : 0;
   const hasBuiltIn = slug === "two-sum";
   // 在线体验版只有内置的那一课能听
   const lectureLocked = IS_DEMO && !hasBuiltIn;
@@ -197,7 +325,10 @@ export default function ProblemPage() {
       <div className="mx-auto flex max-w-md flex-col items-center gap-4 px-4 py-24 text-center">
         <p className="chalk text-4xl text-chalk-300">这页黑板是空的</p>
         <p className="text-sm text-chalk-500">{loadError}</p>
-        <Link href="/roadmap" className="text-sm text-beam-gold hover:underline">
+        <Link
+          href="/roadmap"
+          className="text-sm text-beam-gold hover:underline"
+        >
           回到路线图选题
         </Link>
       </div>
@@ -209,14 +340,20 @@ export default function ProblemPage() {
       {/* ── 顶栏 ── */}
       <header className="flex flex-wrap items-center gap-x-4 gap-y-3">
         <div className="min-w-0">
-          <nav aria-label="位置" className="flex items-center gap-1 text-xs text-chalk-500">
+          <nav
+            aria-label="位置"
+            className="flex items-center gap-1 text-xs text-chalk-500"
+          >
             <Link href="/roadmap" className="hover:text-chalk-100">
               路线图
             </Link>
             {detail && (
               <>
                 <ChevronRight size={12} className="text-chalk-700" />
-                <Link href={`/roadmap#chapter-${chapterIndex}`} className="hover:text-chalk-100">
+                <Link
+                  href={`/roadmap#chapter-${chapterIndex}`}
+                  className="hover:text-chalk-100"
+                >
                   第 {chapterIndex} 章 · {detail.category}
                 </Link>
               </>
@@ -226,7 +363,9 @@ export default function ProblemPage() {
             <h1 className="text-xl font-semibold text-chalk-100">
               {detail ? (
                 <>
-                  <span className="mr-2 font-mono text-base font-normal text-chalk-500">{detail.number}.</span>
+                  <span className="mr-2 font-mono text-base font-normal text-chalk-500">
+                    {detail.number}.
+                  </span>
                   {detail.title}
                 </>
               ) : (
@@ -234,8 +373,12 @@ export default function ProblemPage() {
               )}
             </h1>
             {detail && (
-              <span className={`flex items-center gap-1.5 text-xs ${DIFFICULTY_TEXT[detail.difficulty]}`}>
-                <span className={`size-1.5 rounded-full ${DIFFICULTY_DOT[detail.difficulty]}`} />
+              <span
+                className={`flex items-center gap-1.5 text-xs ${DIFFICULTY_TEXT[detail.difficulty]}`}
+              >
+                <span
+                  className={`size-1.5 rounded-full ${DIFFICULTY_DOT[detail.difficulty]}`}
+                />
                 {DIFFICULTY_LABEL[detail.difficulty]}
               </span>
             )}
@@ -244,13 +387,19 @@ export default function ProblemPage() {
 
         <div className="ml-auto flex items-center gap-2">
           {/* 讲课 / 练习 模式切换 */}
-          <div role="group" aria-label="模式" className="flex rounded-full border border-board-700 bg-board-900/80 p-0.5">
+          <div
+            role="group"
+            aria-label="模式"
+            className="flex rounded-full border border-board-700 bg-board-900/80 p-0.5"
+          >
             <button
               type="button"
               aria-pressed={!practice}
               onClick={() => setPractice(false)}
               className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm transition-colors ${
-                !practice ? "bg-board-700 text-chalk-100" : "text-chalk-500 hover:text-chalk-300"
+                !practice
+                  ? "bg-board-700 text-chalk-100"
+                  : "text-chalk-500 hover:text-chalk-300"
               }`}
             >
               <GraduationCap size={15} />
@@ -260,12 +409,15 @@ export default function ProblemPage() {
               type="button"
               aria-pressed={practice}
               onClick={() => {
-                // 上台自己写时，老师先停下
-                usePlayerStore.getState().pause();
+                // 上台自己写时，停止生成，避免后续步骤覆盖练习代码。
+                lectureAbort.current?.abort();
+                usePlayerStore.getState().stopStream();
                 setPractice(true);
               }}
               className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm transition-colors ${
-                practice ? "bg-board-700 text-beam-cyan" : "text-chalk-500 hover:text-chalk-300"
+                practice
+                  ? "bg-board-700 text-beam-cyan"
+                  : "text-chalk-500 hover:text-chalk-300"
               }`}
             >
               <Pencil size={14} />
@@ -290,6 +442,41 @@ export default function ProblemPage() {
         </div>
       </header>
 
+      {lectureBusy && (
+        <div className="flex items-center gap-3 text-sm text-chalk-300">
+          <p role="status" aria-live="polite">
+            {lectureProgress}
+          </p>
+          <button
+            type="button"
+            className="rounded-full border border-board-600 px-3 py-1"
+            onClick={() => {
+              lectureAbort.current?.abort();
+              usePlayerStore.getState().stopStream();
+              setLectureProgress("备课已取消，未保存教案。");
+            }}
+          >
+            取消备课
+          </button>
+        </div>
+      )}
+      {lectureError && (
+        <div
+          role="alert"
+          className="flex items-center gap-3 text-sm text-beam-rose"
+        >
+          <p>{lectureError}</p>
+          <button
+            type="button"
+            onClick={startLecture}
+            disabled={lectureBusy || lectureLocked || !detail}
+            className="rounded-full border border-beam-rose px-3 py-1 disabled:opacity-40"
+          >
+            重试讲课
+          </button>
+        </div>
+      )}
+
       {/* ── 三栏 ── */}
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,3fr)_minmax(0,5fr)_minmax(0,3.6fr)]">
         {/* 讲义 */}
@@ -298,14 +485,20 @@ export default function ProblemPage() {
           {paragraphs.length > 0 ? (
             <div className="flex flex-col gap-2 text-[15px] leading-7 text-chalk-300">
               {paragraphs.map((p, i) => (
-                <p key={i} data-statement={STATEMENT_IDS[i]} className="rounded-lg px-2 py-1 whitespace-pre-line">
+                <p
+                  key={i}
+                  data-statement={STATEMENT_IDS[i]}
+                  className="rounded-lg px-2 py-1 whitespace-pre-line"
+                >
                   <InlineMarkdown text={p} />
                 </p>
               ))}
             </div>
           ) : (
             <p className="text-sm leading-6 text-chalk-500">
-              {detail ? "这道题的题目还没收录进来。可以先听老师讲，或者到 LeetCode 上对照原题看。" : "正在取题…"}
+              {detail
+                ? "这道题的题目还没收录进来。可以先听老师讲，或者到 LeetCode 上对照原题看。"
+                : "正在取题…"}
             </p>
           )}
           {detail?.testCases && detail.testCases.length > 0 && (
@@ -321,8 +514,12 @@ export default function ProblemPage() {
                 <tbody>
                   {detail.testCases.map((t, i) => (
                     <tr key={i} className="bg-board-800">
-                      <td className="rounded-l-lg px-3 py-2 text-chalk-300">{t.input}</td>
-                      <td className="w-px rounded-r-lg py-2 pr-3 pl-1 whitespace-nowrap text-beam-mint">→ {t.expected}</td>
+                      <td className="rounded-l-lg px-3 py-2 text-chalk-300">
+                        {t.input}
+                      </td>
+                      <td className="w-px rounded-r-lg py-2 pr-3 pl-1 whitespace-nowrap text-beam-mint">
+                        → {t.expected}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -335,31 +532,48 @@ export default function ProblemPage() {
         <section className="flex min-h-0 flex-col gap-3">
           <div className="board-surface board-frame flex h-[24rem] flex-col overflow-hidden rounded-xl p-[6px] lg:h-auto lg:min-h-0 lg:flex-1">
             <div className="flex items-center justify-between gap-3 px-3 pt-1.5 pb-2">
-              <span className="chalk text-xl leading-none text-chalk-300">黑板</span>
+              <span className="chalk text-xl leading-none text-chalk-300">
+                黑板
+              </span>
               <span className="flex items-center gap-2 font-mono text-[11px] text-chalk-500">
                 {language === "python" ? "Python" : "TypeScript"}
                 {practice ? (
-                  <span className="rounded-full border border-beam-cyan/40 px-2 py-0.5 text-beam-cyan">练习中 · 可编辑</span>
+                  <span className="rounded-full border border-beam-cyan/40 px-2 py-0.5 text-beam-cyan">
+                    练习中 · 可编辑
+                  </span>
                 ) : inLecture ? (
                   <span className="flex items-center gap-1.5 rounded-full border border-beam-gold/40 px-2 py-0.5 text-beam-gold">
                     <span className="size-1.5 rounded-full bg-beam-gold" />
                     讲课中
                   </span>
                 ) : (
-                  <span className="rounded-full border border-board-600 px-2 py-0.5">参考解法 · 只读</span>
+                  <span className="rounded-full border border-board-600 px-2 py-0.5">
+                    参考解法 · 只读
+                  </span>
                 )}
               </span>
             </div>
             <div className="min-h-0 flex-1 overflow-hidden rounded-md">
-              <CodeEditor value={code} readOnly={!practice} onChange={setCode} language={language} />
+              <CodeEditor
+                value={code}
+                readOnly={!practice}
+                onChange={setCode}
+                language={language}
+              />
             </div>
           </div>
 
           {vizFrame && (
             <div className="board-surface shrink-0 rounded-xl border border-board-700 px-4 pt-2 pb-3">
               <div className="mb-1 flex items-center justify-between">
-                <span className="font-mono text-[11px] text-chalk-500">可视化 · 数组</span>
-                {step && <span className="font-mono text-[11px] text-chalk-700">随讲解同步</span>}
+                <span className="font-mono text-[11px] text-chalk-500">
+                  可视化 · 数组
+                </span>
+                {step && (
+                  <span className="font-mono text-[11px] text-chalk-700">
+                    随讲解同步
+                  </span>
+                )}
               </div>
               <div className="overflow-x-auto">
                 <ArrayVisualizer frame={vizFrame} />
@@ -367,7 +581,13 @@ export default function ProblemPage() {
             </div>
           )}
 
-          <JudgeControls detail={detail} code={code} language={language} onLanguage={changeLanguage} disabled={!practice} />
+          <JudgeControls
+            detail={detail}
+            code={code}
+            language={language}
+            onLanguage={changeLanguage}
+            disabled={!practice}
+          />
         </section>
 
         {/* AI 导师面板 */}
@@ -376,7 +596,9 @@ export default function ProblemPage() {
             <ColumnLabel
               right={
                 inLecture && stepCount > 0 ? (
-                  <span className="font-mono text-[11px] text-chalk-500">共 {stepCount} 步</span>
+                  <span className="font-mono text-[11px] text-chalk-500">
+                    共 {stepCount} 步
+                  </span>
                 ) : null
               }
             >
@@ -392,35 +614,53 @@ export default function ProblemPage() {
                 {hasBuiltIn ? (
                   <>
                     <p>
-                      这道题老师已经备好课了，直接听就行。一共 {TWO_SUM_SCRIPT.steps.length} 步，从最笨的办法讲起，一直讲到用哈希表一遍搞定。
+                      这道题老师已经备好课了，直接听就行。一共{" "}
+                      {TWO_SUM_SCRIPT.steps.length}{" "}
+                      步，从最笨的办法讲起，一直讲到用哈希表一遍搞定。
                     </p>
                     <LessonPlan preview={TWO_SUM_SCRIPT.steps} />
-                    <p className="text-xs text-chalk-700">← → 切换步骤 · 空格 暂停/继续</p>
+                    <p className="text-xs text-chalk-700">
+                      ← → 切换步骤 · 空格 暂停/继续
+                    </p>
                   </>
                 ) : lectureLocked ? (
                   <>
-                    <p>在线体验版里，老师只备好了「两数之和」这一课。这道题可以先读题、自己动手练。</p>
+                    <p>
+                      在线体验版里，老师只备好了「两数之和」这一课。这道题可以先读题、自己动手练。
+                    </p>
                     <p>
                       想听老师讲这道题？
-                      <a href={REPO_URL} target="_blank" rel="noreferrer" className="text-beam-gold hover:underline">
+                      <a
+                        href={REPO_URL}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-beam-gold hover:underline"
+                      >
                         把 AlgoStage 装到自己电脑上
                       </a>
                       ，接上你的 AI 就行。
                     </p>
-                    <Link href="/problem/two-sum" className="text-beam-gold hover:underline">
+                    <Link
+                      href="/problem/two-sum"
+                      className="text-beam-gold hover:underline"
+                    >
                       先去听「两数之和」 →
                     </Link>
                   </>
                 ) : (
                   <>
-                    <p>这道题老师还没备课。点「开始讲课」，老师会先花十几秒准备一下。</p>
-                    <Link href="/settings" className="flex items-center gap-1.5 text-beam-gold hover:underline">
+                    <p>
+                      这道题老师还没备课。点「开始讲课」，老师会先花十几秒准备一下。
+                    </p>
+                    <Link
+                      href="/settings"
+                      className="flex items-center gap-1.5 text-beam-gold hover:underline"
+                    >
                       <KeyRound size={14} />
                       还没接上 AI？去设置
                     </Link>
                   </>
                 )}
-                {lectureError && <p className="text-beam-rose">{lectureError}</p>}
               </div>
             )}
           </section>
@@ -430,7 +670,9 @@ export default function ProblemPage() {
             <h3 className="flex items-center gap-1.5 text-sm font-medium text-chalk-300">
               <Lightbulb size={14} className="text-beam-gold" />
               提示阶梯
-              <span className="ml-auto text-[11px] font-normal text-chalk-700">用了几级会记在看板上</span>
+              <span className="ml-auto text-[11px] font-normal text-chalk-700">
+                用了几级会记在看板上
+              </span>
             </h3>
             <div className="mt-3 flex items-end gap-1.5">
               {HINT_LEVELS.map((label, i) => {
@@ -449,21 +691,32 @@ export default function ProblemPage() {
                     }`}
                     style={{ height: `${2.6 + i * 0.4}rem` }}
                   >
-                    <span className="font-mono text-[10px] opacity-70">L{i + 1}</span>
+                    <span className="font-mono text-[10px] opacity-70">
+                      L{i + 1}
+                    </span>
                     {hintBusy === i + 1 ? "…" : label}
                   </button>
                 );
               })}
             </div>
-            {hintError && <p className="mt-2 text-xs leading-5 text-beam-rose">{hintError}</p>}
+            {hintError && (
+              <p className="mt-2 text-xs leading-5 text-beam-rose">
+                {hintError}
+              </p>
+            )}
             {hints.length > 0 && (
               <div className="mt-3 flex max-h-40 flex-col gap-2 overflow-y-auto">
                 {hints
                   .slice()
                   .sort((a, b) => a.level - b.level)
                   .map((h) => (
-                    <div key={h.level} className="rounded-lg bg-board-800 px-3 py-2 text-sm leading-6 text-chalk-300">
-                      <span className="mr-1.5 font-mono text-xs text-beam-gold">L{h.level}</span>
+                    <div
+                      key={h.level}
+                      className="rounded-lg bg-board-800 px-3 py-2 text-sm leading-6 text-chalk-300"
+                    >
+                      <span className="mr-1.5 font-mono text-xs text-beam-gold">
+                        L{h.level}
+                      </span>
                       {h.text}
                     </div>
                   ))}
