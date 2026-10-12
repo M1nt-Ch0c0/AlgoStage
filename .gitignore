@@ -15,3 +15,8 @@ lib/db/generated/
 
 # 判题 Worker 与 Pyodide 在安装/构建时生成
 public/judge/
+
+# 测试产物
+coverage/
+playwright-report/
+test-results/

@@ -80,10 +80,6 @@ test("S2/S4：单调用重试、422 不缓存及语言缓存隔离", async () =>
     const result = await ok.json();
     assert.equal(result.cached, false);
     assert.ok(teachingScriptSchema.safeParse(result.script).success);
-    const detail = await localSeedSource.detail("3sum");
-    const lines = detail
-      .referenceSolutions!.find((s) => s.language === "typescript")!
-      .code.split("\n").length;
     assert.equal(result.script.steps[0].targets[0].start, 1);
     assert.ok(
       result.script.steps[0].targets[0].end === undefined ||

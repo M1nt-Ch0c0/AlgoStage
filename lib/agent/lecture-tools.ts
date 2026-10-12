@@ -184,9 +184,10 @@ export function createLectureTools(lineCount: number) {
       };
     }
     if (name === "set_effect") {
-      const { stepId: _, ...effect } = data as z.infer<
+      const { effect: name, targetIndex, color, intensity } = data as z.infer<
         typeof schemas.set_effect
       >;
+      const effect = { effect: name, targetIndex, color, intensity };
       if ((effect.targetIndex ?? 0) >= step.targets.length)
         throw new ToolStateError("targetIndex", "target_range");
       step = {
