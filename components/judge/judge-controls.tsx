@@ -5,7 +5,7 @@ import type { ProblemDetail } from "@/lib/content/types";
 import type { JudgeResult } from "@/lib/judge/types";
 import { judgeInBrowser } from "@/lib/judge/browser";
 import { pythonWorkerPool } from "@/lib/judge/python-pool";
-import { apiPath } from "@/lib/runtime";
+import { apiPath, IS_DEMO } from "@/lib/runtime";
 export default function JudgeControls({ detail, code, language, onLanguage, disabled = false, onResult }: {
   detail: ProblemDetail | null; code: string; language: "typescript" | "python";
   onLanguage: (language: "typescript" | "python") => void;
@@ -28,21 +28,23 @@ export default function JudgeControls({ detail, code, language, onLanguage, disa
       if (judged.error) { setMessage("运行环境未能加载，请重试。"); return; }
       const needsVerification = judged.verdict === "AC" && language !== "python";
       const clientAc = judged.verdict === "AC" && language === "python";
-      setSaving(true);
-      setMessage(needsVerification ? "本地用例通过，正在等待服务端判定…" : "正在保存提交…");
-      const response = await fetch(apiPath(needsVerification ? "/api/judge" : "/api/progress"), {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(needsVerification ? { problemSlug: detail.slug, language, code } : {
-          type: clientAc ? "client-ac" : "submission", problemSlug: detail.slug, language, code,
-          verdict: judged.verdict, runtimeMs: Math.round(judged.runtimeMs),
-        }),
-      });
-      const saved = await response.json();
-      if (!response.ok) throw new Error(saved.message ?? "保存结果失败，请重试。");
-      if (needsVerification) judged = saved.result as JudgeResult;
+      if (!IS_DEMO || needsVerification) {
+        setSaving(true);
+        setMessage(needsVerification ? "本地用例通过，正在等待服务端判定…" : "正在保存提交…");
+        const response = await fetch(apiPath(needsVerification ? "/api/judge" : "/api/progress"), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(needsVerification ? { problemSlug: detail.slug, language, code } : {
+            type: clientAc ? "client-ac" : "submission", problemSlug: detail.slug, language, code,
+            verdict: judged.verdict, runtimeMs: Math.round(judged.runtimeMs),
+          }),
+        });
+        const saved = await response.json();
+        if (!response.ok) throw new Error(saved.message ?? "保存结果失败，请重试。");
+        if (needsVerification) judged = saved.result as JudgeResult;
+      }
       if (abort.signal.aborted) return;
       setResult(judged);
-      setMessage(`${judged.verdict} · ${judged.cases.filter(c=>c.verdict==="AC").length}/${detail.judging.cases.length} 个用例通过 · 已保存`);
+      setMessage(`${judged.verdict} · ${judged.cases.filter(c=>c.verdict==="AC").length}/${detail.judging.cases.length} 个用例通过${IS_DEMO ? "（体验版不保存）" : " · 已保存"}`);
       await onResult?.(judged);
     } catch (error) {
       if (!abort.signal.aborted) setMessage(error instanceof Error ? error.message : "运行或保存结果失败，请重试。");
