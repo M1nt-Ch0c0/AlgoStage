@@ -19,7 +19,6 @@ import { HOT100_CATEGORIES } from "@/lib/content/hot100";
 import { DIFFICULTY_DOT, DIFFICULTY_LABEL, DIFFICULTY_TEXT } from "@/lib/content/pattern-labels";
 import { usePlayerStore } from "@/lib/player/store";
 import EffectStage from "@/components/effects/effect-stage";
-import ConfettiAC from "@/components/effects/confetti-ac";
 import CodeEditor from "@/components/board/code-editor";
 import NarrationBar from "@/components/board/narration-bar";
 import PlayerControls from "@/components/board/player-controls";
@@ -47,9 +46,7 @@ export default function ProblemPage() {
 
   const [practice, setPractice] = useState(false);
   const [code, setCode] = useState("");
-  const [running, setRunning] = useState(false);
   const [runResult, setRunResult] = useState<string | null>(null);
-  const [confetti, setConfetti] = useState<{ key: number; x: number; y: number } | null>(null);
 
   const [lectureBusy, setLectureBusy] = useState(false);
   const [lectureError, setLectureError] = useState<string | null>(null);
@@ -136,32 +133,10 @@ export default function ProblemPage() {
     }
   }, [slug, detail, loadScript, play]);
 
-  // 运行（执行沙箱二期接入：本期 mock AC → 礼花 + 进度落库）
-  const run = useCallback(
-    (e: React.MouseEvent<HTMLButtonElement>) => {
-      if (running) return;
-      setRunning(true);
-      setRunResult(null);
-      const r = e.currentTarget.getBoundingClientRect();
-      setTimeout(() => {
-        setRunning(false);
-        setRunResult("全部通过！（自动判题还在完善，这次结果只是演示）");
-        setConfetti({ key: Date.now(), x: r.left + r.width / 2, y: r.top + r.height / 2 });
-        fetch(apiPath("/api/progress"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            type: "submission",
-            problemSlug: slug,
-            code,
-            language: "typescript",
-            verdict: "AC",
-          }),
-        }).catch(() => {});
-      }, 800);
-    },
-    [running, slug, code],
-  );
+  // 判题沙箱尚未接入，只提示未判题，不记录提交或通过状态。
+  const run = useCallback(() => {
+    setRunResult("判题功能开发中，代码尚未运行或判题。");
+  }, []);
 
   // 提示阶梯
   const askHint = useCallback(
@@ -395,20 +370,20 @@ export default function ProblemPage() {
           <div className="flex shrink-0 flex-wrap items-center gap-3 rounded-xl border border-board-700/70 bg-board-900/80 px-4 py-2.5">
             <span className="text-xs font-medium text-chalk-500">控制台</span>
             {runResult ? (
-              <span className="text-xs text-beam-mint">✓ {runResult}</span>
+              <span className="text-xs text-chalk-500" role="status">{runResult}</span>
             ) : (
               <span className="text-xs text-chalk-700">
-                {practice ? "写好了就点运行，用示例试试你的代码" : "切到「练习」，就能自己动手写"}
+                {practice ? "可以编辑代码；判题功能开发中" : "切到「练习」，就能自己动手写"}
               </span>
             )}
             <button
               type="button"
               onClick={run}
-              disabled={running || !practice}
+              disabled={!practice}
               className="ml-auto flex items-center gap-1.5 rounded-full bg-beam-mint px-4 py-1.5 text-sm font-semibold text-on-accent transition-transform hover:scale-[1.03] disabled:pointer-events-none disabled:opacity-35"
             >
               <Play size={13} />
-              {running ? "运行中…" : "运行"}
+              运行
             </button>
           </div>
         </section>
@@ -521,16 +496,8 @@ export default function ProblemPage() {
         <PlayerControls />
       </div>
 
-      {/* 特效舞台 + 通关礼花 */}
+      {/* 特效舞台 */}
       <EffectStage />
-      {confetti && (
-        <ConfettiAC
-          key={confetti.key}
-          target={{ kind: "dom", selector: "body" }}
-          origin={{ x: confetti.x, y: confetti.y }}
-          onDone={() => setConfetti(null)}
-        />
-      )}
     </div>
   );
 }
