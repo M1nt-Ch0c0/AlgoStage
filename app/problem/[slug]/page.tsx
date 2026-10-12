@@ -14,7 +14,6 @@ import { useParams } from "next/navigation";
 import {
   ChevronRight,
   GraduationCap,
-  Lightbulb,
   Pencil,
   Pause,
   Play,
@@ -43,11 +42,11 @@ import CodeEditor from "@/components/board/code-editor";
 import NarrationBar from "@/components/board/narration-bar";
 import PlayerControls from "@/components/board/player-controls";
 import LessonPlan from "@/components/board/lesson-plan";
+import HintLadder from "@/components/hint/hint-ladder";
 import { InlineMarkdown } from "@/components/board/inline-markdown";
 import ArrayVisualizer from "@/components/viz/array-visualizer";
 
 const STATEMENT_IDS = ["intro", "insight", "summary"] as const;
-const HINT_LEVELS = ["观察", "模式", "方向", "技巧", "骨架"];
 
 /** 栏目小标题：讲义 / 黑板 / 导师 */
 function ColumnLabel({
@@ -82,10 +81,6 @@ export default function ProblemPage() {
   const [lectureComplete, setLectureComplete] = useState(false);
   const lectureAbort = useRef<AbortController | null>(null);
   const [lectureError, setLectureError] = useState<string | null>(null);
-
-  const [hintBusy, setHintBusy] = useState<number | null>(null);
-  const [hintError, setHintError] = useState<string | null>(null);
-  const [hints, setHints] = useState<{ level: number; text: string }[]>([]);
 
   const step = usePlayerStore((s) => s.steps[s.currentIndex]);
   const status = usePlayerStore((s) => s.status);
@@ -291,56 +286,6 @@ export default function ProblemPage() {
     setCode(value);
     if (practice) saveDraft(slug, language, value);
   }
-
-  // 提示阶梯
-  const askHint = useCallback(
-    async (level: number) => {
-      setHintBusy(level);
-      setHintError(null);
-      try {
-        const res = await fetch(apiPath("/api/hint"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            slug,
-            level,
-            userCode: practice ? code : undefined,
-          }),
-        });
-        const j = (await res.json()) as {
-          level?: number;
-          hint?: string;
-          message?: string;
-          error?: string;
-        };
-        if (!res.ok) {
-          throw new Error(
-            j.error === "NO_BYOK"
-              ? "提示要老师现场想，先在设置里接上你的 AI 吧。"
-              : (j.message ?? "这条提示没想出来，稍等一会儿再试吧。"),
-          );
-        }
-        setHints((h) => [
-          ...h.filter((x) => x.level !== j.level),
-          { level: j.level!, text: j.hint! },
-        ]);
-        fetch(apiPath("/api/progress"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ type: "hint", problemSlug: slug, level }),
-        }).catch(() => {});
-      } catch (e) {
-        setHintError(
-          e instanceof Error
-            ? e.message
-            : "这条提示没想出来，稍等一会儿再试吧。",
-        );
-      } finally {
-        setHintBusy(null);
-      }
-    },
-    [slug, practice, code],
-  );
 
   // 讲义段落（data-statement 锚点：intro / insight / summary）
   const paragraphs = useMemo(
@@ -710,64 +655,7 @@ export default function ProblemPage() {
             )}
           </section>
 
-          {/* 提示阶梯（docs/03 §6）：越往上越接近答案 */}
-          <section className="shrink-0 rounded-2xl border border-board-700/70 bg-board-900/80 p-4">
-            <h3 className="flex items-center gap-1.5 text-sm font-medium text-chalk-300">
-              <Lightbulb size={14} className="text-beam-gold" />
-              提示阶梯
-              <span className="ml-auto text-[11px] font-normal text-chalk-700">
-                用了几级会记在看板上
-              </span>
-            </h3>
-            <div className="mt-3 flex items-end gap-1.5">
-              {HINT_LEVELS.map((label, i) => {
-                const used = hints.some((h) => h.level === i + 1);
-                return (
-                  <button
-                    key={label}
-                    type="button"
-                    onClick={() => askHint(i + 1)}
-                    disabled={hintBusy !== null}
-                    title={`第 ${i + 1} 级提示：${label}`}
-                    className={`flex flex-1 flex-col items-center justify-end rounded-lg border px-1 pb-1.5 text-[11px] transition-colors disabled:opacity-50 ${
-                      used
-                        ? "border-beam-gold/50 bg-beam-gold/10 text-beam-gold"
-                        : "border-board-600 text-chalk-500 hover:border-chalk-500 hover:text-chalk-100"
-                    }`}
-                    style={{ height: `${2.6 + i * 0.4}rem` }}
-                  >
-                    <span className="font-mono text-[10px] opacity-70">
-                      L{i + 1}
-                    </span>
-                    {hintBusy === i + 1 ? "…" : label}
-                  </button>
-                );
-              })}
-            </div>
-            {hintError && (
-              <p className="mt-2 text-xs leading-5 text-beam-rose">
-                {hintError}
-              </p>
-            )}
-            {hints.length > 0 && (
-              <div className="mt-3 flex max-h-40 flex-col gap-2 overflow-y-auto">
-                {hints
-                  .slice()
-                  .sort((a, b) => a.level - b.level)
-                  .map((h) => (
-                    <div
-                      key={h.level}
-                      className="rounded-lg bg-board-800 px-3 py-2 text-sm leading-6 text-chalk-300"
-                    >
-                      <span className="mr-1.5 font-mono text-xs text-beam-gold">
-                        L{h.level}
-                      </span>
-                      {h.text}
-                    </div>
-                  ))}
-              </div>
-            )}
-          </section>
+          <HintLadder slug={slug} userCode={practice ? code : undefined} />
         </aside>
       </div>
 

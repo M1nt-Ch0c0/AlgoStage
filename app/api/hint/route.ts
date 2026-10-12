@@ -21,6 +21,7 @@ import {
   UPSTREAM_RETRY_LIMIT,
   waitForUpstreamRetry,
 } from "@/lib/agent/upstream-retry";
+import { hintTimeoutMs } from "@/lib/agent/defaults";
 
 export const runtime = "nodejs";
 
@@ -69,7 +70,7 @@ export async function POST(req: NextRequest) {
   const level = body.level;
   const detail = await localSeedSource.detail(body.slug);
 
-  const timeout = AbortSignal.timeout(30_000);
+  const timeout = AbortSignal.timeout(hintTimeoutMs());
   const signal = AbortSignal.any([req.signal, timeout]);
   try {
     for (let attempt = 0; ; attempt++) {
