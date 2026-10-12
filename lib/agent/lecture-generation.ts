@@ -271,6 +271,7 @@ export async function generateLecture(input: {
               ok: true,
               stepId: applied.step?.id ?? null,
               stepCount: kit.steps.length,
+              ...(applied.highlightedCode ? { highlightedCode: applied.highlightedCode } : {}),
             };
             if (applied.finished) finished = true;
           } catch (error) {

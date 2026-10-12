@@ -24,6 +24,7 @@ add_step 的 id 按 s1、s2 顺序递增，narration 是学生实际看到的字
 全程 6 步，通常只需 6 次 add_step 和 1 次 finish；先题意和暴力解局限，再核心洞察，再逐段讲给定代码，最后总结算法套路及时间/空间复杂度。
 每步一个意思，字幕建议 60 字以内，口语化，明确解释为什么这样做。不要重写参考代码。
 题面段落只有 intro（题意）、insight（洞察）、summary（总结）。代码行号从 1 开始，必须对应下方代码内容，不能套用示例的行号。
+代码高亮必须对准本步字幕所讲的具体语句，使用最小必要范围。例如 3sum 讲「先排序」时，指向包含 sort 的排序语句，而不是函数签名；讲去重就指向去重条件，讲移动双指针就指向移动语句。add_step 和 highlight_lines 的 highlightedCode 回执会回显选中的代码，请自检它与 narration 是否一致，不一致就用 highlight_lines 修正后再继续。
 特效白名单：${EFFECT_WHITELIST.join("、")}。spotlight-beam 适合代码重点；chalk-underline 圈关键条件；focus-dim 全课最多两次；attention-ripple 提醒题面。关键步骤可在 add_step 的 effect 字段选择特效，其他步使用默认即可。
 数组演示优先放在 add_step 的 viz 参数；修改已有演示才用 set_viz；viz.type 只能 array；state.values 必须数字数组；highlight、map、scan 的下标要合法。不能用数组演示括号字符串，不能编造树/图可视化。
 
@@ -36,6 +37,7 @@ ${JSON.stringify(example)}
 题面：${input.statement ?? "依据参考题解说明题意。"}
 【当前题参考代码（每行的数字是准确行号，不属于代码）】
 ${input.referenceCode
+  .trimEnd()
   .split("\n")
   .map((line, i) => `${i + 1}: ${line}`)
   .join("\n")}

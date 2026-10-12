@@ -6,13 +6,14 @@ import { EFFECT_WHITELIST, type TeachingStep } from "@/lib/teaching/types";
 
 export function createLectureTools(referenceCode: string) {
   // 文件末尾的空行不属于可高亮的代码；中间空行仍保留原行号。
-  const lineCount = referenceCode.trimEnd().split("\n").length;
+  const referenceLines = referenceCode.trimEnd().split("\n");
+  const lineCount = referenceLines.length;
   const line = z
     .number()
     .int()
     .min(1)
     .max(lineCount)
-    .describe(`参考代码行号，从 1 开始，最多 ${lineCount}`);
+    .describe(`当前步骤所讲语句的真实行号，从 1 开始，最多 ${lineCount}；例如讲排序必须指向 sort 语句，而非函数签名`);
   const range = z
     .object({
       start: line,
@@ -38,7 +39,7 @@ export function createLectureTools(referenceCode: string) {
           .describe("intro 题意，insight 核心洞察，summary 总结"),
       }),
     ])
-    .describe("本步先标注的一个锚点；代码行号必须来自本题参考代码");
+    .describe("本步先标注的一个锚点；代码行号必须对准 narration 正在讲的那条语句，不能只选附近行或函数签名");
   const schemas = {
     add_step: z
       .object({
@@ -111,12 +112,12 @@ export function createLectureTools(referenceCode: string) {
   const tools = {
     add_step: tool({
       description:
-        "增加并立即播放一步。id 顺序编号 s1/s2；narration 是字幕；target 指向题面段落或本题代码行；effect 可选白名单特效；viz 可选数组全量帧；dwellMs 可调停留。尽量一次给齐本步内容，已成功步骤不要重复添加。",
+        "增加并立即播放一步。id 顺序编号 s1/s2；narration 是字幕；target 指向题面段落或本题代码行；effect 可选白名单特效；viz 可选数组全量帧；dwellMs 可调停留。行号必须对准本步讲的语句：3sum 讲『先排序』应指向 sort 那行，不能指函数签名。结果 highlightedCode 回显带行号的代码，请自检与字幕是否一致；不一致时用 highlight_lines 修正。尽量一次给齐本步内容，已成功步骤不要重复添加。",
       inputSchema: schemas.add_step,
     }),
     highlight_lines: tool({
       description:
-        "修改已存在步骤的代码高亮。stepId 指定步骤，start/end 是含首尾的代码行范围，end 可省略。保留本步已有题面锚点，替换本步代码锚点。",
+        "修改已存在步骤的代码高亮。stepId 指定步骤，start/end 是含首尾的代码行范围，end 可省略。必须对准该步字幕所讲的代码，使用最小必要范围：3sum 的『先排序』指向 sort 那行，不能指函数签名。结果 highlightedCode 回显对应代码文本，请核对一致后继续。保留本步已有题面锚点，替换本步代码锚点。",
       inputSchema: schemas.highlight_lines,
     }),
     set_effect: tool({
@@ -136,10 +137,17 @@ export function createLectureTools(referenceCode: string) {
     }),
   };
   const steps: TeachingStep[] = [];
+  const highlightedCode = (step: TeachingStep) => step.targets.flatMap(target => {
+    if (target.kind !== "code-line") return [];
+    return Array.from({ length: (target.end ?? target.start) - target.start + 1 }, (_, i) => {
+      const line = target.start + i;
+      return `${line}: ${referenceLines[line - 1]}`;
+    });
+  });
   const apply = (
     name: keyof typeof schemas,
     value: unknown,
-  ): { step?: TeachingStep; added?: boolean; finished?: boolean } => {
+  ): { step?: TeachingStep; added?: boolean; finished?: boolean; highlightedCode?: string[] } => {
     const data = schemas[name].parse(value);
     if (name === "finish") {
       if (!steps.length) throw new ToolStateError("steps", "empty_script");
@@ -167,7 +175,7 @@ export function createLectureTools(referenceCode: string) {
         dwellMs: args.dwellMs,
       });
       steps.push(step);
-      return { step, added: true };
+      return { step, added: true, highlightedCode: highlightedCode(step) };
     }
     const args = data as { stepId: string };
     const index = steps.findIndex((s) => s.id === args.stepId);
@@ -204,7 +212,7 @@ export function createLectureTools(referenceCode: string) {
       step = { ...step, viz: (data as z.infer<typeof schemas.set_viz>).viz };
     step = teachingStepSchema.parse(step);
     steps[index] = step;
-    return { step, added: false };
+    return { step, added: false, highlightedCode: highlightedCode(step) };
   };
   return { tools, schemas, steps, apply };
 }
