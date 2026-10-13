@@ -74,6 +74,7 @@ export async function POST(req: NextRequest) {
 
   if (body.byok?.baseURL) {
     const invalid = await validateBaseURL(body.byok.baseURL, AbortSignal.any([req.signal, AbortSignal.timeout(hintTimeoutMs())]));
+    if (invalid && req.signal.aborted) return Response.json({ error: "CANCELLED", message: "讲课请求已取消。" }, { status: 499 });
     if (invalid) return invalid;
   }
 

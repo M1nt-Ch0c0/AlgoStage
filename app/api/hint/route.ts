@@ -77,6 +77,14 @@ export async function POST(req: NextRequest) {
   const signal = AbortSignal.any([req.signal, timeout]);
   if (body.byok?.baseURL) {
     const invalid = await validateBaseURL(body.byok.baseURL, signal);
+    if (invalid && signal.aborted) {
+      return Response.json(
+        timeout.aborted
+          ? { error: "TIMEOUT", message: "提示请求超时，请重试。" }
+          : { error: "CANCELLED", message: "提示请求已取消。" },
+        { status: timeout.aborted ? 504 : 499 },
+      );
+    }
     if (invalid) return invalid;
   }
   const level = body.level;

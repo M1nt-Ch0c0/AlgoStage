@@ -68,7 +68,7 @@ test("工具行号忽略末尾空行，仍保留中间空行的真实位置", ()
 
 test("缓存按提供商和接口地址隔离，同名模型换接口必须重新生成", async () => {
   f.setToolsReply(() => [add("s1"), finish]);
-  const byok = { provider: "openai-compatible", model: "same-model", apiKey: "fake-review-key", baseURL: f.baseURL };
+  const byok = { provider: "openai-compatible", model: "same-model", apiKey: "fake-review-request-key", baseURL: f.baseURL };
   const first = await POST(request({ slug: "3sum", byok }));
   expect((await first.json()).cached).toBe(false);
   const before = f.calls.length;
