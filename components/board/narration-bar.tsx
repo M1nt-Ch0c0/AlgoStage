@@ -8,7 +8,8 @@
  * 流式中下一步还没到时优先显示「下一步准备中…」。可点的「下一步」在播放控制条。
  * 讲完仍显示最后一句，并提供下一题（末题则回路线图）与重播。点击字幕条可跳过打字直接看全文。
  * 结束面板刚出现时，仅当焦点在 body、播放控制条或字幕条上才移到「重播」；
- * 用户正在输入框或对话框里打字时不抢焦点。停留期间不再抢焦点。
+ * 用户正在输入框或对话框里打字时不抢焦点。页面上已有 aria-modal 对话框时，
+ * 即使焦点停在 body 也不移到「重播」。停留期间不再抢焦点。
  */
 "use client";
 
@@ -53,7 +54,9 @@ export default function NarrationBar({ lectureBusy = false }: { lectureBusy?: bo
         active instanceof Element &&
         (active.closest("[data-testid='player-controls']") !== null ||
           (barRef.current?.contains(active) ?? false));
-      if (idle || inPlayer) replayRef.current?.focus();
+      // 模态框打开时焦点常停在 body。这时不能把焦点挪到「重播」。
+      const modalOpen = document.querySelector('[aria-modal="true"]') !== null;
+      if (!modalOpen && (idle || inPlayer)) replayRef.current?.focus();
     }
     panelWasShowing.current = panelShowing;
   }, [panelShowing]);

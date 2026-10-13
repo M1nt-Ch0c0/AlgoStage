@@ -165,6 +165,23 @@ test("结束面板出现时，焦点在输入框或对话框里则留在原地",
   dialog.remove();
 });
 
+test("页面上有 aria-modal 对话框且焦点在 body 时，讲完不把焦点移到重播", async () => {
+  const modal = document.createElement("div");
+  modal.setAttribute("aria-modal", "true");
+  modal.setAttribute("role", "dialog");
+  document.body.append(modal);
+  await act(async () => root.render(createElement(NarrationBar)));
+  (document.activeElement as HTMLElement | null)?.blur();
+  expect(document.activeElement).toBe(document.body);
+
+  await act(async () => usePlayerStore.setState({ status: "finished", currentIndex: 1 }));
+  const replay = [...container.querySelectorAll("button")].find((el) => el.textContent === "重播");
+  expect(replay).toBeTruthy();
+  expect(document.activeElement).toBe(document.body);
+  expect(document.activeElement).not.toBe(replay);
+  modal.remove();
+});
+
 test("进入结束面板时焦点移到重播，停留期间再渲染不再抢焦点", async () => {
   const other = document.createElement("button");
   other.type = "button";
