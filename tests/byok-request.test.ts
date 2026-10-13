@@ -177,6 +177,41 @@ describe("lib/byok/client pure helpers & fetchServerKeyDisabled", () => {
     expect(settingsCalls).toBe(1);
   });
 
+  test("fetchServerKeyDisabled with two concurrent waiters: when one aborts, only that waiter rejects with AbortError while the other resolves true and fetch is called once", async () => {
+    let settingsCalls = 0;
+    let resolveFetch!: (res: Response) => void;
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      if (String(input).endsWith("/api/settings")) {
+        settingsCalls++;
+        expect(init?.signal).toBeUndefined();
+        return new Promise<Response>((resolve) => {
+          resolveFetch = resolve;
+        });
+      }
+      return Promise.resolve(Response.json({}));
+    });
+
+    const ac1 = new AbortController();
+    const ac2 = new AbortController();
+
+    const p1 = fetchServerKeyDisabled(ac1.signal);
+    const p2 = fetchServerKeyDisabled(ac2.signal);
+
+    expect(settingsCalls).toBe(1);
+
+    ac1.abort();
+
+    await expect(p1).rejects.toMatchObject({ name: "AbortError" });
+
+    resolveFetch(Response.json({ serverKeyDisabled: true }));
+
+    await expect(p2).resolves.toBe(true);
+    expect(settingsCalls).toBe(1);
+    expect(await fetchServerKeyDisabled()).toBe(true);
+    expect(settingsCalls).toBe(1);
+  });
+
   test("mapByokErrorMessage maps error codes to Chinese copy and never returns raw error codes", () => {
     expect(mapByokErrorMessage({ code: "BYOK_KEY_REQUIRED" })).toBe(
       "用自定义地址时需要同时填你自己的 Key",

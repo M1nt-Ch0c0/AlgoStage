@@ -68,7 +68,6 @@ export async function fetchServerKeyDisabled(
     const attemptOnce = async (): Promise<boolean> => {
       const res = await currentFetch(apiPath("/api/settings"), {
         cache: "no-store",
-        signal,
       });
       if (!res || !res.ok) {
         throw new ServerKeyStatusError();
@@ -77,7 +76,7 @@ export async function fetchServerKeyDisabled(
       try {
         data = (await res.json()) as SettingsResponse | null;
       } catch (err) {
-        if (signal?.aborted || isAbortError(err)) {
+        if (isAbortError(err)) {
           throw err;
         }
         throw new ServerKeyStatusError();
@@ -96,9 +95,6 @@ export async function fetchServerKeyDisabled(
         }
         return disabled;
       } catch (err) {
-        if (signal?.aborted) {
-          throw createAbortError(signal);
-        }
         if (isAbortError(err)) {
           throw err;
         }
@@ -109,9 +105,6 @@ export async function fetchServerKeyDisabled(
           }
           return disabled;
         } catch (retryErr) {
-          if (signal?.aborted) {
-            throw createAbortError(signal);
-          }
           if (isAbortError(retryErr)) {
             throw retryErr;
           }
