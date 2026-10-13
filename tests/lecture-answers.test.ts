@@ -166,9 +166,35 @@ describe("lecture answers route", () => {
     expect(await f.prisma.lectureAnswer.count()).toBe(2);
   });
 
+  test("14. 缓存命中时 listAnswers 抛错：200、cached、answers 为空、不删缓存", async () => {
+    f.setToolsReply(() => [add("s1", "只讲一步"), finish]);
+    const created = await (await POST(request({ slug: "3sum" }))).json();
+    const findMany = vi.spyOn(f.prisma.lectureAnswer, "findMany").mockRejectedValue(new Error("db down"));
+    const deleteCache = vi.spyOn(f.prisma.lectureScriptCache, "delete");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const response = await POST(request({ slug: "3sum" }));
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body.cached).toBe(true);
+      expect(body.answers).toEqual({});
+      expect(body.scriptVersion).toBe(created.scriptVersion);
+      expect(deleteCache).not.toHaveBeenCalled();
+      expect(await f.prisma.lectureScriptCache.count()).toBe(1);
+      const listWarns = warn.mock.calls.filter((call) => call[0] === "[lecture] listAnswers failed");
+      expect(listWarns).toHaveLength(1);
+      expect(listWarns[0]?.[1]).toEqual({ key: created.cacheKey });
+    } finally {
+      findMany.mockRestore();
+      deleteCache.mockRestore();
+      warn.mockRestore();
+    }
+  });
+
   test("16. 公开实例不查询 LectureAnswer，answers 为空，scriptVersion 仍下发", async () => {
     vi.stubEnv("ALGOSTAGE_DISABLE_SERVER_KEY", "1");
     const findMany = vi.spyOn(f.prisma.lectureAnswer, "findMany");
+    const deleteMany = vi.spyOn(f.prisma.lectureAnswer, "deleteMany");
     const byok = {
       provider: "openai-compatible" as const,
       model: "test-model",
@@ -198,7 +224,19 @@ describe("lecture answers route", () => {
       expect(cached.scriptVersion).toMatch(/^[0-9a-f]{40}$/);
       expect(cached.scriptVersion).toBe(scriptVersion(cached.script));
       expect(findMany).not.toHaveBeenCalled();
+
+      f.setToolsReply(() => [add("s1", "公开实例重讲"), finish]);
+      const regeneratedResponse = await POST(request({ slug: "3sum", byok, regenerate: true }));
+      expect(regeneratedResponse.status).toBe(200);
+      const regenerated = await regeneratedResponse.json();
+      expect(regenerated.cached).toBe(false);
+      expect(regenerated.answers).toEqual({});
+      expect(regenerated.script.steps[0].narration).toBe("公开实例重讲");
+      expect(deleteMany).not.toHaveBeenCalled();
+      expect(findMany).not.toHaveBeenCalled();
+      expect(await f.prisma.lectureAnswer.count()).toBe(1);
     } finally {
+      deleteMany.mockRestore();
       findMany.mockRestore();
       vi.stubEnv("ALGOSTAGE_DISABLE_SERVER_KEY", "");
     }
@@ -309,6 +347,27 @@ describe("lecture answers route", () => {
     expect(await f.prisma.lectureAnswer.count()).toBe(2);
     await f.prisma.lectureScriptCache.delete({ where: { key: body.cacheKey } });
     expect(await f.prisma.lectureAnswer.count()).toBe(0);
+  });
+
+  test("20. 新生成的 scriptVersion 与把 upsert 脚本当作缓存再读时一致", async () => {
+    f.setToolsReply(() => [add("s1", "版本稳定"), finish]);
+    const createdResponse = await POST(request({ slug: "3sum" }));
+    expect(createdResponse.status).toBe(200);
+    const created = await createdResponse.json();
+    const stored = await f.prisma.lectureScriptCache.findUnique({ where: { key: created.cacheKey } });
+    expect(stored?.script).toEqual(expect.any(String));
+    await f.prisma.lectureScriptCache.deleteMany();
+    await f.prisma.lectureScriptCache.create({
+      data: { key: created.cacheKey, script: stored!.script },
+    });
+    const before = f.calls.length;
+    const cachedResponse = await POST(request({ slug: "3sum" }));
+    expect(cachedResponse.status).toBe(200);
+    const cached = await cachedResponse.json();
+    expect(f.calls.length).toBe(before);
+    expect(cached.cached).toBe(true);
+    expect(cached.scriptVersion).toBe(created.scriptVersion);
+    expect(cached.scriptVersion).toBe(scriptVersion(cached.script));
   });
 
   test("21. 请求 Key 不出现在响应正文或日志里", async () => {
