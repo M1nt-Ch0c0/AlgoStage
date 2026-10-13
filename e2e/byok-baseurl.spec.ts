@@ -112,3 +112,82 @@ test("lecture and hint with private baseURL hit real server 400 BASE_URL_NOT_ALL
   await expect(baseURLInput).toBeInViewport();
   await expect(page.getByRole("link", { name: "去设置" })).toHaveCount(0);
 });
+
+test("lecture and hint with malformed baseURL hit real server 400 BASE_URL_INVALID and navigate to /settings?focus=baseUrl", async ({ page }) => {
+  const malformedCandidates = ["htp:/bad", "not a url", "ftp://x.com/v1"];
+  const expectedError = "接口地址格式不对，要以 http:// 或 https:// 开头，去设置页改一下就能开讲。";
+
+  for (const candidate of malformedCandidates) {
+    const byok = {
+      apiKey: "sk-e2e-dummy-key-0000",
+      baseURL: candidate,
+    };
+
+    const hintRes = await page.request.post("/api/hint", {
+      data: { slug: "3sum", level: 1, byok },
+    });
+    expect(hintRes.status()).toBe(400);
+    expect(await hintRes.json()).toMatchObject({
+      code: "BASE_URL_INVALID",
+      error: "BASE_URL_INVALID",
+    });
+
+    const lectureRes = await page.request.post("/api/lecture", {
+      data: { slug: "3sum", solutionLanguage: "typescript", byok },
+    });
+    expect(lectureRes.status()).toBe(400);
+    expect(await lectureRes.json()).toMatchObject({
+      code: "BASE_URL_INVALID",
+      error: "BASE_URL_INVALID",
+    });
+  }
+
+  const malformedByok = {
+    apiKey: "sk-e2e-dummy-key-0000",
+    baseURL: "htp:/bad",
+  };
+
+  // Lecture flow on /problem/3sum
+  await page.goto("/problem/3sum");
+  await page.evaluate((byok) => {
+    window.localStorage.setItem("algostage.byok", JSON.stringify(byok));
+  }, malformedByok);
+
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("三数之和");
+  await page.getByRole("button", { name: "开始讲课", exact: true }).click();
+
+  await expect(page.getByText(expectedError)).toBeVisible();
+  await expect(page.getByText("AI 服务暂时连不上")).toHaveCount(0);
+  const lectureGotoSettings = page.getByTestId("goto-settings");
+  await expect(lectureGotoSettings).toBeVisible();
+  await expect(lectureGotoSettings).toHaveAttribute("href", "/settings?focus=baseUrl");
+
+  await lectureGotoSettings.click();
+  await expect(page).toHaveURL(/\/settings\?focus=baseUrl/);
+  const baseURLInput = page.locator("#baseURL");
+  await expect(baseURLInput).toBeFocused();
+  await expect(baseURLInput).toHaveAttribute("data-highlight", "true");
+  await expect(page.getByText("AI 服务暂时连不上")).toHaveCount(0);
+
+  // Hint flow on /problem/3sum
+  await page.goto("/problem/3sum");
+  await page.evaluate((byok) => {
+    window.localStorage.setItem("algostage.byok", JSON.stringify(byok));
+  }, malformedByok);
+
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("三数之和");
+  await page.getByRole("button", { name: /L1\s*观察/ }).click();
+
+  await expect(page.getByText(expectedError)).toBeVisible();
+  await expect(page.getByText("AI 服务暂时连不上")).toHaveCount(0);
+  const hintGotoSettings = page.getByTestId("goto-settings");
+  await expect(hintGotoSettings).toBeVisible();
+  await expect(hintGotoSettings).toHaveAttribute("href", "/settings?focus=baseUrl");
+
+  await hintGotoSettings.click();
+  await expect(page).toHaveURL(/\/settings\?focus=baseUrl/);
+  await expect(baseURLInput).toBeFocused();
+  await expect(baseURLInput).toHaveAttribute("data-highlight", "true");
+  await expect(page.getByText("AI 服务暂时连不上")).toHaveCount(0);
+});
+
