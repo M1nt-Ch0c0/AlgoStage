@@ -183,6 +183,7 @@ export default function PlayerControls({
                   className="group flex h-5 min-w-0 flex-1 items-center justify-center pointer-coarse:h-11"
                 >
                   <span
+                    data-dot-visual=""
                     className={`block h-1.5 w-full rounded-full transition-colors ${
                       i === currentIndex
                         ? "bg-beam-gold"

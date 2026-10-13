@@ -319,6 +319,9 @@ function touchHitTests(viewport: { width: number; height: number }) {
     const nextButton = page.getByRole("button", { name: "下一步", exact: true });
     await nextButton.tap();
     await expect(page.getByText("第 2 / 3 步")).toBeVisible();
+    // 窄屏上「点「下一步」继续」会把时间线挤到下一行。DOM.getBoxModel 会停在换行前的按钮盒，
+    // 色条却已经到新位置，于是色条中心落在按钮盒外面。等布局稳定后用同一帧的布局盒来量。
+    await expect(page.getByTestId("continue-hint")).toHaveText("点「下一步」继续");
     await expectTouchHitArea(page, "下一步");
 
     const dots = [
@@ -328,16 +331,30 @@ function touchHitTests(viewport: { width: number; height: number }) {
     ];
     const boxes = [];
     for (const dot of dots) {
-      const box = await dot.boundingBox();
-      expect(box).toBeTruthy();
-      expect(box!.height).toBeGreaterThanOrEqual(44);
-      const visual = await dot.locator("span").boundingBox();
-      expect(visual).toBeTruthy();
-      expect(visual!.height).toBeLessThanOrEqual(20);
-      const visualCenter = visual!.x + visual!.width / 2;
-      expect(visualCenter).toBeGreaterThanOrEqual(box!.x);
-      expect(visualCenter).toBeLessThanOrEqual(box!.x + box!.width);
-      boxes.push(box!);
+      const visual = dot.locator("[data-dot-visual]");
+      await expect(visual).toHaveCount(1);
+      const read = () =>
+        Promise.all([
+          dot.evaluate((el) => {
+            const rect = el.getBoundingClientRect();
+            return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+          }),
+          visual.evaluate((el) => {
+            const rect = el.getBoundingClientRect();
+            return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+          }),
+        ]);
+      let box!: { x: number; y: number; width: number; height: number };
+      let bar!: { x: number; y: number; width: number; height: number };
+      await expect(async () => {
+        [box, bar] = await read();
+        expect(box.height).toBeGreaterThanOrEqual(44);
+        expect(bar.height).toBeLessThanOrEqual(20);
+        const visualCenter = bar.x + bar.width / 2;
+        expect(visualCenter).toBeGreaterThanOrEqual(box.x);
+        expect(visualCenter).toBeLessThanOrEqual(box.x + box.width);
+      }).toPass();
+      boxes.push(box);
     }
     const sorted = [...boxes].sort((a, b) => a.x - b.x);
     for (let i = 1; i < sorted.length; i++) {

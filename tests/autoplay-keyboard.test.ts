@@ -367,6 +367,7 @@ test("粗指针下步进按钮热区至少 44px，时间线圆点视觉 20px 居
     expect(dot.className).not.toMatch(/min-w-11|pointer-coarse:min-w|pointer-coarse:w-11/);
     expect(dot.className).not.toMatch(/-m[xytrbl]?-/);
     const bar = dot.querySelector("span")!;
+    expect(bar.hasAttribute("data-dot-visual")).toBe(true);
     expect(bar.className).toContain("h-1.5");
     expect(bar.className).toContain("w-full");
   }
