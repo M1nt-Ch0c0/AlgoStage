@@ -287,7 +287,7 @@ function PendingSegment({ broken }: { broken: boolean }) {
     >
       <span
         className={`block h-1.5 w-full rounded-full border border-dashed ${
-          broken ? "border-beam-rose/60" : "animate-pulse border-board-600"
+          broken ? "border-beam-rose/60" : "motion-safe:animate-pulse motion-reduce:animate-none border-board-600"
         }`}
       />
     </span>

@@ -131,3 +131,22 @@ test.each(["timeout", "disconnect"] as const)("已收到步骤后备课%s：显�
     expect(playBtn.disabled).toBe(false);
   } finally { await act(async () => root.unmount()); }
 });
+
+test("占位段的脉冲只在 motion-safe 下生效，prefers-reduced-motion 时不动画", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const { default: PlayerControls } = await import("../components/board/player-controls");
+  const step: TeachingStep = { id: "s1", narration: "x", targets: [], effects: [] };
+  usePlayerStore.getState().loadScript({ problemSlug: "3sum", mode: "lecture", language: "zh", solutionLanguage: "typescript", steps: [step] });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(createElement(PlayerControls, { generating: true })));
+    const bar = container.querySelector('[data-pending-step="true"] > span')!;
+    const classes = bar.className.split(/\s+/);
+    expect(classes).toContain("motion-safe:animate-pulse");
+    expect(classes).toContain("motion-reduce:animate-none");
+    expect(classes).not.toContain("animate-pulse");
+    expect(bar.className).not.toMatch(/(^|\s)(transition|animate-(?!none))/);
+  } finally { await act(async () => root.unmount()); }
+});
