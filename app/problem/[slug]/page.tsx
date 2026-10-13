@@ -84,6 +84,7 @@ export default function ProblemPage() {
 
   const step = usePlayerStore((s) => s.steps[s.currentIndex]);
   const status = usePlayerStore((s) => s.status);
+  const receiving = usePlayerStore((s) => s.receiving);
   const stepCount = usePlayerStore((s) => s.steps.length);
   const { loadScript, play, pause, replay, reset } = usePlayerStore.getState();
 
@@ -661,7 +662,7 @@ export default function ProblemPage() {
 
       {/* ── 底部播放器控制条 ── */}
       <div className="z-30 max-lg:sticky max-lg:bottom-2">
-        <PlayerControls />
+        <PlayerControls preparing={lectureBusy && (!receiving || stepCount === 0)} />
       </div>
 
       {/* 特效舞台 */}
