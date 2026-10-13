@@ -45,11 +45,24 @@ test("setSpeed(1.5) 写入 localStorage，且在 reset / loadScript / beginStrea
   expect(s().speed).toBe(1.5);
 });
 
-test("localStorage 已设 speed 时重新导入 store 模块，初始 speed 为 1.5", async () => {
+test("localStorage 已设 speed 时重新导入 store 模块，初始 speed 为 1，调用 hydratePrefs 后为 1.5", async () => {
   localStorage.setItem(SPEED_KEY, "1.5");
   vi.resetModules();
   const { usePlayerStore: freshStore } = await import("../lib/player/store");
+  expect(freshStore.getState().speed).toBe(1);
+  freshStore.getState().hydratePrefs();
   expect(freshStore.getState().speed).toBe(1.5);
+});
+
+test("hydrate 前调用 setSpeed 不会被 hydratePrefs 覆盖", async () => {
+  localStorage.setItem(SPEED_KEY, "1.5");
+  vi.resetModules();
+  const { usePlayerStore: freshStore } = await import("../lib/player/store");
+  expect(freshStore.getState().speed).toBe(1);
+  freshStore.getState().setSpeed(2);
+  expect(freshStore.getState().speed).toBe(2);
+  freshStore.getState().hydratePrefs();
+  expect(freshStore.getState().speed).toBe(2);
 });
 
 test("setEffectLevel('calm') 写入 localStorage，且在 reset / loadScript / beginStream 后保持 'calm'", () => {
@@ -68,10 +81,12 @@ test("setEffectLevel('calm') 写入 localStorage，且在 reset / loadScript / b
   expect(s().effectLevel).toBe("calm");
 });
 
-test("localStorage 已设 effectLevel 时重新导入 store 模块，初始 effectLevel 为 'calm'", async () => {
+test("localStorage 已设 effectLevel 时重新导入 store 模块，初始 effectLevel 为 'full'，调用 hydratePrefs 后为 'calm'", async () => {
   localStorage.setItem(EFFECT_LEVEL_KEY, "calm");
   vi.resetModules();
   const { usePlayerStore: freshStore } = await import("../lib/player/store");
+  expect(freshStore.getState().effectLevel).toBe("full");
+  freshStore.getState().hydratePrefs();
   expect(freshStore.getState().effectLevel).toBe("calm");
 });
 
@@ -83,6 +98,9 @@ test("localStorage 中非法值 ('3', 'loud') 回退到默认值 1 和 'full'", 
 
   vi.resetModules();
   const { usePlayerStore: freshStore } = await import("../lib/player/store");
+  expect(freshStore.getState().speed).toBe(1);
+  expect(freshStore.getState().effectLevel).toBe("full");
+  freshStore.getState().hydratePrefs();
   expect(freshStore.getState().speed).toBe(1);
   expect(freshStore.getState().effectLevel).toBe("full");
 });

@@ -48,6 +48,8 @@ interface PlayerState {
   autoAdvanceHydrated: boolean;
   setAutoAdvance: (v: boolean) => void;
   hydrateAutoAdvance: () => void;
+  prefsHydrated: boolean;
+  hydratePrefs: () => void;
   /** 当前步已讲完，等待用户继续；自动翻页关闭时由播放器置位 */
   awaitingContinue: boolean;
   setAwaitingContinue: (v: boolean) => void;
@@ -133,6 +135,8 @@ const initial = {
   steps: [] as TeachingStep[],
   currentIndex: 0,
   generation: 0,
+  speed: 1 as PlayerState["speed"],
+  effectLevel: "full" as PlayerState["effectLevel"],
   awaitingContinue: false,
 };
 
@@ -144,6 +148,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   // 模块初始化不读 localStorage，避免服务端/首帧与挂载后不一致。
   autoAdvance: false,
   autoAdvanceHydrated: false,
+  prefsHydrated: false,
 
   setAutoAdvance: (v) => {
     try {
@@ -158,6 +163,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   hydrateAutoAdvance: () => {
     if (get().autoAdvanceHydrated) return;
     set({ autoAdvance: readAutoAdvance(), autoAdvanceHydrated: true });
+  },
+  hydratePrefs: () => {
+    if (get().prefsHydrated) return;
+    set({ speed: readSpeed(), effectLevel: readEffectLevel(), prefsHydrated: true });
   },
   setAwaitingContinue: (v) => set({ awaitingContinue: v }),
 
@@ -287,7 +296,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     } catch {
       // localStorage 不可用时只更新内存，不把异常抛给调用方
     }
-    set({ speed });
+    set({ speed, prefsHydrated: true });
   },
   setEffectLevel: (effectLevel) => {
     try {
@@ -297,8 +306,15 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     } catch {
       // localStorage 不可用时只更新内存，不把异常抛给调用方
     }
-    set({ effectLevel });
+    set({ effectLevel, prefsHydrated: true });
   },
 
-  reset: () => set({ ...initial, autoAdvance: get().autoAdvance, generation: get().generation + 1 }),
+  reset: () =>
+    set({
+      ...initial,
+      speed: get().speed,
+      effectLevel: get().effectLevel,
+      autoAdvance: get().autoAdvance,
+      generation: get().generation + 1,
+    }),
 }));

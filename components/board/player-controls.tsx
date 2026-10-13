@@ -59,12 +59,23 @@ export default function PlayerControls({
   const awaitingContinue = usePlayerStore((s) => s.awaitingContinue);
   const receiving = usePlayerStore((s) => s.receiving);
   const coarsePointer = useCoarsePointer();
-  const { play, pause, next, prev, goto, setSpeed, setEffectLevel, setAutoAdvance, hydrateAutoAdvance } =
-    usePlayerStore.getState();
+  const {
+    play,
+    pause,
+    next,
+    prev,
+    goto,
+    setSpeed,
+    setEffectLevel,
+    setAutoAdvance,
+    hydrateAutoAdvance,
+    hydratePrefs,
+  } = usePlayerStore.getState();
 
   useEffect(() => {
     hydrateAutoAdvance();
-  }, [hydrateAutoAdvance]);
+    hydratePrefs();
+  }, [hydrateAutoAdvance, hydratePrefs]);
 
   const hasScript = !preparing && steps.length > 0;
   const playing = status === "playing" || status === "streaming";
