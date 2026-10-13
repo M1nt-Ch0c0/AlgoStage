@@ -25,6 +25,14 @@ import {
 } from "@/lib/byok/client";
 import { maskKey, readLocalByok } from "@/lib/byok/storage";
 import { useLocalByok } from "@/lib/byok/use-local-byok";
+import {
+  EFFECT_LEVEL_KEY,
+  readEffectLevel,
+  readSpeed,
+  SPEED_KEY,
+  writeEffectLevel,
+  writeSpeed,
+} from "@/lib/player/store";
 import { apiPath } from "@/lib/runtime";
 import { useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
@@ -52,9 +60,10 @@ const EFFECT_LEVELS = [
 ] as const;
 
 const SPEEDS = [
-  { id: "15", label: "慢 · 15 字/秒" },
-  { id: "22", label: "标准 · 22 字/秒" },
-  { id: "30", label: "快 · 30 字/秒" },
+  { value: 0.5, label: "0.5×" },
+  { value: 1, label: "1×（默认）" },
+  { value: 1.5, label: "1.5×" },
+  { value: 2, label: "2×" },
 ] as const;
 
 type TestState =
@@ -79,8 +88,8 @@ export default function SettingsPage() {
   const [model, setModel] = useState<string>(DEFAULT_MODEL);
   const [theme, setTheme] = useState("dark");
   const [showKey, setShowKey] = useState(false);
-  const [effectLevel, setEffectLevel] = useState("full");
-  const [narrationSpeed, setNarrationSpeed] = useState("22");
+  const [effectLevel, setEffectLevel] = useState<"full" | "calm" | "minimal">("full");
+  const [speed, setSpeed] = useState<0.5 | 1 | 1.5 | 2>(1);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "saved-need-key">("idle");
   const [saveError, setSaveError] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
@@ -163,6 +172,25 @@ export default function SettingsPage() {
   useEffect(() => setTheme(readTheme()), []);
 
   useEffect(() => {
+    setSpeed(readSpeed());
+    setEffectLevel(readEffectLevel());
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === SPEED_KEY || event.key === null) {
+        setSpeed(readSpeed());
+      }
+      if (event.key === EFFECT_LEVEL_KEY || event.key === null) {
+        setEffectLevel(readEffectLevel());
+      }
+    };
+
+    window.addEventListener("storage", handleStorage);
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, []);
+
+  useEffect(() => {
     fetch(apiPath("/api/settings"))
       .then((r) => r.json())
       .then((data: SettingsResponse) => {
@@ -183,8 +211,6 @@ export default function SettingsPage() {
           if (settings.apiKeyMasked) setApiKeyMasked(settings.apiKeyMasked);
           if (settings.model) setModel(settings.model);
         }
-        if (settings.effectLevel) setEffectLevel(settings.effectLevel);
-        if (settings.narrationSpeed) setNarrationSpeed(settings.narrationSpeed);
       })
       .catch(() => {})
       .finally(() => {
@@ -237,6 +263,17 @@ export default function SettingsPage() {
     if (!validateBaseURL()) {
       return;
     }
+    const speedOk = writeSpeed(speed);
+    const effectOk = writeEffectLevel(effectLevel);
+    if (!speedOk || !effectOk) {
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+      }
+      setSaveState("idle");
+      setSaveError("没保存成功，请确认浏览器允许本地存储后再试。");
+      return;
+    }
     if (serverKeyDisabled) {
       const nextKey = apiKey.trim() || localByok?.apiKey || "";
       const trimmedBase = baseURL.trim();
@@ -285,7 +322,11 @@ export default function SettingsPage() {
     setSaveError("");
     if (saveTimer.current) clearTimeout(saveTimer.current);
     const pending = { ...edits.current };
+    delete (pending as Record<string, unknown>).narrationSpeed;
+    delete (pending as Record<string, unknown>).effectLevel;
     const settings = { ...pending, ...(apiKey.trim() ? credentialFields() : {}) };
+    delete (settings as Record<string, unknown>).narrationSpeed;
+    delete (settings as Record<string, unknown>).effectLevel;
     try {
       const res = await fetch(apiPath("/api/settings"), {
         method: "PUT",
@@ -632,7 +673,7 @@ export default function SettingsPage() {
               <legend className={labelClass}>特效强度</legend>
               <div className="grid gap-2 sm:grid-cols-3">
                 {EFFECT_LEVELS.map((l) => (
-                  <button key={l.id} type="button" aria-pressed={effectLevel === l.id} onClick={() => edit("effectLevel", l.id, setEffectLevel)} className={choice(effectLevel === l.id)}>
+                  <button key={l.id} type="button" aria-pressed={effectLevel === l.id} onClick={() => setEffectLevel(l.id)} className={choice(effectLevel === l.id)}>
                     <span className={`block text-sm font-medium ${effectLevel === l.id ? "text-beam-gold" : "text-chalk-100"}`}>{l.label}</span>
                     <span className="mt-0.5 block text-xs text-chalk-500">{l.desc}</span>
                   </button>
@@ -641,16 +682,16 @@ export default function SettingsPage() {
             </fieldset>
 
             <fieldset>
-              <legend className={labelClass}>字幕语速</legend>
-              <div className="flex flex-wrap gap-2">
+              <legend className={labelClass}>讲课语速</legend>
+              <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
                 {SPEEDS.map((sp) => (
                   <button
-                    key={sp.id}
+                    key={sp.value}
                     type="button"
-                    aria-pressed={narrationSpeed === sp.id}
-                    onClick={() => edit("narrationSpeed", sp.id, setNarrationSpeed)}
-                    className={`rounded-full border px-4 py-1.5 text-sm transition-colors pointer-coarse:min-h-11 pointer-coarse:min-w-11 ${
-                      narrationSpeed === sp.id
+                    aria-pressed={speed === sp.value}
+                    onClick={() => setSpeed(sp.value)}
+                    className={`rounded-full border px-4 py-1.5 text-center text-sm transition-colors min-w-11 pointer-coarse:min-h-11 pointer-coarse:min-w-11 ${
+                      speed === sp.value
                         ? "border-beam-gold/70 text-beam-gold"
                         : "border-board-700 text-chalk-500 hover:text-chalk-300"
                     }`}
@@ -659,6 +700,7 @@ export default function SettingsPage() {
                   </button>
                 ))}
               </div>
+              <p className="mt-2 text-xs leading-5 text-chalk-500">和讲课页的倍速是同一个设置，改哪边都会同步</p>
             </fieldset>
 
             <p className="text-xs text-chalk-700">特效和语速要点「保存设置」才会记住。</p>
