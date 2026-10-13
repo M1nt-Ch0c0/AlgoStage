@@ -31,6 +31,7 @@
     "@prisma/client": "7.10.0",
     "ai": "7.0.99",
     "lucide-react": "1.45.0",
+    "modern-screenshot": "4.7.0",
     "motion": "13.2.0",
     "next": "16.4.0",
     "react": "19.3.0",
