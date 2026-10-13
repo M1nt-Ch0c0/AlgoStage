@@ -631,7 +631,9 @@ export default function ProblemPage() {
       )}
       {lectureComplete && !lectureBusy && (
         <p role="status" aria-live="polite" className="text-sm text-beam-mint">
-          教案已生成完成，共 {stepCount} 步。可以继续播放或选择步骤回看。
+          教案已生成完成
+          <span className="sr-only">，共 {stepCount} 步</span>
+          。可以继续播放或选择步骤回看。
         </p>
       )}
       {lectureError && (() => {

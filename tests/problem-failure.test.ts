@@ -151,8 +151,16 @@ test("生成期间主按钮可暂停并补全字幕，完成提示独立于播�
       stream.close();
     });
     expect(usePlayerStore.getState().status).toBe("paused");
-    expect(container.querySelector('[role="status"]')?.textContent).toContain("教案已生成完成，共 1 步");
+    const status = container.querySelector('[role="status"]')!;
+    // 无障碍文本仍含总步数；屏幕上数字只在标题栏出现一次
+    expect(status.textContent).toContain("教案已生成完成，共 1 步");
+    expect(status.querySelector(".sr-only")?.textContent).toBe("，共 1 步");
+    const visibleStatus = status.cloneNode(true) as HTMLElement;
+    visibleStatus.querySelectorAll(".sr-only").forEach((el) => el.remove());
+    expect(visibleStatus.textContent?.replace(/\s+/g, "")).toBe("教案已生成完成。可以继续播放或选择步骤回看。");
+    expect(visibleStatus.textContent).not.toContain("共 1 步");
     expect(container.querySelector("[data-step-total]")?.textContent).toBe("共 1 步");
+    expect(container.querySelectorAll("[data-step-total]")).toHaveLength(1);
     await act(async () => primary("继续").click());
     expect(usePlayerStore.getState().status).toBe("playing");
     expect(primary("暂停")).toBeDefined();
