@@ -133,3 +133,19 @@ test("加载中不显示提示，切题后忽略旧设置响应并排除两数�
   await act(async () => root.render(createElement(AiSetupPrompt, { problemSlug: "two-sum" })));
   expect(container.textContent).toBe("");
 });
+
+test("首页提示卡片在按钮行下方、限宽，「去设置」为描边次按钮；题目页卡片不限宽", async () => {
+  await render(LandingPage);
+  const card = Array.from(container.querySelectorAll("p")).find(p => p.textContent === LANDING_HINT)!.parentElement!;
+  expect(card.classList.contains("max-w-[34rem]")).toBe(true);
+  const wrapper = card.parentElement!;
+  expect(wrapper.className).toBe("mt-5 max-w-[34rem]");
+  expect(wrapper.querySelector('a[href="/classroom/roadmap"]')).toBeNull();
+  const button = link("去设置")!;
+  for (const c of ["border", "border-beam-gold/60", "text-beam-gold", "bg-transparent"]) expect(button.classList.contains(c)).toBe(true);
+  expect(button.classList.contains("bg-beam-gold")).toBe(false);
+  await act(async () => root.render(null));
+  await act(async () => root.render(createElement(AiSetupPrompt, { problemSlug: "3sum" })));
+  const problemCard = Array.from(container.querySelectorAll("p")).find(p => p.textContent === PROBLEM_HINT)!.parentElement!;
+  expect(problemCard.classList.contains("max-w-[34rem]")).toBe(false);
+});
