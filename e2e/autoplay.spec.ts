@@ -642,6 +642,32 @@ test.describe("coarse pointer hit areas 390", () => {
       await close();
     }
   });
+
+  test("tap timeline dot at 2x does not advance an extra step with autoplay off", async ({ page }) => {
+    // Paige decision, 2x persists across lecture start; tapping must not advance an extra step.
+    const count = 12;
+    await mockLecture(page, "group-anagrams", count);
+    await page.goto("/problem/group-anagrams");
+    await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2x", exact: true }).click();
+    await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
+    await expect(page.getByText("第 1 / 12 步")).toBeVisible();
+
+    const track = timelineTrack(page);
+    await expect(track).toBeVisible();
+
+    const dots = page.getByRole("button", { name: /^跳到第 \d+ 步$/ });
+    await expect(dots).toHaveCount(count);
+    const indicator = page.getByText(/第 \d+ \/ 12 步/);
+
+    await expect(async () => {
+      const { bar } = await readSettledDot(dots.nth(4));
+      await page.touchscreen.tap(bar.x + bar.width / 2, bar.y + bar.height / 2);
+      await expect(indicator).toHaveText("第 5 / 12 步", { timeout: 1_000 });
+    }).toPass({ timeout: 10_000 });
+
+    await page.waitForTimeout(2500);
+    await expect(indicator).toHaveText("第 5 / 12 步");
+  });
 });
 
 test.describe("coarse pointer hit areas 1024", () => {
