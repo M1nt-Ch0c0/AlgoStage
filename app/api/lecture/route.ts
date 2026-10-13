@@ -134,19 +134,33 @@ export async function POST(req: NextRequest) {
   // 显式重新生成跳过缓存读取；仅在生成成功并校验后 upsert 覆盖，失败或取消保留旧缓存。
   const cached = body.regenerate ? null : await prisma.lectureScriptCache.findUnique({ where: { key } });
   if (cached) {
+    // 只有脚本解析或校验失败才删缓存。listAnswers 的数据库错误不能落进这个 catch，
+    // 否则会删掉 LectureScriptCache，并级联删掉 LectureAnswer。
+    let script: ReturnType<typeof validateScript> | undefined;
     try {
       // 旧缓存可能有重复或空 step id；lenient 不删缓存，只禁用这些步骤的提问。
-      const script = matchesRequest(
+      script = matchesRequest(
         validateScript(JSON.parse(cached.script), referenceCode, { stepIds: "lenient" }),
       );
+    } catch {
+      // 旧缓存可能未经过校验；丢弃后重新备课。重复 step id 不走这里。
+      await prisma.lectureScriptCache.delete({ where: { key } });
+    }
+    if (script) {
       const disabled = disabledStepIds(script);
       if (disabled.length > 0) {
         console.warn("[lecture] cached script has duplicate step ids", { key, count: disabled.length });
       }
       const version = scriptVersion(script);
-      const answers = serverKeyDisabled()
-        ? {}
-        : await listAnswers(prisma, key, version, askableStepIds(script));
+      let answers: Awaited<ReturnType<typeof listAnswers>> = {};
+      if (!serverKeyDisabled()) {
+        try {
+          answers = await listAnswers(prisma, key, version, askableStepIds(script));
+        } catch {
+          console.warn("[lecture] listAnswers failed", { key });
+          answers = {};
+        }
+      }
       return Response.json({
         cached: true,
         script,
@@ -155,9 +169,6 @@ export async function POST(req: NextRequest) {
         answers,
         askDisabledStepIds: disabled,
       });
-    } catch {
-      // 旧缓存可能未经过校验；丢弃后重新备课。重复 step id 不走这里。
-      await prisma.lectureScriptCache.delete({ where: { key } });
     }
   }
 
