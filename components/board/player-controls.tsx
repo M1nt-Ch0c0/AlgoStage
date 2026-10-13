@@ -4,6 +4,7 @@
  * 键盘可达：←/→ 步进、Space 播放暂停；等待继续时 Space/→ 均下一步（docs/02 §7）。
  * 结束面板出现后 Space 与 → 不再操作播放器。
  * 等待继续时「下一步」改为图标加文字的按钮，热区至少 44px；平时仍是图标按钮。
+ * 粗指针下上一步、播放暂停、下一步（含非等待态）热区至少 44px；时间线圆点视觉仍是细条，点按高度 44px 且相邻热区不重叠。细指针尺寸不变。
  * 粗指针且下一步已就绪时，把「点「下一步」继续」放在这条控制条里（窄屏单独成行，吸底仍可见）。
  * 输入框、contenteditable、Monaco 编辑器内以及带 Ctrl/Meta/Alt 的按键不拦截。
  * 焦点在 button、链接或 role=dialog 内时把 Space / → 留给控件本身（重播、语速、重新生成确认）。
@@ -102,7 +103,7 @@ export default function PlayerControls({
   }, [hasScript, playing, awaitingContinue, panelShowing, play, pause, next, prev]);
 
   const btn =
-    "flex size-8 items-center justify-center rounded-full text-chalk-300 transition-colors hover:bg-board-700 hover:text-chalk-100 disabled:pointer-events-none disabled:opacity-30";
+    "flex size-8 items-center justify-center rounded-full text-chalk-300 transition-colors hover:bg-board-700 hover:text-chalk-100 disabled:pointer-events-none disabled:opacity-30 pointer-coarse:size-11";
   const pill = (on: boolean) =>
     `rounded-full px-2.5 py-0.5 text-xs transition-colors ${
       on ? "bg-board-700 text-beam-gold" : "text-chalk-500 hover:text-chalk-300"
@@ -117,7 +118,7 @@ export default function PlayerControls({
         </button>
         <button
           type="button"
-          className="flex size-9 items-center justify-center rounded-full bg-beam-gold text-on-accent transition-transform hover:scale-105 disabled:pointer-events-none disabled:bg-board-700 disabled:text-chalk-700"
+          className="flex size-9 items-center justify-center rounded-full bg-beam-gold text-on-accent transition-transform hover:scale-105 disabled:pointer-events-none disabled:bg-board-700 disabled:text-chalk-700 pointer-coarse:size-11"
           onClick={() => (playing ? pause() : play())}
           disabled={!hasScript}
           aria-label={playing ? "暂停" : "播放"}
@@ -169,7 +170,7 @@ export default function PlayerControls({
                   onClick={() => goto(i)}
                   aria-label={`跳到第 ${i + 1} 步`}
                   aria-current={i === currentIndex ? "step" : undefined}
-                  className="group flex h-5 min-w-0 flex-1 items-center"
+                  className="group flex h-5 min-w-0 flex-1 items-center pointer-coarse:h-11"
                 >
                   <span
                     className={`block h-1.5 w-full rounded-full transition-colors ${

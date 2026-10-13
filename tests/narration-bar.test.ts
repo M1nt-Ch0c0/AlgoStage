@@ -151,6 +151,9 @@ test("finished 显示讲完了，two-sum 下一题指向 group-anagrams，并有
   expect(roadmap?.getAttribute("href")).toBe("/roadmap");
   const button = [...container.querySelectorAll("button")].find((el) => el.textContent === "重播");
   expect(button).toBeTruthy();
+  expect(button!.className).toContain("pointer-coarse:min-h-11");
+  expect(button!.className).toContain("pointer-coarse:min-w-11");
+  expect(button!.className).toContain("py-1");
   await act(async () => button!.click());
   expect(usePlayerStore.getState().status).toBe("playing");
   expect(usePlayerStore.getState().currentIndex).toBe(0);

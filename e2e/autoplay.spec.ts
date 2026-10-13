@@ -285,6 +285,75 @@ test.describe("coarse pointer", () => {
   });
 });
 
+async function expectTouchHitArea(page: Page, name: string, min = 44) {
+  const button = page.getByRole("button", { name, exact: true });
+  await expect(button).toBeVisible();
+  const box = await button.boundingBox();
+  expect(box, name).toBeTruthy();
+  expect(box!.width, name).toBeGreaterThanOrEqual(min);
+  expect(box!.height, name).toBeGreaterThanOrEqual(min);
+  return box!;
+}
+
+function touchHitTests(viewport: { width: number; height: number }) {
+  test(`coarse pointer ${viewport.width}x${viewport.height} hit areas are at least 44px and timeline dots do not overlap`, async ({ page }) => {
+    await mockLecture(page, "group-anagrams");
+    await page.goto("/problem/group-anagrams");
+    await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2x", exact: true }).click();
+    await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
+    await expect(page.getByText("第 1 / 3 步")).toBeVisible();
+
+    const prev = await expectTouchHitArea(page, "上一步");
+    const play = await expectTouchHitArea(page, "暂停");
+    const next = await expectTouchHitArea(page, "下一步");
+    expect(next.height).toBeGreaterThanOrEqual(44);
+    expect(prev.height).toBeGreaterThanOrEqual(44);
+    expect(play.height).toBeGreaterThanOrEqual(44);
+
+    const nextButton = page.getByRole("button", { name: "下一步", exact: true });
+    await nextButton.tap();
+    await expect(page.getByText("第 2 / 3 步")).toBeVisible();
+    await expectTouchHitArea(page, "下一步");
+
+    const dots = [
+      page.getByRole("button", { name: "跳到第 1 步", exact: true }),
+      page.getByRole("button", { name: "跳到第 2 步", exact: true }),
+      page.getByRole("button", { name: "跳到第 3 步", exact: true }),
+    ];
+    const boxes = [];
+    for (const dot of dots) {
+      const box = await dot.boundingBox();
+      expect(box).toBeTruthy();
+      expect(box!.height).toBeGreaterThanOrEqual(44);
+      const visual = await dot.locator("span").boundingBox();
+      expect(visual).toBeTruthy();
+      expect(visual!.height).toBeLessThanOrEqual(20);
+      boxes.push(box!);
+    }
+    const sorted = [...boxes].sort((a, b) => a.x - b.x);
+    for (let i = 1; i < sorted.length; i++) {
+      expect(sorted[i - 1]!.x + sorted[i - 1]!.width).toBeLessThanOrEqual(sorted[i]!.x + 0.5);
+    }
+
+    await nextButton.tap();
+    await expect(page.getByText("第 3 / 3 步")).toBeVisible();
+    await nextButton.tap();
+    await expect(page.getByText("讲完了")).toBeVisible();
+    await expectTouchHitArea(page, "重播");
+    await expectTouchHitArea(page, "播放");
+  });
+}
+
+test.describe("coarse pointer hit areas 390", () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+  touchHitTests({ width: 390, height: 844 });
+});
+
+test.describe("coarse pointer hit areas 1024", () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 1024, height: 768 } });
+  touchHitTests({ width: 1024, height: 768 });
+});
+
 // Full regenerate flow (confirming and streaming new lecture while paused) is tested in e2e/regenerate.spec.ts.
 test("after finish 「重新生成」 in more menu shows confirm button without firing a second lecture POST", async ({ page }) => {
   const getPosts = await mockLecture(page, "group-anagrams");

@@ -148,7 +148,7 @@ export default function NarrationBar({ lectureBusy = false }: { lectureBusy?: bo
           )}
           <button
             type="button"
-            className="rounded-full border border-board-600 px-3 py-1 text-sm text-chalk-300 hover:text-chalk-100"
+            className="inline-flex min-w-11 items-center justify-center rounded-full border border-board-600 px-3 py-1 text-sm text-chalk-300 hover:text-chalk-100 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
             onClick={(event) => {
               event.stopPropagation();
               replay();

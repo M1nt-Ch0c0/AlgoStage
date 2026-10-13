@@ -283,6 +283,40 @@ test("非 awaitingContinue 时下一步保持图标按钮", async () => {
   expect(button.classList.contains("size-8")).toBe(true);
 });
 
+test("粗指针下步进按钮热区至少 44px，时间线圆点视觉仍是细条且热区不靠负边距重叠", async () => {
+  const prev = container.querySelector<HTMLButtonElement>('button[aria-label="上一步"]')!;
+  const play = container.querySelector<HTMLButtonElement>('button[aria-label="播放"]')!;
+  const next = container.querySelector<HTMLButtonElement>('button[aria-label="下一步"]')!;
+  for (const button of [prev, play, next]) {
+    expect(button.className).toContain("pointer-coarse:size-11");
+  }
+  expect(next.classList.contains("size-8")).toBe(true);
+  expect(play.className).toContain("size-9");
+  expect(play.className).not.toContain("size-11 ");
+
+  const dots = [...container.querySelectorAll<HTMLButtonElement>('button[aria-label^="跳到第"]')];
+  expect(dots.length).toBe(script.steps.length);
+  for (const dot of dots) {
+    expect(dot.className).toContain("h-5");
+    expect(dot.className).toContain("pointer-coarse:h-11");
+    expect(dot.className).not.toMatch(/-m[xytrbl]?-/);
+    const bar = dot.querySelector("span")!;
+    expect(bar.className).toContain("h-1.5");
+    expect(bar.className).toContain("w-full");
+  }
+});
+
+test("细指针类名不把步进按钮和圆点放大成常驻 44px", async () => {
+  const prev = container.querySelector<HTMLButtonElement>('button[aria-label="上一步"]')!;
+  const next = container.querySelector<HTMLButtonElement>('button[aria-label="下一步"]')!;
+  expect(prev.classList.contains("size-8")).toBe(true);
+  expect(prev.classList.contains("size-11")).toBe(false);
+  expect(next.classList.contains("min-h-11")).toBe(false);
+  const dot = container.querySelector<HTMLButtonElement>('button[aria-label="跳到第 1 步"]')!;
+  expect(dot.classList.contains("h-5")).toBe(true);
+  expect(dot.classList.contains("h-11")).toBe(false);
+});
+
 function stubPointer(coarse: boolean) {
   const original = window.matchMedia.bind(window);
   vi.stubGlobal("matchMedia", (query: string) => {
