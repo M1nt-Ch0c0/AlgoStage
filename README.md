@@ -28,9 +28,9 @@ npm run dev                   # http://localhost:3000
 
 想先看看效果：打开 <https://demo.m1ntch0c0.com/algostage>，选「两数之和」，这道题自带内置讲解（含全部特效），不需要 API Key。
 
-> ⚠️ 这是公共实例，设置页保存的 API Key 对所有访客生效、掩码所有人可见。**不要在公共实例上填你自己的 API Key。**
+> 公共实例使用默认的 Docker Compose 部署，关闭了服务器 API Key（`ALGOSTAGE_DISABLE_SERVER_KEY=true`）：服务器不保存、不使用任何 API Key，设置页不能修改服务器设置。你在设置页填的 API Key 只保存在你这台浏览器里，每次讲课和提示请求时带上，只用于当次请求，不会存到服务器；可随时点「清除本机 API Key」。想长期用自己的 API Key，建议按下面的步骤自托管。
 
-其余题目都要先配好 API Key 才能讲解和要提示。请先按上面的步骤自托管或本地部署，再在你自己实例的设置页按三步填写：
+其余题目都要先配好 API Key 才能讲解和要提示。在设置页按三步填写：
 
 1. **接口地址**：先选服务商，再填对应地址。OpenAI 兼容服务留空时使用 `https://api.openai.com/v1`；Anthropic、Google 留空使用官方接口。
 2. **API Key**：填写与上面接口地址同一来源的 API Key，来源混用会被拒绝。
@@ -46,7 +46,7 @@ npm run dev                   # http://localhost:3000
 
 | 环境变量 | 默认值 | 可选值 | 作用 |
 | --- | --- | --- | --- |
-| `ALGOSTAGE_DISABLE_SERVER_KEY` | `false` | `true`/`false`、`on`/`off`、`1`/`0`、`yes`/`no`（不区分大小写） | 设为开启时，服务器不保存、不使用服务器 API Key，设置页不能修改服务器设置，讲课和提示请求需自带 API Key。`deploy/compose.yaml` 设为 `true`。【待合入 A5】设置页的浏览器本机保存：API Key 只保存在你自己的浏览器里，讲课和提示请求自动带上，可点「清除本机 Key」。 |
+| `ALGOSTAGE_DISABLE_SERVER_KEY` | `false` | `true`/`false`、`on`/`off`、`1`/`0`、`yes`/`no`（不区分大小写） | 设为开启时，服务器不保存、不使用服务器 API Key，设置页不能修改服务器设置，讲课和提示请求需自带 API Key。`deploy/compose.yaml` 设为 `true`。设置页提示「API Key 只保存在你这台浏览器里，不会存到服务器。」，讲课和提示请求自动带上，可点「清除本机 API Key」。 |
 | `ALGOSTAGE_ALLOW_PRIVATE_BASE_URL` | `true` | 同上 | 关闭时拒绝内网、本机和保留地址的接口地址。默认允许，方便自托管连接本机或内网模型；`deploy/compose.yaml` 设为 `false`。 |
 
 接口地址只接受 http(s)，不跟随重定向。服务器 API Key 只会发往服务器配置的接口地址；改用其他接口地址时需要同时填你自己的 API Key。详见 [deploy/README.md](deploy/README.md#环境变量自托管)。
@@ -55,12 +55,12 @@ npm run dev                   # http://localhost:3000
 
 | 错误码 | 什么时候出现 | 怎么处理 |
 | --- | --- | --- |
-| `UPSTREAM_AUTH`（HTTP 400） | 提示、讲课或测试连接时模型服务返回 401/403，`retryable: false`，不会自动重试；服务端文案「API Key 无效或没有权限」。【待合入 A5】讲课和提示区显示「API Key 无效或没有权限，去设置页检查一下就能开讲。」，只有「去设置」按钮；设置页在 API Key 输入框下显示红字「API Key 无效或没有权限」，不放按钮。 | 到设置页检查 API Key 是否正确、有没有该模型的权限，并确认 API Key 和接口地址来自同一家服务。 |
-| `NO_BYOK`（HTTP 400） | 没填 API Key 就点了「开始讲课」（公共实例等关闭服务器 API Key 的部署）。和题目页上方的「这道题的 AI 讲解需要你自己的 API Key。」提示不同，这是点击后的报错。【待合入 A5】讲课区显示「还没填 API Key。先去设置页填入你自己的 API Key 就能开讲。」，只有「去设置」按钮。【待合入 P3】去掉「重试讲课」。 | 到设置页填入你自己的 API Key。 |
+| `UPSTREAM_AUTH`（HTTP 400） | 提示、讲课或测试连接时模型服务返回 401/403，`retryable: false`，不会自动重试；服务端文案「API Key 无效或没有权限」。讲课和提示区显示「API Key 无效或没有权限，去设置页检查一下就能开讲。」，只有「去设置」按钮；设置页在 API Key 输入框下显示红字「API Key 无效或没有权限」，不放按钮。 | 到设置页检查 API Key 是否正确、有没有该模型的权限，并确认 API Key 和接口地址来自同一家服务。 |
+| `NO_BYOK`（HTTP 400） | 没填 API Key 就点了「开始讲课」（公共实例等关闭服务器 API Key 的部署）。和题目页上方的「这道题的 AI 讲解需要你自己的 API Key。」提示不同，这是点击后的报错。讲课区显示「还没填 API Key。先去设置页填入你自己的 API Key 就能开讲。」，只有「去设置」按钮。不显示「重试讲课」。 | 到设置页填入你自己的 API Key。 |
 | `BYOK_KEY_REQUIRED`（HTTP 400） | 用了与服务器配置不同的接口地址，但没有填自己的 API Key，提示「用自定义接口地址时，需要同时填你自己的 API Key」。 | 在设置页同时填写该接口地址对应的 API Key。 |
-| `BASE_URL_INVALID`（HTTP 400） | 接口地址格式不对（不是 http(s)、缺少主机等）。【待合入 A5】设置页在接口地址输入框下显示红字「接口地址格式不对，要以 http:// 或 https:// 开头」；讲课和提示区显示「接口地址格式不对，要以 http:// 或 https:// 开头，去设置页改一下就能开讲。」，带「去设置」按钮。 | 改成以 `http://` 或 `https://` 开头的完整地址。 |
-| `BASE_URL_NOT_ALLOWED`（HTTP 400） | 仅在 `ALGOSTAGE_ALLOW_PRIVATE_BASE_URL` 关闭时（如 Docker 默认部署），接口地址指向内网、本机或保留地址。【待合入 A5】设置页在接口地址输入框下显示红字「接口地址只支持公网 http(s) 地址」；讲课和提示区显示「接口地址只支持公网 http(s) 地址，去设置页改一下就能开讲。」，带「去设置」按钮。【待合入 P3】只给「去设置」，去掉「重试讲课」。 | 改用公网接口地址；自托管需要连本机或内网模型时，在可信环境中把该开关设为 `true`。 |
-| `UPSTREAM_ERROR`（HTTP 502） | 连不上模型服务，或部署者在 `AI_BASE_URL` 里配了不合法或指向内网的地址（此时不发起出站请求）；服务端文案「AI 服务暂时连不上，请稍后再试。」。【待合入 A5】讲课和提示区只有「重试」，不带「去设置」。 | 稍后重试；自托管请检查环境变量 `AI_BASE_URL`。 |
+| `BASE_URL_INVALID`（HTTP 400） | 接口地址格式不对（不是 http(s)、缺少主机等）。设置页在接口地址输入框下显示红字「接口地址格式不对，要以 http:// 或 https:// 开头」；讲课和提示区显示「接口地址格式不对，要以 http:// 或 https:// 开头，去设置页改一下就能开讲。」，带「去设置」按钮。 | 改成以 `http://` 或 `https://` 开头的完整地址。 |
+| `BASE_URL_NOT_ALLOWED`（HTTP 400） | 仅在 `ALGOSTAGE_ALLOW_PRIVATE_BASE_URL` 关闭时（如 Docker 默认部署），接口地址指向内网、本机或保留地址。设置页在接口地址输入框下显示红字「接口地址只支持公网 http(s) 地址」；讲课和提示区显示「接口地址只支持公网 http(s) 地址，去设置页改一下就能开讲。」，只有「去设置」按钮，不显示「重试讲课」。 | 改用公网接口地址；自托管需要连本机或内网模型时，在可信环境中把该开关设为 `true`。 |
+| `UPSTREAM_ERROR`（HTTP 502） | 连不上模型服务，或部署者在 `AI_BASE_URL` 里配了不合法或指向内网的地址（此时不发起出站请求）；服务端文案「AI 服务暂时连不上，请稍后再试。」。讲课和提示区只有「重试」，不带「去设置」。 | 稍后重试；自托管请检查环境变量 `AI_BASE_URL`。 |
 
 讲课流开始后，NDJSON 错误事件只含 `type: "error"`、`code`、`retryable`；第一个步骤之前的失败仍返回真实的 HTTP 错误响应。
 
