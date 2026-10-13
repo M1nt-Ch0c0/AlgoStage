@@ -778,7 +778,7 @@ export default function ProblemPage() {
               right={
                 inLecture && stepCount > 0 ? (
                   <span className="font-mono text-[11px] text-chalk-500">
-                    共 {stepCount} 步
+                    {lectureBusy ? `已收到 ${stepCount} 步` : `共 ${stepCount} 步`}
                   </span>
                 ) : null
               }
@@ -829,6 +829,7 @@ export default function ProblemPage() {
         <PlayerControls
           preparing={lectureBusy && (!receiving || stepCount === 0)}
           lectureBusy={lectureBusy}
+          generating={lectureBusy && receiving && stepCount > 0}
         />
       </div>
 

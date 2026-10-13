@@ -44,10 +44,16 @@ function isSpaceActivationTarget(target: EventTarget | null): boolean {
 export default function PlayerControls({
   preparing = false,
   lectureBusy = false,
+  generating = false,
 }: {
   preparing?: boolean;
   /** 备课中：结束面板不显示，Space / → 也不按结束面板拦截。 */
   lectureBusy?: boolean;
+  /**
+   * generating：已收到部分步骤可播放，但教案尚未生成完成——总步数未知，
+   * 不显示「第 x / N 步」，时间线末尾留一段「仍在备课」占位。
+   */
+  generating?: boolean;
 }) {
   const status = usePlayerStore((s) => s.status);
   const steps = usePlayerStore((s) => s.steps);
@@ -181,9 +187,15 @@ export default function PlayerControls({
           <span role="status" className="text-xs text-chalk-500">备课中…</span>
         ) : hasScript ? (
           <>
-            <span className="shrink-0 font-mono text-xs text-chalk-300 tabular-nums">
-              第 {Math.min(currentIndex + 1, steps.length)} / {steps.length} 步
-            </span>
+            {generating ? (
+              <span role="status" className="shrink-0 text-xs text-chalk-300 tabular-nums">
+                已收到 {steps.length} 步，仍在备课…
+              </span>
+            ) : (
+              <span className="shrink-0 font-mono text-xs text-chalk-300 tabular-nums">
+                第 {Math.min(currentIndex + 1, steps.length)} / {steps.length} 步
+              </span>
+            )}
             <div className="flex min-w-0 flex-1 items-center">
               {steps.map((s, i) => (
                 <button
@@ -206,6 +218,15 @@ export default function PlayerControls({
                   />
                 </button>
               ))}
+              {generating && (
+                <span
+                  aria-hidden="true"
+                  data-pending-step="true"
+                  className="flex h-5 min-w-0 flex-1 items-center"
+                >
+                  <span className="block h-1.5 w-full animate-pulse rounded-full border border-dashed border-board-600" />
+                </span>
+              )}
             </div>
           </>
         ) : (

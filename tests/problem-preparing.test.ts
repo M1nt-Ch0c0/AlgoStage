@@ -68,11 +68,20 @@ test.each([false, true])("首个真实步骤到达前显示备课中，不显示
     expect(usePlayerStore.getState().status).toBe("idle");
 
     await act(async () => send({ type: "step", step }));
-    expect(controls.querySelector('[role="status"]')).toBeNull();
-    expect(controls.textContent).toContain("第 1 / 1 步");
+    // 首步到达、教案未完成：可播放，但不能显示「第 1 / 1 步」满格，总步数未知。
+    expect(controls.querySelector('[role="status"]')?.textContent).toBe("已收到 1 步，仍在备课…");
+    expect(controls.textContent).not.toMatch(/第\s*\d+\s*\/\s*\d+\s*步/);
+    expect(controls.querySelector('[data-pending-step="true"]')).not.toBeNull();
+    expect(container.textContent).not.toContain("共 1 步");
     expect(controls.querySelector('[aria-label="跳到第 1 步"]')).not.toBeNull();
     expect(controls.querySelector<HTMLButtonElement>('[aria-label="暂停"]')?.disabled).toBe(false);
+    // 首步和后续步骤之间停顿：仍然不满格。
+    await act(async () => { await new Promise(r => setTimeout(r, 50)); });
+    expect(controls.textContent).not.toMatch(/第\s*\d+\s*\/\s*\d+\s*步/);
+    expect(controls.querySelector('[data-pending-step="true"]')).not.toBeNull();
     await act(async () => { send({ type: "result", script }); stream.close(); });
     expect(controls.textContent).toContain("第 1 / 1 步");
+    expect(controls.querySelector('[data-pending-step="true"]')).toBeNull();
+    expect(controls.querySelector('[role="status"]')).toBeNull();
   } finally { await act(async () => root.unmount()); }
 });
