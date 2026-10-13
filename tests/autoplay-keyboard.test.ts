@@ -90,6 +90,26 @@ test("awaitingContinue 时在 document.body 按 Space 或 ArrowRight 推进步�
   expect(usePlayerStore.getState().currentIndex).toBe(2);
 });
 
+test("awaitingContinue 时下一步按钮可见文字为下一步且热区至少 44px，点击推进", async () => {
+  await act(async () => {
+    setStoreState({ awaitingContinue: true });
+  });
+  const button = container.querySelector<HTMLButtonElement>('button[aria-label="下一步"]')!;
+  expect(button.textContent).toBe("下一步");
+  expect(button.classList.contains("min-h-11")).toBe(true);
+  expect(button.classList.contains("min-w-11")).toBe(true);
+  await act(async () => button.click());
+  expect(usePlayerStore.getState().currentIndex).toBe(1);
+  expect(usePlayerStore.getState().awaitingContinue).toBe(false);
+});
+
+test("非 awaitingContinue 时下一步保持图标按钮", async () => {
+  const button = container.querySelector<HTMLButtonElement>('button[aria-label="下一步"]')!;
+  expect(button.textContent).toBe("");
+  expect(button.classList.contains("min-h-11")).toBe(false);
+  expect(button.classList.contains("size-8")).toBe(true);
+});
+
 test("非 awaitingContinue 且 paused 时按 Space 切换为 playing 且不改变 currentIndex", async () => {
   await act(async () => {
     setStoreState({ status: "paused", awaitingContinue: false });

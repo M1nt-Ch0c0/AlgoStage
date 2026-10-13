@@ -112,6 +112,31 @@ test("on last roadmap problem after finish shows 「回路线图」 link and no 
   await expect(roadmapLink).toHaveAttribute("href", "/roadmap");
 });
 
+test.describe("coarse pointer", () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+
+  test("waiting shows 「点「下一步」继续」 and tapping 「下一步」 advances", async ({ page }) => {
+    await mockLecture(page, "group-anagrams");
+    await page.goto("/problem/group-anagrams");
+    await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2x", exact: true }).click();
+    await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
+
+    await expect(page.getByText("第 1 / 3 步")).toBeVisible();
+    await expect(page.getByTestId("continue-hint")).toHaveText("点「下一步」继续");
+
+    const nextButton = page.getByRole("button", { name: "下一步", exact: true });
+    await expect(nextButton).toBeVisible();
+    await expect(nextButton).toHaveText("下一步");
+    const box = await nextButton.boundingBox();
+    expect(box).toBeTruthy();
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+    expect(box!.width).toBeGreaterThanOrEqual(44);
+    await nextButton.tap();
+    await expect(page.getByText("第 2 / 3 步")).toBeVisible();
+    await expect(page.getByRole("button", { name: "跳到第 2 步", exact: true })).toHaveAttribute("aria-current", "step");
+  });
+});
+
 // Full regenerate flow (confirming and streaming new lecture while paused) is tested in e2e/regenerate.spec.ts.
 test("after finish 「重新生成」 in more menu shows confirm button without firing a second lecture POST", async ({ page }) => {
   const getPosts = await mockLecture(page, "group-anagrams");

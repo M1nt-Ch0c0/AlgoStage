@@ -3,7 +3,9 @@
  * 逐字出现（约 24 字/秒 × 语速），内联 code 金色 mono 高亮；
  * 光标是发光粉笔小竖线，句毕轻跳（globals.css caret-hop）。
  * 与播放器同步：字幕打完后，awaitNarration 为 false 立刻下一步；
- * 否则仅 autoAdvance 时 dwellMs 停留后自动推进，关闭时停在本步并提示按空格继续。
+ * 否则仅 autoAdvance 时 dwellMs 停留后自动推进，关闭时停在本步等用户继续。
+ * 等待继续时只显示提示（粗指针「点「下一步」继续」，细指针「按空格继续」）；
+ * 流式中下一步还没到时优先显示「下一步准备中…」。可点的「下一步」在播放控制条。
  * 讲完仍显示最后一句，并提供下一题（末题则回路线图）与重播。点击字幕条可跳过打字直接看全文。
  */
 "use client";
@@ -14,6 +16,7 @@ import { selectScriptSlug, usePlayerStore } from "@/lib/player/store";
 import { nextProblem } from "@/lib/content/roadmap-order";
 import { parseInline, totalChars, InlinePartial, InlineMarkdown } from "./inline-markdown";
 import { usePrefersReducedMotion } from "@/components/effects/fx-context";
+import { useCoarsePointer } from "./use-coarse-pointer";
 
 const BASE_CHARS_PER_SEC = 24;
 
@@ -34,6 +37,7 @@ export default function NarrationBar() {
   const preparingNext =
     awaitingContinue && receiving && receivedCount > 0 && currentIndex === receivedCount - 1;
   const reduced = usePrefersReducedMotion();
+  const coarsePointer = useCoarsePointer();
 
   const segments = useMemo(
     () => parseInline(step?.narration ?? ""),
@@ -71,7 +75,7 @@ export default function NarrationBar() {
     return () => clearInterval(timer);
   }, [done, reduced, status, speed, total, stepKey]);
 
-  // 打完后：不等待则立刻下一步；自动播放才停留后推进，否则停在本步等空格。
+  // 打完后：不等待则立刻下一步；自动播放才停留后推进，否则停在本步等用户继续。
   useEffect(() => {
     if (!done || !step || status !== "playing") return;
     if (step.awaitNarration === false) {
@@ -117,7 +121,7 @@ export default function NarrationBar() {
       )}
       {awaitingContinue && (
         <p data-testid="continue-hint" className="mt-1 text-xs text-beam-gold/80">
-          {preparingNext ? "下一步准备中…" : "按空格继续"}
+          {preparingNext ? "下一步准备中…" : coarsePointer ? "点「下一步」继续" : "按空格继续"}
         </p>
       )}
       {status === "finished" && step && (

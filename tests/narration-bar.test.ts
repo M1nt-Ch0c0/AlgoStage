@@ -85,6 +85,49 @@ test("流式停在最后一步且等待继续时提示下一步准备中", async
   const hint = container.querySelector("[data-testid='continue-hint']");
   expect(hint?.textContent).toBe("下一步准备中…");
   expect(container.textContent).not.toContain("按空格继续");
+  expect(container.querySelector("button")).toBeNull();
+});
+
+function stubPointer(coarse: boolean) {
+  const original = window.matchMedia.bind(window);
+  vi.stubGlobal("matchMedia", (query: string) => {
+    if (query !== "(pointer: coarse)") return original(query);
+    return {
+      matches: coarse,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    };
+  });
+}
+
+test("粗指针等待继续时提示点「下一步」继续，字幕条没有下一步按钮", async () => {
+  stubPointer(true);
+  usePlayerStore.setState({ status: "playing", awaitingContinue: true });
+  await act(async () => root.render(createElement(NarrationBar)));
+  const hint = container.querySelector("[data-testid='continue-hint']");
+  expect(hint?.textContent).toBe("点「下一步」继续");
+  expect(container.querySelector("button")).toBeNull();
+});
+
+test("细指针等待继续时提示按空格继续，字幕条没有下一步按钮", async () => {
+  stubPointer(false);
+  usePlayerStore.setState({ status: "playing", awaitingContinue: true });
+  await act(async () => root.render(createElement(NarrationBar)));
+  const hint = container.querySelector("[data-testid='continue-hint']");
+  expect(hint?.textContent).toBe("按空格继续");
+  expect(container.querySelector("button")).toBeNull();
+});
+
+test("流式准备中优先于粗指针提示，字幕条没有下一步按钮", async () => {
+  stubPointer(true);
+  usePlayerStore.setState({ receiving: true, currentIndex: sentences.length - 1, awaitingContinue: true });
+  await act(async () => root.render(createElement(NarrationBar)));
+  const hint = container.querySelector("[data-testid='continue-hint']");
+  expect(hint?.textContent).toBe("下一步准备中…");
+  expect(container.textContent).not.toContain("点「下一步」继续");
+  expect(container.textContent).not.toContain("按空格继续");
+  expect(container.querySelector("button")).toBeNull();
 });
 
 test("setAutoAdvance(true) 打完并停留 dwellMs 后进入下一步", async () => {

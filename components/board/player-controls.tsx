@@ -2,6 +2,7 @@
  * PlayerControls · 讲解播放器控制条（docs/02 §5.4 底部）
  * 上一步/播放暂停/下一步 · 步骤指示 · 可点击时间线圆点 · 自动播放 · 语速 · 特效强度档位。
  * 键盘可达：←/→ 步进、Space 播放暂停；等待继续时 Space/→ 均下一步（docs/02 §7）。
+ * 等待继续时「下一步」改为图标加文字的按钮，热区至少 44px；平时仍是图标按钮。
  * 输入框、contenteditable、Monaco 编辑器内以及带 Ctrl/Meta/Alt 的按键不拦截。
  */
 "use client";
@@ -90,13 +91,17 @@ export default function PlayerControls({ preparing = false }: { preparing?: bool
         </button>
         <button
           type="button"
-          className={`${btn}${awaitingContinue ? " text-beam-gold ring-1 ring-beam-gold/60 animate-pulse" : ""}`}
+          className={
+            awaitingContinue
+              ? "flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1 rounded-full px-3 text-xs font-semibold text-beam-gold ring-1 ring-beam-gold/60 animate-pulse transition-colors hover:bg-board-700 disabled:pointer-events-none disabled:opacity-30"
+              : btn
+          }
           onClick={next}
           disabled={!hasScript || currentIndex >= steps.length - 1}
           aria-label="下一步"
           data-awaiting={awaitingContinue ? "true" : undefined}
         >
-          <SkipForward size={16} />
+          {awaitingContinue ? <><SkipForward size={16} />下一步</> : <SkipForward size={16} />}
         </button>
       </div>
 
