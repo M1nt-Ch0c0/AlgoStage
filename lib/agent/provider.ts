@@ -29,7 +29,7 @@ export class ByokKeyRequiredError extends Error {
 }
 
 export class ByokConfigurationError extends Error {
-  constructor() { super("Key 与接口地址必须来自同一配置来源，请同时配置 Key、接口地址和服务商，或清空设置页 Key 后使用环境变量。"); }
+  constructor() { super("API Key 与接口地址必须来自同一配置来源，请同时配置 API Key、接口地址和服务商，或清空设置页的 API Key 后使用环境变量。"); }
 }
 type Origin = "settings" | "env";
 type CredentialOrigin = {

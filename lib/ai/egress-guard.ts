@@ -2,9 +2,9 @@ import { lookup } from "node:dns/promises";
 import { isIP, type LookupFunction } from "node:net";
 import { Agent } from "undici";
 
-export const INVALID_AI_BASE_URL = "接口地址只支持公网 http(s) 地址。";
+export const INVALID_AI_BASE_URL = "接口地址只支持公网 http(s) 地址";
 export const MALFORMED_AI_BASE_URL = "接口地址格式不对，要以 http:// 或 https:// 开头";
-export const AI_CONNECTION_ERROR = "无法连接到 AI 服务，请检查接口地址。";
+export const AI_CONNECTION_ERROR = "AI 服务暂时连不上，请稍后再试。";
 
 export class InvalidAIBaseURLError extends Error {
   constructor() {

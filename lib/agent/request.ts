@@ -72,7 +72,7 @@ export function upstreamError(status?: number) {
 }
 
 export function configurationError() {
-  return Response.json({ error: "CONFIGURATION_ERROR", message: "Key 与接口地址配置不一致，请检查设置。环境变量 Key 必须同时配置 AI_BASE_URL；保存 Key 时请同时保存对应接口地址和服务商。" }, { status: 400 });
+  return Response.json({ error: "CONFIGURATION_ERROR", message: "API Key 与接口地址配置不一致，请检查设置。环境变量里的 API Key 必须同时配置 AI_BASE_URL；保存 API Key 时请同时保存对应接口地址和服务商。" }, { status: 400 });
 }
 
 const streamErrorRetryable = {

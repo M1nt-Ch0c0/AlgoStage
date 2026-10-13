@@ -54,7 +54,7 @@ export async function PUT(req: NextRequest) {
   if (!parsed.success) {
     // 不回传 zod 原始错误或输入，避免 Key 出现在响应与日志中。
     if (parsed.error.issues.some(issue => issue.path.at(-1) === "baseURL")) return baseURLInvalid();
-    return badRequest(parsed.error, "设置参数不正确，请检查 Key、模型和偏好设置。");
+    return badRequest(parsed.error, "设置参数不正确，请检查 API Key、模型和偏好设置。");
   }
   const { baseURL } = parsed.data.settings;
   if (baseURL) {

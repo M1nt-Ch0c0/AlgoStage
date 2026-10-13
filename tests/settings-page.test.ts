@@ -128,7 +128,7 @@ test.each([
 ] as const)("%s 拒绝 %s：持久行内提示，有新 Key：%s", async (action, baseURL, newKey) => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   const { root, container, type } = await renderWith({ settings: {}, keySource: "settings" });
-  const message = "接口地址只支持公网 http(s) 地址。";
+  const message = "接口地址只支持公网 http(s) 地址";
   try {
     await type("baseURL", baseURL);
     if (newKey) await type("apiKey", "test-only-credential");
