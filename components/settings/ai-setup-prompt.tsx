@@ -42,7 +42,7 @@ export default function AiSetupPrompt({ problemSlug }: { problemSlug?: string })
         ? "这道题的 AI 讲解需要你自己的 API Key。"
         : "两数之和可以直接看 AI 讲解。其他题需要先在设置页填入你自己的 API Key。"}</p>
       <div className="flex flex-wrap items-center gap-3">
-        <Link href="/settings" className="inline-flex items-center gap-1.5 rounded-full border border-beam-gold/60 bg-transparent px-4 py-2 text-sm font-semibold text-beam-gold transition-colors hover:bg-beam-gold/10">
+        <Link href="/settings" className="inline-flex items-center gap-1.5 rounded-full border border-beam-gold/60 bg-transparent px-4 py-2 text-sm font-semibold text-beam-gold transition-colors hover:bg-beam-gold/10 pointer-coarse:min-h-11">
           <KeyRound size={14} aria-hidden="true" />去设置
         </Link>
         {problemSlug && (
