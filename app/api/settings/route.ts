@@ -33,7 +33,7 @@ export async function GET() {
   // 不回传完整 Key，只回掩码
   if (settings.apiKey?.trim()) {
     const k = settings.apiKey.trim();
-    settings.apiKeyMasked = k.length > 4 ? `••••${k.slice(-4)}` : "••••";
+    settings.apiKeyMasked = k.length > 8 ? `••••${k.slice(-4)}` : "••••";
   }
   delete settings.apiKey;
   if (settings.baseURL) settings.baseURL = savedEndpoint(settings) ?? "";
