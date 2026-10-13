@@ -18,16 +18,24 @@ const networkCodes = new Set([
   "UND_ERR_CONNECT_TIMEOUT",
 ]);
 
-/** 保留 SDK HTTP 状态及流内结构化鉴权标志；不解析 message 或 responseBody。 */
+/** 保留 SDK HTTP 状态及流内结构化鉴权标志；不解析 message；2xx 时只从 responseBody 的 JSON/SSE 结构里找鉴权标志。 */
 export function upstreamStatusCode(error: unknown): number | undefined {
   const visited = new Set<unknown>();
   const pending: unknown[] = [error];
+  let fallback: number | undefined;
   while (pending.length) {
     const current = pending.pop();
     if (!current || typeof current !== "object" || visited.has(current)) continue;
     visited.add(current);
-    if (APICallError.isInstance(current) && current.statusCode !== undefined)
-      return current.statusCode;
+    if (APICallError.isInstance(current)) {
+      const code = current.statusCode;
+      // A 2xx APICallError means the body was unusable (for example an SSE
+      // body or `{error:{...}}` sent to a non-stream request). Look for the
+      // same structured auth markers the streaming path reads from raw chunks.
+      if (code !== undefined && (code < 200 || code >= 300)) return code;
+      pending.push(current.data, ...structuredBodies(current.responseBody));
+      if (code !== undefined) fallback ??= code;
+    }
     // SSE error parts may be plain objects rather than Error instances.
     // Only known auth markers affect classification; arbitrary upstream codes
     // and text never become client error codes or log fields.
@@ -43,9 +51,20 @@ export function upstreamStatusCode(error: unknown): number | undefined {
       if (value === "authentication_error" || value === "invalid_api_key") return 401;
       if (value === "permission_error" || value === "permission_denied" || value === "insufficient_permissions") return 403;
     }
-    pending.push(details.error, details.cause);
+    pending.push(details.error, details.cause, (current as { value?: unknown }).value);
   }
-  return undefined;
+  return fallback;
+}
+
+/** Parse a JSON or SSE body into objects for marker checks only; never logged. */
+function structuredBodies(body: unknown): unknown[] {
+  if (typeof body !== "string" || body.length > 1_000_000) return [];
+  const parse = (text: string) => { try { return [JSON.parse(text)]; } catch { return []; } };
+  const whole = parse(body.trim());
+  if (whole.length) return whole;
+  return body.split(/\r?\n/)
+    .filter(line => line.startsWith("data:"))
+    .flatMap(line => parse(line.slice(5).trim()));
 }
 
 /** 只按明确的传输错误分类；错误正文、URL 和 Key 都不进入日志。 */
