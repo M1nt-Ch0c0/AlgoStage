@@ -141,6 +141,33 @@ test("setAutoAdvance(true) 打完并停留 dwellMs 后进入下一步", async ()
   expect(usePlayerStore.getState().currentIndex).toBe(1);
 });
 
+test("进入结束面板时焦点移到重播，停留期间再渲染不再抢焦点", async () => {
+  const other = document.createElement("button");
+  other.type = "button";
+  other.textContent = "别处";
+  document.body.append(other);
+  await act(async () => root.render(createElement(NarrationBar)));
+  other.focus();
+  expect(document.activeElement).toBe(other);
+
+  await act(async () => usePlayerStore.setState({ status: "finished", currentIndex: 1 }));
+  const replay = () => [...container.querySelectorAll("button")].find((el) => el.textContent === "重播");
+  expect(document.activeElement).toBe(replay());
+
+  other.focus();
+  expect(document.activeElement).toBe(other);
+  await act(async () => usePlayerStore.setState({ speed: 1.5 }));
+  expect(document.activeElement).toBe(other);
+  expect(container.textContent).toContain("讲完了");
+
+  await act(async () => usePlayerStore.setState({ status: "playing", currentIndex: 0 }));
+  expect(container.textContent).not.toContain("讲完了");
+  other.focus();
+  await act(async () => usePlayerStore.setState({ status: "finished", currentIndex: 1 }));
+  expect(document.activeElement).toBe(replay());
+  other.remove();
+});
+
 test("finished 显示讲完了，two-sum 下一题指向 group-anagrams，并有重播和回路线图", async () => {
   usePlayerStore.setState({ status: "finished", currentIndex: 1 });
   await act(async () => root.render(createElement(NarrationBar)));

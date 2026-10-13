@@ -7,6 +7,7 @@
  * 等待继续时细指针在这里提示「按空格继续」；粗指针的「点「下一步」继续」在播放控制条。
  * 流式中下一步还没到时优先显示「下一步准备中…」。可点的「下一步」在播放控制条。
  * 讲完仍显示最后一句，并提供下一题（末题则回路线图）与重播。点击字幕条可跳过打字直接看全文。
+ * 结束面板刚出现时把焦点移到「重播」，停留期间不再抢焦点。
  */
 "use client";
 
@@ -40,6 +41,12 @@ export default function NarrationBar({ lectureBusy = false }: { lectureBusy?: bo
   const reduced = usePrefersReducedMotion();
   const coarsePointer = useCoarsePointer();
   const panelShowing = endPanelShowing({ status, steps, currentIndex, lectureBusy });
+  const replayRef = useRef<HTMLButtonElement>(null);
+  const panelWasShowing = useRef(false);
+  useEffect(() => {
+    if (panelShowing && !panelWasShowing.current) replayRef.current?.focus();
+    panelWasShowing.current = panelShowing;
+  }, [panelShowing]);
 
   const segments = useMemo(
     () => parseInline(step?.narration ?? ""),
@@ -148,6 +155,7 @@ export default function NarrationBar({ lectureBusy = false }: { lectureBusy?: bo
           )}
           <button
             type="button"
+            ref={replayRef}
             className="inline-flex min-w-11 items-center justify-center rounded-full border border-board-600 px-3 py-1 text-sm text-chalk-300 hover:text-chalk-100 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
             onClick={(event) => {
               event.stopPropagation();

@@ -344,6 +344,35 @@ function touchHitTests(viewport: { width: number; height: number }) {
   });
 }
 
+async function finishAndExpectReplayFocused(page: Page) {
+  await mockLecture(page, "group-anagrams");
+  await page.goto("/problem/group-anagrams");
+  await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2x", exact: true }).click();
+  await page.getByRole("button", { name: "自动播放", exact: true }).click();
+  await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
+  await expect(page.getByText("讲完了")).toBeVisible();
+  await expect(page.getByRole("button", { name: "重播", exact: true })).toBeFocused();
+}
+
+test("desktop 1280 moves focus to 「重播」 when the finished panel appears", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await finishAndExpectReplayFocused(page);
+});
+
+test.describe("coarse pointer focus 390", () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+  test("moves focus to 「重播」 when the finished panel appears", async ({ page }) => {
+    await finishAndExpectReplayFocused(page);
+  });
+});
+
+test.describe("coarse pointer focus 1024", () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 1024, height: 768 } });
+  test("moves focus to 「重播」 when the finished panel appears", async ({ page }) => {
+    await finishAndExpectReplayFocused(page);
+  });
+});
+
 test.describe("coarse pointer hit areas 390", () => {
   test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
   touchHitTests({ width: 390, height: 844 });
