@@ -204,8 +204,7 @@ export default function PlayerControls({
                 第 {Math.min(currentIndex + 1, steps.length)} / {steps.length} 步
               </span>
             )}
-            <div className="flex min-w-0 flex-1 items-center">
-            {/* 时间线圆点：等宽均分，只放步骤；未完成占位段在外面，不参与均分。 */}
+            {/* 时间线轨道：圆点 flex-1 等宽均分；占位段 w-8 shrink-0 贴在同一轨道末尾，不参与均分。 */}
             <div className="flex min-w-0 flex-1 items-center">
               {steps.map((s, i) => (
                 <button
@@ -228,8 +227,7 @@ export default function PlayerControls({
                   />
                 </button>
               ))}
-            </div>
-            {(generating || interrupted) && <PendingSegment broken={interrupted} />}
+              {(generating || interrupted) && <PendingSegment broken={interrupted} />}
             </div>
           </>
         ) : (
