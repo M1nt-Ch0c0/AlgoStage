@@ -105,6 +105,7 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
     window.localStorage.clear();
     resetServerKeyDisabledCache();
     usePlayerStore.getState().reset();
+    vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     document.body.innerHTML = "";
@@ -896,6 +897,9 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
 
     expect(getSaveBtn().textContent).toBe(ENDPOINT_SAVED_NEED_KEY_MESSAGE);
     expect(settingsContainer.textContent).toContain(ENDPOINT_SAVED_NEED_KEY_MESSAGE);
+    const existingStatusEl = getSaveBtn().querySelector('[role="status"]');
+    expect(existingStatusEl).not.toBeNull();
+    expect(existingStatusEl!.getAttribute("aria-live")).toBe("polite");
     expect(readLocalBaseUrl()).toBe("https://api.deepseek.com/v1");
     expect(readLocalByok()).toBeNull();
     expect(settingsContainer.textContent).toContain(
@@ -943,6 +947,87 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
       baseURL: "https://proxy.example.com/v1",
     });
     expect(readLocalBaseUrl()).toBe("https://proxy.example.com/v1");
+  });
+
+  test("serverKeyDisabled mode: with fake timers, save with only 接口地址 -> message visible with role=status and aria-live polite, persists after 2500ms, hides on typing API Key, then save with both shows 已保存 and hides after 2500ms", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+        Response.json({ settings: {}, keySource: "none", serverKeyDisabled: true }),
+      );
+
+      await act(async () => {
+        settingsRoot.render(createElement(SettingsPage));
+      });
+
+      const baseInput = settingsContainer.querySelector<HTMLInputElement>("#baseURL")!;
+      const keyInput = settingsContainer.querySelector<HTMLInputElement>("#apiKey")!;
+      const getSaveBtn = () =>
+        Array.from(settingsContainer.querySelectorAll("button")).find(
+          (b) =>
+            b.textContent?.includes("保存设置") ||
+            b.textContent?.includes("已保存") ||
+            b.textContent?.includes(ENDPOINT_SAVED_NEED_KEY_MESSAGE),
+        )!;
+
+      // save with only 接口地址 -> message visible, has role="status" ancestor/element with aria-live polite
+      await act(async () => {
+        setInputValue(baseInput, "https://api.deepseek.com/v1");
+      });
+      await act(async () => {
+        getSaveBtn().click();
+      });
+
+      expect(settingsContainer.textContent).toContain(ENDPOINT_SAVED_NEED_KEY_MESSAGE);
+      expect(getSaveBtn().textContent).toBe(ENDPOINT_SAVED_NEED_KEY_MESSAGE);
+
+      const statusEl = getSaveBtn().querySelector('[role="status"]');
+      expect(statusEl).not.toBeNull();
+      expect(statusEl!.textContent).toBe(ENDPOINT_SAVED_NEED_KEY_MESSAGE);
+      expect(statusEl!.getAttribute("aria-live")).toBe("polite");
+
+      const messageLeaf = Array.from(settingsContainer.querySelectorAll("*")).find(
+        (el) =>
+          el.children.length === 0 &&
+          el.textContent?.trim() === ENDPOINT_SAVED_NEED_KEY_MESSAGE,
+      );
+      expect(messageLeaf).toBeDefined();
+      const statusAncestor = messageLeaf!.closest('[role="status"]');
+      expect(statusAncestor).not.toBeNull();
+      expect(statusAncestor!.getAttribute("aria-live")).toBe("polite");
+
+      // advance 2500ms -> still visible
+      await act(async () => {
+        vi.advanceTimersByTime(2500);
+      });
+      expect(settingsContainer.textContent).toContain(ENDPOINT_SAVED_NEED_KEY_MESSAGE);
+      expect(getSaveBtn().textContent).toBe(ENDPOINT_SAVED_NEED_KEY_MESSAGE);
+
+      // type in API Key -> message gone
+      await act(async () => {
+        setInputValue(keyInput, "sk-fake-key-for-timer-test");
+      });
+      expect(settingsContainer.textContent).not.toContain(
+        ENDPOINT_SAVED_NEED_KEY_MESSAGE,
+      );
+      expect(getSaveBtn().textContent).toBe("保存设置");
+      expect(getSaveBtn().querySelector('[role="status"]')).toBeNull();
+
+      // then save with both -> 「已保存」 shown and gone after 2500ms
+      await act(async () => {
+        getSaveBtn().click();
+      });
+      expect(getSaveBtn().textContent).toBe("已保存");
+      expect(settingsContainer.textContent).toContain("已保存");
+
+      await act(async () => {
+        vi.advanceTimersByTime(2500);
+      });
+      expect(getSaveBtn().textContent).toBe("保存设置");
+      expect(getSaveBtn().textContent).not.toContain("已保存");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test.each([

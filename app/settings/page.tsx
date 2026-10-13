@@ -96,7 +96,13 @@ export default function SettingsPage() {
   function edit(field: string, value: string, setter: (value: string) => void) {
     edits.current[field] = value;
     setter(value);
-    setSaveState("idle");
+    if (saveState === "saved-need-key") {
+      if (field === "apiKey") {
+        setSaveState("idle");
+      }
+    } else {
+      setSaveState("idle");
+    }
     setSaveError("");
     if (field === "baseURL") {
       setBaseURLError("");
@@ -221,8 +227,10 @@ export default function SettingsPage() {
         edits.current = {};
         setSaveState("saved-need-key");
         focusAndScroll("apiKey", true);
-        if (saveTimer.current) clearTimeout(saveTimer.current);
-        saveTimer.current = setTimeout(() => setSaveState("idle"), 2000);
+        if (saveTimer.current) {
+          clearTimeout(saveTimer.current);
+          saveTimer.current = null;
+        }
         return;
       }
       writeLocalBaseUrl("");
@@ -524,7 +532,11 @@ export default function SettingsPage() {
                 : saveState === "saved"
                   ? "已保存"
                   : saveState === "saved-need-key"
-                    ? ENDPOINT_SAVED_NEED_KEY_MESSAGE
+                    ? (
+                      <span role="status" aria-live="polite">
+                        {ENDPOINT_SAVED_NEED_KEY_MESSAGE}
+                      </span>
+                    )
                     : "保存设置"}
             </button>
             <button
