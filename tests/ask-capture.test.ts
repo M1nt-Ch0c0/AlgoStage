@@ -591,6 +591,105 @@ describe("lib/ask/capture", () => {
       });
     });
 
+    it("aborts when domToCanvas resolves after timeout fired without creating or drawing canvas", async () => {
+      vi.useFakeTimers();
+
+      let resolveDeferredCanvas!: (canvas: unknown) => void;
+      const deferredCanvas = new Promise((resolve) => {
+        resolveDeferredCanvas = resolve;
+      });
+      domToCanvasMock.mockImplementation(() => deferredCanvas);
+
+      const toDataURLSpy = vi.fn(() => "data:image/webp;base64,AAAA");
+      const createElementSpy = vi.spyOn(document, "createElement").mockImplementation((tagName: string) => {
+        if (tagName.toLowerCase() === "canvas") {
+          const fakeCanvas = {
+            width: 0,
+            height: 0,
+            getContext: vi.fn((type: string) => {
+              if (type === "2d") return contextMock;
+              return null;
+            }),
+            toDataURL: toDataURLSpy,
+          };
+          createdCanvases.push(fakeCanvas);
+          return fakeCanvas as unknown as HTMLCanvasElement;
+        }
+        return originalCreateElement(tagName);
+      });
+      const getBoundingClientRectSpy = vi.spyOn(container, "getBoundingClientRect");
+
+      const promise = captureStage(container, baseSel, { timeoutMs: 1000 });
+      await vi.advanceTimersByTimeAsync(1001);
+      const res = await promise;
+
+      expect(res).toEqual({
+        ok: false,
+        reason: "TIMEOUT",
+        fallbackText: "Code target",
+      });
+
+      drawImageMock.mockClear();
+      createElementSpy.mockClear();
+      getBoundingClientRectSpy.mockClear();
+      toDataURLSpy.mockClear();
+      createdCanvases = [];
+
+      // Resolve deferred canvas after timeout has already resolved
+      resolveDeferredCanvas(sourceCanvas);
+
+      // Flush microtasks
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(getBoundingClientRectSpy).not.toHaveBeenCalled();
+      const canvasCalls = createElementSpy.mock.calls.filter(
+        ([tag]) => typeof tag === "string" && tag.toLowerCase() === "canvas",
+      );
+      expect(canvasCalls).toHaveLength(0);
+      expect(drawImageMock).not.toHaveBeenCalled();
+      expect(toDataURLSpy).not.toHaveBeenCalled();
+      expect(createdCanvases).toHaveLength(0);
+    });
+
+    it("aborts when dynamic import resolves after timeout fired without calling domToCanvas", async () => {
+      vi.useFakeTimers();
+      vi.resetModules();
+
+      let resolveDeferredImport!: (mod: unknown) => void;
+      const deferredImport = new Promise((resolve) => {
+        resolveDeferredImport = resolve;
+      });
+
+      vi.doMock("modern-screenshot", () => deferredImport);
+
+      const localDomToCanvas = vi.fn();
+      const { captureStage: dynamicCapture } = await import("@/lib/ask/capture");
+
+      const promise = dynamicCapture(container, baseSel, { timeoutMs: 1000 });
+      await vi.advanceTimersByTimeAsync(1001);
+      const res = await promise;
+
+      expect(res).toEqual({
+        ok: false,
+        reason: "TIMEOUT",
+        fallbackText: "Code target",
+      });
+
+      // Resolve the import after timeout
+      resolveDeferredImport({ domToCanvas: localDomToCanvas });
+
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(localDomToCanvas).not.toHaveBeenCalled();
+
+      vi.resetModules();
+      vi.doMock("modern-screenshot", () => ({
+        domToCanvas: domToCanvasMock,
+      }));
+    });
+
     it("honors custom timeoutMs option", async () => {
       vi.useFakeTimers();
       domToCanvasMock.mockImplementation(() => new Promise(() => {}));

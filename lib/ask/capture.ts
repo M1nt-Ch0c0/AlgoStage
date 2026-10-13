@@ -107,8 +107,11 @@ export async function captureStage(
     const timeoutMs = opts?.timeoutMs ?? CAPTURE_DEFAULTS.timeoutMs;
     const maxBytes = opts?.maxBytes ?? CAPTURE_DEFAULTS.maxBytes;
 
+    let timedOut = false;
+
     const timeoutPromise = new Promise<CaptureResult>((resolve) => {
       timer = setTimeout(() => {
+        timedOut = true;
         resolve({ ok: false, reason: "TIMEOUT", fallbackText });
       }, timeoutMs);
     });
@@ -120,10 +123,16 @@ export async function captureStage(
       } catch {
         return { ok: false, reason: "IMPORT_FAILED", fallbackText };
       }
+      if (timedOut) {
+        return { ok: false, reason: "TIMEOUT", fallbackText };
+      }
 
       let canvas: HTMLCanvasElement;
       try {
         const rendered = await mod.domToCanvas(container);
+        if (timedOut) {
+          return { ok: false, reason: "TIMEOUT", fallbackText };
+        }
         if (!rendered || typeof rendered.getContext !== "function") {
           return { ok: false, reason: "RENDER_FAILED", fallbackText };
         }
