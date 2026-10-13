@@ -572,10 +572,12 @@ test.describe("coarse pointer hit areas 390", () => {
 
     const indicator = page.getByText(/第 \d+ \/ 12 步/);
     for (let i = 0; i < count; i++) {
-      // 离开第 1 步后「点「下一步」继续」收起，时间线会回到按钮那一行，每次点前重新读色条中心。
-      const { bar } = await readSettledDot(dots.nth(i));
-      await page.touchscreen.tap(bar.x + bar.width / 2, bar.y + bar.height / 2);
-      await expect(indicator).toHaveText(`第 ${i + 1} / ${count} 步`);
+      // 离开第 1 步后「点「下一步」继续」收起，时间线会回到按钮那一行。点偏了就重读色条中心再试。
+      await expect(async () => {
+        const { bar } = await readSettledDot(dots.nth(i));
+        await page.touchscreen.tap(bar.x + bar.width / 2, bar.y + bar.height / 2);
+        await expect(indicator).toHaveText(`第 ${i + 1} / ${count} 步`, { timeout: 1_000 });
+      }).toPass({ timeout: 10_000 });
     }
 
     const prev = await expectTouchHitArea(page, "上一步");
