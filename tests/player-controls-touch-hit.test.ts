@@ -50,7 +50,13 @@ test("粗指针下自动播放、语速和特效强度热区至少 44px，视觉
 
   for (const button of [autoplay!, ...speed, ...levels]) {
     expect(button.className).toContain("pointer-coarse:after:h-11");
+    expect(button.className).toContain("pointer-coarse:min-w-11");
     expect(button.className).toContain("relative");
     expect(button.className).toContain("py-0.5");
   }
+
+  const bar = container.querySelector('[data-testid="player-controls"]');
+  expect(bar).toBeTruthy();
+  expect(bar!.className).toContain("gap-y-2");
+  expect(bar!.className).toContain("pointer-coarse:gap-y-6");
 });

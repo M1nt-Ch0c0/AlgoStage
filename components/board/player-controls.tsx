@@ -5,7 +5,7 @@
  * 结束面板出现后 Space 与 → 不再操作播放器。
  * 等待继续时「下一步」改为图标加文字的按钮，热区至少 44px；平时仍是图标按钮。
  * 粗指针下上一步、播放暂停、下一步（含非等待态）热区至少 44×44；时间线圆点视觉仍是 20px 居中细条，点按高度至少 44px，宽度均分整条且相邻热区边对边贴合、不重叠。细指针尺寸不变。
- * 自动播放、语速与特效强度仍用 pill 的 py-0.5 视觉；粗指针用透明 after 把点按高度扩到至少 44px。
+ * 自动播放、语速与特效强度仍用 pill 的 py-0.5 视觉；粗指针用透明 after 把点按高度扩到至少 44px，pill 宽至少 44px 且文字居中，换行 gap-y 加大以免相邻行热区重叠。
  * 粗指针且下一步已就绪时，把「点「下一步」继续」放在这条控制条里（窄屏单独成行，吸底仍可见）。
  * 输入框、contenteditable、Monaco 编辑器内以及带 Ctrl/Meta/Alt 的按键不拦截。
  * 焦点在 button 或链接上时只把 Space 留给控件本身（重播、语速）；←/→ 仍步进。
@@ -138,14 +138,14 @@ export default function PlayerControls({
   const btn =
     "flex size-8 shrink-0 items-center whitespace-nowrap justify-center rounded-full text-chalk-300 transition-colors hover:bg-board-700 hover:text-chalk-100 disabled:pointer-events-none disabled:opacity-30 pointer-coarse:size-11";
   const pill = (on: boolean) =>
-    `shrink-0 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs transition-colors relative pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:top-1/2 pointer-coarse:after:h-11 pointer-coarse:after:-translate-y-1/2 pointer-coarse:after:content-[""] ${
+    `shrink-0 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs transition-colors relative pointer-coarse:inline-flex pointer-coarse:min-w-11 pointer-coarse:items-center pointer-coarse:justify-center pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:top-1/2 pointer-coarse:after:h-11 pointer-coarse:after:-translate-y-1/2 pointer-coarse:after:content-[""] ${
       on ? "bg-board-700 text-beam-gold" : "text-chalk-500 hover:text-chalk-300"
     }`;
 
   return (
     <div
       data-testid="player-controls"
-      className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-board-700/70 bg-board-900/90 px-3 py-2 backdrop-blur-md"
+      className="flex flex-wrap items-center gap-x-4 gap-y-2 pointer-coarse:gap-y-6 rounded-2xl border border-board-700/70 bg-board-900/90 px-3 py-2 backdrop-blur-md"
     >
       {/* 步进控制 */}
       <div className="flex items-center gap-1">
