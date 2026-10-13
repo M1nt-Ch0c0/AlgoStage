@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const root = path.resolve(__dirname, "..");
 const read = (f: string) => readFileSync(path.join(root, f), "utf8");
+const version = JSON.parse(read("package.json")).version;
 
 describe("D3 Demo 部署与构建开关拆除", () => {
   it("Dockerfile 无 DEMO / ALGOSTAGE_DEMO / ARG DEMO 及体验版注释", () => {
@@ -15,10 +16,10 @@ describe("D3 Demo 部署与构建开关拆除", () => {
     expect(dockerfile).toContain("docker build --build-arg BASE_PATH=/a1 -t algostage .");
   });
 
-  it("deploy/compose.yaml 切换为自托管 algostage:0.2.0-alpha.1 且无 DEMO 构建参数", () => {
+  it("deploy/compose.yaml 切换为自托管 algostage 且无 DEMO 构建参数", () => {
     const compose = read("deploy/compose.yaml");
     expect(compose).toContain("name: algostage");
-    expect(compose).toContain("image: algostage:0.2.0-alpha.1");
+    expect(compose).toContain(":-" + version + "}");
     expect(compose).toContain("container_name: algostage");
     expect(compose).toContain("name: algostage-data");
     expect(compose).not.toContain("DEMO:");
@@ -32,7 +33,7 @@ describe("D3 Demo 部署与构建开关拆除", () => {
       expect(content).not.toContain("ALGOSTAGE_DEMO");
     }
     const deployReadme = read("deploy/README.md");
-    expect(deployReadme).toContain("algostage:0.2.0-alpha.1");
+    expect(deployReadme).toContain("algostage:" + version);
     expect(deployReadme).toContain("algostage-data");
   });
 

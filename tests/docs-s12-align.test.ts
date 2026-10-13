@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const root = path.resolve(__dirname, "..");
 const read = (f: string) => readFileSync(path.join(root, f), "utf8");
+const version = JSON.parse(read("package.json")).version;
 
 describe("S12 文档对齐", () => {
   it("README.md 包含验证命令、判题、Docker 与升级说明，且主验证命令不含 npx tsc --noEmit", () => {
@@ -14,6 +15,7 @@ describe("S12 文档对齐", () => {
     expect(readme).toContain("从旧版本升级");
     expect(readme).toContain("判题");
     expect(readme).toContain("Docker 自托管");
+    expect(readme).toContain("algostage:" + version);
     expect(readme).toContain("子路径 + nginx");
     expect(readme).toContain("提示超时");
 
@@ -31,9 +33,9 @@ describe("S12 文档对齐", () => {
     expect(envExample).toContain("HINT_TIMEOUT_MS");
   });
 
-  it("CHANGELOG.md 记录 0.2.0-alpha.1、Demo 移除与 db:push 升级须知", () => {
+  it("CHANGELOG.md 记录当前版本、Demo 移除与 db:push 升级须知", () => {
     const changelog = read("CHANGELOG.md");
-    expect(changelog).toContain("0.2.0-alpha.1");
+    expect(changelog).toContain(version);
     expect(changelog).toMatch(/Demo|NEXT_PUBLIC_ALGOSTAGE_DEMO/);
     expect(changelog).toContain("db:push");
   });

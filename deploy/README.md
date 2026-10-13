@@ -3,7 +3,7 @@
 - 地址（自托管实例 URL，沿用现网 DNS）：<https://demo.m1ntch0c0.com/algostage>
 - 服务器：`root@cpa-direct.m1ntch0c0.com`
 - 源码目录：`/opt/algostage`（现网旧路径待 D5 迁移）
-- 镜像：`algostage:0.2.0-alpha.1`（无 Demo 模式）
+- 镜像：`algostage:0.2.0-alpha.2`（无 Demo 模式）
 - 容器：`algostage`，仅绑定 `127.0.0.1:3100`
 - 数据卷：`algostage-data`，SQLite 位于 `/data/algostage.db`
 - DNS：`demo.m1ntch0c0.com` 的 A 记录指向 `43.255.156.149`，DNS only
@@ -12,15 +12,15 @@
 
 ## 构建与启动
 
-在服务器源码目录执行：
+在服务器源码目录执行（`<版本>` 取 `package.json` 的 `version`，例如 `0.2.0-alpha.2`；`compose.yaml` 中 `ALGOSTAGE_IMAGE_TAG` 默认也是该版本）：
 
 ```sh
-docker compose -f deploy/compose.yaml build
-docker compose -f deploy/compose.yaml up -d --wait
-docker compose -f deploy/compose.yaml ps
+docker buildx build --allow network.host --network host --build-arg BASE_PATH=/algostage -t algostage:<版本> --load .
+ALGOSTAGE_IMAGE_TAG=<版本> docker compose -f deploy/compose.yaml up -d --no-build --wait
+ALGOSTAGE_IMAGE_TAG=<版本> docker compose -f deploy/compose.yaml ps
 ```
 
-此服务器 Docker 默认桥接网络不能访问外网，构建使用 `network: host`。运行容器仍使用隔离网络和回环端口，数据卷在重建时保留。修改实例子路径需重新构建，并同步修改 nginx 路径和健康检查。
+此服务器 Docker 默认桥接网络不能访问外网，因此使用 `docker buildx build` 并开启 `host` 网络构建（`--allow network.host --network host`）。运行容器仍使用隔离网络和回环端口，数据卷在重建时保留。修改实例子路径需重新构建，并同步修改 nginx 路径和健康检查。
 
 `JUDGE_MAX_CONCURRENCY` 限制的是**单个进程**内同时进行的服务端判题数（默认 4，最大 64）；多实例部署时各进程各自计数。
 
@@ -65,7 +65,7 @@ docker compose -f deploy/compose.yaml logs --tail=100 web
 docker compose -f deploy/compose.yaml stop
 ```
 
-更新前可记录旧镜像 ID：`docker inspect algostage --format '{{.Image}}'`。需要回滚时把该镜像标记回 `algostage:0.2.0-alpha.1`，再执行 `up -d --force-recreate --wait`。停止或回滚容器不会删除学习数据；不要运行带 `-v` 的 `down` 命令。
+更新前可记录旧镜像 ID：`docker inspect algostage --format '{{.Image}}'`。需要回滚时把该镜像标记回 `algostage:<版本>`，再执行 `ALGOSTAGE_IMAGE_TAG=<版本> docker compose -f deploy/compose.yaml up -d --no-build --force-recreate --wait`。停止或回滚容器不会删除学习数据；不要运行带 `-v` 的 `down` 命令。
 
 ## 环境变量（自托管）
 
