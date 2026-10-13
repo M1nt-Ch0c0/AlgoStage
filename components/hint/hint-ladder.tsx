@@ -8,6 +8,7 @@ import {
   isBaseUrlNotAllowed,
   mapByokErrorMessage,
   NO_BYOK_MESSAGE,
+  ServerKeyStatusError,
   UPSTREAM_ERROR_MESSAGE,
   withByok,
 } from "@/lib/byok/client";
@@ -146,6 +147,9 @@ export default function HintLadder({
       } catch (e) {
         if (ac.signal.aborted || isAbortError(e)) {
           // cancelled: no scary error
+        } else if (e instanceof ServerKeyStatusError) {
+          setHintError(UPSTREAM_ERROR_MESSAGE);
+          setRetryLevel(level);
         } else {
           setHintError(e instanceof Error ? e.message : SLOW_MSG);
           setRetryLevel(level);

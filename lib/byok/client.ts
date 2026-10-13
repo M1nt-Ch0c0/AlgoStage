@@ -8,6 +8,15 @@ export type SettingsResponse = {
   serverKeyDisabled?: boolean;
 };
 
+export const UPSTREAM_ERROR_MESSAGE = "AI 服务暂时连不上，请稍后再试。";
+
+export class ServerKeyStatusError extends Error {
+  constructor(message = UPSTREAM_ERROR_MESSAGE) {
+    super(message);
+    this.name = "ServerKeyStatusError";
+  }
+}
+
 let cachedFetchFn: typeof fetch | null = null;
 let cachedValue: boolean | null = null;
 let inFlightPromise: Promise<boolean> | null = null;
@@ -26,6 +35,15 @@ function createAbortError(signal: AbortSignal): unknown {
   const err = new Error("The operation was aborted.");
   err.name = "AbortError";
   return err;
+}
+
+function isAbortError(err: unknown): boolean {
+  return (
+    (typeof DOMException !== "undefined" &&
+      err instanceof DOMException &&
+      err.name === "AbortError") ||
+    (err instanceof Error && err.name === "AbortError")
+  );
 }
 
 export async function fetchServerKeyDisabled(
@@ -47,35 +65,67 @@ export async function fetchServerKeyDisabled(
   }
 
   if (!inFlightPromise) {
-    const p = currentFetch(apiPath("/api/settings"), {
-      cache: "no-store",
-      signal,
-    })
-      .then(async (res) => {
-        if (!res || !res.ok) return false;
-        const data = (await res.json().catch(() => null)) as SettingsResponse | null;
-        const disabled = data?.serverKeyDisabled === true;
+    const attemptOnce = async (): Promise<boolean> => {
+      const res = await currentFetch(apiPath("/api/settings"), {
+        cache: "no-store",
+        signal,
+      });
+      if (!res || !res.ok) {
+        throw new ServerKeyStatusError();
+      }
+      let data: SettingsResponse | null;
+      try {
+        data = (await res.json()) as SettingsResponse | null;
+      } catch (err) {
+        if (signal?.aborted || isAbortError(err)) {
+          throw err;
+        }
+        throw new ServerKeyStatusError();
+      }
+      if (!data || typeof data !== "object") {
+        throw new ServerKeyStatusError();
+      }
+      return data.serverKeyDisabled === true;
+    };
+
+    const p = (async () => {
+      try {
+        const disabled = await attemptOnce();
         if (cachedFetchFn === currentFetch) {
           cachedValue = disabled;
         }
         return disabled;
-      })
-      .catch((err) => {
-        if (
-          (typeof DOMException !== "undefined" &&
-            err instanceof DOMException &&
-            err.name === "AbortError") ||
-          (err instanceof Error && err.name === "AbortError")
-        ) {
+      } catch (err) {
+        if (signal?.aborted) {
+          throw createAbortError(signal);
+        }
+        if (isAbortError(err)) {
           throw err;
         }
-        return false;
-      })
-      .finally(() => {
-        if (inFlightPromise === p) {
-          inFlightPromise = null;
+        try {
+          const disabled = await attemptOnce();
+          if (cachedFetchFn === currentFetch) {
+            cachedValue = disabled;
+          }
+          return disabled;
+        } catch (retryErr) {
+          if (signal?.aborted) {
+            throw createAbortError(signal);
+          }
+          if (isAbortError(retryErr)) {
+            throw retryErr;
+          }
+          throw retryErr instanceof ServerKeyStatusError
+            ? retryErr
+            : new ServerKeyStatusError();
         }
-      });
+      }
+    })().finally(() => {
+      if (inFlightPromise === p) {
+        inFlightPromise = null;
+      }
+    });
+    p.catch(() => {});
     inFlightPromise = p;
   }
 
@@ -126,7 +176,6 @@ export const BASE_URL_INVALID_LECTURE_MESSAGE = "接口地址格式不对，要�
 export const BASE_URL_NOT_ALLOWED_MESSAGE = "接口地址只支持公网 http(s) 地址";
 export const BASE_URL_NOT_ALLOWED_SETTINGS_MESSAGE = "接口地址只支持公网 http(s) 地址";
 export const BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE = "接口地址只支持公网 http(s) 地址，去设置页改一下就能开讲。";
-export const UPSTREAM_ERROR_MESSAGE = "AI 服务暂时连不上，请稍后再试。";
 
 const BYOK_ERROR_MAP: Record<string, string> = {
   BYOK_KEY_REQUIRED: "用自定义地址时需要同时填你自己的 Key",

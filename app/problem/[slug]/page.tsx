@@ -15,6 +15,7 @@ import {
   fetchServerKeyDisabled,
   mapByokErrorMessage,
   NO_BYOK_MESSAGE,
+  ServerKeyStatusError,
   UPSTREAM_ERROR_MESSAGE,
   withByok,
 } from "@/lib/byok/client";
@@ -270,7 +271,10 @@ export default function ProblemPage() {
     } catch (e) {
       if (lectureAbort.current === abort) {
         const rawMessage = e instanceof Error ? e.message : "";
-        const mappedMessage = mapByokErrorMessage({ message: rawMessage });
+        const mappedMessage =
+          e instanceof ServerKeyStatusError
+            ? UPSTREAM_ERROR_MESSAGE
+            : mapByokErrorMessage({ message: rawMessage });
         const message = timedOut
           ? "备课超时，请点击重试或换用推荐模型 gpt-6.1-sol。"
           : !abort.signal.aborted

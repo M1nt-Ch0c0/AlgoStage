@@ -8,7 +8,10 @@ import {
   BASE_URL_NOT_ALLOWED_MESSAGE,
   fetchServerKeyDisabled,
   mapByokErrorMessage,
+  NO_BYOK_MESSAGE,
   resetServerKeyDisabledCache,
+  ServerKeyStatusError,
+  UPSTREAM_ERROR_MESSAGE,
   withByok,
 } from "../lib/byok/client";
 import { writeLocalByok } from "../lib/byok/storage";
@@ -108,6 +111,70 @@ describe("lib/byok/client pure helpers & fetchServerKeyDisabled", () => {
     const ac = new AbortController();
     ac.abort();
     await expect(fetchServerKeyDisabled(ac.signal)).rejects.toThrow();
+  });
+
+  test("fetchServerKeyDisabled retries once on failure and succeeds on second attempt (fetch called twice)", async () => {
+    let settingsCalls = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      if (String(input).endsWith("/api/settings")) {
+        settingsCalls++;
+        if (settingsCalls === 1) {
+          throw new Error("network down");
+        }
+        return Response.json({ serverKeyDisabled: true });
+      }
+      return Response.json({});
+    });
+
+    expect(await fetchServerKeyDisabled()).toBe(true);
+    expect(settingsCalls).toBe(2);
+    // Subsequent call uses cached value
+    expect(await fetchServerKeyDisabled()).toBe(true);
+    expect(settingsCalls).toBe(2);
+  });
+
+  test("fetchServerKeyDisabled throws ServerKeyStatusError after two failures and does not cache failure", async () => {
+    let settingsCalls = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      if (String(input).endsWith("/api/settings")) {
+        settingsCalls++;
+        if (settingsCalls === 1) {
+          return new Response("Internal Server Error", { status: 500 });
+        }
+        if (settingsCalls === 2) {
+          return new Response("not-json", { status: 200 });
+        }
+        return Response.json({ serverKeyDisabled: true });
+      }
+      return Response.json({});
+    });
+
+    await expect(fetchServerKeyDisabled()).rejects.toBeInstanceOf(
+      ServerKeyStatusError,
+    );
+    expect(settingsCalls).toBe(2);
+
+    // Third call refetches and succeeds
+    expect(await fetchServerKeyDisabled()).toBe(true);
+    expect(settingsCalls).toBe(3);
+  });
+
+  test("fetchServerKeyDisabled does not retry on AbortError", async () => {
+    let settingsCalls = 0;
+    const ac = new AbortController();
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      if (String(input).endsWith("/api/settings")) {
+        settingsCalls++;
+        ac.abort();
+        const err = new Error("The operation was aborted.");
+        err.name = "AbortError";
+        throw err;
+      }
+      return Response.json({});
+    });
+
+    await expect(fetchServerKeyDisabled(ac.signal)).rejects.toThrow();
+    expect(settingsCalls).toBe(1);
   });
 
   test("mapByokErrorMessage maps error codes to Chinese copy and never returns raw error codes", () => {
@@ -420,4 +487,91 @@ describe("Error code mapping in HintLadder and ProblemPage", () => {
       }
     },
   );
+
+  test("when /api/settings fails twice, HintLadder and ProblemPage show UPSTREAM_ERROR_MESSAGE with only 重试 (no 去设置, not NO_BYOK)", async () => {
+    writeLocalByok({
+      apiKey: "sk-local-byok-key-12345",
+      model: "gpt-4o",
+    });
+
+    const detail = await localSeedSource.detail("3sum");
+    let settingsCalls = 0;
+    let lectureCalled = false;
+    let hintCalled = false;
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/api/settings")) {
+        settingsCalls++;
+        return new Response("upstream gateway down", { status: 503 });
+      }
+      if (url.endsWith("/api/problems/3sum")) {
+        return Response.json({ problem: detail });
+      }
+      if (url.endsWith("/api/lecture")) {
+        lectureCalled = true;
+        return Response.json({ error: "NO_BYOK" }, { status: 400 });
+      }
+      if (url.endsWith("/api/hint")) {
+        hintCalled = true;
+        return Response.json({ error: "NO_BYOK" }, { status: 400 });
+      }
+      return Response.json({ ok: true });
+    });
+
+    await act(async () => {
+      root.render(createElement(ProblemPage));
+    });
+    settingsCalls = 0;
+
+    // 1. Trigger lecture
+    const startBtn = Array.from(
+      container.querySelectorAll<HTMLButtonElement>("header button"),
+    ).find((b) => b.textContent === "开始讲课")!;
+    await act(async () => {
+      startBtn.click();
+    });
+
+    expect(settingsCalls).toBe(2);
+    expect(lectureCalled).toBe(false);
+
+    const alertsAfterLecture = Array.from(
+      container.querySelectorAll('[role="alert"]'),
+    );
+    expect(alertsAfterLecture).toHaveLength(1);
+    const lectureAlert = alertsAfterLecture[0];
+    expect(lectureAlert.textContent).toContain(UPSTREAM_ERROR_MESSAGE);
+    expect(lectureAlert.textContent).not.toContain(NO_BYOK_MESSAGE);
+    expect(lectureAlert.textContent).not.toContain("NO_BYOK");
+    expect(lectureAlert.textContent).not.toContain("去设置");
+    expect(lectureAlert.querySelector('[data-testid="goto-settings"]')).toBeNull();
+    const lectureBtns = Array.from(lectureAlert.querySelectorAll("button"));
+    expect(lectureBtns).toHaveLength(1);
+    expect(lectureBtns[0].textContent).toBe("重试");
+
+    // 2. Trigger hint
+    const hintBtn = Array.from(container.querySelectorAll("button")).find(
+      (b) =>
+        b.textContent?.includes("观察") ||
+        b.getAttribute("title")?.includes("观察"),
+    )!;
+    await act(async () => {
+      hintBtn.click();
+    });
+
+    expect(settingsCalls).toBe(4);
+    expect(hintCalled).toBe(false);
+
+    const allAlerts = Array.from(container.querySelectorAll('[role="alert"]'));
+    expect(allAlerts).toHaveLength(2);
+    const hintAlert = allAlerts[1];
+    expect(hintAlert.textContent).toContain(UPSTREAM_ERROR_MESSAGE);
+    expect(hintAlert.textContent).not.toContain(NO_BYOK_MESSAGE);
+    expect(hintAlert.textContent).not.toContain("NO_BYOK");
+    expect(hintAlert.textContent).not.toContain("去设置");
+    expect(hintAlert.querySelector('[data-testid="goto-settings"]')).toBeNull();
+    const hintBtns = Array.from(hintAlert.querySelectorAll("button"));
+    expect(hintBtns).toHaveLength(1);
+    expect(hintBtns[0].textContent).toBe("重试");
+  });
 });
