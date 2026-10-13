@@ -593,14 +593,17 @@ test.describe("coarse pointer hit areas 390", () => {
       await page.goto("/problem/group-anagrams");
       await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2x", exact: true }).click();
       await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
-      await expect(page.getByText(`第 1 / ${count} 步`)).toBeVisible();
+      // 备课中控制栏不显示「第 x / N 步」（v0.2.1），改等 role=status 的「已收到 N 步…」。
+      await expect(page.getByRole("status").filter({ hasText: `已收到 ${count} 步，仍在备课…` })).toBeVisible();
       await page.getByRole("button", { name: `跳到第 ${count} 步`, exact: true }).tap();
-      await expect(page.getByText(`第 ${count} / ${count} 步`)).toBeVisible();
+      await expect(page.getByRole("button", { name: `跳到第 ${count} 步`, exact: true })).toHaveAttribute("aria-current", "step");
       await expect(page.getByText("下一步准备中…")).toBeVisible();
 
       const dots = page.getByRole("button", { name: /^跳到第 \d+ 步$/ });
       await expect(dots).toHaveCount(count);
       const pending = page.locator("[data-pending-step]");
+      // 本分支已实现占位条：必须走占位分支。
+      await expect(pending).toHaveCount(1);
       const pendingCount = await pending.count();
       const boxes: LayoutBox[] = [];
       for (let i = 0; i < count; i++) {
@@ -692,5 +695,251 @@ test("after finish 「重新生成」 in more menu shows confirm button without 
   await expect(page.getByRole("dialog")).toBeVisible();
   await expect(page.getByRole("button", { name: "确定重新生成", exact: true })).toBeVisible();
   expect(getPosts()).toBe(1);
+});
+
+/** 只量热区，不点按，避免自动播放 / 语速 / 特效强度把播放状态改掉。 */
+async function checkToggles(page: Page) {
+  // components/board/player-controls.tsx: SPEEDS 0.5, 1, 1.5, 2；LEVELS 华丽 / 克制 / 极简。
+  const speedLabels = ["0.5x", "1x", "1.5x", "2x"];
+  const effectLabels = ["华丽", "克制", "极简"];
+  const speedGroup = page.getByRole("group", { name: "语速" });
+  const effectGroup = page.getByRole("group", { name: "特效强度" });
+  const toggles = [
+    page.getByRole("button", { name: "自动播放", exact: true }),
+    ...speedLabels.map((name) => speedGroup.getByRole("button", { name, exact: true })),
+    ...effectLabels.map((name) => effectGroup.getByRole("button", { name, exact: true })),
+  ];
+
+  for (const toggle of toggles) {
+    await expect(async () => {
+      const label = (await toggle.innerText()).trim();
+      await toggle.evaluate((el) => el.setAttribute("data-hit-probe", ""));
+      try {
+        const rect = await toggle.evaluate((el) => {
+          const box = el.getBoundingClientRect();
+          const afterHeight = Number.parseFloat(getComputedStyle(el, "::after").height);
+          return { x: box.x, y: box.y, width: box.width, height: box.height, afterHeight };
+        });
+        console.log(
+          `[toggle-hit] ${label} width=${rect.width} height=${rect.height} after=${rect.afterHeight}`,
+        );
+        expect(rect.width).toBeGreaterThanOrEqual(44);
+        expect(rect.afterHeight).toBeGreaterThanOrEqual(44);
+
+        const dx = Math.min(18, rect.width / 2 - 1);
+        const centerX = rect.x + rect.width / 2;
+        const centerY = rect.y + rect.height / 2;
+        const offsets: Array<[number, number]> = [
+          [0, -18],
+          [0, 18],
+          [-dx, 0],
+          [dx, 0],
+        ];
+        for (const [ox, oy] of offsets) {
+          const x = centerX + ox;
+          const y = centerY + oy;
+          const hit = await page.evaluate(({ x, y }) => {
+            const el = document.elementFromPoint(x, y);
+            return el?.closest("button")?.hasAttribute("data-hit-probe") ?? false;
+          }, { x, y });
+          expect(hit).toBe(true);
+        }
+      } finally {
+        await toggle.evaluate((el) => el.removeAttribute("data-hit-probe"));
+      }
+    }).toPass();
+  }
+
+  await expect(async () => {
+    const measured = await page.getByTestId("player-controls").evaluate((el) => {
+      const children: Array<{ top: number; bottom: number; centerY: number; label: string | null; text: string }> = [];
+      for (const child of el.children) {
+        const box = child.getBoundingClientRect();
+        if (box.width <= 0 || box.height <= 0) continue;
+        children.push({
+          top: box.top,
+          bottom: box.bottom,
+          centerY: box.top + box.height / 2,
+          label: child.getAttribute("aria-label"),
+          // 自动播放按钮没有 aria-label，可访问名就是正文。
+          text: (child.textContent ?? "").trim(),
+        });
+      }
+
+      // 子项 centreY 落在已有行的 top..bottom 里才并入该行，不再用 top 相差 4px。
+      const rows: Array<{ top: number; bottom: number }> = [];
+      for (const child of [...children].sort((a, b) => a.centerY - b.centerY)) {
+        const row = rows.find((candidate) => child.centerY >= candidate.top && child.centerY <= candidate.bottom);
+        if (row) {
+          row.top = Math.min(row.top, child.top);
+          row.bottom = Math.max(row.bottom, child.bottom);
+        } else {
+          rows.push({ top: child.top, bottom: child.bottom });
+        }
+      }
+
+      const centerY = (label: string) => children.find((child) => child.label === label)?.centerY ?? null;
+      // 语速 / 特效强度用 aria-label。自动播放与时间线同一行，按钮本身没有 aria-label。
+      const toggleChildren = children.filter(
+        (child) => child.label === "语速" || child.label === "特效强度" || child.text === "自动播放",
+      );
+      const toggleRows: Array<{ top: number; bottom: number }> = [];
+      for (const child of toggleChildren) {
+        const row = rows.find((candidate) => child.centerY >= candidate.top && child.centerY <= candidate.bottom);
+        if (row && !toggleRows.includes(row)) toggleRows.push(row);
+      }
+      toggleRows.sort((a, b) => a.top - b.top);
+      const upperToggleRow = toggleRows[0];
+      const lowerToggleRow = toggleRows[toggleRows.length - 1];
+      const toggleGap =
+        upperToggleRow && lowerToggleRow && upperToggleRow !== lowerToggleRow
+          ? lowerToggleRow.top - upperToggleRow.bottom
+          : null;
+      return {
+        count: rows.length,
+        centres: rows.map((row) => (row.top + row.bottom) / 2),
+        speedCenterY: centerY("语速"),
+        effectCenterY: centerY("特效强度"),
+        toggleRowCount: toggleRows.length,
+        toggleGap,
+      };
+    });
+    console.log(
+      `[player-controls rows] count=${measured.count} centres=${measured.centres.join(",")} toggleRows=${measured.toggleRowCount} toggleGap=${measured.toggleGap}`,
+    );
+    expect(measured.count).toBeLessThanOrEqual(4);
+    expect(measured.speedCenterY).not.toBeNull();
+    expect(measured.effectCenterY).not.toBeNull();
+    expect(Math.abs(measured.speedCenterY! - measured.effectCenterY!)).toBeLessThan(4);
+  }).toPass();
+}
+
+/** 从每个 toggle 中心向四边逐像素探连续自命中，并量相邻行热区是否重叠。 */
+async function probeToggleHits(page: Page, tag: string) {
+  const measured = await page.evaluate(() => {
+    const bar = document.querySelector('[data-testid="player-controls"]');
+    if (!(bar instanceof HTMLElement)) throw new Error("player-controls missing");
+
+    const isSelfHit = (button: HTMLButtonElement, hit: Element | null) =>
+      hit === button || (hit !== null && button.contains(hit));
+
+    const toggles = [...bar.querySelectorAll<HTMLButtonElement>("button[aria-pressed]")].map((button) => {
+      const box = button.getBoundingClientRect();
+      const centerX = box.left + box.width / 2;
+      const centerY = box.top + box.height / 2;
+      const extent = (stepX: number, stepY: number) => {
+        let distance = 0;
+        for (let step = 1; step <= 80; step += 1) {
+          const hit = document.elementFromPoint(centerX + stepX * step, centerY + stepY * step);
+          if (!isSelfHit(button, hit)) break;
+          distance = step;
+        }
+        return distance;
+      };
+      const up = extent(0, -1);
+      const down = extent(0, 1);
+      const left = extent(-1, 0);
+      const right = extent(1, 0);
+      return {
+        label: (button.textContent ?? "").trim(),
+        centerY,
+        up,
+        down,
+        selfHitHeight: up + down + 1,
+        selfHitWidth: left + right + 1,
+      };
+    });
+
+    const rows: Array<typeof toggles> = [];
+    for (const toggle of [...toggles].sort((a, b) => a.centerY - b.centerY)) {
+      const row = rows.find((candidate) =>
+        candidate.some((member) => Math.abs(member.centerY - toggle.centerY) <= 4),
+      );
+      if (row) row.push(toggle);
+      else rows.push([toggle]);
+    }
+
+    const overlaps: number[] = [];
+    for (let index = 0; index < rows.length - 1; index += 1) {
+      const upper = rows[index];
+      const lower = rows[index + 1];
+      const upperBottomHit = Math.min(...upper.map((toggle) => toggle.centerY + toggle.down));
+      const lowerTopHit = Math.max(...lower.map((toggle) => toggle.centerY - toggle.up));
+      overlaps.push(upperBottomHit - lowerTopHit);
+    }
+    const rowOverlapPx = overlaps.length > 0 ? Math.max(...overlaps) : 0;
+
+    return {
+      barHeight: bar.getBoundingClientRect().height,
+      rows: rows.length,
+      rowOverlapPx,
+      toggles,
+    };
+  });
+
+  const summary = measured.toggles.map((toggle) => `${toggle.label}:${toggle.selfHitWidth}x${toggle.selfHitHeight}`).join(" ");
+  console.log(
+    `[toggle-probe ${tag}] barHeight=${measured.barHeight} rows=${measured.rows} rowOverlapPx=${measured.rowOverlapPx} ${summary}`,
+  );
+
+  for (const toggle of measured.toggles) {
+    expect(toggle.selfHitHeight).toBeGreaterThanOrEqual(44);
+    expect(toggle.selfHitWidth).toBeGreaterThanOrEqual(44);
+  }
+  expect(measured.rowOverlapPx).toBeLessThanOrEqual(0);
+}
+
+test.describe("coarse pointer toggle hit areas 390", () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+
+  test("toggles keep own 44x44 hit area and speed and effect groups share a row while playing", async ({ page }) => {
+    await mockLecture(page, "group-anagrams");
+    await page.goto("/problem/group-anagrams");
+    await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
+    await expect(page.getByText("第 1 / 3 步")).toBeVisible();
+    await checkToggles(page);
+    await probeToggleHits(page, "844-playing");
+  });
+
+  test("same while preparing", async ({ page }) => {
+    const cleanup = await mockPartialLecture(page, "group-anagrams", 2);
+    try {
+      await page.goto("/problem/group-anagrams");
+      await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
+      // 「备课中…」只在第一步到达前显示；已收到 2 步时是仍在备课状态，不要退回步数计数。
+      await expect(page.getByRole("status").filter({ hasText: "已收到 2 步，仍在备课…" })).toBeVisible();
+      await checkToggles(page);
+      await probeToggleHits(page, "844-preparing");
+    } finally {
+      await cleanup();
+    }
+  });
+});
+
+test.describe("coarse pointer toggle hit areas 390x667", () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 667 } });
+
+  test("toggles keep own 44x44 hit area and speed and effect groups share a row while playing", async ({ page }) => {
+    await mockLecture(page, "group-anagrams");
+    await page.goto("/problem/group-anagrams");
+    await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
+    await expect(page.getByText("第 1 / 3 步")).toBeVisible();
+    await checkToggles(page);
+    await probeToggleHits(page, "667-playing");
+  });
+
+  test("same while preparing", async ({ page }) => {
+    const cleanup = await mockPartialLecture(page, "group-anagrams", 2);
+    try {
+      await page.goto("/problem/group-anagrams");
+      await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
+      // 「备课中…」只在第一步到达前显示；已收到 2 步时是仍在备课状态，不要退回步数计数。
+      await expect(page.getByRole("status").filter({ hasText: "已收到 2 步，仍在备课…" })).toBeVisible();
+      await checkToggles(page);
+      await probeToggleHits(page, "667-preparing");
+    } finally {
+      await cleanup();
+    }
+  });
 });
 

@@ -40,6 +40,31 @@ export function readLectureMeta(data: unknown): {
   };
 }
 
+/** 读流时网络断开（fetch reader 抛 TypeError 等）：已收步骤保留，提示中断。 */
+export const LECTURE_INTERRUPTED_MESSAGE = "备课中断，网络连接已断开，请重试。";
+
+/** 浏览器网络/读流错误（TypeError: network error、非用户触发的 AbortError 等），不含业务错误。 */
+export function isNetworkStreamError(error: unknown): boolean {
+  if (error instanceof ByokError) return error.code === "INTERRUPTED";
+  if (error instanceof TypeError) return true;
+  const name = (error as { name?: unknown } | null)?.name;
+  return name === "AbortError" || name === "NetworkError";
+}
+
+/**
+ * 把网络/读流错误归一成 A5 错误：已收到 ≥1 步 → INTERRUPTED（保留步骤）；0 步 → UPSTREAM_ERROR。
+ * 不是网络错误时返回 null。绝不透出浏览器原文。
+ */
+export function normalizeNetworkError(
+  error: unknown,
+  receivedSteps: number,
+): { code: string; message: string } | null {
+  if (!isNetworkStreamError(error)) return null;
+  return receivedSteps > 0
+    ? { code: "INTERRUPTED", message: LECTURE_INTERRUPTED_MESSAGE }
+    : { code: "UPSTREAM_ERROR", message: UPSTREAM_ERROR_MESSAGE };
+}
+
 const STREAM_ERROR_MAP: Record<string, string> = {
   TIMEOUT: LECTURE_TIMEOUT_MESSAGE,
   UPSTREAM_AUTH: UPSTREAM_AUTH_LECTURE_MESSAGE,
@@ -118,7 +143,15 @@ export async function readLectureResponse(
   };
   try {
     while (true) {
-      const { value, done } = await reader.read();
+      let chunk: ReadableStreamReadResult<Uint8Array>;
+      try {
+        chunk = await reader.read();
+      } catch (error) {
+        if (error instanceof ByokError) throw error;
+        // 连接被直接断开（无 error 事件）：浏览器抛 TypeError: network error，归一为 INTERRUPTED。
+        throw new ByokError("INTERRUPTED", LECTURE_INTERRUPTED_MESSAGE);
+      }
+      const { value, done } = chunk;
       buffer += decoder.decode(value, { stream: !done });
       if (buffer.length > 1024 * 1024)
         throw new ByokError("PAYLOAD_TOO_LARGE", "教案数据过大，请重试。");
@@ -140,4 +173,16 @@ export async function readLectureResponse(
     await reader.cancel().catch(() => {});
     reader.releaseLock();
   }
+}
+
+/**
+ * 备课中途断开类错误：已收到的步骤可保留播放。
+ * - TIMEOUT / INTERRUPTED / INCOMPLETE_STREAM（流未完整结束）：总是算断开。
+ * - UPSTREAM_ERROR（上游 EOF/RST/500，服务端重试后放弃）：只有已收到 ≥1 步时才算断开；
+ *   0 步时仍按普通失败清空。UPSTREAM_AUTH、INVALID_SCRIPT 等不算（v0.2.2 范围）。
+ */
+export function isLectureCutOff(error: unknown, receivedSteps = 0): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  if (code === "TIMEOUT" || code === "INTERRUPTED" || code === "INCOMPLETE_STREAM") return true;
+  return code === "UPSTREAM_ERROR" && receivedSteps > 0;
 }

@@ -209,6 +209,7 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
     const testBtn = Array.from(settingsContainer.querySelectorAll("button")).find(
       (b) => b.textContent?.includes("测试连接"),
     )!;
+    expect(testBtn.className).toContain("pointer-coarse:min-h-11");
     await act(async () => {
       testBtn.click();
     });
@@ -291,6 +292,7 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
       (b) => b.textContent === "清除本机 API Key",
     )!;
     expect(clearBtn).toBeDefined();
+    expect(clearBtn.className).toContain("pointer-coarse:min-h-11");
     await act(async () => {
       clearBtn.click();
     });
@@ -337,7 +339,7 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
     expect(settingsContainer.textContent).not.toContain("SETTINGS_LOCKED");
   });
 
-  test("settings page testConnection NO_BYOK renders NO_BYOK_SETTINGS_MESSAGE, no 去设置 link, and focuses + highlights API Key input", async () => {
+  test("settings page testConnection NO_BYOK focuses #apiKey, schedules NO_BYOK_SETTINGS_MESSAGE in SettingsStatus, not in red fail text, and clears on edit", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input);
       if (url.endsWith("/api/settings")) {
@@ -371,22 +373,54 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
       testBtn.click();
     });
 
-    expect(settingsContainer.textContent).toContain(NO_BYOK_SETTINGS_MESSAGE);
-    expect(settingsContainer.textContent).not.toContain("先去设置页");
-    expect(settingsContainer.textContent).not.toContain("去设置");
-    expect(settingsContainer.textContent).not.toContain("NO_BYOK");
-    expect(settingsContainer.querySelector('a[href="/settings"]')).toBeNull();
-
     expect(document.activeElement).toBe(apiKeyInput);
     expect(scrollSpy).toHaveBeenCalledWith({ block: "center", behavior: "smooth" });
     expect(apiKeyInput.getAttribute("data-highlight")).toBe("true");
     expect(apiKeyInput.classList.contains("ring-2")).toBe(true);
     expect(apiKeyInput.classList.contains("ring-beam-gold")).toBe(true);
 
-    // Highlight clears when editing API key
+    await act(async () => {
+      await new Promise<void>((resolve) => {
+        if (typeof requestAnimationFrame === "function") {
+          requestAnimationFrame(() => resolve());
+        } else {
+          setTimeout(resolve, 0);
+        }
+      });
+    });
+
+    const occurrences = (
+      document.body.textContent?.match(new RegExp(NO_BYOK_SETTINGS_MESSAGE, "g")) || []
+    ).length;
+    expect(occurrences).toBe(1);
+
+    const statusEl = settingsContainer.querySelector<HTMLElement>("#settings-status")!;
+    expect(statusEl).not.toBeNull();
+    expect(statusEl.getAttribute("role")).toBe("status");
+    expect(statusEl.textContent).toBe(NO_BYOK_SETTINGS_MESSAGE);
+    expect(
+      Array.from(document.body.querySelectorAll('[role="status"]')).some(
+        (el) => el.textContent?.includes(NO_BYOK_SETTINGS_MESSAGE),
+      ),
+    ).toBe(true);
+
+    const roseElements = Array.from(document.body.querySelectorAll(".text-beam-rose"));
+    for (const el of roseElements) {
+      expect(el.textContent).not.toContain(NO_BYOK_SETTINGS_MESSAGE);
+    }
+    expect(document.body.textContent).not.toContain("✗");
+
+    expect(settingsContainer.textContent).not.toContain("先去设置页");
+    expect(settingsContainer.textContent).not.toContain("去设置");
+    expect(settingsContainer.textContent).not.toContain("NO_BYOK");
+    expect(settingsContainer.querySelector('a[href="/settings"]')).toBeNull();
+
+    // Highlight and status text clear when editing API key
     await act(async () => {
       setInputValue(apiKeyInput, "sk-editing");
     });
+    expect(statusEl.textContent).toBe("");
+    expect(document.body.textContent).not.toContain(NO_BYOK_SETTINGS_MESSAGE);
     expect(apiKeyInput.getAttribute("data-highlight")).toBeNull();
     expect(apiKeyInput.classList.contains("ring-beam-gold")).toBe(false);
   });
@@ -1216,6 +1250,7 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
       const saveBtn = Array.from(settingsContainer.querySelectorAll("button")).find(
         (b) => b.textContent?.includes("保存设置"),
       )!;
+      expect(saveBtn.className).toContain("pointer-coarse:min-h-11");
       await act(async () => {
         saveBtn.click();
       });

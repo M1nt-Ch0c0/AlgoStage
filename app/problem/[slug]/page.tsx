@@ -41,7 +41,7 @@ import JudgeSignature from "@/components/judge/judge-signature";
 import AiSetupPrompt from "@/components/settings/ai-setup-prompt";
 import { teachingScriptSchema } from "@/lib/teaching/schema";
 import { readDraft, saveDraft, draftLanguage } from "@/lib/player/drafts";
-import { readLectureResponse } from "@/lib/player/lecture-response";
+import { isLectureCutOff, normalizeNetworkError, readLectureResponse } from "@/lib/player/lecture-response";
 import { cancelLectureForPlayback, loadLectureForPlayback, switchProblemForPlayback } from "@/lib/player/load-lecture";
 import { TWO_SUM_SCRIPT } from "@/lib/content/scripts/two-sum";
 import { HOT100_CATEGORIES } from "@/lib/content/hot100";
@@ -94,6 +94,10 @@ export default function ProblemPage() {
   const [lectureProgress, setLectureProgress] = useState("");
   const [lectureComplete, setLectureComplete] = useState(false);
   const lectureInFlight = useRef<boolean>(false);
+  // 超时/中断时已收到部分步骤：保留可播放，进度显示「已收到 N 步，备课中断」。
+  const [lectureInterrupted, setLectureInterrupted] = useState(false);
+  // 同步记录中断态，重试时据此立即清掉旧的半份教案（不等新流首步）。
+  const lectureInterruptedRef = useRef(false);
   const lectureAbort = useRef<AbortController | null>(null);
   const [lectureError, setLectureError] = useState<{
     code: string;
@@ -123,6 +127,7 @@ export default function ProblemPage() {
         setLectureProgress("");
         setLectureError(null);
         setLectureComplete(false);
+        setLectureInterrupted(false);
       },
       reset: usePlayerStore.getState().reset,
     });
@@ -179,6 +184,10 @@ export default function ProblemPage() {
     if (lectureInFlight.current) return;
     setLectureError(null);
     setLectureComplete(false);
+    setLectureInterrupted(false);
+    // 中断后重试：旧的已收到步骤未保存，立刻清掉，避免头部短暂显示旧「已收到 N 步」和「继续」。
+    const retryAfterCutOff = lectureInterruptedRef.current;
+    lectureInterruptedRef.current = false;
     if (practice) saveDraft(slug, language, code);
     setPractice(false);
     if (!detail) {
@@ -191,7 +200,7 @@ export default function ProblemPage() {
     lectureInFlight.current = true;
     lectureAbort.current?.abort();
     // 重新生成立刻停掉旧播放并清掉步骤；reset 保留 autoAdvance。失败后步骤为空，stopStream 会停在 idle。
-    if (regenerate) usePlayerStore.getState().reset();
+    if (regenerate || retryAfterCutOff) usePlayerStore.getState().reset();
     const abort = new AbortController();
     lectureAbort.current = abort;
     let timedOut = false;
@@ -201,6 +210,7 @@ export default function ProblemPage() {
     }, LECTURE_TIMEOUT_MS + 5000);
     setLectureBusy(true);
     setLectureProgress("正在生成首个讲解步骤…");
+    let streaming = false;
     try {
       if (slug === "two-sum") {
         setLanguage("typescript");
@@ -240,7 +250,6 @@ export default function ProblemPage() {
         }
         throw new ByokError("UPSTREAM_ERROR", UPSTREAM_ERROR_MESSAGE);
       }
-      let streaming = false;
       let guard: StreamGuard | undefined;
       const reference =
         detail.referenceSolutions?.find((s) => s.language === language)?.code ??
@@ -295,14 +304,17 @@ export default function ProblemPage() {
             message: LECTURE_TIMEOUT_MESSAGE,
           };
         } else if (!abort.signal.aborted) {
+          // 网络/读流错误（含首个 fetch 无响应）：有步骤 → INTERRUPTED，0 步 → UPSTREAM_ERROR；不显示浏览器原文。
+          const network = normalizeNetworkError(e, usePlayerStore.getState().steps.length);
           const resolved =
-            e instanceof ServerKeyStatusError
+            network ??
+            (e instanceof ServerKeyStatusError
               ? { code: "UPSTREAM_ERROR", message: UPSTREAM_ERROR_MESSAGE }
               : e instanceof ByokError
                 ? { code: e.code, message: e.message }
                 : resolveByokError({
                     message: e instanceof Error ? e.message : "",
-                  });
+                  }));
           const code = resolved?.code ?? "LECTURE_FAILED";
           const message =
             code === "BASE_URL_NOT_ALLOWED"
@@ -316,9 +328,18 @@ export default function ProblemPage() {
                     : (resolved?.message ?? "老师这次没备好课，请重试。");
           nextError = { code, message };
         }
-        // 失败也清空半份教案，避免残留字幕与代码锚点；错误提示独立保留。
-        cancelLectureForPlayback(detail, language, { abort: () => abort.abort(), reset, setCode });
-        lastReportedRef.current = -1;
+        const received = usePlayerStore.getState().steps.length;
+        // A5 已把未知错误码归一为 UPSTREAM_ERROR，这里按归一后的 code 判断。
+        if (nextError && streaming && (timedOut || isLectureCutOff(nextError, received)) && received > 0) {
+          // 超时、中途断开或上游断开（UPSTREAM_ERROR）、已收到步骤：保留可播放（v0.2.1 Paige 决定），只停止接收；不保存教案。其他错误仍清空。
+          usePlayerStore.getState().stopStream();
+          lectureInterruptedRef.current = true;
+          setLectureInterrupted(true);
+        } else {
+          // 没收到步骤：清空半份教案，避免残留字幕与代码锚点；错误提示独立保留。
+          cancelLectureForPlayback(detail, language, { abort: () => abort.abort(), reset, setCode });
+          lastReportedRef.current = -1;
+        }
         if (nextError) setLectureError(nextError);
       }
     } finally {
@@ -349,6 +370,7 @@ export default function ProblemPage() {
     setLectureProgress("");
     setLectureError(null);
     setLectureComplete(false);
+    setLectureInterrupted(false);
     lastReportedRef.current = -1;
   }
 
@@ -594,8 +616,10 @@ export default function ProblemPage() {
 
       {lectureBusy && (
         <div className="flex items-center gap-3 text-sm text-chalk-300">
-          <p role="status" aria-live="polite">
-            {lectureProgress}
+          {/* 非 live：步数由播放控件里的 role=status「已收到 N 步…」播报，避免重复；
+              步骤到达后这里只显示不带数字的「备课中…」，N 只出现在 status 里。 */}
+          <p data-lecture-progress>
+            {stepCount > 0 && /^(已生成 \d+ 步|备课中)/.test(lectureProgress) ? "备课中…" : lectureProgress}
           </p>
           <button
             type="button"
@@ -610,7 +634,9 @@ export default function ProblemPage() {
       )}
       {lectureComplete && !lectureBusy && (
         <p role="status" aria-live="polite" className="text-sm text-beam-mint">
-          教案已生成完成，共 {stepCount} 步。可以继续播放或选择步骤回看。
+          教案已生成完成
+          <span className="sr-only">，共 {stepCount} 步</span>
+          。可以继续播放或选择步骤回看。
         </p>
       )}
       {lectureError && (() => {
@@ -631,7 +657,8 @@ export default function ProblemPage() {
                 className="inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-full border border-beam-rose px-3 py-1 disabled:opacity-40"
               >
                 {lectureError.code === "UPSTREAM_ERROR" ||
-                lectureError.code === "TIMEOUT"
+                lectureError.code === "TIMEOUT" ||
+                lectureError.code === "INTERRUPTED"
                   ? "重试"
                   : "重试讲课"}
               </button>
@@ -776,8 +803,8 @@ export default function ProblemPage() {
           <section className="flex min-h-0 flex-1 flex-col gap-3 rounded-2xl border border-board-700/70 bg-board-900/80 p-4">
             <ColumnLabel
               right={
-                inLecture && stepCount > 0 ? (
-                  <span className="font-mono text-[11px] text-chalk-500">
+                inLecture && stepCount > 0 && !lectureBusy && !lectureInterrupted ? (
+                  <span data-step-total className="font-mono text-[11px] text-chalk-500">
                     共 {stepCount} 步
                   </span>
                 ) : null
@@ -829,6 +856,8 @@ export default function ProblemPage() {
         <PlayerControls
           preparing={lectureBusy && (!receiving || stepCount === 0)}
           lectureBusy={lectureBusy}
+          generating={lectureBusy && receiving && stepCount > 0}
+          interrupted={!lectureBusy && lectureInterrupted && stepCount > 0}
         />
       </div>
 

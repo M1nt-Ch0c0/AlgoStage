@@ -5,7 +5,7 @@
  * 结束面板出现后 Space 与 → 不再操作播放器。
  * 等待继续时「下一步」改为图标加文字的按钮，热区至少 44px；平时仍是图标按钮。
  * 粗指针下上一步、播放暂停、下一步（含非等待态）热区至少 44×44；时间线圆点视觉仍是 20px 居中细条，点按高度至少 44px，宽度均分整条且相邻热区边对边贴合、不重叠。细指针尺寸不变。
- * 自动播放、语速与特效强度仍用 pill 的 py-0.5 视觉；粗指针用透明 after 把点按高度扩到至少 44px。
+ * 自动播放、语速与特效强度仍用 pill 的 py-0.5 视觉；粗指针用透明 after 把点按高度扩到至少 44px，pill 宽至少 44px 且文字居中，换行 gap-y 加大以免相邻行热区重叠。
  * 粗指针且下一步已就绪时，把「点「下一步」继续」放在这条控制条里（窄屏单独成行，吸底仍可见）。
  * 输入框、contenteditable、Monaco 编辑器内以及带 Ctrl/Meta/Alt 的按键不拦截。
  * 焦点在 button 或链接上时只把 Space 留给控件本身（重播、语速）；←/→ 仍步进。
@@ -41,13 +41,27 @@ function isSpaceActivationTarget(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest("button, a") !== null;
 }
 
+/**
+ * preparing：首个步骤到达前（备课中，不可播放）。
+ * generating：已收到部分步骤可播放，但教案尚未生成完成——总步数未知，
+ * 不显示「第 x / N 步」，时间线末尾留一段「仍在备课」占位，避免 1/1 满格。
+ * interrupted：备课超时/中断但已收到部分步骤——步骤仍可播放，占位段改为静态「断开」样式。
+ */
 export default function PlayerControls({
   preparing = false,
   lectureBusy = false,
+  generating = false,
+  interrupted = false,
 }: {
   preparing?: boolean;
   /** 备课中：结束面板不显示，Space / → 也不按结束面板拦截。 */
   lectureBusy?: boolean;
+  /**
+   * generating：已收到部分步骤可播放，但教案尚未生成完成——总步数未知，
+   * 不显示「第 x / N 步」，时间线末尾留一段「仍在备课」占位。
+   */
+  generating?: boolean;
+  interrupted?: boolean;
 }) {
   const status = usePlayerStore((s) => s.status);
   const steps = usePlayerStore((s) => s.steps);
@@ -122,16 +136,16 @@ export default function PlayerControls({
   }, [hasScript, playing, awaitingContinue, panelShowing, play, pause, next, prev]);
 
   const btn =
-    "flex size-8 items-center justify-center rounded-full text-chalk-300 transition-colors hover:bg-board-700 hover:text-chalk-100 disabled:pointer-events-none disabled:opacity-30 pointer-coarse:size-11";
+    "flex size-8 shrink-0 items-center whitespace-nowrap justify-center rounded-full text-chalk-300 transition-colors hover:bg-board-700 hover:text-chalk-100 disabled:pointer-events-none disabled:opacity-30 pointer-coarse:size-11";
   const pill = (on: boolean) =>
-    `rounded-full px-2.5 py-0.5 text-xs transition-colors relative pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:top-1/2 pointer-coarse:after:h-11 pointer-coarse:after:-translate-y-1/2 pointer-coarse:after:content-[""] ${
+    `shrink-0 whitespace-nowrap rounded-full px-2.5 pointer-coarse:px-1.5 py-0.5 text-xs transition-colors relative pointer-coarse:inline-flex pointer-coarse:min-w-11 pointer-coarse:items-center pointer-coarse:justify-center pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:top-1/2 pointer-coarse:after:h-11 pointer-coarse:after:-translate-y-1/2 pointer-coarse:after:content-[""] ${
       on ? "bg-board-700 text-beam-gold" : "text-chalk-500 hover:text-chalk-300"
     }`;
 
   return (
     <div
       data-testid="player-controls"
-      className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-board-700/70 bg-board-900/90 px-3 py-2 backdrop-blur-md"
+      className="flex flex-wrap items-center gap-x-4 pointer-coarse:gap-x-2 gap-y-2 pointer-coarse:gap-y-5 rounded-2xl border border-board-700/70 bg-board-900/90 px-3 py-2 backdrop-blur-md"
     >
       {/* 步进控制 */}
       <div className="flex items-center gap-1">
@@ -140,7 +154,7 @@ export default function PlayerControls({
         </button>
         <button
           type="button"
-          className="flex size-9 items-center justify-center rounded-full bg-beam-gold text-on-accent transition-transform hover:scale-105 disabled:pointer-events-none disabled:bg-board-700 disabled:text-chalk-700 pointer-coarse:size-11"
+          className="flex size-9 shrink-0 items-center whitespace-nowrap justify-center rounded-full bg-beam-gold text-on-accent transition-transform hover:scale-105 disabled:pointer-events-none disabled:bg-board-700 disabled:text-chalk-700 pointer-coarse:size-11"
           onClick={() => (playing ? pause() : play())}
           disabled={!hasScript}
           aria-label={playing ? "暂停" : "播放"}
@@ -181,9 +195,16 @@ export default function PlayerControls({
           <span role="status" className="text-xs text-chalk-500">备课中…</span>
         ) : hasScript ? (
           <>
-            <span className="shrink-0 font-mono text-xs text-chalk-300 tabular-nums">
-              第 {Math.min(currentIndex + 1, steps.length)} / {steps.length} 步
-            </span>
+            {generating || interrupted ? (
+              <span role="status" className="shrink-0 text-xs text-chalk-300 tabular-nums">
+                {generating ? `已收到 ${steps.length} 步，仍在备课…` : `已收到 ${steps.length} 步，备课中断`}
+              </span>
+            ) : (
+              <span className="shrink-0 font-mono text-xs text-chalk-300 tabular-nums">
+                第 {Math.min(currentIndex + 1, steps.length)} / {steps.length} 步
+              </span>
+            )}
+            {/* 时间线轨道：圆点 flex-1 等宽均分；占位段 w-8 shrink-0 贴在同一轨道末尾，不参与均分。 */}
             <div className="flex min-w-0 flex-1 items-center">
               {steps.map((s, i) => (
                 <button
@@ -206,6 +227,7 @@ export default function PlayerControls({
                   />
                 </button>
               ))}
+              {(generating || interrupted) && <PendingSegment broken={interrupted} />}
             </div>
           </>
         ) : (
@@ -250,5 +272,22 @@ export default function PlayerControls({
         ))}
       </div>
     </div>
+  );
+}
+
+/** 未完成占位段：独立于圆点尺寸，固定宽度、不参与等宽均分。broken = 备课中断（静态）。 */
+function PendingSegment({ broken }: { broken: boolean }) {
+  return (
+    <span
+      aria-hidden="true"
+      data-pending-step={broken ? "broken" : "true"}
+      className="flex h-5 w-8 shrink-0 items-center"
+    >
+      <span
+        className={`block h-1.5 w-full rounded-full border border-dashed ${
+          broken ? "border-beam-rose/60" : "motion-safe:animate-pulse motion-reduce:animate-none border-board-600"
+        }`}
+      />
+    </span>
   );
 }

@@ -173,7 +173,7 @@ export function withByok<T extends Record<string, unknown>>(
 }
 
 export const NO_BYOK_MESSAGE = "还没填 API Key。先去设置页填入你自己的 API Key 就能开讲。";
-export const NO_BYOK_SETTINGS_MESSAGE = "还没填 API Key。在下面填入你自己的 API Key 就能开讲。";
+export const NO_BYOK_SETTINGS_MESSAGE = "还没填 API Key。填入你自己的 API Key 就能开讲。";
 export const ENDPOINT_SAVED_NEED_KEY_MESSAGE = "接口地址已保存，还要填 API Key 才能开讲。";
 export const BASE_URL_INVALID_MESSAGE = "接口地址格式不对，要以 http:// 或 https:// 开头";
 export const BASE_URL_INVALID_LECTURE_MESSAGE = "接口地址格式不对，要以 http:// 或 https:// 开头，去设置页改一下就能开讲。";
