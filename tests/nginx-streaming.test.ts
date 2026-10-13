@@ -163,14 +163,40 @@ http {
     expect(await fixture.prisma.lectureScriptCache.count()).toBe(0);
   });
 
-  test("上游挂起时，服务端超时提示经 nginx 到达且不缓存半份教案", async () => {
-    fixture.setDelay(3000);
+  // 与上方 vi.mock 的 LECTURE_TIMEOUT_MS 保持一致；墙钟断言留出覆盖率插桩下的余量。
+  const SERVER_TIMEOUT_MS = 1800, HANG_MS = SERVER_TIMEOUT_MS + 1200, MARGIN_MS = 2000;
+
+  test("首段送达后上游挂起，服务端超时提示经 nginx 流式到达且不缓存半份教案", async () => {
+    // 首轮立即返回 s1；首轮回复生成时再让后续请求挂起，保证超时一定发生在首段之后，与机器快慢无关。
+    fixture.setDelay(0);
+    let round = 0;
+    fixture.setToolsReply(() => {
+      if (++round === 1) {
+        fixture.setDelay(HANG_MS);
+        return [{ name: "add_step", input: { id: "s1", narration: "找出和为零的三个数", target: { kind: "statement", blockId: "intro" } } }];
+      }
+      return [{ name: "finish", input: {} }];
+    });
     const started = performance.now();
     const response = await request();
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toContain("application/x-ndjson");
     const events = (await response.text()).trim().split("\n").map(line => JSON.parse(line));
     expect(events.some(event => event.type === "progress")).toBe(true);
+    expect(events.filter(event => event.type === "step").map(event => event.step?.id ?? event.id)).toEqual(["s1"]);
+    expect(events.some(event => event.type === "result")).toBe(false);
     expect(events.at(-1)).toEqual({ type: "error", code: "TIMEOUT", retryable: true });
-    expect(performance.now() - started).toBeLessThan(4000);
+    expect(performance.now() - started).toBeLessThan(SERVER_TIMEOUT_MS + MARGIN_MS);
     expect(await fixture.prisma.lectureScriptCache.count()).toBe(0);
-  });
+  }, 15000);
+
+  test("首段之前上游就挂起，服务端以 504 TIMEOUT 经 nginx 返回且不缓存", async () => {
+    fixture.setDelay(HANG_MS);
+    const started = performance.now();
+    const response = await request();
+    expect(response.status).toBe(504);
+    expect(await response.json()).toMatchObject({ error: "TIMEOUT" });
+    expect(performance.now() - started).toBeLessThan(SERVER_TIMEOUT_MS + MARGIN_MS);
+    expect(await fixture.prisma.lectureScriptCache.count()).toBe(0);
+  }, 15000);
 });
