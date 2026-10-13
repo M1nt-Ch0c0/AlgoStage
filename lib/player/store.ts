@@ -85,6 +85,8 @@ export function isStale(
 }
 
 export const AUTO_ADVANCE_KEY = "algostage.autoAdvance";
+export const SPEED_KEY = "algostage.speed";
+export const EFFECT_LEVEL_KEY = "algostage.effectLevel";
 
 /** true 仅当浏览器里该键恰好为 "true"；无 window、读失败或其它值都视为关闭 */
 export function readAutoAdvance(): boolean {
@@ -92,6 +94,34 @@ export function readAutoAdvance(): boolean {
     return typeof window !== "undefined" && window.localStorage.getItem(AUTO_ADVANCE_KEY) === "true";
   } catch {
     return false;
+  }
+}
+
+export function readSpeed(): 0.5 | 1 | 1.5 | 2 {
+  try {
+    if (typeof window === "undefined") return 1;
+    const raw = window.localStorage.getItem(SPEED_KEY);
+    if (raw === null) return 1;
+    const parsed = Number(raw);
+    if (parsed === 0.5 || parsed === 1 || parsed === 1.5 || parsed === 2) {
+      return parsed;
+    }
+    return 1;
+  } catch {
+    return 1;
+  }
+}
+
+export function readEffectLevel(): "full" | "calm" | "minimal" {
+  try {
+    if (typeof window === "undefined") return "full";
+    const raw = window.localStorage.getItem(EFFECT_LEVEL_KEY);
+    if (raw === "full" || raw === "calm" || raw === "minimal") {
+      return raw;
+    }
+    return "full";
+  } catch {
+    return "full";
   }
 }
 
@@ -103,8 +133,6 @@ const initial = {
   steps: [] as TeachingStep[],
   currentIndex: 0,
   generation: 0,
-  speed: 1 as const,
-  effectLevel: "full" as const,
   awaitingContinue: false,
 };
 
@@ -251,8 +279,26 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   interrupt: () => set({ status: "interrupted", awaitingContinue: false }),
   resume: () => set({ status: "paused" }),
 
-  setSpeed: (speed) => set({ speed }),
-  setEffectLevel: (effectLevel) => set({ effectLevel }),
+  setSpeed: (speed) => {
+    try {
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(SPEED_KEY, String(speed));
+      }
+    } catch {
+      // localStorage 不可用时只更新内存，不把异常抛给调用方
+    }
+    set({ speed });
+  },
+  setEffectLevel: (effectLevel) => {
+    try {
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(EFFECT_LEVEL_KEY, effectLevel);
+      }
+    } catch {
+      // localStorage 不可用时只更新内存，不把异常抛给调用方
+    }
+    set({ effectLevel });
+  },
 
   reset: () => set({ ...initial, autoAdvance: get().autoAdvance, generation: get().generation + 1 }),
 }));
