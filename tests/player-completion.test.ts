@@ -50,7 +50,7 @@ test.each([1, 50])("finished 可从当前有效步骤继续，无有效步骤时
 test("生成完成不会打断尚在播放的当前步骤", () => {
   const store = usePlayerStore.getState();
   store.beginStream(script);
-  script.steps.forEach(store.appendStep);
+  script.steps.forEach((step) => store.appendStep(step));
   store.completeStream(script);
   expect(usePlayerStore.getState()).toMatchObject({ status: "playing", currentIndex: 0, receiving: false });
 });
