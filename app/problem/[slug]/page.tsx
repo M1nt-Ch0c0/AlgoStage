@@ -614,10 +614,10 @@ export default function ProblemPage() {
       {lectureBusy && (
         <div className="flex items-center gap-3 text-sm text-chalk-300">
           {/* 非 live：步数由播放控件里的 role=status「已收到 N 步…」播报，避免重复；
-              步骤到达后服务端的「已生成 N 步…」与其重复，不再显示。 */}
-          {!(stepCount > 0 && /^已生成 \d+ 步/.test(lectureProgress)) && (
-            <p data-lecture-progress>{lectureProgress}</p>
-          )}
+              步骤到达后这里只显示不带数字的「备课中…」，N 只出现在 status 里。 */}
+          <p data-lecture-progress>
+            {stepCount > 0 && /^(已生成 \d+ 步|备课中)/.test(lectureProgress) ? "备课中…" : lectureProgress}
+          </p>
           <button
             type="button"
             className="rounded-full border border-board-600 px-3 py-1"
@@ -797,9 +797,9 @@ export default function ProblemPage() {
           <section className="flex min-h-0 flex-1 flex-col gap-3 rounded-2xl border border-board-700/70 bg-board-900/80 p-4">
             <ColumnLabel
               right={
-                inLecture && stepCount > 0 ? (
-                  <span className="font-mono text-[11px] text-chalk-500">
-                    {lectureBusy || lectureInterrupted ? `已收到 ${stepCount} 步` : `共 ${stepCount} 步`}
+                inLecture && stepCount > 0 && !lectureBusy && !lectureInterrupted ? (
+                  <span data-step-total className="font-mono text-[11px] text-chalk-500">
+                    共 {stepCount} 步
                   </span>
                 ) : null
               }

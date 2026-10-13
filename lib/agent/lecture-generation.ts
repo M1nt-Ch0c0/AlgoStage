@@ -178,7 +178,7 @@ export async function generateLecture(input: {
         phase: repair ? "retry" : "generating",
         message: repair
           ? `第 ${repair.step} 步调用未通过校验，正在重试该调用（${repair.attempt}/${TOOL_RETRY_LIMIT + 1}）；已生成步骤保留…`
-          : `已生成 ${kit.steps.length} 步，正在备课并播放…`,
+          : "备课中…",
       });
       const assistant: ToolCallPart[] = [],
         results: ToolResultPart[] = [];
@@ -287,7 +287,7 @@ export async function generateLecture(input: {
                   type: "progress",
                   attempt: 1 + toolRetries + upstreamRetries,
                   phase: "generating",
-                  message: `已生成 ${kit.steps.length} 步，正在备课并播放…`,
+                  message: "备课中…",
                 });
             }
             output = {

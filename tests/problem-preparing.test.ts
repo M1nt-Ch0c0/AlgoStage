@@ -74,6 +74,12 @@ test.each([false, true])("首个真实步骤到达前显示备课中，不显示
     expect(controls.querySelector('[data-pending-step="true"]')).not.toBeNull();
     expect(container.textContent).not.toContain("共 1 步");
     expect(controls.querySelector('[aria-label="跳到第 1 步"]')).not.toBeNull();
+    // 按钮不换行、不被挤窄；占位格固定 32px
+    for (const label of ["上一步", "暂停", "下一步"]) {
+      const cls = controls.querySelector(`[aria-label="${label}"]`)!.className.split(/\s+/);
+      expect(cls).toEqual(expect.arrayContaining(["whitespace-nowrap", "shrink-0"]));
+    }
+    expect(controls.querySelector('[data-pending-step]')!.className.split(/\s+/)).toEqual(expect.arrayContaining(["w-8", "shrink-0"]));
     expect(controls.querySelector<HTMLButtonElement>('[aria-label="暂停"]')?.disabled).toBe(false);
     // 首步和后续步骤之间停顿：仍然不满格。
     await act(async () => { await new Promise(r => setTimeout(r, 50)); });
@@ -123,6 +129,9 @@ test.each(["timeout", "disconnect", "upstream"] as const)("已收到步骤后备
     expect(pending?.innerHTML).not.toContain("animate-pulse");
     expect(container.textContent).toContain("已收到 2 步");
     expect(container.textContent).not.toContain("共 2 步");
+    // 中断后 AI 导师标题栏不显示步数，N 只在 status 里出现一次
+    expect(container.querySelector("[data-step-total]")).toBeNull();
+    expect(container.textContent!.match(/2 步/g)).toHaveLength(1);
     expect(container.textContent).toContain("重试");
     // 已收到的步骤仍可点、可播放
     const dot = controls.querySelector<HTMLButtonElement>('[aria-label="跳到第 1 步"]')!;
@@ -217,6 +226,12 @@ test("中断后点重试：立即清掉旧步数和「继续」；备课进度�
     const announcing = live().filter(el => /步/.test(el.textContent ?? ""));
     expect(announcing.map(el => el.textContent)).toEqual(["已收到 2 步，仍在备课…"]);
     expect(container.textContent).not.toContain("已生成 2 步");
+    // 控制栏可见文字不带数字；标题栏备课中不显示步数；同一个 N 只出现一次
+    expect(container.querySelector("[data-lecture-progress]")?.textContent).toBe("备课中…");
+    expect(container.querySelector("[data-step-total]")).toBeNull();
+    expect(container.textContent!.match(/2 步/g)).toHaveLength(1);
+    await act(async () => send({ type: "progress", attempt: 1, message: "备课中…" }));
+    expect(container.querySelector("[data-lecture-progress]")?.textContent).toBe("备课中…");
     expect(container.textContent).toContain("取消备课");
 
     await act(async () => { send({ type: "error", code: "TIMEOUT", retryable: true }); streams.at(-1)!.close(); });

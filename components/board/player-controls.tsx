@@ -136,9 +136,9 @@ export default function PlayerControls({
   }, [hasScript, playing, awaitingContinue, panelShowing, play, pause, next, prev]);
 
   const btn =
-    "flex size-8 items-center justify-center rounded-full text-chalk-300 transition-colors hover:bg-board-700 hover:text-chalk-100 disabled:pointer-events-none disabled:opacity-30 pointer-coarse:size-11";
+    "flex size-8 shrink-0 items-center whitespace-nowrap justify-center rounded-full text-chalk-300 transition-colors hover:bg-board-700 hover:text-chalk-100 disabled:pointer-events-none disabled:opacity-30 pointer-coarse:size-11";
   const pill = (on: boolean) =>
-    `rounded-full px-2.5 py-0.5 text-xs transition-colors relative pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:top-1/2 pointer-coarse:after:h-11 pointer-coarse:after:-translate-y-1/2 pointer-coarse:after:content-[""] ${
+    `shrink-0 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs transition-colors relative pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:top-1/2 pointer-coarse:after:h-11 pointer-coarse:after:-translate-y-1/2 pointer-coarse:after:content-[""] ${
       on ? "bg-board-700 text-beam-gold" : "text-chalk-500 hover:text-chalk-300"
     }`;
 
@@ -154,7 +154,7 @@ export default function PlayerControls({
         </button>
         <button
           type="button"
-          className="flex size-9 items-center justify-center rounded-full bg-beam-gold text-on-accent transition-transform hover:scale-105 disabled:pointer-events-none disabled:bg-board-700 disabled:text-chalk-700 pointer-coarse:size-11"
+          className="flex size-9 shrink-0 items-center whitespace-nowrap justify-center rounded-full bg-beam-gold text-on-accent transition-transform hover:scale-105 disabled:pointer-events-none disabled:bg-board-700 disabled:text-chalk-700 pointer-coarse:size-11"
           onClick={() => (playing ? pause() : play())}
           disabled={!hasScript}
           aria-label={playing ? "暂停" : "播放"}

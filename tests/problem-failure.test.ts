@@ -152,6 +152,7 @@ test("生成期间主按钮可暂停并补全字幕，完成提示独立于播�
     });
     expect(usePlayerStore.getState().status).toBe("paused");
     expect(container.querySelector('[role="status"]')?.textContent).toContain("教案已生成完成，共 1 步");
+    expect(container.querySelector("[data-step-total]")?.textContent).toBe("共 1 步");
     await act(async () => primary("继续").click());
     expect(usePlayerStore.getState().status).toBe("playing");
     expect(primary("暂停")).toBeDefined();

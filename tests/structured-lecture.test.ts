@@ -405,6 +405,21 @@ describe("工具教案：单调用修复、白名单、流式播放、失败不�
     assert.equal(attempts.at(-1), 3);
     for (let i = 1; i < attempts.length; i++) assert.ok(attempts[i] >= attempts[i - 1]);
   });
+  test("生成中进度文案不带步数（N 只由前端 status 显示）", async () => {
+    let round = 0;
+    f.setToolsReply(() => (++round === 1
+      ? [{ name: "add_step", input: step("s1") }, { name: "add_step", input: step("s2", 2) }]
+      : [{ name: "finish", input: {} }]));
+    const messages: string[] = [];
+    const result = await generateLecture({
+      config, prompt: "工具教案", metadata, referenceCode: "a\nb",
+      validate: value => validateScript(value, "a\nb"),
+      onEvent: event => { if (event.type === "progress" && event.phase === "generating") messages.push(event.message); },
+    });
+    assert.equal(result.ok, true);
+    assert.ok(messages.length > 0);
+    for (const m of messages) assert.equal(m, "备课中…");
+  });
   test("DeepSeek 直接工具模式关闭不兼容的默认推理，没有 response_format", async () => {
     f.setRequireNonThinkingTools(true);
     await f.save({ model: "deepseek-flash" });
