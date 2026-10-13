@@ -33,6 +33,7 @@ export default defineConfig({
         "app/api/progress/route.ts",
         "lib/content/local-source.ts",
         "lib/anchors.ts",
+        "lib/ask/**",
         "lib/judge/{browser,compare,worker-common,javascript-worker,python-worker,specs}.ts",
       ],
       thresholds: { perFile: true, statements: 60, branches: 60, functions: 60, lines: 60 },
