@@ -146,6 +146,50 @@ for (const mode of modes) {
       await expect(page.getByText("没保存成功，请确认浏览器允许本地存储后再试。")).toBeVisible();
       await expect(page.getByRole("button", { name: "已保存" })).toHaveCount(0);
     });
+
+    test("(f) same-tab navigation: change speed in player, navigate to settings via internal link, save 1.5× and 克制, return via internal link, assert player synced", async ({
+      page,
+    }) => {
+      // 打开讲课页
+      await page.goto(`${mode.baseURL}/problem/two-sum`);
+      const playerControls = page.getByTestId("player-controls");
+      await expect(playerControls).toBeVisible();
+
+      // 改倍速
+      const playerSpeedGroup = playerControls.getByRole("group", { name: "语速" });
+      await playerSpeedGroup.getByRole("button", { name: "2x" }).click();
+      await expect(playerSpeedGroup.getByRole("button", { name: "2x" })).toHaveAttribute("aria-pressed", "true");
+
+      // 通过站内链接点击进设置页（不用 page.goto、不 reload）
+      await page.getByRole("link", { name: "设置" }).click();
+      const speedGroup = page.getByRole("group", { name: "讲课语速" });
+      const effectGroup = page.getByRole("group", { name: "特效强度" });
+      await expect(speedGroup).toBeVisible();
+
+      // 选 1.5× 和「克制」点「保存设置」
+      await speedGroup.getByRole("button", { name: "1.5×" }).click();
+      await expect(speedGroup.getByRole("button", { name: "1.5×" })).toHaveAttribute("aria-pressed", "true");
+
+      await effectGroup.getByRole("button", { name: "克制" }).click();
+      await expect(effectGroup.getByRole("button", { name: "克制" })).toHaveAttribute("aria-pressed", "true");
+
+      await page.getByRole("button", { name: "保存设置" }).click();
+      await expect(page.getByRole("button", { name: "已保存" })).toBeVisible();
+
+      // 通过站内链接回讲课页
+      await page.getByRole("link", { name: "AlgoStage 首页" }).click();
+      await page.getByRole("link", { name: "听第一堂课：两数之和" }).click();
+
+      // 断言播放器显示 1.5× 和克制
+      const returnPlayerControls = page.getByTestId("player-controls");
+      await expect(returnPlayerControls).toBeVisible();
+
+      const returnSpeed = returnPlayerControls.getByRole("group", { name: "语速" }).getByRole("button", { name: "1.5x" });
+      await expect(returnSpeed).toHaveAttribute("aria-pressed", "true");
+
+      const returnEffect = returnPlayerControls.getByRole("group", { name: "特效强度" }).getByRole("button", { name: "克制" });
+      await expect(returnEffect).toHaveAttribute("aria-pressed", "true");
+    });
   });
 }
 

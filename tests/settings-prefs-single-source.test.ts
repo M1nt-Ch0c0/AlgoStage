@@ -294,4 +294,55 @@ describe("settings prefs single-source (v0.2.2 P2)", () => {
     expect(usePlayerStore.getState().speed).toBe(2);
     expect(usePlayerStore.getState().effectLevel).toBe("minimal");
   });
+
+  test("save syncs usePlayerStore on success and leaves store unchanged when write fails", async () => {
+    usePlayerStore.setState({ speed: 1, effectLevel: "full" });
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (_input, init) => {
+      if (init?.method === "PUT") {
+        return Response.json({ ok: true });
+      }
+      return Response.json({
+        settings: {},
+        keySource: "env",
+        serverKeyDisabled: false,
+      });
+    });
+
+    await act(async () => {
+      root.render(createElement(SettingsPage));
+    });
+
+    await act(async () => {
+      findButton(container, "1.5×")!.click();
+      findButton(container, "克制")!.click();
+    });
+
+    // 1. 任一写失败（SPEED_KEY 失败）时不改 store
+    let failKey: string | null = SPEED_KEY;
+    const origSetItem = window.localStorage.setItem;
+    const setItemSpy = vi.spyOn(window.localStorage, "setItem").mockImplementation((k, v) => {
+      if (k === failKey) {
+        throw new Error("QuotaExceededError");
+      }
+      return origSetItem.call(window.localStorage, k, v);
+    });
+
+    await clickSave(container);
+    expect(usePlayerStore.getState().speed).toBe(1);
+    expect(usePlayerStore.getState().effectLevel).toBe("full");
+
+    // 2. 另一个写失败（EFFECT_LEVEL_KEY 失败）时也不改 store
+    failKey = EFFECT_LEVEL_KEY;
+    await clickSave(container);
+    expect(usePlayerStore.getState().speed).toBe(1);
+    expect(usePlayerStore.getState().effectLevel).toBe("full");
+
+    // 3. 两项均写成功后 store 更新为新值
+    failKey = null;
+    await clickSave(container);
+    expect(usePlayerStore.getState().speed).toBe(1.5);
+    expect(usePlayerStore.getState().effectLevel).toBe("calm");
+
+    setItemSpy.mockRestore();
+  });
 });

@@ -30,6 +30,7 @@ import {
   readEffectLevel,
   readSpeed,
   SPEED_KEY,
+  usePlayerStore,
   writeEffectLevel,
   writeSpeed,
 } from "@/lib/player/store";
@@ -274,6 +275,7 @@ export default function SettingsPage() {
       setSaveError("没保存成功，请确认浏览器允许本地存储后再试。");
       return;
     }
+    usePlayerStore.setState({ speed, effectLevel });
     if (serverKeyDisabled) {
       const nextKey = apiKey.trim() || localByok?.apiKey || "";
       const trimmedBase = baseURL.trim();
