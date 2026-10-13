@@ -544,7 +544,7 @@ export default function SettingsPage() {
               type="button"
               onClick={save}
               disabled={saveState === "saving"}
-              className="inline-flex items-center gap-2 rounded-full bg-beam-gold px-5 py-2 text-sm font-semibold text-on-accent transition-transform duration-150 hover:scale-105 active:scale-95 disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-full bg-beam-gold px-5 py-2 text-sm font-semibold text-on-accent transition-transform duration-150 hover:scale-105 active:scale-95 disabled:opacity-60 pointer-coarse:min-h-11"
             >
               {saveState === "saved" || saveState === "saved-need-key" ? (
                 <motion.svg
@@ -574,7 +574,7 @@ export default function SettingsPage() {
               type="button"
               onClick={testConnection}
               disabled={testState.kind === "testing"}
-              className="rounded-full border border-board-600 px-5 py-2 text-sm text-chalk-300 transition-colors hover:border-beam-cyan/60 hover:text-beam-cyan disabled:opacity-60"
+              className="rounded-full border border-board-600 px-5 py-2 text-sm text-chalk-300 transition-colors hover:border-beam-cyan/60 hover:text-beam-cyan disabled:opacity-60 pointer-coarse:min-h-11"
             >
               {testState.kind === "testing" ? "正在试着连一下…" : "测试连接"}
             </button>
@@ -582,7 +582,7 @@ export default function SettingsPage() {
               <button
                 type="button"
                 onClick={clearLocalKey}
-                className="rounded-full border border-board-600 px-5 py-2 text-sm text-chalk-300 transition-colors hover:border-beam-rose/60 hover:text-beam-rose"
+                className="rounded-full border border-board-600 px-5 py-2 text-sm text-chalk-300 transition-colors hover:border-beam-rose/60 hover:text-beam-rose pointer-coarse:min-h-11"
               >
                 清除本机 API Key
               </button>

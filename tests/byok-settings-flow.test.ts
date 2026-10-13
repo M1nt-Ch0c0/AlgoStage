@@ -209,6 +209,7 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
     const testBtn = Array.from(settingsContainer.querySelectorAll("button")).find(
       (b) => b.textContent?.includes("测试连接"),
     )!;
+    expect(testBtn.className).toContain("pointer-coarse:min-h-11");
     await act(async () => {
       testBtn.click();
     });
@@ -291,6 +292,7 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
       (b) => b.textContent === "清除本机 API Key",
     )!;
     expect(clearBtn).toBeDefined();
+    expect(clearBtn.className).toContain("pointer-coarse:min-h-11");
     await act(async () => {
       clearBtn.click();
     });
@@ -1245,12 +1247,13 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
       expect(keyInput.getAttribute("aria-invalid")).toBe("false");
 
       // Trigger on save (PUT)
-      const saveBtn = Array.from(settingsContainer.querySelectorAll("button")).find(
-        (b) => b.textContent?.includes("保存设置"),
-      )!;
-      await act(async () => {
-        saveBtn.click();
-      });
+    const saveBtn = Array.from(settingsContainer.querySelectorAll("button")).find(
+      (b) => b.textContent?.includes("保存设置"),
+    )!;
+    expect(saveBtn.className).toContain("pointer-coarse:min-h-11");
+    await act(async () => {
+      saveBtn.click();
+    });
 
       const errAfterSave = settingsContainer.querySelector("#apiKey-error");
       expect(errAfterSave).not.toBeNull();

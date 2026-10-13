@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { act, createElement, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
@@ -309,5 +311,37 @@ test("测试连接无 API Key：聚焦 #apiKey，下一帧在 [role=status] 显�
     await act(async () => root.unmount());
   }
 });
+
+test("serverKeyDisabled 模式下「保存设置」「测试连接」「清除本机 API Key」按钮均包含 pointer-coarse:min-h-11 类名", async () => {
+  const { root, container } = await renderWith({
+    settings: {},
+    keySource: "none",
+    serverKeyDisabled: true,
+  });
+  try {
+    const buttons = Array.from(container.querySelectorAll("button"));
+    const saveBtn = buttons.find((b) => b.textContent?.includes("保存设置") || b.textContent?.includes("已保存"));
+    const testBtn = buttons.find((b) => b.textContent?.includes("测试连接"));
+    const clearBtn = buttons.find((b) => b.textContent?.includes("清除本机 API Key"));
+
+    expect(saveBtn).toBeDefined();
+    expect(testBtn).toBeDefined();
+    expect(clearBtn).toBeDefined();
+
+    expect(saveBtn?.className).toContain("pointer-coarse:min-h-11");
+    expect(testBtn?.className).toContain("pointer-coarse:min-h-11");
+    expect(clearBtn?.className).toContain("pointer-coarse:min-h-11");
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+test("构建时静态检查：app/settings/page.tsx 中「保存设置」「测试连接」「清除本机 API Key」直接包含 pointer-coarse:min-h-11 类名", () => {
+  const source = readFileSync(resolve(__dirname, "../app/settings/page.tsx"), "utf8");
+  expect(source).toContain("pointer-coarse:min-h-11");
+  const occurrences = (source.match(/pointer-coarse:min-h-11/g) || []).length;
+  expect(occurrences).toBe(3);
+});
+
 
 
