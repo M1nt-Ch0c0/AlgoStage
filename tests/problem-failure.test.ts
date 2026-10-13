@@ -10,6 +10,7 @@ import {
   UPSTREAM_ERROR_MESSAGE,
 } from "../lib/byok/client";
 import { usePlayerStore } from "../lib/player/store";
+import { LECTURE_INTERRUPTED_MESSAGE } from "../lib/player/lecture-response";
 import { localSeedSource } from "../lib/content/local-source";
 
 vi.mock("next/navigation", () => ({ useParams: () => ({ slug: "3sum" }) }));
@@ -245,3 +246,68 @@ test.each([
   } finally { await act(async () => root.unmount()); }
 });
 
+
+async function mountWithLecture(lecture: () => Promise<Response>) {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const detail = await localSeedSource.detail("3sum");
+  vi.spyOn(globalThis, "fetch").mockImplementation(async input => {
+    const path = String(input);
+    if (path.endsWith("/api/lecture")) return lecture();
+    if (path.endsWith("/api/settings")) return Response.json({ keySource: "env" });
+    if (path.endsWith("/api/problems/3sum")) return Response.json({ problem: detail });
+    return Response.json({ ok: true });
+  });
+  const container = document.createElement("div"); document.body.append(container);
+  const root = createRoot(container);
+  await act(async () => root.render(createElement(ProblemPage)));
+  await act(async () => Array.from(container.querySelectorAll("button")).find(b => b.textContent === "开始讲课")!.click());
+  return { container, root };
+}
+
+const expectSingleRetry = (container: HTMLElement) => {
+  const alert = container.querySelector('[role="alert"]')!;
+  const buttons = Array.from(alert.querySelectorAll("button"));
+  expect(buttons.map(b => b.textContent)).toEqual(["重试"]);
+  expect(alert.querySelectorAll("a")).toHaveLength(0);
+  expect(alert.textContent).not.toContain("去设置");
+  expect(container.textContent).not.toContain("重试讲课");
+  expect(container.textContent).not.toContain("network error");
+  return alert;
+};
+
+test.each([1, 4])("收到 %d 步后读流抛 TypeError（socket 断开、无 error 事件）：保留步骤，显示「已收到 N 步，备课中断」+ INTERRUPTED 文案 + 一个「重试」", async n => {
+  let stream!: ReadableStreamDefaultController;
+  const { container, root } = await mountWithLecture(async () =>
+    new Response(new ReadableStream({ start(c) { stream = c; } }), { headers: { "Content-Type": "application/x-ndjson" } }));
+  const send = (event: unknown) => stream.enqueue(new TextEncoder().encode(JSON.stringify(event) + "\n"));
+  try {
+    await act(async () => {
+      for (let i = 1; i <= n; i++) send({ type: "step", step: { id: `s${i}`, narration: `第${i}步`, targets: [{ kind: "code-line", start: 2 }], effects: [], dwellMs: 5000 } });
+    });
+    expect(usePlayerStore.getState().steps).toHaveLength(n);
+    await act(async () => { stream.error(new TypeError("network error")); });
+    expect(usePlayerStore.getState()).toMatchObject({ receiving: false });
+    expect(usePlayerStore.getState().steps).toHaveLength(n);
+    expect(container.textContent).toContain(`已收到 ${n} 步，备课中断`);
+    expect(container.textContent).not.toContain("还没开始上课");
+    const alert = expectSingleRetry(container);
+    expect(alert.textContent).toContain(LECTURE_INTERRUPTED_MESSAGE);
+    // alert 不重复 status 里的「已收到 N 步」
+    expect(alert.textContent).not.toContain("已收到");
+  } finally { await act(async () => root.unmount()); }
+});
+
+test.each([
+  { kind: "读流 0 步抛 TypeError", lecture: async () => new Response(new ReadableStream({ start(c) { c.error(new TypeError("network error")); } }), { headers: { "Content-Type": "application/x-ndjson" } }) },
+  { kind: "首个 fetch 无响应", lecture: async (): Promise<Response> => { throw new TypeError("Failed to fetch"); } },
+])("0 步网络错误（$kind）：按 UPSTREAM_ERROR 显示 A5 文案和一个「重试」，不显示浏览器原文", async ({ lecture }) => {
+  const { container, root } = await mountWithLecture(lecture);
+  try {
+    expect(usePlayerStore.getState().steps).toHaveLength(0);
+    const alert = expectSingleRetry(container);
+    expect(alert.textContent).toContain(UPSTREAM_ERROR_MESSAGE);
+    expect(container.textContent).not.toContain("Failed to fetch");
+    expect(container.textContent).not.toContain("备课中断");
+    expect(alert.textContent).not.toContain("已收到");
+  } finally { await act(async () => root.unmount()); }
+});

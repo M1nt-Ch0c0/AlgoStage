@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vitest";
-import { isLectureCutOff, readLectureResponse } from "../lib/player/lecture-response";
+import { isLectureCutOff, LECTURE_INTERRUPTED_MESSAGE, readLectureResponse } from "../lib/player/lecture-response";
 
 const headers = { "Content-Type": "application/x-ndjson" };
 const step = { id: "s1", narration: "首步", targets: [{ kind: "statement", blockId: "intro" }], effects: [] };
@@ -52,9 +52,9 @@ test("超出缓冲上限的无换行响应被拒绝并取消请求", async () =>
   expect(body.locked).toBe(false);
 });
 
-test("网络读取失败后取消也失败，仍释放流锁并保留原错误", async () => {
-  const body = new ReadableStream({ start(controller) { controller.error(new Error("network interrupted")); } });
-  await expect(readLectureResponse(new Response(body, { headers }), () => {})).rejects.toThrow("network interrupted");
+test("网络读取失败后取消也失败，仍释放流锁，错误归一为 INTERRUPTED（不透出浏览器原文）", async () => {
+  const body = new ReadableStream({ start(controller) { controller.error(new TypeError("network error")); } });
+  await expect(readLectureResponse(new Response(body, { headers }), () => {})).rejects.toMatchObject({ code: "INTERRUPTED", message: LECTURE_INTERRUPTED_MESSAGE });
   expect(body.locked).toBe(false);
 });
 test("isLectureCutOff：UPSTREAM_ERROR 只在已收到步骤时算中断", () => {

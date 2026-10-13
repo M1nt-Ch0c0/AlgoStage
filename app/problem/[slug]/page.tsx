@@ -41,7 +41,7 @@ import JudgeSignature from "@/components/judge/judge-signature";
 import AiSetupPrompt from "@/components/settings/ai-setup-prompt";
 import { teachingScriptSchema } from "@/lib/teaching/schema";
 import { readDraft, saveDraft, draftLanguage } from "@/lib/player/drafts";
-import { isLectureCutOff, readLectureResponse } from "@/lib/player/lecture-response";
+import { isLectureCutOff, normalizeNetworkError, readLectureResponse } from "@/lib/player/lecture-response";
 import { cancelLectureForPlayback, loadLectureForPlayback, switchProblemForPlayback } from "@/lib/player/load-lecture";
 import { TWO_SUM_SCRIPT } from "@/lib/content/scripts/two-sum";
 import { HOT100_CATEGORIES } from "@/lib/content/hot100";
@@ -304,14 +304,17 @@ export default function ProblemPage() {
             message: LECTURE_TIMEOUT_MESSAGE,
           };
         } else if (!abort.signal.aborted) {
+          // 网络/读流错误（含首个 fetch 无响应）：有步骤 → INTERRUPTED，0 步 → UPSTREAM_ERROR；不显示浏览器原文。
+          const network = normalizeNetworkError(e, usePlayerStore.getState().steps.length);
           const resolved =
-            e instanceof ServerKeyStatusError
+            network ??
+            (e instanceof ServerKeyStatusError
               ? { code: "UPSTREAM_ERROR", message: UPSTREAM_ERROR_MESSAGE }
               : e instanceof ByokError
                 ? { code: e.code, message: e.message }
                 : resolveByokError({
                     message: e instanceof Error ? e.message : "",
-                  });
+                  }));
           const code = resolved?.code ?? "LECTURE_FAILED";
           const message =
             code === "BASE_URL_NOT_ALLOWED"
@@ -654,7 +657,8 @@ export default function ProblemPage() {
                 className="inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-full border border-beam-rose px-3 py-1 disabled:opacity-40"
               >
                 {lectureError.code === "UPSTREAM_ERROR" ||
-                lectureError.code === "TIMEOUT"
+                lectureError.code === "TIMEOUT" ||
+                lectureError.code === "INTERRUPTED"
                   ? "重试"
                   : "重试讲课"}
               </button>
