@@ -5,6 +5,12 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import HintLadder from "../components/hint/hint-ladder";
+import {
+  BASE_URL_INVALID_LECTURE_MESSAGE,
+  BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE,
+  NO_BYOK_MESSAGE,
+  UPSTREAM_AUTH_LECTURE_MESSAGE,
+} from "../lib/byok/client";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -104,6 +110,8 @@ test("超时失败显示超时提示与重试，重试再次请求", async () =>
   });
   await act(async () => {});
   expect(container.textContent).toContain("提示请求超时，请重试。");
+  expect(container.textContent).not.toContain("去设置");
+  expect(container.querySelector('[role="alert"] a')).toBeNull();
   const retry = Array.from(container.querySelectorAll("button")).find(
     (b) => b.textContent === "重试",
   )!;
@@ -115,6 +123,46 @@ test("超时失败显示超时提示与重试，重试再次请求", async () =>
   await act(async () => {});
   expect(fetchMock).toHaveBeenCalledTimes(3); // hint fail + hint retry + progress
   expect(container.textContent).toContain("看一下目标值");
+});
+
+test.each([
+  { code: "NO_BYOK", message: NO_BYOK_MESSAGE, href: "/settings?focus=apiKey" },
+  { code: "UPSTREAM_AUTH", message: UPSTREAM_AUTH_LECTURE_MESSAGE, href: "/settings?focus=apiKey" },
+  { code: "BASE_URL_INVALID", message: BASE_URL_INVALID_LECTURE_MESSAGE, href: "/settings?focus=baseUrl" },
+  { code: "BASE_URL_NOT_ALLOWED", message: BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE, href: "/settings?focus=baseUrl" },
+  { code: "BYOK_KEY_REQUIRED", message: "用自定义接口地址时，需要同时填你自己的 API Key", href: "/settings" },
+])("config code $code 显示「去设置」，不显示「重试」", async ({ code, message, href }) => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockImplementation(async (url: unknown) => {
+      const path = String(url);
+      if (path.endsWith("/api/settings")) {
+        return Response.json({ serverKeyDisabled: true });
+      }
+      if (path.endsWith("/api/hint")) {
+        return Response.json({ error: code, message: code }, { status: 400 });
+      }
+      return Response.json({ ok: true });
+    }),
+  );
+
+  await act(async () => {
+    root.render(createElement(HintLadder, { slug: "two-sum" }));
+  });
+  await act(async () => {
+    levelButton("观察").click();
+  });
+
+  const alert = container.querySelector('[role="alert"]');
+  expect(alert).not.toBeNull();
+  expect(alert!.textContent).toContain(message);
+  expect(alert!.querySelectorAll("button")).toHaveLength(0);
+  expect(alert!.textContent).not.toContain("重试");
+
+  const link = alert!.querySelector("a");
+  expect(link).not.toBeNull();
+  expect(link!.textContent).toBe("去设置");
+  expect(link!.getAttribute("href")).toBe(href);
 });
 
 test("卸载时中止进行中的请求", async () => {

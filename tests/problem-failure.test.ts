@@ -3,6 +3,8 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
 import {
+  BASE_URL_INVALID_LECTURE_MESSAGE,
+  BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE,
   LECTURE_TIMEOUT_MESSAGE,
   UPSTREAM_AUTH_LECTURE_MESSAGE,
   UPSTREAM_ERROR_MESSAGE,
@@ -21,6 +23,8 @@ afterEach(() => { usePlayerStore.getState().reset(); vi.restoreAllMocks(); vi.un
 test.each([
   { error: "UPSTREAM_AUTH", message: UPSTREAM_AUTH_LECTURE_MESSAGE },
   { error: "AUTH_ERROR", message: UPSTREAM_AUTH_LECTURE_MESSAGE },
+  { error: "BASE_URL_INVALID", message: BASE_URL_INVALID_LECTURE_MESSAGE },
+  { error: "BASE_URL_NOT_ALLOWED", message: BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE },
   { error: "TIMEOUT", message: LECTURE_TIMEOUT_MESSAGE },
   { error: "INVALID_SCRIPT", message: "教案不合法，请换用 gpt-6.1-sol。" },
 ])("流式备课失败清空半份教案，保留对应错误和操作入口：%j", async ({ error, message }) => {
@@ -49,12 +53,21 @@ test.each([
     expect(container.querySelector("[data-editor]")?.textContent).toBe(detail.referenceSolutions!.find(s => s.language === "typescript")!.code);
     const alert = container.querySelector('[role="alert"]')!;
     expect(alert.textContent).toContain(message);
-    if (error === "UPSTREAM_AUTH" || error === "AUTH_ERROR") {
+    if (
+      error === "UPSTREAM_AUTH" ||
+      error === "AUTH_ERROR" ||
+      error === "BASE_URL_INVALID" ||
+      error === "BASE_URL_NOT_ALLOWED"
+    ) {
       expect(alert.querySelectorAll("button")).toHaveLength(0);
       expect(alert.textContent).not.toContain("重试");
       const link = alert.querySelector('[data-testid="goto-settings"]') as HTMLAnchorElement;
       expect(link).not.toBeNull();
-      expect(link.getAttribute("href")).toBe("/settings?focus=apiKey");
+      expect(link.getAttribute("href")).toBe(
+        error === "BASE_URL_INVALID" || error === "BASE_URL_NOT_ALLOWED"
+          ? "/settings?focus=baseUrl"
+          : "/settings?focus=apiKey",
+      );
       expect(link.textContent).toBe("去设置");
     } else if (error === "TIMEOUT") {
       const buttons = Array.from(alert.querySelectorAll("button"));

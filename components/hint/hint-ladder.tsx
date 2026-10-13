@@ -4,6 +4,8 @@ import {
   BASE_URL_INVALID_LECTURE_MESSAGE,
   BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE,
   ByokError,
+  configErrorFocus,
+  errorActions,
   fetchServerKeyDisabled,
   HINT_TIMEOUT_MESSAGE,
   isBaseUrlInvalid,
@@ -262,41 +264,42 @@ export default function HintLadder({
           </button>
         </div>
       )}
-      {hintError && (
-        <div
-          role="alert"
-          className="mt-2 flex items-center gap-2 text-xs leading-5 text-beam-rose"
-        >
-          <p>{hintError.message}</p>
-          {(hintError.code === "NO_BYOK" ||
-            hintError.code === "UPSTREAM_AUTH" ||
-            hintError.code === "BASE_URL_NOT_ALLOWED" ||
-            hintError.code === "BASE_URL_INVALID") && (
-            <Link
-              href={
-                hintError.code === "NO_BYOK" ||
-                hintError.code === "UPSTREAM_AUTH"
-                  ? "/settings?focus=apiKey"
-                  : "/settings?focus=baseUrl"
-              }
-              data-testid="goto-settings"
-              className="inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-full border border-beam-gold/60 bg-transparent px-2.5 py-0.5 text-beam-gold transition-colors hover:border-beam-gold"
-            >
-              去设置
-            </Link>
-          )}
-          {retryLevel !== null && hintError.code !== "UPSTREAM_AUTH" && (
-            <button
-              type="button"
-              onClick={() => askHint(retryLevel)}
-              disabled={hintBusy !== null}
-              className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center whitespace-nowrap rounded-full border border-beam-rose px-2 py-0.5 disabled:opacity-40"
-            >
-              重试
-            </button>
-          )}
-        </div>
-      )}
+      {hintError && (() => {
+        const actions = errorActions(hintError.code, "hint");
+        const focus = configErrorFocus(hintError.code);
+        const isFocused = focus !== null;
+        return (
+          <div
+            role="alert"
+            className="mt-2 flex items-center gap-2 text-xs leading-5 text-beam-rose"
+          >
+            <p>{hintError.message}</p>
+            {actions.settings && (
+              <Link
+                href={focus ? `/settings?focus=${focus}` : "/settings"}
+                data-testid={isFocused ? "goto-settings" : undefined}
+                className={
+                  isFocused
+                    ? "inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-full border border-beam-gold/60 bg-transparent px-2.5 py-0.5 text-beam-gold transition-colors hover:border-beam-gold"
+                    : "inline-flex min-h-11 shrink-0 items-center whitespace-nowrap underline hover:text-chalk-100"
+                }
+              >
+                去设置
+              </Link>
+            )}
+            {actions.retry && retryLevel !== null && (
+              <button
+                type="button"
+                onClick={() => askHint(retryLevel)}
+                disabled={hintBusy !== null}
+                className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center whitespace-nowrap rounded-full border border-beam-rose px-2 py-0.5 disabled:opacity-40"
+              >
+                重试
+              </button>
+            )}
+          </div>
+        );
+      })()}
       {hints.length > 0 && (
         <div className="mt-3 flex max-h-40 flex-col gap-2 overflow-y-auto">
           {hints

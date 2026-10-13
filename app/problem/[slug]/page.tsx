@@ -11,6 +11,8 @@ import {
   BASE_URL_INVALID_LECTURE_MESSAGE,
   BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE,
   ByokError,
+  configErrorFocus,
+  errorActions,
   fetchServerKeyDisabled,
   LECTURE_TIMEOUT_MESSAGE,
   resolveByokError,
@@ -627,50 +629,35 @@ export default function ProblemPage() {
           教案已生成完成，共 {stepCount} 步。可以继续播放或选择步骤回看。
         </p>
       )}
-      {lectureError && (
-        <div
-          role="alert"
-          className="flex items-center gap-3 text-sm text-beam-rose"
-        >
-          <p>{lectureError.message}</p>
-          {lectureError.code !== "UPSTREAM_AUTH" && (
-            <button
-              type="button"
-              onClick={() => startLecture()}
-              disabled={lectureBusy || !detail}
-              className="inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-full border border-beam-rose px-3 py-1 disabled:opacity-40"
-            >
-              {lectureError.code === "UPSTREAM_ERROR" ||
-              lectureError.code === "TIMEOUT"
-                ? "重试"
-                : "重试讲课"}
-            </button>
-          )}
-          {lectureError.code !== "UPSTREAM_ERROR" &&
-            lectureError.code !== "TIMEOUT" && (
+      {lectureError && (() => {
+        const actions = errorActions(lectureError.code, "lecture");
+        const focus = configErrorFocus(lectureError.code);
+        const isFocused = focus !== null;
+        return (
+          <div
+            role="alert"
+            className="flex items-center gap-3 text-sm text-beam-rose"
+          >
+            <p>{lectureError.message}</p>
+            {actions.retry && (
+              <button
+                type="button"
+                onClick={() => startLecture()}
+                disabled={lectureBusy || !detail}
+                className="inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-full border border-beam-rose px-3 py-1 disabled:opacity-40"
+              >
+                {lectureError.code === "UPSTREAM_ERROR" ||
+                lectureError.code === "TIMEOUT"
+                  ? "重试"
+                  : "重试讲课"}
+              </button>
+            )}
+            {actions.settings && (
               <Link
-                href={
-                  lectureError.code === "NO_BYOK" ||
-                  lectureError.code === "UPSTREAM_AUTH"
-                    ? "/settings?focus=apiKey"
-                    : lectureError.code === "BASE_URL_NOT_ALLOWED" ||
-                        lectureError.code === "BASE_URL_INVALID"
-                      ? "/settings?focus=baseUrl"
-                      : "/settings"
-                }
-                data-testid={
-                  lectureError.code === "NO_BYOK" ||
-                  lectureError.code === "UPSTREAM_AUTH" ||
-                  lectureError.code === "BASE_URL_NOT_ALLOWED" ||
-                  lectureError.code === "BASE_URL_INVALID"
-                    ? "goto-settings"
-                    : undefined
-                }
+                href={focus ? `/settings?focus=${focus}` : "/settings"}
+                data-testid={isFocused ? "goto-settings" : undefined}
                 className={
-                  lectureError.code === "NO_BYOK" ||
-                  lectureError.code === "UPSTREAM_AUTH" ||
-                  lectureError.code === "BASE_URL_NOT_ALLOWED" ||
-                  lectureError.code === "BASE_URL_INVALID"
+                  isFocused
                     ? "inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-full border border-beam-gold/60 bg-transparent px-3 py-1 text-beam-gold transition-colors hover:border-beam-gold"
                     : "inline-flex min-h-11 shrink-0 items-center whitespace-nowrap underline hover:text-chalk-100"
                 }
@@ -678,8 +665,9 @@ export default function ProblemPage() {
                 去设置
               </Link>
             )}
-        </div>
-      )}
+          </div>
+        );
+      })()}
 
       {/* ── 三栏 ── */}
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,3fr)_minmax(0,5fr)_minmax(0,3.6fr)]">

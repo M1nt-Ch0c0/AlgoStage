@@ -10,8 +10,10 @@ import {
   BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE,
   BASE_URL_NOT_ALLOWED_MESSAGE,
   ByokError,
+  errorActions,
   HINT_TIMEOUT_MESSAGE,
   isBaseUrlInvalid,
+  isConfigErrorCode,
   isUpstreamAuth,
   LECTURE_TIMEOUT_MESSAGE,
   mapByokErrorMessage,
@@ -308,10 +310,7 @@ describe("Rendered UI error messages in HintLadder and ProblemPage", () => {
       const retryBtn = Array.from(alert!.querySelectorAll("button")).find(
         (b) => b.textContent === "重试",
       );
-      if (code === "UPSTREAM_AUTH") {
-        expect(retryBtn).toBeUndefined();
-        expect(alert!.querySelectorAll("button")).toHaveLength(0);
-      } else {
+      if (code === "UPSTREAM_ERROR") {
         expect(retryBtn).toBeDefined();
         for (const cls of [
           "min-h-11",
@@ -322,28 +321,20 @@ describe("Rendered UI error messages in HintLadder and ProblemPage", () => {
         ]) {
           expect(retryBtn!.classList.contains(cls)).toBe(true);
         }
+      } else {
+        expect(retryBtn).toBeUndefined();
+        expect(alert!.querySelectorAll("button")).toHaveLength(0);
+        expect(alert!.textContent).not.toContain("重试");
       }
 
       const settingsLink = Array.from(alert!.querySelectorAll("a")).find(
         (a) => a.textContent === "去设置",
       );
-      if (
-        code === "NO_BYOK" ||
-        code === "UPSTREAM_AUTH" ||
-        code === "BASE_URL_NOT_ALLOWED" ||
-        code === "BASE_URL_INVALID"
-      ) {
+      if (code === "UPSTREAM_ERROR") {
+        expect(settingsLink).toBeUndefined();
+        expect(alert!.querySelectorAll("a")).toHaveLength(0);
+      } else {
         expect(settingsLink).toBeDefined();
-        expect(settingsLink!.getAttribute("data-testid")).toBe("goto-settings");
-        expect(settingsLink!.getAttribute("href")).toBe(
-          code === "NO_BYOK" || code === "UPSTREAM_AUTH"
-            ? "/settings?focus=apiKey"
-            : "/settings?focus=baseUrl",
-        );
-        expect(settingsLink!.classList.contains("border")).toBe(true);
-        expect(settingsLink!.classList.contains("border-beam-gold/60")).toBe(true);
-        expect(settingsLink!.classList.contains("text-beam-gold")).toBe(true);
-        expect(settingsLink!.classList.contains("bg-transparent")).toBe(true);
         for (const cls of [
           "min-h-11",
           "inline-flex",
@@ -353,8 +344,26 @@ describe("Rendered UI error messages in HintLadder and ProblemPage", () => {
         ]) {
           expect(settingsLink!.classList.contains(cls)).toBe(true);
         }
-      } else {
-        expect(settingsLink).toBeUndefined();
+        if (
+          code === "NO_BYOK" ||
+          code === "UPSTREAM_AUTH" ||
+          code === "BASE_URL_NOT_ALLOWED" ||
+          code === "BASE_URL_INVALID"
+        ) {
+          expect(settingsLink!.getAttribute("data-testid")).toBe("goto-settings");
+          expect(settingsLink!.getAttribute("href")).toBe(
+            code === "NO_BYOK" || code === "UPSTREAM_AUTH"
+              ? "/settings?focus=apiKey"
+              : "/settings?focus=baseUrl",
+          );
+          expect(settingsLink!.classList.contains("border")).toBe(true);
+          expect(settingsLink!.classList.contains("border-beam-gold/60")).toBe(true);
+          expect(settingsLink!.classList.contains("text-beam-gold")).toBe(true);
+          expect(settingsLink!.classList.contains("bg-transparent")).toBe(true);
+        } else {
+          expect(settingsLink!.getAttribute("href")).toBe("/settings");
+          expect(settingsLink!.classList.contains("border-beam-gold/60")).toBe(false);
+        }
       }
     },
   );
@@ -392,6 +401,13 @@ describe("Rendered UI error messages in HintLadder and ProblemPage", () => {
     expect(alert).not.toBeNull();
     expect(alert!.textContent).toContain("老师这会儿有点慢，请再试一次。");
     expect(alert!.textContent).not.toContain(rawCode);
+
+    const retryBtn = Array.from(alert!.querySelectorAll("button")).find(
+      (b) => b.textContent === "重试",
+    );
+    expect(retryBtn).toBeDefined();
+    expect(alert!.querySelectorAll("a")).toHaveLength(0);
+    expect(alert!.textContent).not.toContain("去设置");
   });
 
   test.each(
@@ -449,14 +465,9 @@ describe("Rendered UI error messages in HintLadder and ProblemPage", () => {
       expect(alert!.textContent).not.toContain(code);
 
       const buttons = Array.from(alert!.querySelectorAll("button"));
-      if (code === "UPSTREAM_AUTH") {
-        expect(buttons).toHaveLength(0);
-        expect(alert!.textContent).not.toContain("重试");
-      } else {
+      if (code === "UPSTREAM_ERROR") {
         expect(buttons).toHaveLength(1);
-        expect(buttons[0].textContent).toBe(
-          code === "UPSTREAM_ERROR" ? "重试" : "重试讲课",
-        );
+        expect(buttons[0].textContent).toBe("重试");
         for (const cls of [
           "min-h-11",
           "inline-flex",
@@ -466,6 +477,9 @@ describe("Rendered UI error messages in HintLadder and ProblemPage", () => {
         ]) {
           expect(buttons[0].classList.contains(cls)).toBe(true);
         }
+      } else {
+        expect(buttons).toHaveLength(0);
+        expect(alert!.textContent).not.toContain("重试");
       }
 
       const settingsLink = Array.from(alert!.querySelectorAll("a")).find(
@@ -604,6 +618,8 @@ describe("Rendered UI error messages in HintLadder and ProblemPage", () => {
     expect(alert).not.toBeNull();
     expect(alert!.textContent).toContain(BASE_URL_INVALID_LECTURE_MESSAGE);
     expect(alert!.textContent).not.toContain(UPSTREAM_ERROR_MESSAGE);
+    expect(alert!.textContent).not.toContain("重试");
+    expect(alert!.querySelectorAll("button")).toHaveLength(0);
     const settingsLink = alert!.querySelector('[data-testid="goto-settings"]');
     expect(settingsLink).not.toBeNull();
     expect(settingsLink!.getAttribute("href")).toBe("/settings?focus=baseUrl");
@@ -1065,6 +1081,60 @@ describe("Rendered UI error messages in HintLadder and ProblemPage", () => {
       expect(call).not.toContain(undefined);
       expect(call.map(String)).not.toContain("undefined");
     }
+  });
+
+  test("errorActions and isConfigErrorCode", () => {
+    for (const code of [
+      "NO_BYOK",
+      "BASE_URL_INVALID",
+      "BASE_URL_NOT_ALLOWED",
+      "BYOK_KEY_REQUIRED",
+      "UPSTREAM_AUTH",
+      "SETTINGS_LOCKED",
+    ]) {
+      expect(isConfigErrorCode(code)).toBe(true);
+      expect(errorActions(code)).toEqual({ settings: true, retry: false });
+      expect(errorActions(code, "lecture")).toEqual({
+        settings: true,
+        retry: false,
+      });
+      expect(errorActions(code, "hint")).toEqual({
+        settings: true,
+        retry: false,
+      });
+    }
+
+    for (const code of ["UPSTREAM_ERROR", "TIMEOUT"]) {
+      expect(isConfigErrorCode(code)).toBe(false);
+      expect(errorActions(code)).toEqual({ settings: false, retry: true });
+      expect(errorActions(code, "lecture")).toEqual({
+        settings: false,
+        retry: true,
+      });
+      expect(errorActions(code, "hint")).toEqual({
+        settings: false,
+        retry: true,
+      });
+    }
+
+    expect(isConfigErrorCode("UNKNOWN_CODE")).toBe(false);
+    expect(errorActions("UNKNOWN_CODE")).toEqual({
+      settings: false,
+      retry: true,
+    });
+    expect(errorActions("UNKNOWN_CODE", "hint")).toEqual({
+      settings: false,
+      retry: true,
+    });
+
+    expect(errorActions("INVALID_SCRIPT", "lecture")).toEqual({
+      settings: true,
+      retry: true,
+    });
+    expect(errorActions("INVALID_SCRIPT")).toEqual({
+      settings: true,
+      retry: true,
+    });
   });
 });
 

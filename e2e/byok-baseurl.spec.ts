@@ -211,16 +211,71 @@ test("at 390x844 viewport, BASE_URL_INVALID error-action buttons/links in lectur
   const lectureAlert = page.getByRole("alert").first();
   await expect(lectureAlert).toContainText(expectedError);
 
-  const retryLectureBtn = lectureAlert.getByRole("button", { name: "重试讲课", exact: true });
+  // Config-class errors show ONLY 「去设置」 and NO 「重试」/「重试讲课」
+  await expect(lectureAlert.getByRole("button", { name: "重试讲课", exact: true })).toHaveCount(0);
+  await expect(lectureAlert.getByRole("button", { name: "重试", exact: true })).toHaveCount(0);
   const lectureGotoSettings = lectureAlert.getByTestId("goto-settings");
-  await expect(retryLectureBtn).toBeVisible();
   await expect(lectureGotoSettings).toBeVisible();
 
-  const retryLectureBox = await retryLectureBtn.boundingBox();
-  expect(retryLectureBox).not.toBeNull();
-  expect(retryLectureBox!.height).toBeGreaterThanOrEqual(44);
+  const lectureGotoBox = await lectureGotoSettings.boundingBox();
+  expect(lectureGotoBox).not.toBeNull();
+  expect(lectureGotoBox!.height).toBeGreaterThanOrEqual(44);
 
-  const retryTextMetrics = await retryLectureBtn.evaluate((el) => {
+  const lectureTextMetrics = await lectureGotoSettings.evaluate((el) => {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    return {
+      textHeight: range.getBoundingClientRect().height,
+      lineHeight: parseFloat(window.getComputedStyle(el).lineHeight),
+    };
+  });
+  expect(lectureTextMetrics.textHeight).toBeLessThan(2 * lectureTextMetrics.lineHeight);
+
+  // Trigger hint error as well to verify hint state: NO 重试 button, 去设置 present
+  await page.getByRole("button", { name: /L1\s*观察/ }).click();
+  const hintAlert = page.getByRole("alert").nth(1);
+  await expect(hintAlert).toContainText(expectedError);
+
+  await expect(hintAlert.getByRole("button", { name: "重试", exact: true })).toHaveCount(0);
+  const hintGotoSettings = hintAlert.getByTestId("goto-settings");
+  await expect(hintGotoSettings).toBeVisible();
+
+  const hintGotoBox = await hintGotoSettings.boundingBox();
+  expect(hintGotoBox).not.toBeNull();
+  expect(hintGotoBox!.height).toBeGreaterThanOrEqual(44);
+
+  // UPSTREAM_ERROR hint error from real server (AI_BASE_URL http://127.0.0.1:1/no-model has zero egress and returns 502 UPSTREAM_ERROR)
+  const upstreamCheck = await page.request.post("/api/hint", {
+    data: { slug: "3sum", level: 1, byok: { apiKey: "sk-e2e-dummy-key-0000" } },
+  });
+  expect(upstreamCheck.status()).toBe(502);
+  expect(await upstreamCheck.json()).toMatchObject({
+    code: "UPSTREAM_ERROR",
+    error: "UPSTREAM_ERROR",
+  });
+
+  // Now reload with byok containing only apiKey (falling back to server's private AI_BASE_URL for 502 UPSTREAM_ERROR)
+  await page.goto("/problem/3sum");
+  await page.evaluate(() => {
+    window.localStorage.setItem("algostage.byok", JSON.stringify({ apiKey: "sk-e2e-dummy-key-0000" }));
+  });
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("三数之和");
+  await page.getByRole("button", { name: /L1\s*观察/ }).click();
+
+  const upstreamHintAlert = page.getByRole("alert").first();
+  await expect(upstreamHintAlert).toContainText("AI 服务暂时连不上，请稍后再试。");
+  await expect(upstreamHintAlert.getByTestId("goto-settings")).toHaveCount(0);
+  await expect(upstreamHintAlert.getByRole("link", { name: "去设置" })).toHaveCount(0);
+
+  const hintRetryBtn = upstreamHintAlert.getByRole("button", { name: "重试", exact: true });
+  await expect(hintRetryBtn).toBeVisible();
+
+  const hintRetryBox = await hintRetryBtn.boundingBox();
+  expect(hintRetryBox).not.toBeNull();
+  expect(hintRetryBox!.width).toBeGreaterThanOrEqual(44);
+  expect(hintRetryBox!.height).toBeGreaterThanOrEqual(44);
+
+  const retryTextMetrics = await hintRetryBtn.evaluate((el) => {
     const range = document.createRange();
     range.selectNodeContents(el);
     return {
@@ -229,29 +284,6 @@ test("at 390x844 viewport, BASE_URL_INVALID error-action buttons/links in lectur
     };
   });
   expect(retryTextMetrics.textHeight).toBeLessThan(2 * retryTextMetrics.lineHeight);
-
-  const lectureGotoBox = await lectureGotoSettings.boundingBox();
-  expect(lectureGotoBox).not.toBeNull();
-  expect(lectureGotoBox!.height).toBeGreaterThanOrEqual(44);
-
-  // Trigger hint error as well to verify hint buttons/links at 390x844
-  await page.getByRole("button", { name: /L1\s*观察/ }).click();
-  const hintAlert = page.getByRole("alert").nth(1);
-  await expect(hintAlert).toContainText(expectedError);
-
-  const hintGotoSettings = hintAlert.getByTestId("goto-settings");
-  const hintRetryBtn = hintAlert.getByRole("button", { name: "重试", exact: true });
-  await expect(hintGotoSettings).toBeVisible();
-  await expect(hintRetryBtn).toBeVisible();
-
-  const hintGotoBox = await hintGotoSettings.boundingBox();
-  expect(hintGotoBox).not.toBeNull();
-  expect(hintGotoBox!.height).toBeGreaterThanOrEqual(44);
-
-  const hintRetryBox = await hintRetryBtn.boundingBox();
-  expect(hintRetryBox).not.toBeNull();
-  expect(hintRetryBox!.width).toBeGreaterThanOrEqual(44);
-  expect(hintRetryBox!.height).toBeGreaterThanOrEqual(44);
 });
 
 

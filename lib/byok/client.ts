@@ -261,6 +261,62 @@ export function isNoByokError(data: unknown): boolean {
   return rec.error === "NO_BYOK" || rec.code === "NO_BYOK";
 }
 
+export const CONFIG_ERROR_CODES = [
+  "NO_BYOK",
+  "BASE_URL_INVALID",
+  "BASE_URL_NOT_ALLOWED",
+  "BYOK_KEY_REQUIRED",
+  "UPSTREAM_AUTH",
+  "SETTINGS_LOCKED",
+] as const;
+
+export type ConfigErrorCode = (typeof CONFIG_ERROR_CODES)[number];
+
+const LECTURE_SPECIFIC_CODES = new Set([
+  "INVALID_SCRIPT",
+  "STREAM_ERROR",
+  "INVALID_STREAM",
+  "PAYLOAD_TOO_LARGE",
+  "INCOMPLETE_STREAM",
+  "EMPTY_BODY",
+  "LECTURE_FAILED",
+  "NOT_READY",
+]);
+
+export function isConfigErrorCode(code: string | undefined | null): boolean {
+  return (
+    typeof code === "string" &&
+    (CONFIG_ERROR_CODES as readonly string[]).includes(code)
+  );
+}
+
+export function errorActions(
+  code: string | undefined | null,
+  context?: "lecture" | "hint",
+): { settings: boolean; retry: boolean } {
+  if (isConfigErrorCode(code)) {
+    return { settings: true, retry: false };
+  }
+  if (
+    context === "lecture" ||
+    (!context && typeof code === "string" && LECTURE_SPECIFIC_CODES.has(code))
+  ) {
+    if (typeof code === "string" && LECTURE_SPECIFIC_CODES.has(code)) {
+      return { settings: true, retry: true };
+    }
+  }
+  return { settings: false, retry: true };
+}
+
+export function configErrorFocus(
+  code: string | undefined | null,
+): "apiKey" | "baseUrl" | null {
+  if (code === "NO_BYOK" || code === "UPSTREAM_AUTH") return "apiKey";
+  if (code === "BASE_URL_INVALID" || code === "BASE_URL_NOT_ALLOWED")
+    return "baseUrl";
+  return null;
+}
+
 export function parseFocusParam(search: string): "baseURL" | "apiKey" | null {
   try {
     const params = new URLSearchParams(search);
