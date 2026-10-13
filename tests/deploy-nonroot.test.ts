@@ -89,7 +89,7 @@ describe("entrypoint data permissions", () => {
 
 it("documents a concrete data-volume backup before the one-time chown", () => {
   const readme = readFileSync(path.join(root, "deploy/README.md"), "utf8");
-  const backup = 'docker run --rm -v <你的数据卷名>:/data -v "$PWD":/backup alpine tar czf /backup/algostage-data-$(date +%F).tgz -C /data .';
+  const backup = 'docker run --rm -v <你的数据卷名>:/data -v ~/algostage-backups:/backup alpine tar czf /backup/algostage-data-$(date +%F).tgz -C /data .';
   expect(readme).toContain(backup);
   expect(readme).toContain("algostage.db-wal");
   expect(readme.indexOf(backup)).toBeLessThan(readme.indexOf(fixCommand));

@@ -1,7 +1,9 @@
 node_modules
 .next
 .git
-.env*
+.env
+.env.*
+!.env.example
 prisma/*.db
 prisma/*.db-journal
 docs/assets
@@ -12,3 +14,13 @@ public/judge
 coverage
 playwright-report
 test-results
+
+# 数据库备份与本地数据库：绝不能打进镜像
+*.tgz
+*.tar.gz
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+/algostage.db
+backups/

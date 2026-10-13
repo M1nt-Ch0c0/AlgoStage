@@ -42,9 +42,12 @@ docker inspect -f '{{range .Mounts}}{{.Name}} -> {{.Destination}}{{"\n"}}{{end}}
 1. 停止旧容器（`ALGOSTAGE_IMAGE_TAG=<旧版本> docker compose -f deploy/compose.yaml stop`），再把整个数据卷打包备份，包含 `/data/algostage.db` 以及仍存在的 SQLite `algostage.db-wal` / `algostage.db-shm` 文件：
 
    ```sh
-   docker run --rm -v <你的数据卷名>:/data -v "$PWD":/backup alpine tar czf /backup/algostage-data-$(date +%F).tgz -C /data .
-   tar tzf algostage-data-$(date +%F).tgz   # 确认备份里有 algostage.db
+   mkdir -p ~/algostage-backups   # 也可以换成你自己选的目录，但必须在源码目录之外
+   docker run --rm -v <你的数据卷名>:/data -v ~/algostage-backups:/backup alpine tar czf /backup/algostage-data-$(date +%F).tgz -C /data .
+   tar tzf ~/algostage-backups/algostage-data-$(date +%F).tgz   # 确认备份里有 algostage.db
    ```
+
+   > **注意**：备份里有数据库和明文 Key，不要放在仓库目录（构建上下文）里。`docker build` 的 `COPY . .` 会把源码目录下的文件打进镜像；`.dockerignore` 虽已排除 `*.tgz`、`*.db`，仍请把备份放在仓库之外。
 
 2. 对旧卷执行一次权限修复：
 
