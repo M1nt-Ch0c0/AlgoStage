@@ -6,7 +6,7 @@ import AiSetupPrompt from "../components/settings/ai-setup-prompt";
 import {
   BASE_URL_NOT_ALLOWED_SETTINGS_MESSAGE,
   isBaseUrlNotAllowed,
-  isLocalBaseUrlAllowed,
+  isValidHttpBaseUrl,
   NO_BYOK_SETTINGS_MESSAGE,
   parseFocusParam,
   resetServerKeyDisabledCache,
@@ -469,7 +469,7 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
     const localKeyInput = settingsContainer.querySelector<HTMLInputElement>("#apiKey")!;
     await act(async () => {
       setInputValue(localKeyInput, "sk-local-key-12345");
-      setInputValue(localBaseInput, "http://localhost:11434/v1");
+      setInputValue(localBaseInput, "not-a-valid-url");
     });
 
     const localSaveBtn = Array.from(settingsContainer.querySelectorAll("button")).find(
@@ -485,6 +485,137 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
     expect(document.activeElement).toBe(localBaseInput);
     expect(readLocalByok()).toBeNull();
     expect(settingsContainer.textContent).not.toContain("已保存");
+  });
+
+  test("baseURL frontend validation: typing invalid shows no error; blur invalid shows error; editing clears; empty ok on blur and save; save invalid blocked; http://192.168.1.2 passes and saves", async () => {
+    let serverKeyDisabledMode = false;
+    const putCalls: unknown[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (init?.method === "PUT") {
+        putCalls.push(JSON.parse(String(init.body)));
+        return Response.json({ ok: true });
+      }
+      if (url.endsWith("/api/settings")) {
+        return Response.json({
+          settings: {},
+          keySource: "settings",
+          serverKeyDisabled: serverKeyDisabledMode,
+        });
+      }
+      return Response.json({ ok: true });
+    });
+
+    await act(async () => {
+      settingsRoot.render(createElement(SettingsPage));
+    });
+
+    const baseInput = settingsContainer.querySelector<HTMLInputElement>("#baseURL")!;
+    const saveBtn = Array.from(settingsContainer.querySelectorAll("button")).find(
+      (b) => b.textContent?.includes("保存设置"),
+    )!;
+
+    // 1. Typing invalid shows no error
+    await act(async () => {
+      setInputValue(baseInput, "ftp://invalid.example.com");
+    });
+    expect(settingsContainer.querySelector("#baseURL-error")).toBeNull();
+
+    // 2. Blur invalid shows error and focuses input
+    await act(async () => {
+      baseInput.focus();
+      baseInput.blur();
+    });
+    expect(settingsContainer.querySelector("#baseURL-error")?.textContent).toBe(
+      BASE_URL_NOT_ALLOWED_SETTINGS_MESSAGE,
+    );
+    expect(document.activeElement).toBe(baseInput);
+
+    // 3. Editing after shows clears error immediately
+    await act(async () => {
+      setInputValue(baseInput, "not-a-url");
+    });
+    expect(settingsContainer.querySelector("#baseURL-error")).toBeNull();
+
+    // 4. Save with invalid blocked (no fetch PUT) with focus on input
+    await act(async () => {
+      saveBtn.click();
+    });
+    expect(settingsContainer.querySelector("#baseURL-error")?.textContent).toBe(
+      BASE_URL_NOT_ALLOWED_SETTINGS_MESSAGE,
+    );
+    expect(document.activeElement).toBe(baseInput);
+    expect(putCalls).toHaveLength(0);
+
+    // 5. Empty ok on blur and save
+    await act(async () => {
+      setInputValue(baseInput, "   ");
+    });
+    expect(settingsContainer.querySelector("#baseURL-error")).toBeNull();
+    await act(async () => {
+      baseInput.focus();
+      baseInput.blur();
+    });
+    expect(settingsContainer.querySelector("#baseURL-error")).toBeNull();
+    await act(async () => {
+      saveBtn.click();
+    });
+    expect(settingsContainer.querySelector("#baseURL-error")).toBeNull();
+    expect(putCalls).toHaveLength(1);
+
+    // 6. http://192.168.1.2 passes frontend validation and save proceeds (normal mode)
+    await act(async () => {
+      setInputValue(baseInput, "http://192.168.1.2");
+    });
+    await act(async () => {
+      baseInput.focus();
+      baseInput.blur();
+    });
+    expect(settingsContainer.querySelector("#baseURL-error")).toBeNull();
+    await act(async () => {
+      saveBtn.click();
+    });
+    expect(settingsContainer.querySelector("#baseURL-error")).toBeNull();
+    expect(putCalls).toHaveLength(2);
+    expect(putCalls[1]).toEqual({
+      settings: { baseURL: "http://192.168.1.2" },
+    });
+
+    // 7. http://192.168.1.2 passes frontend validation and save proceeds (serverKeyDisabled mode)
+    serverKeyDisabledMode = true;
+    await act(async () => {
+      settingsRoot.unmount();
+    });
+    settingsRoot = createRoot(settingsContainer);
+    await act(async () => {
+      settingsRoot.render(createElement(SettingsPage));
+    });
+
+    const localBaseInput = settingsContainer.querySelector<HTMLInputElement>("#baseURL")!;
+    const localKeyInput = settingsContainer.querySelector<HTMLInputElement>("#apiKey")!;
+    const localSaveBtn = Array.from(settingsContainer.querySelectorAll("button")).find(
+      (b) => b.textContent?.includes("保存设置"),
+    )!;
+
+    await act(async () => {
+      setInputValue(localKeyInput, "sk-local-lan-key-123");
+      setInputValue(localBaseInput, "http://192.168.1.2");
+    });
+    await act(async () => {
+      localBaseInput.focus();
+      localBaseInput.blur();
+    });
+    expect(settingsContainer.querySelector("#baseURL-error")).toBeNull();
+
+    await act(async () => {
+      localSaveBtn.click();
+    });
+    expect(settingsContainer.querySelector("#baseURL-error")).toBeNull();
+    expect(putCalls).toHaveLength(2);
+    expect(readLocalByok()).toMatchObject({
+      apiKey: "sk-local-lan-key-123",
+      baseURL: "http://192.168.1.2",
+    });
   });
 
   test("focus=baseUrl and focus=apiKey query params focus, scrollIntoView, and highlight target input after settings load", async () => {
@@ -571,20 +702,19 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
     expect(isBaseUrlNotAllowed({ code: "BASE_URL_NOT_ALLOWED" })).toBe(true);
     expect(isBaseUrlNotAllowed({ error: "OTHER" })).toBe(false);
 
-    expect(isLocalBaseUrlAllowed("")).toBe(true);
-    expect(isLocalBaseUrlAllowed("https://api.openai.com/v1")).toBe(true);
-    expect(isLocalBaseUrlAllowed("http://example.com/v1")).toBe(true);
-    expect(isLocalBaseUrlAllowed("ftp://example.com")).toBe(false);
-    expect(isLocalBaseUrlAllowed("http://localhost:8000")).toBe(false);
-    expect(isLocalBaseUrlAllowed("http://127.0.0.1:8000")).toBe(false);
-    expect(isLocalBaseUrlAllowed("http://10.0.0.1/v1")).toBe(false);
-    expect(isLocalBaseUrlAllowed("http://192.168.1.1/v1")).toBe(false);
-    expect(isLocalBaseUrlAllowed("http://172.16.0.1/v1")).toBe(false);
-    expect(isLocalBaseUrlAllowed("http://172.31.255.255/v1")).toBe(false);
-    expect(isLocalBaseUrlAllowed("http://172.32.0.1/v1")).toBe(true);
-    expect(isLocalBaseUrlAllowed("http://[::1]:8000/v1")).toBe(false);
-    expect(isLocalBaseUrlAllowed("http://0.0.0.0:8000/v1")).toBe(false);
-    expect(isLocalBaseUrlAllowed("http://mybox.local/v1")).toBe(false);
+    expect(isValidHttpBaseUrl("")).toBe(true);
+    expect(isValidHttpBaseUrl("   ")).toBe(true);
+    expect(isValidHttpBaseUrl("https://api.openai.com/v1")).toBe(true);
+    expect(isValidHttpBaseUrl("http://example.com/v1")).toBe(true);
+    expect(isValidHttpBaseUrl("http://192.168.1.2")).toBe(true);
+    expect(isValidHttpBaseUrl("http://localhost:8000")).toBe(true);
+    expect(isValidHttpBaseUrl("http://127.0.0.1:8000")).toBe(true);
+    expect(isValidHttpBaseUrl("http://10.0.0.1/v1")).toBe(true);
+    expect(isValidHttpBaseUrl("http://[::1]:8000/v1")).toBe(true);
+    expect(isValidHttpBaseUrl("ftp://example.com")).toBe(false);
+    expect(isValidHttpBaseUrl("not-a-url")).toBe(false);
+    expect(isValidHttpBaseUrl("http://")).toBe(false);
+    expect(isValidHttpBaseUrl("https://")).toBe(false);
   });
 
   test("~200-char base URL saved locally renders fully without truncate or font-mono", async () => {

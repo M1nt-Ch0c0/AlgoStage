@@ -6,8 +6,8 @@ import { savedEndpoint } from "@/lib/agent/saved-endpoint";
 import {
   BASE_URL_NOT_ALLOWED_SETTINGS_MESSAGE,
   isBaseUrlNotAllowed,
-  isLocalBaseUrlAllowed,
   isNoByokError,
+  isValidHttpBaseUrl,
   mapByokErrorMessage,
   NO_BYOK_SETTINGS_MESSAGE,
   parseFocusParam,
@@ -165,15 +165,22 @@ export default function SettingsPage() {
     setTestState({ kind: "idle" });
   }
 
+  function validateBaseURL(): boolean {
+    if (!isValidHttpBaseUrl(baseURL)) {
+      setBaseURLError(BASE_URL_NOT_ALLOWED_SETTINGS_MESSAGE);
+      setSaveState("idle");
+      focusAndScroll("baseURL", false);
+      return false;
+    }
+    setBaseURLError("");
+    return true;
+  }
+
   async function save() {
+    if (!validateBaseURL()) {
+      return;
+    }
     if (serverKeyDisabled) {
-      if (!isLocalBaseUrlAllowed(baseURL)) {
-        setBaseURLError(BASE_URL_NOT_ALLOWED_SETTINGS_MESSAGE);
-        setSaveState("idle");
-        focusAndScroll("baseURL", false);
-        return;
-      }
-      setBaseURLError("");
       const nextKey = apiKey.trim() || localByok?.apiKey || "";
       if (nextKey) {
         saveLocalByok({
@@ -373,6 +380,7 @@ export default function SettingsPage() {
                   id="baseURL"
                   value={baseURL}
                   onChange={(e) => edit("baseURL", e.target.value, setBaseURL)}
+                  onBlur={validateBaseURL}
                   placeholder={provider === "openai-compatible" ? "环境变量 Key 沿用环境地址；新 Key 留空使用默认地址" : "留空使用该服务商官方接口"}
                   className={`${inputClass} min-w-0 tracking-normal [font-variant-ligatures:none]${highlightBaseURL ? " ring-2 ring-beam-gold" : ""}`}
                   data-highlight={highlightBaseURL ? "true" : undefined}

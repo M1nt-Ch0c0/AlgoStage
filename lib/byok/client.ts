@@ -160,8 +160,8 @@ export function parseFocusParam(search: string): "baseURL" | "apiKey" | null {
   }
 }
 
-export function isLocalBaseUrlAllowed(baseURL: string): boolean {
-  const trimmed = baseURL.trim();
+export function isValidHttpBaseUrl(value: string): boolean {
+  const trimmed = value.trim();
   if (!trimmed) return true;
   if (!/^https?:\/\/[^/\\\s]/i.test(trimmed) || /[\\\s]/.test(trimmed)) {
     return false;
@@ -173,41 +173,7 @@ export function isLocalBaseUrlAllowed(baseURL: string): boolean {
     return false;
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") return false;
-  const host = url.hostname.replace(/^\[|\]$/g, "").toLowerCase().replace(/\.$/, "");
-  if (!host) return false;
-  if (
-    host === "localhost" ||
-    host.endsWith(".localhost") ||
-    host === "local" ||
-    host.endsWith(".local") ||
-    host === "0.0.0.0" ||
-    host === "::1" ||
-    host === "0:0:0:0:0:0:0:1" ||
-    host === "::" ||
-    host === "0:0:0:0:0:0:0:0"
-  ) {
-    return false;
-  }
-  const ipv4Match = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (ipv4Match) {
-    const [a, b] = ipv4Match.slice(1).map(Number);
-    if (
-      a === 0 ||
-      a === 10 ||
-      a === 127 ||
-      (a === 192 && b === 168) ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 169 && b === 254)
-    ) {
-      return false;
-    }
-  }
-  if (host.startsWith("::ffff:")) {
-    const v4Hex = host.slice(7);
-    if (v4Hex === "7f00:1" || v4Hex.startsWith("7f") || v4Hex.startsWith("a") || v4Hex.startsWith("c0a8:") || /^ac1[0-f]:/.test(v4Hex) || v4Hex === "0:0") {
-      return false;
-    }
-  }
+  if (!url.hostname) return false;
   return true;
 }
 
