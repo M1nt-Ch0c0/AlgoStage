@@ -238,7 +238,7 @@ test("中断后点重试：立即清掉旧步数和「继续」；备课进度�
     expect(container.textContent).toContain("已收到 2 步");
     expect(headerButtons()).toContain("继续");
 
-    const retry = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="alert"] button')).find(b => b.textContent === "重试讲课")!;
+    const retry = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="alert"] button')).find(b => b.textContent === "重试")!;
     // 新流还没有任何事件：头部和主按钮必须已经是新一轮的状态
     await act(async () => retry.click());
     expect(streams).toHaveLength(2);

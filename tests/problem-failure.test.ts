@@ -27,7 +27,7 @@ test.each([
   { error: "BASE_URL_NOT_ALLOWED", message: BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE },
   { error: "TIMEOUT", message: LECTURE_TIMEOUT_MESSAGE },
   { error: "INVALID_SCRIPT", message: "教案不合法，请换用 gpt-6.1-sol。" },
-])("流式备课失败清空半份教案，保留对应错误和操作入口：%j", async ({ error, message }) => {
+])("流式备课失败（TIMEOUT 已收步骤时保留，其余清空），保留对应错误和操作入口：%j", async ({ error, message }) => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const detail = await localSeedSource.detail("3sum");
   let stream!: ReadableStreamDefaultController;
@@ -49,8 +49,15 @@ test.each([
     expect(usePlayerStore.getState().steps).toHaveLength(1);
     expect(usePlayerStore.getState().status).toBe("playing");
     await act(async () => { send({ type: "error", code: error, error, retryable: error === "TIMEOUT" }); stream.close(); });
-    expect(usePlayerStore.getState()).toMatchObject({ steps: [], status: "idle", script: null, receiving: false });
-    expect(container.querySelector("[data-editor]")?.textContent).toBe(detail.referenceSolutions!.find(s => s.language === "typescript")!.code);
+    if (error === "TIMEOUT") {
+      // v0.2.1：已收到 ≥1 步时超时按备课中断处理，保留可播放步骤（isLectureCutOff）。
+      expect(usePlayerStore.getState()).toMatchObject({ receiving: false });
+      expect(usePlayerStore.getState().steps).toHaveLength(1);
+      expect(container.textContent).toContain("已收到 1 步");
+    } else {
+      expect(usePlayerStore.getState()).toMatchObject({ steps: [], status: "idle", script: null, receiving: false });
+      expect(container.querySelector("[data-editor]")?.textContent).toBe(detail.referenceSolutions!.find(s => s.language === "typescript")!.code);
+    }
     const alert = container.querySelector('[role="alert"]')!;
     expect(alert.textContent).toContain(message);
     if (
@@ -107,7 +114,9 @@ test.each([
     await act(async () => Array.from(container.querySelectorAll("button")).find(b => b.textContent === "开始讲课")!.click());
     await act(async () => send({ type: "step", step: { id: "s1", narration: "先排序", targets: [{ kind: "code-line", start: 2 }], effects: [], dwellMs: 5000 } }));
     await act(async () => { send(payload); stream.close(); });
-    expect(usePlayerStore.getState()).toMatchObject({ steps: [], status: "idle", script: null, receiving: false });
+    // v0.2.1：已收到 ≥1 步后上游断开按备课中断处理，保留可播放步骤；文案和操作仍按 A5。
+    expect(usePlayerStore.getState()).toMatchObject({ receiving: false });
+    expect(usePlayerStore.getState().steps).toHaveLength(1);
     const alert = container.querySelector('[role="alert"]')!;
     expect(alert.textContent).toContain(UPSTREAM_ERROR_MESSAGE);
     expect(container.textContent).not.toContain(payload.message);

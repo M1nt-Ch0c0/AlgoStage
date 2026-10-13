@@ -60,6 +60,8 @@ test("网络读取失败后取消也失败，仍释放流锁并保留原错误",
 test("isLectureCutOff：UPSTREAM_ERROR 只在已收到步骤时算中断", () => {
   expect(isLectureCutOff({ code: "TIMEOUT" })).toBe(true);
   expect(isLectureCutOff({ code: "INTERRUPTED" })).toBe(true);
+  // A5 的流未完整结束错误码是 INCOMPLETE_STREAM，与 INTERRUPTED 等价。
+  expect(isLectureCutOff({ code: "INCOMPLETE_STREAM" })).toBe(true);
   expect(isLectureCutOff({ code: "UPSTREAM_ERROR" }, 0)).toBe(false);
   expect(isLectureCutOff({ code: "UPSTREAM_ERROR" }, 2)).toBe(true);
   expect(isLectureCutOff({ code: "UPSTREAM_AUTH" }, 2)).toBe(false);
