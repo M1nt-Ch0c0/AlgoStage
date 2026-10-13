@@ -34,7 +34,8 @@ export function loadLectureForPlayback(value: unknown, detail: ProblemDetail, co
   if (parsed.problemSlug !== detail.slug) throw new Error("教案与当前题目不匹配，请重试。");
   const referenceCode = detail.referenceSolutions?.find(s => s.language === parsed.solutionLanguage)?.code;
   if (!referenceCode?.trim()) throw new Error("这道题的参考代码还没加载好，请稍后再试。");
-  const script = validateScript(parsed, referenceCode);
+  // 接口可能返回 v0.3 前的旧缓存，里面会有重复或空的 step id；lenient 仍允许播放。
+  const script = validateScript(parsed, referenceCode, { stepIds: "lenient" });
   // 练习时可能删过代码；任何重新开课都必须恢复与教案一致的全文。
   controls.setCode(referenceCode);
   controls.loadScript(script);

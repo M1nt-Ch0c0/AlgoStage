@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vitest";
-import { readLectureResponse } from "../lib/player/lecture-response";
+import { readLectureMeta, readLectureResponse } from "../lib/player/lecture-response";
 
 const headers = { "Content-Type": "application/x-ndjson" };
 const step = { id: "s1", narration: "首步", targets: [{ kind: "statement", blockId: "intro" }], effects: [] };
@@ -50,6 +50,43 @@ test("超出缓冲上限的无换行响应被拒绝并取消请求", async () =>
   await expect(readLectureResponse(new Response(body, { headers }), () => {})).rejects.toThrow("教案数据过大");
   expect(cancelled).toBe(true);
   expect(body.locked).toBe(false);
+});
+
+test("20. 旧响应缺字段时 readLectureMeta 使用空默认值", () => {
+  const empty = { cacheKey: "", scriptVersion: "", answers: {}, askDisabledStepIds: [] };
+  expect(readLectureMeta(undefined)).toEqual(empty);
+  expect(readLectureMeta(null)).toEqual(empty);
+  expect(readLectureMeta({})).toEqual(empty);
+  expect(readLectureMeta({ script: { steps: [] } })).toEqual(empty);
+  expect(readLectureMeta({
+    cacheKey: 12,
+    scriptVersion: null,
+    answers: "nope",
+    askDisabledStepIds: ["s1", 2],
+  })).toEqual(empty);
+  expect(readLectureMeta({ askDisabledStepIds: "s1" }).askDisabledStepIds).toEqual([]);
+
+  const answer = {
+    v: 1,
+    id: "a1",
+    stepId: "s1",
+    question: "为什么？",
+    selection: { mode: "single", bbox: { x: 0, y: 0, width: 8, height: 8 }, targets: [] },
+    segments: [{ id: "seg", narration: "因为查找。" }],
+    createdAt: "2026-10-13T08:00:00.000Z",
+  };
+  expect(readLectureMeta({
+    cacheKey: "cache-key",
+    scriptVersion: "a".repeat(40),
+    answers: { s1: [answer] },
+    askDisabledStepIds: ["dup", ""],
+  })).toEqual({
+    cacheKey: "cache-key",
+    scriptVersion: "a".repeat(40),
+    answers: { s1: [answer] },
+    askDisabledStepIds: ["dup", ""],
+  });
+  expect(readLectureMeta({ answers: { s1: [{ ...answer, stepId: "other" }] } }).answers).toEqual({});
 });
 
 test("网络读取失败后取消也失败，仍释放流锁并保留原错误", async () => {
