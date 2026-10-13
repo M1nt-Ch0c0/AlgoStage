@@ -26,9 +26,11 @@ npm run db:push && npm run db:seed   # 初始化本地 SQLite + 灌入 Hot 100
 npm run dev                   # http://localhost:3000
 ```
 
-线上实例：<https://demo.m1ntch0c0.com/algostage>（自托管，没有 Demo 模式）。
+想先看看效果：打开 <https://demo.m1ntch0c0.com/algostage>，选「两数之和」，这道题自带内置讲解（含全部特效），不需要 Key。
 
-只有「两数之和」自带内置讲解（含全部特效），不需要 Key；其余题目都要先配好 Key 才能讲解和要提示。打开设置页，按三步填写：
+> ⚠️ 这是公共实例，设置页保存的 Key 对所有访客生效、掩码所有人可见。**不要在公共实例上填你自己的 Key。**
+
+其余题目都要先配好 Key 才能讲解和要提示。请先按上面的步骤自托管或本地部署，再在你自己实例的设置页按三步填写：
 
 1. **接口地址（base URL）**：先选服务商，再填对应地址。OpenAI 兼容服务留空时使用 `https://api.openai.com/v1`；Anthropic、Google 留空使用官方接口。
 2. **API Key**：填写与上面接口同一来源的 Key，来源混用会被拒绝。
