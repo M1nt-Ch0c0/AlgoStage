@@ -30,6 +30,8 @@ import {
 import { validateBaseURL } from "@/lib/agent/settings-connection";
 import { AI_CONNECTION_ERROR, InvalidAIBaseURLError, ServerAIBaseURLError } from "@/lib/ai/egress-guard";
 import { summarizeSelection } from "@/lib/ask/answers";
+import { insertAnswer } from "@/lib/ask/answers-repo";
+import { admitAsk, resolveAskClientIp } from "@/lib/ask/ask-control";
 import { scriptVersion } from "@/lib/ask/script-version";
 import { stepAnswerSchema } from "@/lib/ask/schema";
 import type { StepAnswer } from "@/lib/ask/types";
@@ -100,6 +102,7 @@ export async function POST(req: NextRequest) {
   const deadline = Date.now() + askTimeoutMs();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let cleaned = false;
+  let releaseAdmission: (() => void) | undefined;
 
   const armTimeout = () => {
     if (timeout.signal.aborted) return;
@@ -121,8 +124,8 @@ export async function POST(req: NextRequest) {
     cleaned = true;
     clearTimer();
     stop.detach();
-    // STEP-4: release the cacheKey lock / public IP slot here, and only here.
-    // The token must match the one acquired below. Do not release when POST returns.
+    releaseAdmission?.();
+    releaseAdmission = undefined;
   };
   const leave = (response: Response) => {
     cleanup();
@@ -195,11 +198,25 @@ export async function POST(req: NextRequest) {
     if (isAskFailure(ownership)) return leave(askFailureResponse(ownership));
     if (!ownership.ok) return leave(ownership.db ? upstreamError() : stepNotFound());
 
-    // STEP-4: admission. Check and set synchronously, with no await between them.
-    // Local: cacheKey lock first → 409 ASK_BUSY, message exactly 「上一个问题还在回答，答完再问」.
-    // A busy rejection does not consume the 60s window. Then the window → 429 RATE_LIMITED.
-    // Public (serverKeyDisabled): no cacheKey lock. IP window + concurrency slot, same 429.
-    // Release the token only inside cleanup(), including after POST has already returned.
+    const mode = serverKeyDisabled() ? "public" as const : "local" as const;
+    const admitted = admitAsk({
+      mode,
+      cacheKey: body.cacheKey,
+      ip: resolveAskClientIp(req.headers),
+    });
+    if (!admitted.ok) {
+      const headers =
+        admitted.retryAfterSec != null
+          ? { "Retry-After": String(admitted.retryAfterSec) }
+          : undefined;
+      return leave(askError(
+        admitted.code as Parameters<typeof askError>[0],
+        admitted.status,
+        admitted.message,
+        headers,
+      ));
+    }
+    releaseAdmission = admitted.release;
 
     const imageUsed = body.image != null && supportsAskImage(byok);
     const context: AskContext = {
@@ -461,15 +478,41 @@ async function completeAnswer(
   if (late) return late;
 
   if (serverKeyDisabled()) {
-    // STEP-4: public instances skip LectureAnswer entirely: no transaction,
-    // no insertAnswer, no audit row, no file backup. Shared script cache stays readable.
     return answer;
   }
 
-  // STEP-4: local insert. prisma.$transaction re-reads lectureScriptCache, repeats
-  // the lenient/version/askable checks, then insertAnswer. Abort or timeout inside
-  // the transaction rolls it back. Send result only after commit. On insert failure
-  // return UPSTREAM_ERROR and do not send result.
+  try {
+    await prisma.$transaction(async (tx) => {
+      if (session.stopped()) {
+        throw Object.assign(new Error("ask-stop"), { askFailure: session.stopped()! });
+      }
+      const owned = await loadOwnership(context.body, context.byok);
+      if (!owned.ok) {
+        throw Object.assign(new Error("ask-own"), {
+          askFailure: owned.db ? upstreamFailure() : stepNotFoundFailure(),
+        });
+      }
+      if (session.stopped()) {
+        throw Object.assign(new Error("ask-stop"), { askFailure: session.stopped()! });
+      }
+      await insertAnswer(tx, {
+        id: answer.id,
+        cacheKey: context.body.cacheKey,
+        scriptVersion: context.body.scriptVersion,
+        stepId: answer.stepId,
+        payload: answer,
+      });
+      if (session.stopped()) {
+        throw Object.assign(new Error("ask-stop"), { askFailure: session.stopped()! });
+      }
+    });
+  } catch (error) {
+    const tagged = error as { askFailure?: AskFailure };
+    if (tagged?.askFailure) return tagged.askFailure;
+    if (isAskFailure(error)) return error;
+    console.warn("ask_route", JSON.stringify({ type: "insert_answer" }));
+    return upstreamFailure();
+  }
   return answer;
 }
 

@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import { deleteAnswersForCacheKey, listAnswers, type LectureAnswerRow, type PrismaLike } from "@/lib/ask/answers-repo";
+import {
+  deleteAnswersForCacheKey,
+  insertAnswer,
+  listAnswers,
+  type AnswerInsertDb,
+  type LectureAnswerRow,
+  type PrismaLike,
+} from "@/lib/ask/answers-repo";
+import type { StepAnswer } from "@/lib/ask/types";
 
 function row(overrides: Partial<LectureAnswerRow> = {}): LectureAnswerRow {
   return {
@@ -41,8 +49,22 @@ function fakeDb(rows: LectureAnswerRow[]) {
   const deleteMany = vi.fn(async (args: { where: { cacheKey: string } }) => ({
     count: rows.filter((item) => item.cacheKey === args.where.cacheKey).length,
   }));
-  const db: PrismaLike = { lectureAnswer: { findMany, deleteMany } };
-  return { db, findMany, deleteMany };
+  const create = vi.fn(async (args: { data: LectureAnswerRow }) => args.data);
+  const db = { lectureAnswer: { findMany, deleteMany, create } } satisfies PrismaLike & AnswerInsertDb;
+  return { db, findMany, deleteMany, create };
+}
+
+function answerPayload(overrides: Record<string, unknown> = {}): StepAnswer {
+  return {
+    v: 1,
+    id: "req-1",
+    stepId: "s1",
+    question: "为什么？",
+    selection: { mode: "single", bbox: { x: 0, y: 0, width: 8, height: 8 }, targets: [] },
+    segments: [{ id: "seg", narration: "因为查找。" }],
+    createdAt: "2026-10-13T08:00:00.000Z",
+    ...overrides,
+  } as StepAnswer;
 }
 
 describe("answers repo", () => {
@@ -150,5 +172,83 @@ describe("answers repo", () => {
     ]);
     await expect(deleteAnswersForCacheKey(db, "cache-a")).resolves.toBe(2);
     expect(deleteMany).toHaveBeenCalledWith({ where: { cacheKey: "cache-a" } });
+  });
+
+  it("insertAnswer 用白名单 JSON 与 createdAt Date 调用 create", async () => {
+    const { db, create } = fakeDb([]);
+    const payload = answerPayload();
+
+    const stored = await insertAnswer(db, {
+      id: "req-1",
+      cacheKey: "cache-a",
+      scriptVersion: "v-current",
+      stepId: "s1",
+      payload,
+    });
+
+    expect(stored).toEqual(payload);
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(create).toHaveBeenCalledWith({
+      data: {
+        id: "req-1",
+        cacheKey: "cache-a",
+        scriptVersion: "v-current",
+        stepId: "s1",
+        payload: JSON.stringify(payload),
+        createdAt: new Date(payload.createdAt),
+      },
+    });
+  });
+
+  it("insertAnswer 在 id 不一致时抛错且不写库", async () => {
+    const { db, create } = fakeDb([]);
+    await expect(
+      insertAnswer(db, {
+        id: "req-1",
+        cacheKey: "cache-a",
+        scriptVersion: "v-current",
+        stepId: "s1",
+        payload: answerPayload({ id: "other" }),
+      }),
+    ).rejects.toThrow("answer metadata mismatch");
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("insertAnswer 在 stepId 不一致时抛错且不写库", async () => {
+    const { db, create } = fakeDb([]);
+    await expect(
+      insertAnswer(db, {
+        id: "req-1",
+        cacheKey: "cache-a",
+        scriptVersion: "v-current",
+        stepId: "s1",
+        payload: answerPayload({ stepId: "s2" }),
+      }),
+    ).rejects.toThrow("answer metadata mismatch");
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("insertAnswer 丢掉 payload 上 schema 之外的字段", async () => {
+    const { db, create } = fakeDb([]);
+    const extra = { ...answerPayload(), note: "drop me", score: 9 } as StepAnswer & {
+      note: string;
+      score: number;
+    };
+
+    const stored = await insertAnswer(db, {
+      id: "req-1",
+      cacheKey: "cache-a",
+      scriptVersion: "v-current",
+      stepId: "s1",
+      payload: extra,
+    });
+
+    expect(stored).toEqual(answerPayload());
+    expect(stored).not.toHaveProperty("note");
+    expect(stored).not.toHaveProperty("score");
+    const written = create.mock.calls[0]?.[0].data.payload;
+    expect(written).toBe(JSON.stringify(answerPayload()));
+    expect(written).not.toContain("note");
+    expect(written).not.toContain("drop me");
   });
 });

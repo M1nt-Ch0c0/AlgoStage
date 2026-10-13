@@ -11,6 +11,7 @@ import {
 } from "@/lib/agent/request";
 import type { AskGenerationResult } from "@/lib/agent/ask-generation";
 import type { ByokConfig } from "@/lib/agent/provider";
+import { resetAskControlForTests } from "@/lib/ask/ask-control";
 import { scriptVersion } from "@/lib/ask/script-version";
 import type { AnswerSegment, StepAnswer } from "@/lib/ask/types";
 import { validateScript } from "@/lib/teaching/validated-script";
@@ -318,6 +319,36 @@ const NOT_FOUND = { error: "NOT_FOUND", message: "没找到这道题，请回路
 
 type GenerateInput = Parameters<typeof import("@/lib/agent/ask-generation").generateAsk>[0];
 
+const insertHarness = vi.hoisted(() => {
+  type Gate = {
+    entered: () => void;
+    enteredPromise: Promise<void>;
+    release: () => void;
+    released: Promise<void>;
+    finished: () => void;
+    finishedPromise: Promise<void>;
+  };
+  let gate: Gate | undefined;
+  return {
+    hold() {
+      let entered!: () => void;
+      let release!: () => void;
+      let finished!: () => void;
+      const enteredPromise = new Promise<void>((resolve) => { entered = resolve; });
+      const released = new Promise<void>((resolve) => { release = resolve; });
+      const finishedPromise = new Promise<void>((resolve) => { finished = resolve; });
+      gate = { entered, enteredPromise, release, released, finished, finishedPromise };
+      return gate;
+    },
+    reset() {
+      gate = undefined;
+    },
+    current() {
+      return gate;
+    },
+  };
+});
+
 const harness = vi.hoisted(() => {
   const calls: GenerateInput[] = [];
   let impl: (input: GenerateInput) => Promise<AskGenerationResult> = async () => ({
@@ -348,6 +379,27 @@ const harness = vi.hoisted(() => {
       calls.push(input);
       if (passthrough && actual) return actual(input);
       return impl(input);
+    },
+  };
+});
+
+vi.mock("@/lib/ask/answers-repo", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/ask/answers-repo")>("@/lib/ask/answers-repo");
+  return {
+    ...actual,
+    insertAnswer: async (
+      tx: Parameters<typeof actual.insertAnswer>[0],
+      input: Parameters<typeof actual.insertAnswer>[1],
+    ) => {
+      const gate = insertHarness.current();
+      if (!gate) return actual.insertAnswer(tx, input);
+      gate.entered();
+      try {
+        await gate.released;
+        return await actual.insertAnswer(tx, input);
+      } finally {
+        gate.finished();
+      }
     },
   };
 });
@@ -501,6 +553,8 @@ describe("POST /api/lecture/ask", () => {
   });
 
   beforeEach(async () => {
+    resetAskControlForTests();
+    insertHarness.reset();
     harness.reset();
     vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
@@ -1156,5 +1210,141 @@ describe("POST /api/lecture/ask", () => {
     expect(missing.status).toBe(409);
     expect(await missing.json()).toEqual(STEP_NOT_FOUND);
     expect(await fixture.prisma.lectureScriptCache.count()).toBe(1);
+  });
+
+  test("#40 same cacheKey concurrent/second → 409 ASK_BUSY", async () => {
+    const seeded = await seed();
+    let release: (() => void) | undefined;
+    const hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    harness.set(okGeneration([segment()], { hold }));
+    const first = post(askBody(STEP, seeded.key, seeded.version), { accept: "application/x-ndjson" });
+    await vi.waitFor(() => {
+      if (harness.calls.length < 1) throw new Error("waiting");
+    });
+    const second = await post(askBody(STEP, seeded.key, seeded.version));
+    expect(second.status).toBe(409);
+    const body = await second.json() as { error: string; message: string };
+    expect(body.error).toBe("ASK_BUSY");
+    expect(body.message).toBe("上一个问题还在回答，答完再问");
+    release?.();
+    const opened = await first;
+    expect(opened.status).toBe(200);
+    await opened.text();
+  });
+
+  test("#37 success local creates one LectureAnswer row", async () => {
+    const seeded = await seed();
+    harness.set(okGeneration());
+    const response = await post(askBody(STEP, seeded.key, seeded.version));
+    expect(response.status).toBe(200);
+    const body = await response.json() as { answer: StepAnswer };
+    const rows = await fixture.prisma.lectureAnswer.findMany();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.id).toBe(body.answer.id);
+    expect(rows[0]?.cacheKey).toBe(seeded.key);
+    expect(rows[0]?.scriptVersion).toBe(seeded.version);
+    expect(rows[0]?.stepId).toBe(STEP);
+    expect(JSON.parse(rows[0]?.payload ?? "{}")).toMatchObject({
+      id: body.answer.id,
+      stepId: STEP,
+      question: body.answer.question,
+    });
+  });
+
+  test("#36 abort/timeout during insert → no row", async () => {
+    const seeded = await seed();
+    harness.set(okGeneration());
+    const gate = insertHarness.hold();
+    const original = fixture.prisma.$transaction.bind(fixture.prisma);
+    let settled = Promise.resolve();
+    vi.spyOn(fixture.prisma, "$transaction").mockImplementation(((...args: unknown[]) => {
+      const pending = (original as (...inner: unknown[]) => Promise<unknown>)(...args);
+      settled = pending.then(() => undefined, () => undefined);
+      return pending;
+    }) as typeof fixture.prisma.$transaction);
+    const controller = new AbortController();
+    const pending = post(askBody(STEP, seeded.key, seeded.version), {
+      accept: "application/x-ndjson",
+      signal: controller.signal,
+    });
+    await gate.enteredPromise;
+    controller.abort();
+    gate.release();
+    const response = await pending;
+    expect(response.status).toBe(200);
+    const lines = await readLines(response);
+    expect(lines.some((line) => line.type === "result")).toBe(false);
+    expect(lines.at(-1)).toMatchObject({ type: "error", code: "CANCELLED" });
+    await settled;
+    expect(await fixture.prisma.lectureAnswer.count()).toBe(0);
+  });
+
+  test("#39 public success never calls lectureAnswer create/findMany/deleteMany", async () => {
+    vi.stubEnv("ALGOSTAGE_DISABLE_SERVER_KEY", "true");
+    const seeded = await seed();
+    harness.set(okGeneration());
+    const create = vi.spyOn(fixture.prisma.lectureAnswer, "create");
+    const findMany = vi.spyOn(fixture.prisma.lectureAnswer, "findMany");
+    const deleteMany = vi.spyOn(fixture.prisma.lectureAnswer, "deleteMany");
+    const response = await post(askBody(STEP, seeded.key, seeded.version));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ answer: { stepId: STEP } });
+    expect(create).not.toHaveBeenCalled();
+    expect(findMany).not.toHaveBeenCalled();
+    expect(deleteMany).not.toHaveBeenCalled();
+    expect(await fixture.prisma.lectureAnswer.count()).toBe(0);
+  });
+
+  test("#41 public: 3rd concurrent same IP → 429; 7th in window → 429 with Retry-After", async () => {
+    vi.stubEnv("ALGOSTAGE_DISABLE_SERVER_KEY", "true");
+    const seeded = await seed();
+    let release: (() => void) | undefined;
+    const hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    harness.set(okGeneration([segment()], { hold }));
+    const body = askBody(STEP, seeded.key, seeded.version);
+    const first = post(body, { accept: "application/x-ndjson" });
+    const second = post(body, { accept: "application/x-ndjson" });
+    await vi.waitFor(() => {
+      if (harness.calls.length < 2) throw new Error("waiting");
+    });
+    const third = await post(body);
+    expect(third.status).toBe(429);
+    expect((await third.json()).error).toBe("RATE_LIMITED");
+
+    release?.();
+    const opened = await Promise.all([first, second]);
+    for (const response of opened) {
+      expect(response.status).toBe(200);
+      await response.text();
+    }
+
+    harness.set(okGeneration());
+    for (let i = 0; i < 4; i += 1) {
+      const next = await post(body);
+      expect(next.status, `follow-up ${i}`).toBe(200);
+      await next.json();
+    }
+    const seventh = await post(body);
+    expect(seventh.status).toBe(429);
+    expect((await seventh.json()).error).toBe("RATE_LIMITED");
+    const retryAfter = seventh.headers.get("retry-after");
+    expect(retryAfter).toBeTruthy();
+    expect(Number(retryAfter)).toBeGreaterThan(0);
+  });
+
+  test("#43 after success, next admit works", async () => {
+    const seeded = await seed();
+    harness.set(okGeneration());
+    const first = await post(askBody(STEP, seeded.key, seeded.version));
+    expect(first.status).toBe(200);
+    await first.json();
+    const second = await post(askBody(STEP, seeded.key, seeded.version));
+    expect(second.status).toBe(200);
+    await second.json();
+    expect(await fixture.prisma.lectureAnswer.count()).toBe(2);
   });
 });
