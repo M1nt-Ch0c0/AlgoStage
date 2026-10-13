@@ -8,6 +8,7 @@
  * 粗指针且下一步已就绪时，把「点「下一步」继续」放在这条控制条里（窄屏单独成行，吸底仍可见）。
  * 输入框、contenteditable、Monaco 编辑器内以及带 Ctrl/Meta/Alt 的按键不拦截。
  * 焦点在 button、链接或 role=dialog 内时把 Space / → 留给控件本身（重播、语速、重新生成确认）。
+ * 页面上存在 aria-modal="true" 的对话框时忽略全部播放器快捷键，即使焦点在 document.body 上。
  */
 "use client";
 
@@ -76,6 +77,8 @@ export default function PlayerControls({
   // 键盘：←/→ 步进、Space 播放暂停；等待继续时 Space 与 → 都下一步。输入区与修饰键忽略。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // 模态框打开时焦点常停在 document.body，仍要丢掉 Space / 方向键等全部快捷键。
+      if (document.querySelector('[aria-modal="true"]')) return;
       if (isTypingTarget(e.target)) return;
       if (isNativeActivationTarget(e.target)) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;

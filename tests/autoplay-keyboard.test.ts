@@ -56,6 +56,36 @@ function pressKey(target: EventTarget, key: string) {
   return event;
 }
 
+test("aria-modal 对话框打开时忽略 Space 与 ArrowRight，关掉后快捷键恢复", async () => {
+  await act(async () => {
+    setStoreState({ status: "paused", awaitingContinue: false, currentIndex: 0 });
+  });
+
+  const dialog = document.createElement("div");
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("aria-modal", "true");
+  document.body.append(dialog);
+  document.body.focus();
+
+  await act(async () => {
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+  });
+  expect(usePlayerStore.getState()).toMatchObject({ status: "paused", currentIndex: 0 });
+
+  dialog.remove();
+
+  await act(async () => {
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+  });
+  expect(usePlayerStore.getState()).toMatchObject({ status: "playing", currentIndex: 0 });
+
+  await act(async () => {
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+  });
+  expect(usePlayerStore.getState().currentIndex).toBe(1);
+});
+
 test("焦点在 button、链接或 role=dialog 内时 Space 与 → 不拦截，交给控件自己", async () => {
   await act(async () => {
     setStoreState({ awaitingContinue: true, speed: 2 });
