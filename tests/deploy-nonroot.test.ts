@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 const root = path.resolve(__dirname, "..");
 const entrypointPath = path.join(root, "deploy/entrypoint.sh");
-const fixCommand = "docker run --rm -v algostage-data:/data alpine chown -R 1001:1001 /data";
+const fixCommand = "docker run --rm -v <你的数据卷名>:/data alpine chown -R 1001:1001 /data";
 
 it("runs the final Docker stage as UID/GID 1001 with owned runtime and data files", () => {
   const runtime = readFileSync(path.join(root, "Dockerfile"), "utf8").split(/^FROM\s.+$/m).at(-1)!;
@@ -80,6 +80,8 @@ describe("entrypoint data permissions", () => {
     expect(result.stdout).toBe("");
     expect(result.stderr).toContain(`data directory ${dataDirectory} is not writable (uid ${process.getuid?.()})`);
     expect(result.stderr).toContain(fixCommand);
+    expect(result.stderr).toContain("docker volume ls");
+    expect(result.stderr).not.toContain("-v algostage-data:");
     expect(result.stderr).not.toContain("Unexpected ownership repair");
     expect(readdirSync(dataDirectory)).toEqual([]);
   });
@@ -87,8 +89,19 @@ describe("entrypoint data permissions", () => {
 
 it("documents a concrete data-volume backup before the one-time chown", () => {
   const readme = readFileSync(path.join(root, "deploy/README.md"), "utf8");
-  const backup = 'docker run --rm -v algostage-data:/data -v "$PWD":/backup alpine tar czf /backup/algostage-data-$(date +%F).tgz -C /data .';
+  const backup = 'docker run --rm -v <你的数据卷名>:/data -v "$PWD":/backup alpine tar czf /backup/algostage-data-$(date +%F).tgz -C /data .';
   expect(readme).toContain(backup);
   expect(readme).toContain("algostage.db-wal");
   expect(readme.indexOf(backup)).toBeLessThan(readme.indexOf(fixCommand));
+});
+
+it("never tells users to copy-paste a hardcoded volume name", () => {
+  const readme = readFileSync(path.join(root, "deploy/README.md"), "utf8");
+  const entrypoint = readFileSync(entrypointPath, "utf8");
+  for (const text of [readme, entrypoint]) {
+    expect(text).not.toMatch(/-v algostage-data:/);
+    expect(text).toContain("docker volume ls");
+  }
+  expect(readme).toContain("config --volumes");
+  expect(readme).toMatch(/docker inspect .*Mounts/);
 });
