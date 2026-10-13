@@ -208,6 +208,58 @@ test("最后一步默认模式下「下一步」可点，点击、Space、→ �
   expect(usePlayerStore.getState()).toMatchObject({ status: "finished", currentIndex: 2 });
 });
 
+test("finished 且备课中时结束面板不出现，Space 与 → 也不拦截", async () => {
+  await act(async () => {
+    setStoreState({ status: "finished", currentIndex: script.steps.length - 1, awaitingContinue: false });
+    root.render(
+      createElement(
+        "div",
+        null,
+        createElement(PlayerControls, { lectureBusy: true }),
+        createElement(NarrationBar, { lectureBusy: true }),
+      ),
+    );
+  });
+
+  expect(container.textContent).not.toContain("讲完了");
+  expect([...container.querySelectorAll("button")].some((el) => el.textContent === "重播")).toBe(false);
+
+  await act(async () => {
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+  });
+  // 面板未显示，Space 不按结束面板拦截，从完成态回到播放。
+  expect(usePlayerStore.getState()).toMatchObject({ status: "playing", currentIndex: 2 });
+  expect(container.textContent).not.toContain("讲完了");
+
+  await act(async () => {
+    setStoreState({ status: "finished", currentIndex: script.steps.length - 1, awaitingContinue: true });
+  });
+  await act(async () => {
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+  });
+  expect(usePlayerStore.getState()).toMatchObject({ status: "finished", currentIndex: 2 });
+  expect(container.textContent).not.toContain("讲完了");
+
+  await act(async () => {
+    root.render(
+      createElement(
+        "div",
+        null,
+        createElement(PlayerControls),
+        createElement(NarrationBar),
+      ),
+    );
+  });
+  expect(container.textContent).toContain("讲完了");
+
+  await act(async () => {
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+  });
+  expect(usePlayerStore.getState()).toMatchObject({ status: "finished", currentIndex: 2 });
+  expect(container.textContent).toContain("讲完了");
+});
+
 test("完成态下面板已显示时 Space 与 → 不离开 finished，也不改 currentIndex", async () => {
   await act(async () => {
     setStoreState({ status: "finished", currentIndex: script.steps.length - 1, awaitingContinue: false });

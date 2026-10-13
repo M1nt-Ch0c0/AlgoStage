@@ -12,7 +12,7 @@
 
 import { useEffect } from "react";
 import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
-import { usePlayerStore } from "@/lib/player/store";
+import { endPanelShowing, usePlayerStore } from "@/lib/player/store";
 import { useCoarsePointer } from "./use-coarse-pointer";
 
 const SPEEDS = [0.5, 1, 1.5, 2] as const;
@@ -38,7 +38,14 @@ function isNativeActivationTarget(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest("button, a, [role=dialog]") !== null;
 }
 
-export default function PlayerControls({ preparing = false }: { preparing?: boolean }) {
+export default function PlayerControls({
+  preparing = false,
+  lectureBusy = false,
+}: {
+  preparing?: boolean;
+  /** 备课中：结束面板不显示，Space / → 也不按结束面板拦截。 */
+  lectureBusy?: boolean;
+}) {
   const status = usePlayerStore((s) => s.status);
   const steps = usePlayerStore((s) => s.steps);
   const currentIndex = usePlayerStore((s) => s.currentIndex);
@@ -62,19 +69,21 @@ export default function PlayerControls({ preparing = false }: { preparing?: bool
   const preparingNext =
     awaitingContinue && receiving && steps.length > 0 && currentIndex === steps.length - 1;
   const showContinueHint = coarsePointer && awaitingContinue && !preparingNext;
+  // 与字幕条「讲完了」同一条件：finished、当前步存在、且没在备课。
+  const panelShowing = endPanelShowing({ status, steps, currentIndex, lectureBusy });
 
   // 键盘：←/→ 步进、Space 播放暂停；等待继续时 Space 与 → 都下一步。输入区与修饰键忽略。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!hasScript) return;
       if (isTypingTarget(e.target)) return;
       if (isNativeActivationTarget(e.target)) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
-      // 结束面板出现后空格与 → 不再回退到最后一步；← 仍可回看。
-      if (status === "finished" && (e.key === " " || e.key === "ArrowRight")) {
+      // 结束面板出现后空格与 → 不再回退到最后一步；← 仍可回看。备课中面板不显示，按键照常。
+      if (panelShowing && (e.key === " " || e.key === "ArrowRight")) {
         e.preventDefault();
         return;
       }
+      if (!hasScript) return;
       if (e.key === "ArrowLeft") {
         e.preventDefault();
         prev();
@@ -90,7 +99,7 @@ export default function PlayerControls({ preparing = false }: { preparing?: bool
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [hasScript, playing, awaitingContinue, status, play, pause, next, prev]);
+  }, [hasScript, playing, awaitingContinue, panelShowing, play, pause, next, prev]);
 
   const btn =
     "flex size-8 items-center justify-center rounded-full text-chalk-300 transition-colors hover:bg-board-700 hover:text-chalk-100 disabled:pointer-events-none disabled:opacity-30";

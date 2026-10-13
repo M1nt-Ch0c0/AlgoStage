@@ -12,7 +12,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { selectScriptSlug, usePlayerStore } from "@/lib/player/store";
+import { endPanelShowing, selectScriptSlug, usePlayerStore } from "@/lib/player/store";
 import { nextProblem } from "@/lib/content/roadmap-order";
 import { parseInline, totalChars, InlinePartial, InlineMarkdown } from "./inline-markdown";
 import { usePrefersReducedMotion } from "@/components/effects/fx-context";
@@ -20,8 +20,10 @@ import { useCoarsePointer } from "./use-coarse-pointer";
 
 const BASE_CHARS_PER_SEC = 24;
 
-export default function NarrationBar() {
-  const step = usePlayerStore((s) => s.steps[s.currentIndex]);
+export default function NarrationBar({ lectureBusy = false }: { lectureBusy?: boolean }) {
+  const steps = usePlayerStore((s) => s.steps);
+  const currentIndex = usePlayerStore((s) => s.currentIndex);
+  const step = steps[currentIndex];
   const status = usePlayerStore((s) => s.status);
   const speed = usePlayerStore((s) => s.speed);
   const next = usePlayerStore((s) => s.next);
@@ -31,13 +33,13 @@ export default function NarrationBar() {
   const autoAdvance = usePlayerStore((s) => s.autoAdvance);
   const awaitingContinue = usePlayerStore((s) => s.awaitingContinue);
   const receiving = usePlayerStore((s) => s.receiving);
-  const currentIndex = usePlayerStore((s) => s.currentIndex);
-  const receivedCount = usePlayerStore((s) => s.steps.length);
+  const receivedCount = steps.length;
   const setAwaitingContinue = usePlayerStore((s) => s.setAwaitingContinue);
   const preparingNext =
     awaitingContinue && receiving && receivedCount > 0 && currentIndex === receivedCount - 1;
   const reduced = usePrefersReducedMotion();
   const coarsePointer = useCoarsePointer();
+  const panelShowing = endPanelShowing({ status, steps, currentIndex, lectureBusy });
 
   const segments = useMemo(
     () => parseInline(step?.narration ?? ""),
@@ -124,7 +126,7 @@ export default function NarrationBar() {
           {preparingNext ? "下一步准备中…" : "按空格继续"}
         </p>
       )}
-      {status === "finished" && step && (
+      {panelShowing && (
         <div>
           <p>讲完了</p>
           {nextItem ? (

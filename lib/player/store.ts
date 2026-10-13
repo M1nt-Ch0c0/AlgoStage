@@ -13,6 +13,20 @@ export type PlayerStatus =
   | "interrupted" // 用户追问，挂起
   | "finished";
 
+/**
+ * 字幕条「讲完了」面板是否在显示。备课中（lectureBusy）主按钮仍是「备课中…」，
+ * 面板不出现，Space / → 也不按结束面板拦截。页面顶栏、字幕条与播放器键盘共用这一条件。
+ */
+export function endPanelShowing(state: {
+  status: PlayerStatus;
+  steps: readonly unknown[];
+  currentIndex: number;
+  lectureBusy?: boolean;
+}): boolean {
+  const step = state.steps[state.currentIndex];
+  return state.status === "finished" && step != null && !state.lectureBusy;
+}
+
 export type StreamGuard = { generation: number; problemSlug?: string };
 
 interface PlayerState {

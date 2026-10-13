@@ -35,7 +35,7 @@ import {
   DIFFICULTY_LABEL,
   DIFFICULTY_TEXT,
 } from "@/lib/content/pattern-labels";
-import { usePlayerStore, type StreamGuard } from "@/lib/player/store";
+import { endPanelShowing, usePlayerStore, type StreamGuard } from "@/lib/player/store";
 import EffectStage from "@/components/effects/effect-stage";
 import CodeEditor from "@/components/board/code-editor";
 import NarrationBar from "@/components/board/narration-bar";
@@ -80,7 +80,9 @@ export default function ProblemPage() {
   const lectureAbort = useRef<AbortController | null>(null);
   const [lectureError, setLectureError] = useState<string | null>(null);
 
-  const step = usePlayerStore((s) => s.steps[s.currentIndex]);
+  const steps = usePlayerStore((s) => s.steps);
+  const currentIndex = usePlayerStore((s) => s.currentIndex);
+  const step = steps[currentIndex];
   const status = usePlayerStore((s) => s.status);
   const receiving = usePlayerStore((s) => s.receiving);
   const stepCount = usePlayerStore((s) => s.steps.length);
@@ -318,7 +320,7 @@ export default function ProblemPage() {
   const playing = status === "playing" || (status === "streaming" && stepCount > 0);
   const canResume = (status === "paused" || status === "interrupted") && stepCount > 0;
   // 与字幕条「讲完了」面板同一条件，且未在备课（备课中主按钮仍是「备课中…」）。
-  const endPanelShowing = status === "finished" && step != null && !lectureBusy;
+  const panelShowing = endPanelShowing({ status, steps, currentIndex, lectureBusy });
   const showRegenerate =
     (status === "paused" || status === "finished") && stepCount > 0 && !lectureBusy;
   const regenerateMenuOpen = moreOpen && showRegenerate;
@@ -444,7 +446,7 @@ export default function ProblemPage() {
             </button>
           </div>
           {/* 结束面板已有「重播」时顶栏主按钮让位，避免同一屏两个重播。 */}
-          {!endPanelShowing && (
+          {!panelShowing && (
             <button
               type="button"
               onClick={() => {
@@ -706,7 +708,7 @@ export default function ProblemPage() {
 
             <AiSetupPrompt problemSlug={slug} />
 
-            <NarrationBar />
+            <NarrationBar lectureBusy={lectureBusy} />
 
             {inLecture ? (
               <LessonPlan />
@@ -739,7 +741,10 @@ export default function ProblemPage() {
 
       {/* ── 底部播放器控制条 ── */}
       <div className="z-30 max-lg:sticky max-lg:bottom-2">
-        <PlayerControls preparing={lectureBusy && (!receiving || stepCount === 0)} />
+        <PlayerControls
+          preparing={lectureBusy && (!receiving || stepCount === 0)}
+          lectureBusy={lectureBusy}
+        />
       </div>
 
       {/* 特效舞台 */}
