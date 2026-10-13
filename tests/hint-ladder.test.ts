@@ -107,6 +107,8 @@ test("超时失败显示超时提示与重试，重试再次请求", async () =>
   const retry = Array.from(container.querySelectorAll("button")).find(
     (b) => b.textContent === "重试",
   )!;
+  expect(retry.classList.contains("min-h-11")).toBe(true);
+  expect(retry.classList.contains("min-w-11")).toBe(true);
   await act(async () => {
     retry.click();
   });

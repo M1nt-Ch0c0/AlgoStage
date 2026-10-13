@@ -250,6 +250,7 @@ test("at 390x844 viewport, BASE_URL_INVALID error-action buttons/links in lectur
 
   const hintRetryBox = await hintRetryBtn.boundingBox();
   expect(hintRetryBox).not.toBeNull();
+  expect(hintRetryBox!.width).toBeGreaterThanOrEqual(44);
   expect(hintRetryBox!.height).toBeGreaterThanOrEqual(44);
 });
 

@@ -290,7 +290,7 @@ export default function HintLadder({
               type="button"
               onClick={() => askHint(retryLevel)}
               disabled={hintBusy !== null}
-              className="inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-full border border-beam-rose px-2 py-0.5 disabled:opacity-40"
+              className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center whitespace-nowrap rounded-full border border-beam-rose px-2 py-0.5 disabled:opacity-40"
             >
               重试
             </button>
