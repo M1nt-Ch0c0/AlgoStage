@@ -28,7 +28,7 @@ import AiSetupPrompt from "@/components/settings/ai-setup-prompt";
 import { teachingScriptSchema } from "@/lib/teaching/schema";
 import { readDraft, saveDraft, draftLanguage } from "@/lib/player/drafts";
 import { readLectureResponse } from "@/lib/player/lecture-response";
-import { cancelLectureForPlayback, loadLectureForPlayback } from "@/lib/player/load-lecture";
+import { cancelLectureForPlayback, loadLectureForPlayback, switchProblemForPlayback } from "@/lib/player/load-lecture";
 import { TWO_SUM_SCRIPT } from "@/lib/content/scripts/two-sum";
 import { HOT100_CATEGORIES } from "@/lib/content/hot100";
 import {
@@ -36,7 +36,7 @@ import {
   DIFFICULTY_LABEL,
   DIFFICULTY_TEXT,
 } from "@/lib/content/pattern-labels";
-import { usePlayerStore } from "@/lib/player/store";
+import { usePlayerStore, type StreamGuard } from "@/lib/player/store";
 import EffectStage from "@/components/effects/effect-stage";
 import CodeEditor from "@/components/board/code-editor";
 import NarrationBar from "@/components/board/narration-bar";
@@ -87,11 +87,24 @@ export default function ProblemPage() {
   const stepCount = usePlayerStore((s) => s.steps.length);
   const { loadScript, play, pause, replay, reset } = usePlayerStore.getState();
 
+  // 讲解进度埋点（看板数据源）
+  const lastReportedRef = useRef(-1);
+
   useEffect(() => {
-    setLectureBusy(false);
-    setLectureProgress("");
-    setLectureError(null);
-    setLectureComplete(false);
+    switchProblemForPlayback({
+      abort: () => {
+        lectureAbort.current?.abort();
+        lectureAbort.current = null;
+      },
+      clearLectureUi: () => {
+        setLectureBusy(false);
+        setLectureProgress("");
+        setLectureError(null);
+        setLectureComplete(false);
+      },
+      reset: usePlayerStore.getState().reset,
+    });
+    lastReportedRef.current = -1;
     return () => {
       lectureAbort.current?.abort();
       lectureAbort.current = null;
@@ -121,8 +134,6 @@ export default function ProblemPage() {
     return () => abort.abort();
   }, [slug, reset]);
 
-  // 讲解进度埋点（看板数据源）
-  const lastReportedRef = useRef(-1);
   useEffect(() => {
     // 本地重播的步骤已上报过，读 store 快照而不订阅，避免重复写入进度。
     if (!step || status === "idle" || usePlayerStore.getState().replaying) return;
@@ -183,6 +194,7 @@ export default function ProblemPage() {
         body: JSON.stringify({ slug, solutionLanguage: language, ...(regenerate ? { regenerate: true } : {}) }),
       });
       let streaming = false;
+      let guard: StreamGuard | undefined;
       const reference =
         detail.referenceSolutions?.find((s) => s.language === language)?.code ??
         "";
@@ -201,6 +213,7 @@ export default function ProblemPage() {
               language: "zh",
               solutionLanguage: language,
             });
+            guard = { generation: usePlayerStore.getState().generation, problemSlug: slug };
             streaming = true;
           }
           const lineCount = reference.split("\n").length;
@@ -214,15 +227,15 @@ export default function ProblemPage() {
             )
           )
             throw new Error("教案行号无效，请重试或换用 gpt-6.1-sol。");
-          if (update) usePlayerStore.getState().updateStep(step);
-          else usePlayerStore.getState().appendStep(step);
+          if (update) usePlayerStore.getState().updateStep(step, guard);
+          else usePlayerStore.getState().appendStep(step, guard);
         },
       );
       if (abort.signal.aborted) return;
       if (streaming)
         usePlayerStore
           .getState()
-          .completeStream(teachingScriptSchema.parse(script));
+          .completeStream(teachingScriptSchema.parse(script), guard);
       else
         loadLectureForPlayback(script, detail, { setCode, loadScript, play });
       setLectureComplete(true);
