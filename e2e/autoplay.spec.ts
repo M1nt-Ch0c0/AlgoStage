@@ -60,10 +60,11 @@ async function reachLastStep(page: Page) {
   await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
   for (let i = 1; i <= 2; i++) {
     await expect(page.getByText(`第 ${i} / 3 步`)).toBeVisible();
+    await expect(page.getByTestId("continue-hint")).toHaveText("按空格继续");
     await page.keyboard.press("Space");
   }
   await expect(page.getByText("第 3 / 3 步")).toBeVisible();
-  await expect(page.getByTestId("continue-hint")).toBeVisible();
+  await expect(page.getByTestId("continue-hint")).toHaveText("按空格继续");
   await expect(page.getByText("讲完了")).toHaveCount(0);
 }
 
