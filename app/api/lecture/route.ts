@@ -26,6 +26,10 @@ export const runtime = "nodejs";
 
 function generationErrorResponse(failure: Extract<GenerationResult, { ok: false }>) {
   if (failure.error === "UPSTREAM_AUTH") return upstreamAuthError();
+  if (failure.error === "UPSTREAM_ERROR") return Response.json(
+    { code: "UPSTREAM_ERROR", error: "UPSTREAM_ERROR", retryable: true, message: failure.message },
+    { status: failure.status },
+  );
   return Response.json({ error: failure.error, message: failure.message }, { status: failure.status });
 }
 

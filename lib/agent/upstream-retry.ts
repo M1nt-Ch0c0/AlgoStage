@@ -18,15 +18,32 @@ const networkCodes = new Set([
   "UND_ERR_CONNECT_TIMEOUT",
 ]);
 
-/** 保留 SDK 包装异常中的 HTTP 状态，不读取或透传错误正文。 */
+/** 保留 SDK HTTP 状态及流内结构化鉴权标志；不解析 message 或 responseBody。 */
 export function upstreamStatusCode(error: unknown): number | undefined {
   const visited = new Set<unknown>();
-  let current = error;
-  while (current instanceof Error && !visited.has(current)) {
+  const pending: unknown[] = [error];
+  while (pending.length) {
+    const current = pending.pop();
+    if (!current || typeof current !== "object" || visited.has(current)) continue;
     visited.add(current);
     if (APICallError.isInstance(current) && current.statusCode !== undefined)
       return current.statusCode;
-    current = current.cause;
+    // SSE error parts may be plain objects rather than Error instances.
+    // Only known auth markers affect classification; arbitrary upstream codes
+    // and text never become client error codes or log fields.
+    const details = current as {
+      statusCode?: unknown; status?: unknown; code?: unknown; type?: unknown;
+      cause?: unknown; error?: unknown;
+    };
+    for (const value of [details.statusCode, details.status, details.code]) {
+      if (value === 401 || value === "401") return 401;
+      if (value === 403 || value === "403") return 403;
+    }
+    for (const value of [details.type, details.code]) {
+      if (value === "authentication_error" || value === "invalid_api_key") return 401;
+      if (value === "permission_error" || value === "permission_denied" || value === "insufficient_permissions") return 403;
+    }
+    pending.push(details.error, details.cause);
   }
   return undefined;
 }

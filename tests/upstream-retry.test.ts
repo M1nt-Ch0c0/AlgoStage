@@ -80,6 +80,9 @@ test.each([401, 403])("SDK 包装的 %i 保留鉴权状态且不重试", async s
   }) });
   expect(upstreamStatusCode(error)).toBe(statusCode);
   expect(isTransientUpstreamError(error)).toBe(false);
+  const part = { type: "error", error };
+  expect(upstreamStatusCode(part)).toBe(statusCode);
+  expect(isTransientUpstreamError(part)).toBe(false);
   const response = settingsConnectionError(error);
   expect(response.status).toBe(400);
   expect(await response.json()).toEqual({
@@ -87,11 +90,46 @@ test.each([401, 403])("SDK 包装的 %i 保留鉴权状态且不重试", async s
   });
 });
 
+test.each([
+  [{ statusCode: 401 }, 401],
+  [{ statusCode: "403" }, 403],
+  [{ status: 403 }, 403],
+  [{ code: "401" }, 401],
+  [{ type: "authentication_error" }, 401],
+  [{ type: "permission_error" }, 403],
+  [{ code: "invalid_api_key" }, 401],
+  [{ code: "permission_denied" }, 403],
+  [{ type: "insufficient_permissions" }, 403],
+] as const)("流内鉴权标志 %j 在 error part 和网络异常包装内都不重试", (details, status) => {
+  const error = { type: "error", error: { ...details, message: "untrusted-private-details" } };
+  for (const value of [details, error, new TypeError("fetch failed", { cause: error })]) {
+    expect(upstreamStatusCode(value)).toBe(status);
+    expect(isTransientUpstreamError(value)).toBe(false);
+  }
+});
+
+test.each([
+  "401 authentication_error",
+  { message: "401 authentication_error invalid_api_key permission_error" },
+  { responseBody: '{"error":{"statusCode":401}}' },
+  { data: { statusCode: 401 } },
+  { error: { code: "BASE_URL_NOT_ALLOWED", message: "UPSTREAM_AUTH" } },
+  { error: { type: "invalid_request_error", code: "invalid_parameters" } },
+])("不根据上游文本或非错误字段 %j 推测鉴权失败", error => {
+  expect(upstreamStatusCode(error)).toBeUndefined();
+  expect(isTransientUpstreamError(error)).toBe(false);
+});
+
 test("未知错误和循环 cause 不推测 HTTP 状态", () => {
   const error = new Error("internal-private-details");
   error.cause = error;
   expect(upstreamStatusCode(error)).toBeUndefined();
-  expect(upstreamStatusCode({ statusCode: 401 })).toBeUndefined();
+  expect(isTransientUpstreamError(error)).toBe(false);
+  const part = { error: undefined as unknown, cause: error };
+  part.error = part;
+  expect(upstreamStatusCode(part)).toBeUndefined();
+  error.cause = { statusCode: 401, error: part };
+  expect(upstreamStatusCode(part)).toBe(401);
   expect(isTransientUpstreamError(error)).toBe(false);
 });
 

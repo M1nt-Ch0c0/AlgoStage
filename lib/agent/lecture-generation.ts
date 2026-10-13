@@ -195,6 +195,9 @@ export async function generateLecture(input: {
           maxRetries: 0,
           maxOutputTokens: 7000,
           abortSignal: controller.signal,
+          // Some SDK error schemas discard status/statusCode. Inspect only
+          // structured auth markers from raw chunks; never emit the chunks.
+          include: { rawChunks: true },
           // 不输出 SDK 原始异常，避免兼容上游把密钥包含在响应正文中。
           onError: () => {},
           ...(input.config.provider === "openai-compatible" &&
@@ -210,6 +213,10 @@ export async function generateLecture(input: {
         });
         for await (const part of stream.fullStream) {
           if (controller.signal.aborted) return cancelled;
+          if (part.type === "raw") {
+            const status = upstreamStatusCode(part.rawValue);
+            if (status === 401 || status === 403) throw part.rawValue;
+          }
           if (part.type === "error") throw part.error;
           if (part.type !== "tool-call") continue;
           // Reject credential echoes before retaining tool calls for retries.
@@ -361,6 +368,12 @@ export async function generateLecture(input: {
             status: status ?? null,
           }),
         );
+        if (status === 401 || status === 403) return {
+          ok: false,
+          status: 400,
+          error: "UPSTREAM_AUTH",
+          message: "API Key 无效或没有权限",
+        };
         if (isTransientUpstreamError(error) && upstreamRetries < UPSTREAM_RETRY_LIMIT) {
           upstreamRetries++;
           // 部分工具已经成功时，将它们的回执带入下一轮，避免从头重生成。
@@ -379,12 +392,6 @@ export async function generateLecture(input: {
           catch { return cancelled; }
           continue;
         }
-        if (status === 401 || status === 403) return {
-          ok: false,
-          status: 400,
-          error: "UPSTREAM_AUTH",
-          message: "API Key 无效或没有权限",
-        };
         return {
           ok: false,
           status: 502,

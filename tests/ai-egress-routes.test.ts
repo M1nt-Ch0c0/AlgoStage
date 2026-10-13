@@ -10,6 +10,7 @@ import { POST as testConnection } from "../app/api/settings/test-connection/rout
 import { AI_CONNECTION_ERROR, INVALID_AI_BASE_URL, MALFORMED_AI_BASE_URL } from "../lib/ai/egress-guard";
 const MALFORMED = { code: "BASE_URL_INVALID", error: "BASE_URL_INVALID", message: MALFORMED_AI_BASE_URL };
 const UPSTREAM_AUTH = { code: "UPSTREAM_AUTH", error: "UPSTREAM_AUTH", retryable: false, message: "API Key 无效或没有权限" };
+const UPSTREAM_ERROR = { code: "UPSTREAM_ERROR", error: "UPSTREAM_ERROR", retryable: true, message: AI_CONNECTION_ERROR };
 import { mockAIResponse } from "./support/mock-ai-response";
 
 const db = vi.hoisted(() => {
@@ -119,7 +120,7 @@ describe.each(entries)("$name", ({ POST, accept }) => {
       .mockResolvedValue([{ address: "10.0.0.1", family: 4 }]);
     const response = await POST(request({ slug: "two-sum", level: 1, byok }, accept));
     expect(response.status).toBe(502);
-    expect(await response.json()).toEqual({ error: "UPSTREAM_ERROR", message: AI_CONNECTION_ERROR });
+    expect(await response.json()).toEqual(UPSTREAM_ERROR);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -127,7 +128,7 @@ describe.each(entries)("$name", ({ POST, accept }) => {
     fetchMock.mockImplementation(async () => new Response("upstream-private-details", { status, headers: { location: "http://127.0.0.1/private" } }));
     const response = await POST(request({ slug: "two-sum", level: 1, byok }, accept));
     expect(response.status).toBe(502);
-    expect(await response.json()).toEqual({ error: "UPSTREAM_ERROR", message: AI_CONNECTION_ERROR });
+    expect(await response.json()).toEqual(UPSTREAM_ERROR);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.lastCall![1]?.redirect).toBe("manual");
     expect(JSON.stringify(vi.mocked(console.warn).mock.calls)).not.toContain("upstream-private-details");
@@ -139,7 +140,7 @@ describe.each(entries)("$name", ({ POST, accept }) => {
     else fetchMock.mockRejectedValue(error);
     const response = await POST(request({ slug: "two-sum", level: 1, byok }, accept));
     expect(response.status).toBe(502);
-    expect(await response.json()).toEqual({ error: "UPSTREAM_ERROR", message: AI_CONNECTION_ERROR });
+    expect(await response.json()).toEqual(UPSTREAM_ERROR);
     expect(JSON.stringify(vi.mocked(console.warn).mock.calls)).not.toContain("internal-private-details");
   });
 
@@ -149,7 +150,7 @@ describe.each(entries)("$name", ({ POST, accept }) => {
     const auth = status === 401 || status === 403;
     expect(response.status).toBe(auth ? 400 : 502);
     expect(response.headers.get("content-type")).toContain("application/json");
-    expect(await response.json()).toEqual(auth ? UPSTREAM_AUTH : { error: "UPSTREAM_ERROR", message: AI_CONNECTION_ERROR });
+    expect(await response.json()).toEqual(auth ? UPSTREAM_AUTH : UPSTREAM_ERROR);
     expect(fetchMock).toHaveBeenCalledTimes(status === 500 ? 2 : 1);
   });
 
@@ -173,6 +174,83 @@ test.each([401, 403])("测试连接：上游 %i 返回 400 UPSTREAM_AUTH，不�
   expect(fetchMock).toHaveBeenCalledTimes(1);
 });
 
+test.each([
+  { name: "hint", POST: hint },
+  { name: "lecture JSON", POST: lecture },
+  { name: "test-connection", POST: testConnection },
+])("$name 的 502 包含固定错误码、重试标志和原有消息", async ({ POST }) => {
+  fetchMock.mockImplementation(async () => Response.json({
+    error: { message: `upstream-private-details ${byok.apiKey}` },
+  }, { status: 502 }));
+  const response = await POST(request({ slug: "two-sum", level: 1, byok }));
+  expect(response.status).toBe(502);
+  expect(await response.json()).toEqual(UPSTREAM_ERROR);
+});
+
+const streamAuthFailures = [
+  { name: "SSE 401", details: { code: 401 }, event: "error" },
+  { name: "SSE 403 status", details: { status: 403 }, event: "error" },
+  { name: "SSE 401 statusCode", details: { statusCode: 401 }, event: "error" },
+  { name: "SSE authentication_error", details: { type: "authentication_error" }, event: "error" },
+  { name: "SSE permission_error", details: { type: "permission_error" }, event: "error" },
+  { name: "error chunk 403", details: { code: "403" } },
+  { name: "mid401sse invalid_api_key", details: { type: "invalid_request_error", code: "invalid_api_key" }, event: "error" },
+] as const;
+const firstLectureStep = {
+  name: "add_step",
+  input: { id: "s1", narration: "讲解", target: { kind: "code-line", start: 1 } },
+};
+
+describe.each(["application/json", "application/x-ndjson"])("讲课 %s 首步前的流内鉴权失败", accept => {
+  test.each(streamAuthFailures)("$name 返回真实 400 且不重试", async failure => {
+    fetchMock.mockImplementation(async (_input, init) => mockAIResponse(init, [], {
+      payload: { error: { ...failure.details, message: `upstream-private-details ${byok.apiKey}` } },
+      event: "event" in failure ? failure.event : undefined,
+    }));
+    const response = await lecture(request({ slug: "two-sum", byok }, accept));
+    expect(response.status).toBe(400);
+    expect(response.headers.get("content-type")).toContain("application/json");
+    expect(await response.json()).toEqual(UPSTREAM_AUTH);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(db.prisma.lectureScriptCache.upsert).not.toHaveBeenCalled();
+    expect(JSON.stringify([vi.mocked(console.warn).mock.calls, vi.mocked(console.error).mock.calls]))
+      .not.toMatch(/upstream-private-details|test-only-credential/);
+  });
+
+  test("首步工具参数已到达但尚未完成，mid401sse 仍返回 400", async () => {
+    fetchMock.mockImplementation(async (_input, init) => mockAIResponse(init, [firstLectureStep], {
+      payload: { error: { type: "invalid_request_error", code: "invalid_api_key", message: `upstream-private-details ${byok.apiKey}` } },
+      event: "error",
+    }));
+    const response = await lecture(request({ slug: "two-sum", byok }, accept));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual(UPSTREAM_AUTH);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(db.prisma.lectureScriptCache.upsert).not.toHaveBeenCalled();
+  });
+});
+
+test.each(streamAuthFailures)("首步已输出后 $name 的 NDJSON 末事件仅含三个鉴权错误字段", async failure => {
+  fetchMock.mockImplementationOnce(async (_input, init) => mockAIResponse(init, [firstLectureStep]))
+    .mockImplementation(async (_input, init) => mockAIResponse(init, [], {
+      payload: { error: { ...failure.details, message: `upstream-private-details ${byok.apiKey}` } },
+      event: "event" in failure ? failure.event : undefined,
+    }));
+  const response = await lecture(request({ slug: "two-sum", byok }, "application/x-ndjson"));
+  expect(response.status).toBe(200);
+  expect(response.headers.get("content-type")).toContain("application/x-ndjson");
+  const raw = await response.text();
+  const events = raw.trim().split("\n").map(line => JSON.parse(line));
+  expect(events.filter(event => event.type === "step")).toHaveLength(1);
+  expect(events.at(-1)).toEqual({ type: "error", code: "UPSTREAM_AUTH", retryable: false });
+  expect(events.filter(event => event.type === "error")).toEqual([events.at(-1)]);
+  expect(raw).not.toMatch(/upstream-private-details|test-only-credential/);
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(db.prisma.lectureScriptCache.upsert).not.toHaveBeenCalled();
+  expect(JSON.stringify([vi.mocked(console.warn).mock.calls, vi.mocked(console.error).mock.calls]))
+    .not.toMatch(/upstream-private-details|test-only-credential/);
+});
+
 test.each(["settings", "env"])("%s 中的接口同样必须经过 DNS 和地址校验", async source => {
   if (source === "settings") {
     for (const [key, value] of Object.entries({ ...byok, baseURL: "http://127.1/v1" })) db.settings.set(key, value);
@@ -184,7 +262,7 @@ test.each(["settings", "env"])("%s 中的接口同样必须经过 DNS 和地址�
     const response = await POST(request({ slug: "two-sum", level: 1 }));
     // 库里存的地址用户可修：400；env 地址用户改不了：固定 502。
     expect(response.status).toBe(source === "settings" ? 400 : 502);
-    expect(await response.json()).toEqual(source === "settings" ? { code: "BASE_URL_NOT_ALLOWED", error: "BASE_URL_NOT_ALLOWED", message: INVALID_AI_BASE_URL } : { error: "UPSTREAM_ERROR", message: AI_CONNECTION_ERROR });
+    expect(await response.json()).toEqual(source === "settings" ? { code: "BASE_URL_NOT_ALLOWED", error: "BASE_URL_NOT_ALLOWED", message: INVALID_AI_BASE_URL } : UPSTREAM_ERROR);
   }
   expect(fetchMock).not.toHaveBeenCalled();
 });
@@ -209,11 +287,11 @@ test("env 中遗留的非法 URL 也返回固定 502（含 test-connection）且
   for (const { POST, accept } of entries) {
     const response = await POST(request({ slug: "two-sum", level: 1 }, accept));
     expect(response.status).toBe(502);
-    expect(await response.json()).toEqual({ error: "UPSTREAM_ERROR", message: AI_CONNECTION_ERROR });
+    expect(await response.json()).toEqual(UPSTREAM_ERROR);
   }
   const response = await testConnection(request({}));
   expect(response.status).toBe(502);
-  expect(await response.json()).toEqual({ error: "UPSTREAM_ERROR", message: AI_CONNECTION_ERROR });
+  expect(await response.json()).toEqual(UPSTREAM_ERROR);
   expect(fetchMock).not.toHaveBeenCalled();
   expect(dns).not.toHaveBeenCalled();
 });
@@ -395,7 +473,7 @@ describe.each(settingsEntries)("$name: 校验与原子性", ({ name, run }) => {
     const response = await run(byok);
     expect(response.status).toBe(502);
     const text = await response.text();
-    expect(JSON.parse(text)).toEqual({ error: "UPSTREAM_ERROR", message: AI_CONNECTION_ERROR });
+    expect(JSON.parse(text)).toEqual(UPSTREAM_ERROR);
     expect(text).not.toMatch(leakPattern);
     expect(db.prisma.$transaction).not.toHaveBeenCalled();
     expect(db.settings.size).toBe(0);
@@ -486,7 +564,7 @@ describe.each([undefined, "true"])("Riley 矩阵：switch=%s（全内存 DNS/HTT
     for (const response of responses) {
       expect(response.status).toBe(502);
       const text = await response.text();
-      expect(JSON.parse(text)).toEqual({ error: "UPSTREAM_ERROR", message: AI_CONNECTION_ERROR });
+      expect(JSON.parse(text)).toEqual(UPSTREAM_ERROR);
       expect(text).not.toMatch(leakPattern);
     }
     expect(fetchMock).toHaveBeenCalledTimes(kind === "500" ? 5 : 3);

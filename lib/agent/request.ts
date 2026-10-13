@@ -66,7 +66,7 @@ export function upstreamAuthError() {
 export function upstreamError(status?: number) {
   if (status === 401 || status === 403) return upstreamAuthError();
   return Response.json(
-    { error: "UPSTREAM_ERROR", message: AI_CONNECTION_ERROR },
+    { code: "UPSTREAM_ERROR", error: "UPSTREAM_ERROR", retryable: true, message: AI_CONNECTION_ERROR },
     { status: 502 },
   );
 }
