@@ -1,6 +1,7 @@
 "use client";
 
 import { KeySourceBadge, type KeySource } from "@/components/settings/key-source-badge";
+import { SettingsStatus } from "@/components/settings/settings-status";
 import { DEFAULT_MODEL } from "@/lib/agent/defaults";
 import { savedEndpoint } from "@/lib/agent/saved-endpoint";
 import {
@@ -82,6 +83,7 @@ export default function SettingsPage() {
   const [narrationSpeed, setNarrationSpeed] = useState("22");
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "saved-need-key">("idle");
   const [saveError, setSaveError] = useState("");
+  const [statusMessage, setStatusMessage] = useState("");
   const [testState, setTestState] = useState<TestState>({ kind: "idle" });
   const [serverKeyDisabled, setServerKeyDisabled] = useState(false);
   const [highlightApiKey, setHighlightApiKey] = useState(false);
@@ -90,9 +92,45 @@ export default function SettingsPage() {
   const [localSavedBaseURL, setLocalSavedBaseURL] = useState("");
   const { byok: localByok, save: saveLocalByok, clear: clearLocalByokState } = useLocalByok();
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const statusRaf = useRef<number | null>(null);
+  const statusFallbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 只记录真实编辑；预填文案和从服务端读到的旧值都不能隐式写回。
   const edits = useRef<Record<string, string>>({});
-  useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current); }, []);
+
+  function clearScheduledStatus() {
+    if (statusRaf.current !== null && typeof cancelAnimationFrame === "function") {
+      cancelAnimationFrame(statusRaf.current);
+      statusRaf.current = null;
+    }
+    if (statusFallbackTimer.current !== null) {
+      clearTimeout(statusFallbackTimer.current);
+      statusFallbackTimer.current = null;
+    }
+    setStatusMessage("");
+  }
+
+  function scheduleStatus(msg: string) {
+    clearScheduledStatus();
+    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+      statusRaf.current = window.requestAnimationFrame(() => {
+        statusRaf.current = null;
+        setStatusMessage(msg);
+      });
+    } else {
+      statusFallbackTimer.current = setTimeout(() => {
+        statusFallbackTimer.current = null;
+        setStatusMessage(msg);
+      }, 0);
+    }
+  }
+
+  useEffect(() => () => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    if (statusFallbackTimer.current) clearTimeout(statusFallbackTimer.current);
+    if (statusRaf.current !== null && typeof cancelAnimationFrame === "function") {
+      cancelAnimationFrame(statusRaf.current);
+    }
+  }, []);
   function edit(field: string, value: string, setter: (value: string) => void) {
     edits.current[field] = value;
     setter(value);
@@ -111,6 +149,7 @@ export default function SettingsPage() {
     if (field === "apiKey") {
       setApiKeyError("");
       setHighlightApiKey(false);
+      clearScheduledStatus();
     }
   }
 
@@ -185,6 +224,7 @@ export default function SettingsPage() {
     setApiKeyError("");
     delete edits.current.apiKey;
     setSaveState("idle");
+    clearScheduledStatus();
     setTestState({ kind: "idle" });
   }
 
@@ -216,6 +256,7 @@ export default function SettingsPage() {
         setLocalSavedBaseURL(trimmedBase);
         setApiKey("");
         edits.current = {};
+        clearScheduledStatus();
         setSaveState("saved");
         if (saveTimer.current) clearTimeout(saveTimer.current);
         saveTimer.current = setTimeout(() => setSaveState("idle"), 2000);
@@ -227,6 +268,7 @@ export default function SettingsPage() {
         edits.current = {};
         setSaveState("saved-need-key");
         focusAndScroll("apiKey", true);
+        scheduleStatus(ENDPOINT_SAVED_NEED_KEY_MESSAGE);
         if (saveTimer.current) {
           clearTimeout(saveTimer.current);
           saveTimer.current = null;
@@ -237,6 +279,7 @@ export default function SettingsPage() {
       setLocalSavedBaseURL("");
       setApiKey("");
       edits.current = {};
+      clearScheduledStatus();
       setSaveState("saved");
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => setSaveState("idle"), 2000);
@@ -244,6 +287,7 @@ export default function SettingsPage() {
     }
 
     setSaveState("saving");
+    clearScheduledStatus();
     setSaveError("");
     if (saveTimer.current) clearTimeout(saveTimer.current);
     const pending = { ...edits.current };
@@ -293,6 +337,7 @@ export default function SettingsPage() {
   async function testConnection() {
     setTestState({ kind: "testing" });
     setSaveState("idle");
+    clearScheduledStatus();
     if (saveTimer.current) clearTimeout(saveTimer.current);
     try {
       const body: Record<string, unknown> = {};
@@ -497,6 +542,7 @@ export default function SettingsPage() {
                   {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
               </div>
+              <SettingsStatus id="settings-status" message={statusMessage} />
               {apiKeyError && <p id="apiKey-error" role="alert" className="mt-2 text-xs leading-5 text-beam-rose">{apiKeyError}</p>}
               {!serverKeyDisabled && apiKeyMasked && <button type="button" className="mt-2 text-xs text-beam-cyan" onClick={() => edit("apiKey", "", setApiKey)}>清除已保存的 API Key，改用环境变量（保存后生效）</button>}
             </div>
@@ -529,15 +575,9 @@ export default function SettingsPage() {
               ) : null}
               {saveState === "saving"
                 ? "保存中…"
-                : saveState === "saved"
+                : saveState === "saved" || saveState === "saved-need-key"
                   ? "已保存"
-                  : saveState === "saved-need-key"
-                    ? (
-                      <span role="status" aria-live="polite">
-                        {ENDPOINT_SAVED_NEED_KEY_MESSAGE}
-                      </span>
-                    )
-                    : "保存设置"}
+                  : "保存设置"}
             </button>
             <button
               type="button"

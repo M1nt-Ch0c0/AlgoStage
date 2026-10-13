@@ -888,18 +888,33 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
       )!;
 
     // (a) Valid baseURL, no API key typed and none saved
+    const statusEl = settingsContainer.querySelector<HTMLElement>("#settings-status")!;
+    expect(statusEl).not.toBeNull();
+    expect(statusEl.getAttribute("role")).toBe("status");
+    expect(statusEl.getAttribute("aria-live")).toBe("polite");
+    expect(statusEl.textContent).toBe("");
+
     await act(async () => {
       setInputValue(baseInput, "https://api.deepseek.com/v1");
     });
     await act(async () => {
       getSaveBtn().click();
     });
+    await act(async () => {
+      await new Promise<void>((resolve) => {
+        if (typeof requestAnimationFrame === "function") {
+          requestAnimationFrame(() => resolve());
+        } else {
+          setTimeout(resolve, 0);
+        }
+      });
+    });
 
-    expect(getSaveBtn().textContent).toBe(ENDPOINT_SAVED_NEED_KEY_MESSAGE);
+    expect(getSaveBtn().textContent).toBe("已保存");
+    expect(getSaveBtn().querySelector('[role="status"]')).toBeNull();
+    expect(statusEl.textContent).toBe(ENDPOINT_SAVED_NEED_KEY_MESSAGE);
     expect(settingsContainer.textContent).toContain(ENDPOINT_SAVED_NEED_KEY_MESSAGE);
-    const existingStatusEl = getSaveBtn().querySelector('[role="status"]');
-    expect(existingStatusEl).not.toBeNull();
-    expect(existingStatusEl!.getAttribute("aria-live")).toBe("polite");
+    expect(statusEl.getAttribute("aria-live")).toBe("polite");
     expect(readLocalBaseUrl()).toBe("https://api.deepseek.com/v1");
     expect(readLocalByok()).toBeNull();
     expect(settingsContainer.textContent).toContain(
@@ -970,43 +985,52 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
             b.textContent?.includes(ENDPOINT_SAVED_NEED_KEY_MESSAGE),
         )!;
 
-      // save with only 接口地址 -> message visible, has role="status" ancestor/element with aria-live polite
+      const statusEl = settingsContainer.querySelector<HTMLElement>("#settings-status")!;
+      expect(statusEl).not.toBeNull();
+      expect(statusEl.getAttribute("role")).toBe("status");
+      expect(statusEl.getAttribute("aria-live")).toBe("polite");
+      expect(statusEl.textContent).toBe("");
+
+      // save with only 接口地址 -> message visible with role=status and aria-live polite
       await act(async () => {
         setInputValue(baseInput, "https://api.deepseek.com/v1");
       });
       await act(async () => {
         getSaveBtn().click();
       });
+      await act(async () => {
+        vi.advanceTimersByTime(50);
+        await new Promise<void>((resolve) => {
+          if (typeof requestAnimationFrame === "function") {
+            requestAnimationFrame(() => resolve());
+          } else {
+            setTimeout(resolve, 0);
+          }
+        });
+      });
 
       expect(settingsContainer.textContent).toContain(ENDPOINT_SAVED_NEED_KEY_MESSAGE);
-      expect(getSaveBtn().textContent).toBe(ENDPOINT_SAVED_NEED_KEY_MESSAGE);
+      expect(getSaveBtn().textContent).toBe("已保存");
+      expect(getSaveBtn().querySelector('[role="status"]')).toBeNull();
 
-      const statusEl = getSaveBtn().querySelector('[role="status"]');
-      expect(statusEl).not.toBeNull();
-      expect(statusEl!.textContent).toBe(ENDPOINT_SAVED_NEED_KEY_MESSAGE);
-      expect(statusEl!.getAttribute("aria-live")).toBe("polite");
-
-      const messageLeaf = Array.from(settingsContainer.querySelectorAll("*")).find(
-        (el) =>
-          el.children.length === 0 &&
-          el.textContent?.trim() === ENDPOINT_SAVED_NEED_KEY_MESSAGE,
-      );
-      expect(messageLeaf).toBeDefined();
-      const statusAncestor = messageLeaf!.closest('[role="status"]');
-      expect(statusAncestor).not.toBeNull();
-      expect(statusAncestor!.getAttribute("aria-live")).toBe("polite");
+      expect(statusEl.textContent).toBe(ENDPOINT_SAVED_NEED_KEY_MESSAGE);
+      expect(statusEl.getAttribute("aria-live")).toBe("polite");
+      expect(document.activeElement).toBe(keyInput);
 
       // advance 2500ms -> still visible
       await act(async () => {
         vi.advanceTimersByTime(2500);
       });
       expect(settingsContainer.textContent).toContain(ENDPOINT_SAVED_NEED_KEY_MESSAGE);
-      expect(getSaveBtn().textContent).toBe(ENDPOINT_SAVED_NEED_KEY_MESSAGE);
+      expect(statusEl.textContent).toBe(ENDPOINT_SAVED_NEED_KEY_MESSAGE);
+      expect(getSaveBtn().textContent).toBe("已保存");
+      expect(getSaveBtn().querySelector('[role="status"]')).toBeNull();
 
       // type in API Key -> message gone
       await act(async () => {
         setInputValue(keyInput, "sk-fake-key-for-timer-test");
       });
+      expect(statusEl.textContent).toBe("");
       expect(settingsContainer.textContent).not.toContain(
         ENDPOINT_SAVED_NEED_KEY_MESSAGE,
       );
