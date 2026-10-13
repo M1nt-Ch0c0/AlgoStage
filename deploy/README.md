@@ -37,7 +37,6 @@ ALGOSTAGE_IMAGE_TAG=<版本> docker compose -f deploy/compose.yaml ps
 ```sh
 docker volume ls                                   # 列出所有卷
 docker inspect -f '{{range .Mounts}}{{.Name}} -> {{.Destination}}{{"\n"}}{{end}}' algostage   # 看容器 /data 实际挂的卷
-ALGOSTAGE_IMAGE_TAG=<旧版本> docker compose -f deploy/compose.yaml config --volumes   # 查看 compose 声明的卷
 ```
 
 1. 停止旧容器（`ALGOSTAGE_IMAGE_TAG=<旧版本> docker compose -f deploy/compose.yaml stop`），再把整个数据卷打包备份，包含 `/data/algostage.db` 以及仍存在的 SQLite `algostage.db-wal` / `algostage.db-shm` 文件：
