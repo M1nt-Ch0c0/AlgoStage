@@ -151,6 +151,8 @@ export default function ProblemPage() {
       return;
     }
     lectureAbort.current?.abort();
+    // 重新生成立刻停掉旧播放并清掉步骤；reset 保留 autoAdvance。失败后步骤为空，stopStream 会停在 idle。
+    if (regenerate) usePlayerStore.getState().reset();
     const abort = new AbortController();
     lectureAbort.current = abort;
     let timedOut = false;
@@ -298,9 +300,27 @@ export default function ProblemPage() {
     : 0;
   const hasBuiltIn = slug === "two-sum";
   const inLecture = status !== "idle";
-  const playbackStarted = stepCount > 0 && status !== "idle" && status !== "finished";
-  const playing = status === "playing" || status === "streaming";
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [confirmRegen, setConfirmRegen] = useState(false);
+  // 各题共用同一套主按钮：未开始 / 备课中 / 暂停 / 继续 / 重播。
+  const playing = status === "playing" || (status === "streaming" && stepCount > 0);
+  const canResume = (status === "paused" || status === "interrupted") && stepCount > 0;
   const canReplay = status === "finished" && stepCount > 0 && !lectureBusy;
+  const showRegenerate =
+    (status === "paused" || status === "finished") && stepCount > 0 && !lectureBusy;
+  const regenerateMenuOpen = moreOpen && showRegenerate;
+  useEffect(() => {
+    if (!showRegenerate) setMoreOpen(false);
+  }, [showRegenerate]);
+  const mainLabel = playing
+    ? "暂停"
+    : canResume
+      ? "继续"
+      : lectureBusy
+        ? "备课中…"
+        : canReplay
+          ? "重播"
+          : "开始讲课";
 
   if (loadError) {
     return (
@@ -414,35 +434,93 @@ export default function ProblemPage() {
           </div>
           <button
             type="button"
-            // 已有完整教案时「从头再讲」只本地重播，不再请求；重新生成走单独入口。
-            onClick={() => playbackStarted ? (playing ? pause() : play()) : canReplay ? replay() : startLecture()}
-            disabled={(!playbackStarted && lectureBusy) || !detail}
+            // 完成态「重播」只本地重放；重新生成在「更多」里确认后才请求。
+            onClick={() => {
+              setMoreOpen(false);
+              if (playing) pause();
+              else if (canResume) play();
+              else if (canReplay) replay();
+              else void startLecture();
+            }}
+            disabled={!detail || mainLabel === "备课中…"}
             className="flex items-center gap-1.5 rounded-full bg-beam-gold px-4 py-2 text-sm font-semibold text-on-accent transition-transform hover:scale-[1.03] disabled:pointer-events-none disabled:opacity-50"
           >
-            {playbackStarted ? (
-              playing ? <Pause size={15} /> : <Play size={15} />
-            ) : lectureBusy ? (
+            {mainLabel === "暂停" ? (
+              <Pause size={15} />
+            ) : mainLabel === "备课中…" ? (
               <Sparkles size={15} className="animate-pulse" />
-            ) : inLecture ? (
+            ) : mainLabel === "重播" ? (
               <RotateCcw size={15} />
             ) : (
               <Play size={15} />
             )}
-            {playbackStarted ? (playing ? "暂停" : "继续讲课") : lectureBusy ? "备课中…" : inLecture ? "从头再讲" : "开始讲课"}
+            {mainLabel}
           </button>
-          {(status === "paused" || status === "finished") && stepCount > 0 && !lectureBusy && (
-            <button
-              type="button"
-              onClick={() => startLecture(true)}
-              disabled={!detail}
-              className="flex items-center gap-1.5 rounded-full border border-board-600 px-3 py-2 text-sm text-chalk-300 hover:text-chalk-100 disabled:opacity-40"
-            >
-              <Sparkles size={14} />
-              重新生成
-            </button>
+          {showRegenerate && (
+            <div className="relative">
+              <button
+                type="button"
+                aria-label="更多"
+                aria-haspopup="menu"
+                aria-expanded={regenerateMenuOpen}
+                onClick={() => setMoreOpen((open) => !open)}
+                className="flex items-center gap-1.5 rounded-full border border-board-600 px-3 py-2 text-sm text-chalk-300 hover:text-chalk-100"
+              >
+                更多
+              </button>
+              {regenerateMenuOpen && (
+                <div
+                  role="menu"
+                  className="absolute right-0 top-full z-20 mt-1 min-w-32 rounded-xl border border-board-600 bg-board-900 p-1 shadow-lg"
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMoreOpen(false);
+                      setConfirmRegen(true);
+                    }}
+                    className="flex w-full items-center gap-1.5 rounded-lg px-3 py-2 text-left text-sm text-chalk-300 hover:bg-board-700 hover:text-chalk-100"
+                  >
+                    <Sparkles size={14} />
+                    重新生成
+                  </button>
+                </div>
+              )}
+            </div>
           )}
         </div>
       </header>
+      {confirmRegen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+        >
+          <div className="flex max-w-sm flex-col gap-3 rounded-2xl border border-board-600 bg-board-900 p-4 text-sm text-chalk-100">
+            <p>重新生成会清掉当前教案，确定吗？</p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmRegen(false)}
+                className="rounded-full border border-board-600 px-3 py-1.5 text-chalk-300 hover:text-chalk-100"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmRegen(false);
+                  void startLecture(true);
+                }}
+                className="rounded-full bg-beam-gold px-3 py-1.5 font-semibold text-on-accent"
+              >
+                确定重新生成
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {lectureBusy && (
         <div className="flex items-center gap-3 text-sm text-chalk-300">

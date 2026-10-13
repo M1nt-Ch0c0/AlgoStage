@@ -46,8 +46,16 @@ test.each([false, true])("首个真实步骤到达前显示备课中，不显示
       await act(async () => usePlayerStore.getState().loadScript(script));
       expect(controls.textContent).toContain("第 1 / 1 步");
     }
-    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("header button"))
-      .find(button => button.textContent === (regenerate ? "重新生成" : "开始讲课"))!.click());
+    if (regenerate) {
+      await act(async () => container.querySelector<HTMLButtonElement>('header button[aria-label="更多"]')!.click());
+      const item = container.querySelector<HTMLButtonElement>('[role="menuitem"]')!;
+      await act(async () => item.click());
+      const confirm = Array.from(container.querySelectorAll("button")).find(b => b.textContent === "确定重新生成") as HTMLButtonElement;
+      await act(async () => confirm.click());
+    } else {
+      await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("header button"))
+        .find(button => button.textContent === "开始讲课")!.click());
+    }
     await act(async () => send({ type: "progress", attempt: 1, message: "正在生成首个讲解步骤…" }));
     expect(controls.querySelector('[role="status"]')?.textContent).toBe("备课中…");
     expect(controls.textContent).not.toMatch(/第\s*\d+\s*\/\s*\d+\s*步/);
@@ -56,7 +64,8 @@ test.each([false, true])("首个真实步骤到达前显示备课中，不显示
       expect(controls.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)?.disabled).toBe(true);
     }
     await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true })));
-    expect(usePlayerStore.getState().status).toBe(regenerate ? "paused" : "idle");
+    // 重新生成会先 reset，步骤清空后状态是 idle，与首次开讲相同；空格在备课中不推进。
+    expect(usePlayerStore.getState().status).toBe("idle");
 
     await act(async () => send({ type: "step", step }));
     expect(controls.querySelector('[role="status"]')).toBeNull();
