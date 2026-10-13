@@ -5,7 +5,7 @@
 import { z } from "zod";
 import { EFFECT_WHITELIST } from "./types";
 
-const effectTarget = z.discriminatedUnion("kind", [
+export const effectTargetSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("code-line"), start: z.number().int().min(1), end: z.number().int().min(1).optional() }),
   z.object({ kind: z.literal("code-token"), line: z.number().int().min(1), match: z.string() }),
   z.object({ kind: z.literal("statement"), blockId: z.string() }),
@@ -15,7 +15,7 @@ const effectTarget = z.discriminatedUnion("kind", [
 
 const beamColor = z.enum(["gold", "cyan", "violet", "rose", "mint"]);
 
-const effectCall = z.object({
+export const effectCallSchema = z.object({
   effect: z.enum(EFFECT_WHITELIST),
   targetIndex: z.number().int().min(0).optional(),
   color: beamColor.optional(),
@@ -50,12 +50,13 @@ export const arrayVizFrameSchema = z.object({
 });
 
 export type ArrayVizState = z.infer<typeof arrayVizStateSchema>;
+export type ArrayVizFrame = z.infer<typeof arrayVizFrameSchema>;
 
 export const teachingStepSchema = z.object({
   id: z.string(),
   narration: z.string().min(1),
-  targets: z.array(effectTarget).min(1),
-  effects: z.array(effectCall).default([]),
+  targets: z.array(effectTargetSchema).min(1),
+  effects: z.array(effectCallSchema).default([]),
   viz: arrayVizFrameSchema.optional(),
   awaitNarration: z.boolean().optional(),
   dwellMs: z.number().int().min(0).optional(),

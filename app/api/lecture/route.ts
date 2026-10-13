@@ -11,10 +11,12 @@ import {
 } from "@/lib/agent/lecture-generation";
 import { createHash } from "crypto";
 import { NextRequest } from "next/server";
-import { resolveByok, ByokConfigurationError, ByokKeyRequiredError, type ByokConfig, savedBaseURLOf } from "@/lib/agent/provider";
+import { resolveByok, ByokConfigurationError, ByokKeyRequiredError, type ByokConfig, savedBaseURLOf, serverKeyDisabled } from "@/lib/agent/provider";
 import { buildLecturePrompt } from "@/lib/agent/modes/lecture";
 import { highlightProblem } from "@/lib/agent/lecture-highlights";
-import { validateScript } from "@/lib/teaching/validated-script";
+import { deleteAnswersForCacheKey, listAnswers } from "@/lib/ask/answers-repo";
+import { scriptVersion } from "@/lib/ask/script-version";
+import { askableStepIds, disabledStepIds, validateScript } from "@/lib/teaching/validated-script";
 import { lectureRequestSchema, badRequest, baseURLInvalid, byokKeyRequired, configurationError, streamErrorEvent, upstreamAuthError, upstreamError } from "@/lib/agent/request";
 import { localSeedSource } from "@/lib/content/local-source";
 import { prisma } from "@/lib/db/prisma";
@@ -132,14 +134,41 @@ export async function POST(req: NextRequest) {
   // 显式重新生成跳过缓存读取；仅在生成成功并校验后 upsert 覆盖，失败或取消保留旧缓存。
   const cached = body.regenerate ? null : await prisma.lectureScriptCache.findUnique({ where: { key } });
   if (cached) {
+    // 只有脚本解析或校验失败才删缓存。listAnswers 的数据库错误不能落进这个 catch，
+    // 否则会删掉 LectureScriptCache，并级联删掉 LectureAnswer。
+    let script: ReturnType<typeof validateScript> | undefined;
     try {
-      const script = matchesRequest(
-        validateScript(JSON.parse(cached.script), referenceCode),
+      // 旧缓存可能有重复或空 step id；lenient 不删缓存，只禁用这些步骤的提问。
+      script = matchesRequest(
+        validateScript(JSON.parse(cached.script), referenceCode, { stepIds: "lenient" }),
       );
-      return Response.json({ cached: true, script });
     } catch {
-      // 旧缓存可能未经过校验；丢弃后重新备课。
+      // 旧缓存可能未经过校验；丢弃后重新备课。重复 step id 不走这里。
       await prisma.lectureScriptCache.delete({ where: { key } });
+    }
+    if (script) {
+      const disabled = disabledStepIds(script);
+      if (disabled.length > 0) {
+        console.warn("[lecture] cached script has duplicate step ids", { key, count: disabled.length });
+      }
+      const version = scriptVersion(script);
+      let answers: Awaited<ReturnType<typeof listAnswers>> = {};
+      if (!serverKeyDisabled()) {
+        try {
+          answers = await listAnswers(prisma, key, version, askableStepIds(script));
+        } catch {
+          console.warn("[lecture] listAnswers failed", { key });
+          answers = {};
+        }
+      }
+      return Response.json({
+        cached: true,
+        script,
+        cacheKey: key,
+        scriptVersion: version,
+        answers,
+        askDisabledStepIds: disabled,
+      });
     }
   }
 
@@ -193,6 +222,8 @@ export async function POST(req: NextRequest) {
           update: { script: JSON.stringify(result.script) },
           create: { key, script: JSON.stringify(result.script) },
         });
+        // 覆盖缓存后旧回答对不上新 scriptVersion；公开实例不读写 LectureAnswer。
+        if (!serverKeyDisabled()) await deleteAnswersForCacheKey(tx, key);
         if (generationAbort.signal.aborted) throw new Error("Cancelled");
       });
       return result;
@@ -232,7 +263,15 @@ export async function POST(req: NextRequest) {
           ready(result.ok ? undefined : result);
           send(
             result.ok
-              ? { type: "result", cached: false, script: result.script }
+              ? {
+                  type: "result",
+                  cached: false,
+                  script: result.script,
+                  cacheKey: key,
+                  scriptVersion: scriptVersion(result.script),
+                  answers: {},
+                  askDisabledStepIds: [],
+                }
               : streamErrorEvent(result.error),
           );
         } catch {
@@ -268,6 +307,13 @@ export async function POST(req: NextRequest) {
   }
   const result = await generate();
   return result.ok
-    ? Response.json({ cached: false, script: result.script })
+    ? Response.json({
+        cached: false,
+        script: result.script,
+        cacheKey: key,
+        scriptVersion: scriptVersion(result.script),
+        answers: {},
+        askDisabledStepIds: [],
+      })
     : generationErrorResponse(result);
 }

@@ -1,4 +1,5 @@
-import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { describe, it, expect, expectTypeOf, vi } from "vitest";
 import {
   answerSegmentSchema,
   askBBoxSchema,
@@ -7,6 +8,9 @@ import {
   stepAnswerSchema,
   stepAnswersMapSchema,
 } from "@/lib/ask/schema";
+import { effectCallSchema, effectTargetSchema } from "@/lib/teaching/schema";
+import type { AnswerSegment } from "@/lib/ask/types";
+import type { z } from "zod";
 
 const bbox = { x: 1, y: 2, width: 30, height: 40 };
 
@@ -186,11 +190,76 @@ describe("ask schema", () => {
       effects: [{ effect: "spotlight-beam", intensity: "loud" }],
     })).success).toBe(false);
     expect(answerSegmentSchema.safeParse(segment({
-      viz: { type: "tree", state: { values: [1] } },
-    })).success).toBe(false);
-    expect(answerSegmentSchema.safeParse(segment({
       viz: { type: "array", state: { values: [Number.NaN] } },
-    })).success).toBe(false);
+    })).success).toBe(true);
     expect(answerSegmentSchema.safeParse({ id: "bare", narration: "只有旁白" }).success).toBe(true);
+  });
+
+  it("1. ask schema 不再本地定义 effectTarget / effectCall，与教学 schema 同一引用", async () => {
+    const source = readFileSync(new URL("../lib/ask/schema.ts", import.meta.url), "utf8");
+    expect(source).not.toContain('z.discriminatedUnion("kind"');
+    const teaching = await import("@/lib/teaching/schema");
+    expect(effectTargetSchema).toBe(teaching.effectTargetSchema);
+    expect(effectCallSchema).toBe(teaching.effectCallSchema);
+  });
+
+  it("2. 合法 array viz 保留且原样输出", () => {
+    const viz = { type: "array" as const, state: { values: [2, 7], highlight: [0], map: { "2": 0 }, scan: 0 } };
+    const parsed = answerSegmentSchema.parse(segment({ viz }));
+    expect("viz" in parsed ? parsed.viz : undefined).toEqual(viz);
+    expect(Object.prototype.hasOwnProperty.call(parsed, "viz")).toBe(true);
+  });
+
+  it("3-5. 非数组或不合法 viz 丢掉键，文字与 targets 保留，整段整条都不失败", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const cases = [
+      { type: "tree", state: { values: [1] } },
+      { type: "array", state: { values: [1], highlight: [5] } },
+      "x",
+      null,
+    ];
+    try {
+      for (const viz of cases) {
+        warn.mockClear();
+        const parsed = answerSegmentSchema.parse(segment({ viz }));
+        expect(parsed.narration).toBe("先算出补数，再查哈希表。");
+        expect(parsed.targets).toEqual([{ kind: "code-line", start: 4, end: 5 }]);
+        expect(Object.prototype.hasOwnProperty.call(parsed, "viz")).toBe(false);
+        expect("viz" in parsed).toBe(false);
+        expect(warn).toHaveBeenCalledWith("[ask] dropped non-array viz");
+        expect(warn.mock.calls.every((call) => call.length === 1 && call[0] === "[ask] dropped non-array viz")).toBe(true);
+
+        const whole = stepAnswerSchema.parse(answer({ segments: [segment({ viz })] }));
+        expect(whole.segments).toHaveLength(1);
+        expect(Object.prototype.hasOwnProperty.call(whole.segments[0], "viz")).toBe(false);
+      }
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("缺省 viz 不告警，输出也没有 viz 键", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const full = segment();
+      const without = { ...full, viz: undefined };
+      delete without.viz;
+      const parsed = answerSegmentSchema.parse(without);
+      expect(Object.prototype.hasOwnProperty.call(parsed, "viz")).toBe(false);
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("6. createdAt 接受 Z 与偏移，拒绝纯日期和普通文字", () => {
+    expect(stepAnswerSchema.safeParse(answer({ createdAt: "2026-10-13T11:00:00.000Z" })).success).toBe(true);
+    expect(stepAnswerSchema.safeParse(answer({ createdAt: "2026-10-13T19:00:00+08:00" })).success).toBe(true);
+    expect(stepAnswerSchema.safeParse(answer({ createdAt: "2026-10-13" })).success).toBe(false);
+    expect(stepAnswerSchema.safeParse(answer({ createdAt: "yesterday" })).success).toBe(false);
+  });
+
+  it("answerSegmentSchema 输出可赋给 AnswerSegment", () => {
+    expectTypeOf<z.output<typeof answerSegmentSchema>>().toMatchTypeOf<AnswerSegment>();
   });
 });

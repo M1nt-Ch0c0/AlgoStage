@@ -25,6 +25,7 @@ const db = vi.hoisted(() => {
   const models = {
     setting,
     lectureScriptCache: { ...writeMethods(), findUnique: vi.fn(async (): Promise<{ script: string } | null> => null) },
+    lectureAnswer: { ...writeMethods(), findMany: vi.fn(async () => []), deleteMany: vi.fn(async () => ({ count: 0 })) },
     hintUsage: writeMethods(), user: writeMethods(), problemProgress: writeMethods(),
     submission: writeMethods(), reviewCard: writeMethods(),
   };

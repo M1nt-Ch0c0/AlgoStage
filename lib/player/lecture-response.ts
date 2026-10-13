@@ -7,10 +7,38 @@ import {
   UPSTREAM_AUTH_LECTURE_MESSAGE,
   UPSTREAM_ERROR_MESSAGE,
 } from "@/lib/byok/client";
+import { stepAnswersMapSchema } from "@/lib/ask/schema";
+import type { StepAnswersMap } from "@/lib/ask/types";
 import { teachingStepSchema } from "@/lib/teaching/schema";
 import type { TeachingStep } from "@/lib/teaching/types";
 
 export { LECTURE_TIMEOUT_MESSAGE } from "@/lib/byok/client";
+
+function asRecord(data: unknown): Record<string, unknown> {
+  return data !== null && typeof data === "object" ? (data as Record<string, unknown>) : {};
+}
+
+function asString(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+/** 旧响应没有这些字段时用空默认值；不写入播放器 store。 */
+export function readLectureMeta(data: unknown): {
+  cacheKey: string;
+  scriptVersion: string;
+  answers: StepAnswersMap;
+  askDisabledStepIds: string[];
+} {
+  const record = asRecord(data);
+  const parsedAnswers = stepAnswersMapSchema.safeParse(record.answers);
+  const ids = record.askDisabledStepIds;
+  return {
+    cacheKey: asString(record.cacheKey),
+    scriptVersion: asString(record.scriptVersion),
+    answers: parsedAnswers.success ? parsedAnswers.data : {},
+    askDisabledStepIds: Array.isArray(ids) && ids.every((id) => typeof id === "string") ? ids : [],
+  };
+}
 
 /** 读流时网络断开（fetch reader 抛 TypeError 等）：已收步骤保留，提示中断。 */
 export const LECTURE_INTERRUPTED_MESSAGE = "备课中断，网络连接已断开，请重试。";

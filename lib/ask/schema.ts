@@ -1,10 +1,10 @@
 /**
  * Ask 协议的 zod 校验。
- * effectTarget / effectCall 在 lib/teaching/schema.ts 里未导出，这里按同一形状最小重写。
+ * effectTargetSchema / effectCallSchema 从 lib/teaching/schema.ts 导入，与教案共用同一引用。
+ * 非数组 viz 静默丢掉（保留文字），不算失败。
  */
 import { z } from "zod";
-import { arrayVizFrameSchema } from "@/lib/teaching/schema";
-import { EFFECT_WHITELIST } from "@/lib/teaching/types";
+import { arrayVizFrameSchema, effectCallSchema, effectTargetSchema } from "@/lib/teaching/schema";
 import { ASK_LIMITS } from "@/lib/ask/types";
 
 const finite = z.number().finite();
@@ -42,22 +42,13 @@ export const askSelectionSchema = z.object({
   question: z.string().trim().min(1).max(ASK_LIMITS.questionMax),
 });
 
-/** Mirrors the unexported `effectTarget` in lib/teaching/schema.ts. */
-const effectTargetSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("code-line"), start: z.number().int().min(1), end: z.number().int().min(1).optional() }),
-  z.object({ kind: z.literal("code-token"), line: z.number().int().min(1), match: z.string() }),
-  z.object({ kind: z.literal("statement"), blockId: z.string() }),
-  z.object({ kind: z.literal("viz-node"), nodeId: z.string() }),
-  z.object({ kind: z.literal("dom"), selector: z.string() }),
-]);
-
-/** Mirrors the unexported `effectCall` in lib/teaching/schema.ts. */
-const effectCallSchema = z.object({
-  effect: z.enum(EFFECT_WHITELIST),
-  targetIndex: z.number().int().min(0).optional(),
-  color: z.enum(["gold", "cyan", "violet", "rose", "mint"]).optional(),
-  intensity: z.enum(["whisper", "normal", "shout"]).optional(),
-  params: z.record(z.string(), z.unknown()).optional(),
+/** Keep a valid array frame; drop anything else without failing the segment. */
+const optionalArrayViz = z.unknown().optional().transform((value) => {
+  if (value === undefined) return undefined;
+  const parsed = arrayVizFrameSchema.safeParse(value);
+  if (parsed.success) return parsed.data;
+  console.warn("[ask] dropped non-array viz");
+  return undefined;
 });
 
 export const answerSegmentSchema = z.object({
@@ -65,7 +56,14 @@ export const answerSegmentSchema = z.object({
   narration: z.string().min(1).max(ASK_LIMITS.narrationMax),
   targets: z.array(effectTargetSchema).optional(),
   effects: z.array(effectCallSchema).optional(),
-  viz: arrayVizFrameSchema.optional(),
+  viz: optionalArrayViz,
+}).transform((segment) => {
+  if (segment.viz === undefined) {
+    const rest = { ...segment };
+    delete rest.viz;
+    return rest;
+  }
+  return segment;
 });
 
 export const stepAnswerSchema = z.object({
