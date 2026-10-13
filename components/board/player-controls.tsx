@@ -1,7 +1,8 @@
 /**
  * PlayerControls · 讲解播放器控制条（docs/02 §5.4 底部）
- * 上一步/播放暂停/下一步 · 步骤指示 · 可点击时间线圆点 · 语速 · 特效强度档位。
- * 键盘可达：←/→ 步进、Space 播放暂停（docs/02 §7）。
+ * 上一步/播放暂停/下一步 · 步骤指示 · 可点击时间线圆点 · 自动播放 · 语速 · 特效强度档位。
+ * 键盘可达：←/→ 步进、Space 播放暂停；等待继续时 Space/→ 均下一步（docs/02 §7）。
+ * 输入框、contenteditable、Monaco 编辑器内以及带 Ctrl/Meta/Alt 的按键不拦截。
  */
 "use client";
 
@@ -16,24 +17,37 @@ const LEVELS = [
   { value: "minimal", label: "极简" },
 ] as const;
 
+/** 焦点在输入控件、可编辑区或 Monaco 内时不抢快捷键（happy-dom 未必实现 isContentEditable）。 */
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  const tag = target.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  if (target instanceof HTMLElement && target.isContentEditable) return true;
+  return (
+    target.closest('[contenteditable=""],[contenteditable="true"],.monaco-editor') !== null
+  );
+}
+
 export default function PlayerControls({ preparing = false }: { preparing?: boolean }) {
   const status = usePlayerStore((s) => s.status);
   const steps = usePlayerStore((s) => s.steps);
   const currentIndex = usePlayerStore((s) => s.currentIndex);
   const speed = usePlayerStore((s) => s.speed);
   const effectLevel = usePlayerStore((s) => s.effectLevel);
-  const { play, pause, next, prev, goto, setSpeed, setEffectLevel } =
+  const autoAdvance = usePlayerStore((s) => s.autoAdvance);
+  const awaitingContinue = usePlayerStore((s) => s.awaitingContinue);
+  const { play, pause, next, prev, goto, setSpeed, setEffectLevel, setAutoAdvance } =
     usePlayerStore.getState();
 
   const hasScript = !preparing && steps.length > 0;
   const playing = status === "playing" || status === "streaming";
 
-  // 键盘操作：←/→ 步进、Space 播放暂停
+  // 键盘：←/→ 步进、Space 播放暂停；等待继续时 Space 与 → 都下一步。输入区与修饰键忽略。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!hasScript) return;
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (isTypingTarget(e.target)) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key === "ArrowLeft") {
         e.preventDefault();
         prev();
@@ -42,12 +56,14 @@ export default function PlayerControls({ preparing = false }: { preparing?: bool
         next();
       } else if (e.key === " ") {
         e.preventDefault();
-        playing ? pause() : play();
+        if (awaitingContinue) next();
+        else if (playing) pause();
+        else play();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [hasScript, playing, play, pause, next, prev]);
+  }, [hasScript, playing, awaitingContinue, play, pause, next, prev]);
 
   const btn =
     "flex size-8 items-center justify-center rounded-full text-chalk-300 transition-colors hover:bg-board-700 hover:text-chalk-100 disabled:pointer-events-none disabled:opacity-30";
@@ -74,10 +90,11 @@ export default function PlayerControls({ preparing = false }: { preparing?: bool
         </button>
         <button
           type="button"
-          className={btn}
+          className={`${btn}${awaitingContinue ? " text-beam-gold ring-1 ring-beam-gold/60 animate-pulse" : ""}`}
           onClick={next}
           disabled={!hasScript || currentIndex >= steps.length - 1}
           aria-label="下一步"
+          data-awaiting={awaitingContinue ? "true" : undefined}
         >
           <SkipForward size={16} />
         </button>
@@ -119,6 +136,16 @@ export default function PlayerControls({ preparing = false }: { preparing?: bool
           <span className="text-xs text-chalk-700">还没开始上课</span>
         )}
       </div>
+
+      {/* 自动播放：关闭时打完本步停住，等空格或下一步继续 */}
+      <button
+        type="button"
+        aria-pressed={autoAdvance}
+        onClick={() => setAutoAdvance(!autoAdvance)}
+        className={pill(autoAdvance)}
+      >
+        自动播放
+      </button>
 
       {/* 语速 */}
       <div role="group" aria-label="语速" className="flex items-center gap-0.5 rounded-full border border-board-700/70 p-0.5">
