@@ -138,14 +138,14 @@ export default function PlayerControls({
   const btn =
     "flex size-8 shrink-0 items-center whitespace-nowrap justify-center rounded-full text-chalk-300 transition-colors hover:bg-board-700 hover:text-chalk-100 disabled:pointer-events-none disabled:opacity-30 pointer-coarse:size-11";
   const pill = (on: boolean) =>
-    `shrink-0 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs transition-colors relative pointer-coarse:inline-flex pointer-coarse:min-w-11 pointer-coarse:items-center pointer-coarse:justify-center pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:top-1/2 pointer-coarse:after:h-11 pointer-coarse:after:-translate-y-1/2 pointer-coarse:after:content-[""] ${
+    `shrink-0 whitespace-nowrap rounded-full px-2.5 pointer-coarse:px-1.5 py-0.5 text-xs transition-colors relative pointer-coarse:inline-flex pointer-coarse:min-w-11 pointer-coarse:items-center pointer-coarse:justify-center pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:top-1/2 pointer-coarse:after:h-11 pointer-coarse:after:-translate-y-1/2 pointer-coarse:after:content-[""] ${
       on ? "bg-board-700 text-beam-gold" : "text-chalk-500 hover:text-chalk-300"
     }`;
 
   return (
     <div
       data-testid="player-controls"
-      className="flex flex-wrap items-center gap-x-4 gap-y-2 pointer-coarse:gap-y-6 rounded-2xl border border-board-700/70 bg-board-900/90 px-3 py-2 backdrop-blur-md"
+      className="flex flex-wrap items-center gap-x-4 pointer-coarse:gap-x-2 gap-y-2 pointer-coarse:gap-y-6 rounded-2xl border border-board-700/70 bg-board-900/90 px-3 py-2 backdrop-blur-md"
     >
       {/* 步进控制 */}
       <div className="flex items-center gap-1">
