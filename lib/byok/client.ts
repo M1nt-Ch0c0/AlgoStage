@@ -122,6 +122,7 @@ export function withByok<T extends Record<string, unknown>>(
 export const NO_BYOK_MESSAGE = "还没填 API Key。先去设置页填入你自己的 API Key 就能开讲。";
 export const NO_BYOK_SETTINGS_MESSAGE = "还没填 API Key。在下面填入你自己的 API Key 就能开讲。";
 export const BASE_URL_INVALID_MESSAGE = "接口地址格式不对，要以 http:// 或 https:// 开头";
+export const BASE_URL_INVALID_LECTURE_MESSAGE = "接口地址格式不对，要以 http:// 或 https:// 开头，去设置页改一下就能开讲。";
 export const BASE_URL_NOT_ALLOWED_MESSAGE = "只支持公网 http(s) 地址";
 export const BASE_URL_NOT_ALLOWED_SETTINGS_MESSAGE = "接口地址只支持公网 http(s) 地址";
 export const BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE = "接口地址只支持公网 http(s) 地址，去设置页改一下就能开讲。";

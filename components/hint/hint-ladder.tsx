@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  BASE_URL_INVALID_MESSAGE,
+  BASE_URL_INVALID_LECTURE_MESSAGE,
   BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE,
   fetchServerKeyDisabled,
   isBaseUrlInvalid,
@@ -123,7 +123,7 @@ export default function HintLadder({
             throw new Error(SLOW_MSG);
           }
           if (isBaseUrlInvalid(j)) {
-            throw new Error(BASE_URL_INVALID_MESSAGE);
+            throw new Error(BASE_URL_INVALID_LECTURE_MESSAGE);
           }
           if (isBaseUrlNotAllowed(j)) {
             throw new Error(BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE);
@@ -217,7 +217,7 @@ export default function HintLadder({
           <p>{hintError}</p>
           {(hintError === NO_BYOK_MESSAGE ||
             hintError === BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE ||
-            hintError === BASE_URL_INVALID_MESSAGE) && (
+            hintError === BASE_URL_INVALID_LECTURE_MESSAGE) && (
             <Link
               href={
                 hintError === NO_BYOK_MESSAGE

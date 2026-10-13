@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import HintLadder from "../components/hint/hint-ladder";
 import {
+  BASE_URL_INVALID_LECTURE_MESSAGE,
   BASE_URL_INVALID_MESSAGE,
   BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE,
   isBaseUrlInvalid,
@@ -106,6 +107,12 @@ describe("mapByokErrorMessage pure unit tests", () => {
     expect(isBaseUrlInvalid({ code: "BASE_URL_INVALID" })).toBe(true);
     expect(isBaseUrlInvalid({ error: "BASE_URL_NOT_ALLOWED" })).toBe(false);
     expect(isBaseUrlInvalid(null)).toBe(false);
+    expect(BASE_URL_INVALID_MESSAGE).toBe(
+      "接口地址格式不对，要以 http:// 或 https:// 开头",
+    );
+    expect(BASE_URL_INVALID_LECTURE_MESSAGE).toBe(
+      "接口地址格式不对，要以 http:// 或 https:// 开头，去设置页改一下就能开讲。",
+    );
   });
 });
 
@@ -193,7 +200,9 @@ describe("Rendered UI error messages in HintLadder and ProblemPage", () => {
       const uiExpected =
         code === "BASE_URL_NOT_ALLOWED"
           ? BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE
-          : expected;
+          : code === "BASE_URL_INVALID"
+            ? BASE_URL_INVALID_LECTURE_MESSAGE
+            : expected;
       return [
         { shape: "code", payload: { code }, code, expected: uiExpected },
         {
@@ -301,7 +310,9 @@ describe("Rendered UI error messages in HintLadder and ProblemPage", () => {
       const uiExpected =
         code === "BASE_URL_NOT_ALLOWED"
           ? BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE
-          : expected;
+          : code === "BASE_URL_INVALID"
+            ? BASE_URL_INVALID_LECTURE_MESSAGE
+            : expected;
       return [
         { shape: "code", payload: { code }, code, expected: uiExpected },
         {
