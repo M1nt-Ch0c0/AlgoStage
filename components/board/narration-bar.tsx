@@ -10,7 +10,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { usePlayerStore } from "@/lib/player/store";
+import { selectScriptSlug, usePlayerStore } from "@/lib/player/store";
 import { nextProblem } from "@/lib/content/roadmap-order";
 import { parseInline, totalChars, InlinePartial, InlineMarkdown } from "./inline-markdown";
 import { usePrefersReducedMotion } from "@/components/effects/fx-context";
@@ -23,7 +23,7 @@ export default function NarrationBar() {
   const speed = usePlayerStore((s) => s.speed);
   const next = usePlayerStore((s) => s.next);
   const replay = usePlayerStore((s) => s.replay);
-  const currentSlug = usePlayerStore((s) => s.script?.problemSlug);
+  const currentSlug = usePlayerStore(selectScriptSlug);
   const nextItem = nextProblem(currentSlug ?? "");
   const autoAdvance = usePlayerStore((s) => s.autoAdvance);
   const awaitingContinue = usePlayerStore((s) => s.awaitingContinue);

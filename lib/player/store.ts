@@ -75,6 +75,9 @@ const initial = {
   awaitingContinue: false,
 };
 
+/** 当前教案题号；无脚本时为 null。供字幕条等不把 problemSlug 写进组件源码的读取。 */
+export const selectScriptSlug = (s: { script: TeachingScript | null }) => s.script?.problemSlug ?? null;
+
 export const usePlayerStore = create<PlayerState>((set, get) => ({
   ...initial,
   autoAdvance: readAutoAdvance(),
