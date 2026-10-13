@@ -113,3 +113,9 @@ export async function readLectureResponse(
     reader.releaseLock();
   }
 }
+
+/** 备课中途断开类错误（超时/流未完整结束）：已收到的步骤可保留播放。 */
+export function isLectureCutOff(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  return code === "TIMEOUT" || code === "INTERRUPTED" || code === "INCOMPLETE_STREAM";
+}

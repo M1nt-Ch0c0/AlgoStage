@@ -85,3 +85,49 @@ test.each([false, true])("首个真实步骤到达前显示备课中，不显示
     expect(controls.querySelector('[role="status"]')).toBeNull();
   } finally { await act(async () => root.unmount()); }
 });
+
+test.each(["timeout", "disconnect"] as const)("已收到步骤后备课%s：显示「已收到 N 步，备课中断」，不满格，步骤可播放，有重试", async kind => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const detail = await localSeedSource.detail("3sum");
+  const mk = (id: string): TeachingStep => ({ id, narration: id, targets: [{ kind: "code-line", start: 2 }], effects: [] });
+  let stream!: ReadableStreamDefaultController;
+  const response = new Response(new ReadableStream({ start(controller) { stream = controller; } }), {
+    headers: { "Content-Type": "application/x-ndjson" },
+  });
+  vi.spyOn(globalThis, "fetch").mockImplementation(async input => {
+    if (String(input).endsWith("/api/lecture")) return response;
+    if (String(input).endsWith("/api/settings")) return Response.json({ keySource: "env" });
+    if (String(input).endsWith("/api/problems/3sum")) return Response.json({ problem: detail });
+    return Response.json({ ok: true });
+  });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const send = (event: unknown) => stream.enqueue(new TextEncoder().encode(JSON.stringify(event) + "\n"));
+  try {
+    await act(async () => root.render(createElement(ProblemPage)));
+    const controls = container.querySelector('[aria-label="语速"]')!.parentElement!;
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("header button"))
+      .find(button => button.textContent === "开始讲课")!.click());
+    await act(async () => { send({ type: "step", step: mk("s1") }); send({ type: "step", step: mk("s2") }); });
+    await act(async () => {
+      if (kind === "timeout") send({ type: "error", code: "TIMEOUT", retryable: true });
+      stream.close();
+    });
+    expect(controls.querySelector('[role="status"]')?.textContent).toBe("已收到 2 步，备课中断");
+    expect(controls.textContent).not.toMatch(/第\s*\d+\s*\/\s*\d+\s*步/);
+    const pending = controls.querySelector<HTMLElement>('[data-pending-step]');
+    expect(pending?.dataset.pendingStep).toBe("broken");
+    expect(pending?.innerHTML).not.toContain("animate-pulse");
+    expect(container.textContent).toContain("已收到 2 步");
+    expect(container.textContent).not.toContain("共 2 步");
+    expect(container.textContent).toContain("重试");
+    // 已收到的步骤仍可点、可播放
+    const dot = controls.querySelector<HTMLButtonElement>('[aria-label="跳到第 1 步"]')!;
+    await act(async () => dot.click());
+    expect(usePlayerStore.getState().currentIndex).toBe(0);
+    expect(usePlayerStore.getState().steps).toHaveLength(2);
+    const playBtn = controls.querySelector<HTMLButtonElement>('[aria-label="播放"],[aria-label="暂停"]')!;
+    expect(playBtn.disabled).toBe(false);
+  } finally { await act(async () => root.unmount()); }
+});

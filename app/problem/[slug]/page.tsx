@@ -41,7 +41,7 @@ import JudgeSignature from "@/components/judge/judge-signature";
 import AiSetupPrompt from "@/components/settings/ai-setup-prompt";
 import { teachingScriptSchema } from "@/lib/teaching/schema";
 import { readDraft, saveDraft, draftLanguage } from "@/lib/player/drafts";
-import { readLectureResponse } from "@/lib/player/lecture-response";
+import { isLectureCutOff, readLectureResponse } from "@/lib/player/lecture-response";
 import { cancelLectureForPlayback, loadLectureForPlayback, switchProblemForPlayback } from "@/lib/player/load-lecture";
 import { TWO_SUM_SCRIPT } from "@/lib/content/scripts/two-sum";
 import { HOT100_CATEGORIES } from "@/lib/content/hot100";
@@ -94,6 +94,8 @@ export default function ProblemPage() {
   const [lectureProgress, setLectureProgress] = useState("");
   const [lectureComplete, setLectureComplete] = useState(false);
   const lectureInFlight = useRef<boolean>(false);
+  // 超时/中断时已收到部分步骤：保留可播放，进度显示「已收到 N 步，备课中断」。
+  const [lectureInterrupted, setLectureInterrupted] = useState(false);
   const lectureAbort = useRef<AbortController | null>(null);
   const [lectureError, setLectureError] = useState<{
     code: string;
@@ -123,6 +125,7 @@ export default function ProblemPage() {
         setLectureProgress("");
         setLectureError(null);
         setLectureComplete(false);
+        setLectureInterrupted(false);
       },
       reset: usePlayerStore.getState().reset,
     });
@@ -179,6 +182,7 @@ export default function ProblemPage() {
     if (lectureInFlight.current) return;
     setLectureError(null);
     setLectureComplete(false);
+    setLectureInterrupted(false);
     if (practice) saveDraft(slug, language, code);
     setPractice(false);
     if (!detail) {
@@ -201,6 +205,7 @@ export default function ProblemPage() {
     }, LECTURE_TIMEOUT_MS + 5000);
     setLectureBusy(true);
     setLectureProgress("正在生成首个讲解步骤…");
+    let streaming = false;
     try {
       if (slug === "two-sum") {
         setLanguage("typescript");
@@ -240,7 +245,6 @@ export default function ProblemPage() {
         }
         throw new ByokError("UPSTREAM_ERROR", UPSTREAM_ERROR_MESSAGE);
       }
-      let streaming = false;
       let guard: StreamGuard | undefined;
       const reference =
         detail.referenceSolutions?.find((s) => s.language === language)?.code ??
@@ -316,9 +320,15 @@ export default function ProblemPage() {
                     : (resolved?.message ?? "老师这次没备好课，请重试。");
           nextError = { code, message };
         }
-        // 失败也清空半份教案，避免残留字幕与代码锚点；错误提示独立保留。
-        cancelLectureForPlayback(detail, language, { abort: () => abort.abort(), reset, setCode });
-        lastReportedRef.current = -1;
+        if (nextError && streaming && (timedOut || isLectureCutOff(e)) && usePlayerStore.getState().steps.length > 0) {
+          // 超时或中途断开、已收到步骤：保留可播放（v0.2.1 Paige 决定），只停止接收；不保存教案。其他错误仍清空。
+          usePlayerStore.getState().stopStream();
+          setLectureInterrupted(true);
+        } else {
+          // 没收到步骤：清空半份教案，避免残留字幕与代码锚点；错误提示独立保留。
+          cancelLectureForPlayback(detail, language, { abort: () => abort.abort(), reset, setCode });
+          lastReportedRef.current = -1;
+        }
         if (nextError) setLectureError(nextError);
       }
     } finally {
@@ -349,6 +359,7 @@ export default function ProblemPage() {
     setLectureProgress("");
     setLectureError(null);
     setLectureComplete(false);
+    setLectureInterrupted(false);
     lastReportedRef.current = -1;
   }
 
@@ -778,7 +789,7 @@ export default function ProblemPage() {
               right={
                 inLecture && stepCount > 0 ? (
                   <span className="font-mono text-[11px] text-chalk-500">
-                    {lectureBusy ? `已收到 ${stepCount} 步` : `共 ${stepCount} 步`}
+                    {lectureBusy || lectureInterrupted ? `已收到 ${stepCount} 步` : `共 ${stepCount} 步`}
                   </span>
                 ) : null
               }
@@ -830,6 +841,7 @@ export default function ProblemPage() {
           preparing={lectureBusy && (!receiving || stepCount === 0)}
           lectureBusy={lectureBusy}
           generating={lectureBusy && receiving && stepCount > 0}
+          interrupted={!lectureBusy && lectureInterrupted && stepCount > 0}
         />
       </div>
 

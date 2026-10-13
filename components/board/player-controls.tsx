@@ -41,10 +41,17 @@ function isSpaceActivationTarget(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest("button, a") !== null;
 }
 
+/**
+ * preparing：首个步骤到达前（备课中，不可播放）。
+ * generating：已收到部分步骤可播放，但教案尚未生成完成——总步数未知，
+ * 不显示「第 x / N 步」，时间线末尾留一段「仍在备课」占位，避免 1/1 满格。
+ * interrupted：备课超时/中断但已收到部分步骤——步骤仍可播放，占位段改为静态「断开」样式。
+ */
 export default function PlayerControls({
   preparing = false,
   lectureBusy = false,
   generating = false,
+  interrupted = false,
 }: {
   preparing?: boolean;
   /** 备课中：结束面板不显示，Space / → 也不按结束面板拦截。 */
@@ -54,6 +61,7 @@ export default function PlayerControls({
    * 不显示「第 x / N 步」，时间线末尾留一段「仍在备课」占位。
    */
   generating?: boolean;
+  interrupted?: boolean;
 }) {
   const status = usePlayerStore((s) => s.status);
   const steps = usePlayerStore((s) => s.steps);
@@ -187,15 +195,17 @@ export default function PlayerControls({
           <span role="status" className="text-xs text-chalk-500">备课中…</span>
         ) : hasScript ? (
           <>
-            {generating ? (
+            {generating || interrupted ? (
               <span role="status" className="shrink-0 text-xs text-chalk-300 tabular-nums">
-                已收到 {steps.length} 步，仍在备课…
+                {generating ? `已收到 ${steps.length} 步，仍在备课…` : `已收到 ${steps.length} 步，备课中断`}
               </span>
             ) : (
               <span className="shrink-0 font-mono text-xs text-chalk-300 tabular-nums">
                 第 {Math.min(currentIndex + 1, steps.length)} / {steps.length} 步
               </span>
             )}
+            <div className="flex min-w-0 flex-1 items-center">
+            {/* 时间线圆点：等宽均分，只放步骤；未完成占位段在外面，不参与均分。 */}
             <div className="flex min-w-0 flex-1 items-center">
               {steps.map((s, i) => (
                 <button
@@ -218,15 +228,8 @@ export default function PlayerControls({
                   />
                 </button>
               ))}
-              {generating && (
-                <span
-                  aria-hidden="true"
-                  data-pending-step="true"
-                  className="flex h-5 min-w-0 flex-1 items-center"
-                >
-                  <span className="block h-1.5 w-full animate-pulse rounded-full border border-dashed border-board-600" />
-                </span>
-              )}
+            </div>
+            {(generating || interrupted) && <PendingSegment broken={interrupted} />}
             </div>
           </>
         ) : (
@@ -271,5 +274,22 @@ export default function PlayerControls({
         ))}
       </div>
     </div>
+  );
+}
+
+/** 未完成占位段：独立于圆点尺寸，固定宽度、不参与等宽均分。broken = 备课中断（静态）。 */
+function PendingSegment({ broken }: { broken: boolean }) {
+  return (
+    <span
+      aria-hidden="true"
+      data-pending-step={broken ? "broken" : "true"}
+      className="flex h-5 w-8 shrink-0 items-center"
+    >
+      <span
+        className={`block h-1.5 w-full rounded-full border border-dashed ${
+          broken ? "border-beam-rose/60" : "animate-pulse border-board-600"
+        }`}
+      />
+    </span>
   );
 }
