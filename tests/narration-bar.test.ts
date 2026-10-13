@@ -141,14 +141,38 @@ test("setAutoAdvance(true) 打完并停留 dwellMs 后进入下一步", async ()
   expect(usePlayerStore.getState().currentIndex).toBe(1);
 });
 
+test("结束面板出现时，焦点在输入框或对话框里则留在原地", async () => {
+  const input = document.createElement("input");
+  document.body.append(input);
+  await act(async () => root.render(createElement(NarrationBar)));
+  input.focus();
+  expect(document.activeElement).toBe(input);
+  await act(async () => usePlayerStore.setState({ status: "finished", currentIndex: 1 }));
+  expect(document.activeElement).toBe(input);
+  expect(container.textContent).toContain("讲完了");
+  input.remove();
+
+  const dialog = document.createElement("div");
+  dialog.setAttribute("role", "dialog");
+  const field = document.createElement("textarea");
+  dialog.append(field);
+  document.body.append(dialog);
+  await act(async () => usePlayerStore.setState({ status: "playing", currentIndex: 0 }));
+  field.focus();
+  expect(document.activeElement).toBe(field);
+  await act(async () => usePlayerStore.setState({ status: "finished", currentIndex: 1 }));
+  expect(document.activeElement).toBe(field);
+  dialog.remove();
+});
+
 test("进入结束面板时焦点移到重播，停留期间再渲染不再抢焦点", async () => {
   const other = document.createElement("button");
   other.type = "button";
   other.textContent = "别处";
   document.body.append(other);
   await act(async () => root.render(createElement(NarrationBar)));
-  other.focus();
-  expect(document.activeElement).toBe(other);
+  (document.activeElement as HTMLElement | null)?.blur();
+  expect(document.activeElement).toBe(document.body);
 
   await act(async () => usePlayerStore.setState({ status: "finished", currentIndex: 1 }));
   const replay = () => [...container.querySelectorAll("button")].find((el) => el.textContent === "重播");
@@ -162,7 +186,7 @@ test("进入结束面板时焦点移到重播，停留期间再渲染不再抢�
 
   await act(async () => usePlayerStore.setState({ status: "playing", currentIndex: 0 }));
   expect(container.textContent).not.toContain("讲完了");
-  other.focus();
+  (document.activeElement as HTMLElement | null)?.blur();
   await act(async () => usePlayerStore.setState({ status: "finished", currentIndex: 1 }));
   expect(document.activeElement).toBe(replay());
   other.remove();
