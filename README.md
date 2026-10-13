@@ -76,6 +76,14 @@ ALGOSTAGE_IMAGE_TAG=0.2.0-alpha.2 docker compose -f deploy/compose.yaml up -d --
 
 无 Demo；需自备 API Key。数据卷 `/data/algostage.db`。详见 [deploy/README.md](deploy/README.md)。
 
+容器以非 root 用户 `algostage`（UID/GID `1001:1001`）运行。从 0.2.1 之前的版本升级时，旧数据卷归 root 所有，需先停旧容器、备份数据库，再执行一次：
+
+```bash
+docker run --rm -v algostage-data:/data alpine chown -R 1001:1001 /data
+```
+
+不处理时容器启动会报 `Error: data directory /data is not writable (uid 1001).` 并退出。
+
 ## 子路径 + nginx
 
 构建时设 `NEXT_PUBLIC_BASE_PATH`。讲解流 `application/x-ndjson`，需关代理缓冲（应用已发 `X-Accel-Buffering: no`）；`/algostage/api/lecture` 独立 location，读超时 300 秒。
