@@ -126,6 +126,7 @@ export const BASE_URL_INVALID_LECTURE_MESSAGE = "接口地址格式不对，要�
 export const BASE_URL_NOT_ALLOWED_MESSAGE = "只支持公网 http(s) 地址";
 export const BASE_URL_NOT_ALLOWED_SETTINGS_MESSAGE = "接口地址只支持公网 http(s) 地址";
 export const BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE = "接口地址只支持公网 http(s) 地址，去设置页改一下就能开讲。";
+export const UPSTREAM_ERROR_MESSAGE = "AI 服务暂时连不上，请稍后再试。";
 
 const BYOK_ERROR_MAP: Record<string, string> = {
   BYOK_KEY_REQUIRED: "用自定义地址时需要同时填你自己的 Key",
@@ -133,6 +134,7 @@ const BYOK_ERROR_MAP: Record<string, string> = {
   BASE_URL_NOT_ALLOWED: BASE_URL_NOT_ALLOWED_MESSAGE,
   SETTINGS_LOCKED: "公共实例不支持修改服务器设置",
   NO_BYOK: NO_BYOK_MESSAGE,
+  UPSTREAM_ERROR: UPSTREAM_ERROR_MESSAGE,
 };
 
 export function isBaseUrlInvalid(data: unknown): boolean {

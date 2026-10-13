@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
-import { act, createElement } from "react";
+import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import SettingsPage from "../app/settings/page";
 import HintLadder from "../components/hint/hint-ladder";
 import {
   BASE_URL_INVALID_LECTURE_MESSAGE,
@@ -10,12 +11,21 @@ import {
   isBaseUrlInvalid,
   mapByokErrorMessage,
   resetServerKeyDisabledCache,
+  UPSTREAM_ERROR_MESSAGE,
 } from "../lib/byok/client";
 import { localSeedSource } from "../lib/content/local-source";
 import { readLectureResponse } from "../lib/player/lecture-response";
 import { usePlayerStore } from "../lib/player/store";
 
 vi.mock("next/navigation", () => ({ useParams: () => ({ slug: "3sum" }) }));
+vi.mock("motion/react", () => ({
+  motion: {
+    svg: "svg",
+    path: () => null,
+    span: ({ children, className }: { children?: ReactNode; className?: string }) =>
+      createElement("span", { className }, children),
+  },
+}));
 vi.mock("../components/board/code-editor", () => ({
   default: ({ value }: { value: string }) =>
     createElement("pre", { "data-editor": true }, value),
@@ -44,6 +54,10 @@ const EXPECTED_MAPPINGS = [
   {
     code: "NO_BYOK",
     expected: "还没填 API Key。先去设置页填入你自己的 API Key 就能开讲。",
+  },
+  {
+    code: "UPSTREAM_ERROR",
+    expected: UPSTREAM_ERROR_MESSAGE,
   },
 ] as const;
 
@@ -98,11 +112,12 @@ describe("mapByokErrorMessage pure unit tests", () => {
     // Non-raw human-readable message is preserved when code is unknown
     expect(
       mapByokErrorMessage({
-        code: "UPSTREAM_ERROR",
+        code: "SOME_OTHER_ERROR",
         message: "Key 无效或没有权限，请检查设置。",
       }),
     ).toBe("Key 无效或没有权限，请检查设置。");
 
+    expect(UPSTREAM_ERROR_MESSAGE).toBe("AI 服务暂时连不上，请稍后再试。");
     expect(isBaseUrlInvalid({ error: "BASE_URL_INVALID" })).toBe(true);
     expect(isBaseUrlInvalid({ code: "BASE_URL_INVALID" })).toBe(true);
     expect(isBaseUrlInvalid({ error: "BASE_URL_NOT_ALLOWED" })).toBe(false);
@@ -222,7 +237,9 @@ describe("Rendered UI error messages in HintLadder and ProblemPage", () => {
           return Response.json({ serverKeyDisabled: true });
         }
         if (url.endsWith("/api/hint")) {
-          return Response.json(payload, { status: 400 });
+          return Response.json(payload, {
+            status: code === "UPSTREAM_ERROR" ? 502 : 400,
+          });
         }
         return Response.json({ ok: true });
       });
@@ -336,7 +353,9 @@ describe("Rendered UI error messages in HintLadder and ProblemPage", () => {
           return Response.json({ problem: detail });
         }
         if (url.endsWith("/api/lecture")) {
-          return Response.json(payload, { status: 400 });
+          return Response.json(payload, {
+            status: code === "UPSTREAM_ERROR" ? 502 : 400,
+          });
         }
         return Response.json({ ok: true });
       });
@@ -360,26 +379,227 @@ describe("Rendered UI error messages in HintLadder and ProblemPage", () => {
       const settingsLink = Array.from(alert!.querySelectorAll("a")).find(
         (a) => a.textContent === "去设置",
       );
-      expect(settingsLink).toBeDefined();
-      if (
-        code === "NO_BYOK" ||
-        code === "BASE_URL_NOT_ALLOWED" ||
-        code === "BASE_URL_INVALID"
-      ) {
-        expect(settingsLink!.getAttribute("data-testid")).toBe("goto-settings");
-        expect(settingsLink!.getAttribute("href")).toBe(
-          code === "NO_BYOK"
-            ? "/settings?focus=apiKey"
-            : "/settings?focus=baseUrl",
-        );
-        expect(settingsLink!.classList.contains("border")).toBe(true);
-        expect(settingsLink!.classList.contains("border-beam-gold/60")).toBe(true);
-        expect(settingsLink!.classList.contains("text-beam-gold")).toBe(true);
-        expect(settingsLink!.classList.contains("bg-transparent")).toBe(true);
+      if (code === "UPSTREAM_ERROR") {
+        expect(settingsLink).toBeUndefined();
+        expect(alert!.querySelector('[data-testid="goto-settings"]')).toBeNull();
+        expect(alert!.querySelectorAll("a")).toHaveLength(0);
+        const buttons = Array.from(alert!.querySelectorAll("button"));
+        expect(buttons).toHaveLength(1);
+        expect(buttons[0].textContent).toBe("重试");
       } else {
-        expect(settingsLink!.getAttribute("href")).toBe("/settings");
-        expect(settingsLink!.classList.contains("border-beam-gold/60")).toBe(false);
+        expect(settingsLink).toBeDefined();
+        if (
+          code === "NO_BYOK" ||
+          code === "BASE_URL_NOT_ALLOWED" ||
+          code === "BASE_URL_INVALID"
+        ) {
+          expect(settingsLink!.getAttribute("data-testid")).toBe("goto-settings");
+          expect(settingsLink!.getAttribute("href")).toBe(
+            code === "NO_BYOK"
+              ? "/settings?focus=apiKey"
+              : "/settings?focus=baseUrl",
+          );
+          expect(settingsLink!.classList.contains("border")).toBe(true);
+          expect(settingsLink!.classList.contains("border-beam-gold/60")).toBe(true);
+          expect(settingsLink!.classList.contains("text-beam-gold")).toBe(true);
+          expect(settingsLink!.classList.contains("bg-transparent")).toBe(true);
+        } else {
+          expect(settingsLink!.getAttribute("href")).toBe("/settings");
+          expect(settingsLink!.classList.contains("border-beam-gold/60")).toBe(false);
+        }
       }
     },
   );
+
+  test.each([
+    { label: "502 + error: UPSTREAM_ERROR", status: 502, payload: { error: "UPSTREAM_ERROR", message: "无法连接到 AI 服务，请检查接口地址。" } },
+    { label: "502 + code: UPSTREAM_ERROR", status: 502, payload: { code: "UPSTREAM_ERROR", message: "Key 无效或没有权限，请检查设置。" } },
+    { label: "502 status only", status: 502, payload: {} },
+  ])(
+    "HintLadder UPSTREAM_ERROR ($label): shows UPSTREAM_ERROR_MESSAGE, ONLY 重试 button (no 去设置), and clicking 重试 re-runs the same request",
+    async ({ status, payload }) => {
+      const hintCalls: Record<string, unknown>[] = [];
+      let callCount = 0;
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+        const url = String(input);
+        if (url.endsWith("/api/settings")) {
+          return Response.json({ serverKeyDisabled: true });
+        }
+        if (url.endsWith("/api/hint")) {
+          hintCalls.push(JSON.parse(String(init?.body)));
+          callCount++;
+          if (callCount === 1) {
+            return Response.json(payload, { status });
+          }
+          return Response.json({ level: 2, hint: "双指针思路" });
+        }
+        return Response.json({ ok: true });
+      });
+
+      await act(async () => {
+        root.render(createElement(HintLadder, { slug: "3sum", userCode: "const x = 1;" }));
+      });
+
+      const l2Btn = Array.from(container.querySelectorAll("button")).find(
+        (b) =>
+          b.textContent?.includes("模式") ||
+          b.getAttribute("title")?.includes("模式"),
+      )!;
+      await act(async () => {
+        l2Btn.click();
+      });
+
+      const alert = container.querySelector('[role="alert"]');
+      expect(alert).not.toBeNull();
+      expect(alert!.textContent).toContain(UPSTREAM_ERROR_MESSAGE);
+      expect(alert!.textContent).not.toContain("UPSTREAM_ERROR");
+      expect(alert!.textContent).not.toContain("去设置");
+      expect(alert!.querySelectorAll("a")).toHaveLength(0);
+      expect(alert!.querySelector('[data-testid="goto-settings"]')).toBeNull();
+
+      const buttons = Array.from(alert!.querySelectorAll("button"));
+      expect(buttons).toHaveLength(1);
+      expect(buttons[0].textContent).toBe("重试");
+
+      await act(async () => {
+        buttons[0].click();
+      });
+
+      expect(hintCalls).toHaveLength(2);
+      expect(hintCalls[0]).toEqual({ slug: "3sum", level: 2, userCode: "const x = 1;" });
+      expect(hintCalls[1]).toEqual(hintCalls[0]);
+      expect(container.querySelector('[role="alert"]')).toBeNull();
+      expect(container.textContent).toContain("双指针思路");
+    },
+  );
+
+  test.each([
+    { label: "502 + error: UPSTREAM_ERROR", status: 502, payload: { error: "UPSTREAM_ERROR", message: "无法连接到 AI 服务，请检查接口地址。" } },
+    { label: "502 + code: UPSTREAM_ERROR", status: 502, payload: { code: "UPSTREAM_ERROR", message: "Key 无效或没有权限，请检查设置。" } },
+    { label: "502 status only", status: 502, payload: {} },
+  ])(
+    "ProblemPage lecture UPSTREAM_ERROR ($label): shows UPSTREAM_ERROR_MESSAGE, ONLY 重试 button (no 去设置), and clicking 重试 re-runs the same request",
+    async ({ status, payload }) => {
+      const detail = await localSeedSource.detail("3sum");
+      const step = {
+        id: "s1",
+        narration: "先排序",
+        targets: [{ kind: "code-line" as const, start: 2 }],
+        effects: [],
+        dwellMs: 5000,
+      };
+      const lectureCalls: Record<string, unknown>[] = [];
+      let callCount = 0;
+
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+        const url = String(input);
+        if (url.endsWith("/api/settings")) {
+          return Response.json({ serverKeyDisabled: true });
+        }
+        if (url.endsWith("/api/problems/3sum")) {
+          return Response.json({ problem: detail });
+        }
+        if (url.endsWith("/api/lecture")) {
+          lectureCalls.push(JSON.parse(String(init?.body)));
+          callCount++;
+          if (callCount === 1) {
+            return Response.json(payload, { status });
+          }
+          const ndjson =
+            JSON.stringify({ type: "step", step }) +
+            "\n" +
+            JSON.stringify({
+              type: "result",
+              script: {
+                problemSlug: "3sum",
+                mode: "lecture",
+                solutionLanguage: "typescript",
+                language: "zh",
+                steps: [step],
+              },
+            }) +
+            "\n";
+          return new Response(ndjson, {
+            headers: { "Content-Type": "application/x-ndjson" },
+          });
+        }
+        return Response.json({ ok: true });
+      });
+
+      await act(async () => {
+        root.render(createElement(ProblemPage));
+      });
+
+      const startBtn = Array.from(
+        container.querySelectorAll<HTMLButtonElement>("header button"),
+      ).find((b) => b.textContent === "开始讲课")!;
+      await act(async () => {
+        startBtn.click();
+      });
+
+      const alert = container.querySelector('[role="alert"]');
+      expect(alert).not.toBeNull();
+      expect(alert!.textContent).toContain(UPSTREAM_ERROR_MESSAGE);
+      expect(alert!.textContent).not.toContain("UPSTREAM_ERROR");
+      expect(alert!.textContent).not.toContain("去设置");
+      expect(alert!.querySelectorAll("a")).toHaveLength(0);
+      expect(alert!.querySelector('[data-testid="goto-settings"]')).toBeNull();
+
+      const buttons = Array.from(alert!.querySelectorAll("button"));
+      expect(buttons).toHaveLength(1);
+      expect(buttons[0].textContent).toBe("重试");
+
+      await act(async () => {
+        buttons[0].click();
+      });
+
+      expect(lectureCalls).toHaveLength(2);
+      expect(lectureCalls[0]).toEqual({ slug: "3sum", solutionLanguage: "typescript" });
+      expect(lectureCalls[1]).toEqual(lectureCalls[0]);
+      expect(container.querySelector('[role="alert"]')).toBeNull();
+      expect(container.textContent).toContain("教案已生成完成");
+    },
+  );
+
+  test.each([
+    { shape: "error", payload: { error: "UPSTREAM_ERROR", message: "无法连接到 AI 服务，请检查接口地址。" } },
+    { shape: "code", payload: { code: "UPSTREAM_ERROR", message: "Key 无效或没有权限，请检查设置。" } },
+    { shape: "502-only", payload: {} },
+  ])(
+    "SettingsPage testConnection 502 UPSTREAM_ERROR ($shape) shows UPSTREAM_ERROR_MESSAGE with no 去设置",
+    async ({ payload }) => {
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+        const url = String(input);
+        if (url.endsWith("/api/settings")) {
+          return Response.json({
+            settings: {},
+            keySource: "settings",
+            serverKeyDisabled: false,
+          });
+        }
+        if (url.endsWith("/api/settings/test-connection")) {
+          return Response.json(payload, { status: 502 });
+        }
+        return Response.json({ ok: true });
+      });
+
+      await act(async () => {
+        root.render(createElement(SettingsPage));
+      });
+
+      const testBtn = Array.from(container.querySelectorAll("button")).find(
+        (b) => b.textContent?.includes("测试连接"),
+      )!;
+      await act(async () => {
+        testBtn.click();
+      });
+
+      expect(container.textContent).toContain(UPSTREAM_ERROR_MESSAGE);
+      expect(container.textContent).not.toContain("UPSTREAM_ERROR");
+      expect(container.textContent).not.toContain("去设置");
+      expect(container.querySelector('[data-testid="goto-settings"]')).toBeNull();
+      expect(container.querySelector('a[href*="/settings"]')).toBeNull();
+    },
+  );
 });
+

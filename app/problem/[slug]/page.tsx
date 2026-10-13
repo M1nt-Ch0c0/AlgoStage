@@ -15,6 +15,7 @@ import {
   fetchServerKeyDisabled,
   mapByokErrorMessage,
   NO_BYOK_MESSAGE,
+  UPSTREAM_ERROR_MESSAGE,
   withByok,
 } from "@/lib/byok/client";
 import { readLocalByok } from "@/lib/byok/storage";
@@ -216,6 +217,10 @@ export default function ProblemPage() {
           ),
         ),
       });
+      if (!res.ok && res.status === 502) {
+        const errData = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+        throw new Error(mapByokErrorMessage(errData) ?? UPSTREAM_ERROR_MESSAGE);
+      }
       let streaming = false;
       let guard: StreamGuard | undefined;
       const reference =
@@ -597,34 +602,36 @@ export default function ProblemPage() {
             disabled={lectureBusy || !detail}
             className="rounded-full border border-beam-rose px-3 py-1 disabled:opacity-40"
           >
-            重试讲课
+            {lectureError === UPSTREAM_ERROR_MESSAGE ? "重试" : "重试讲课"}
           </button>
-          <Link
-            href={
-              lectureError === NO_BYOK_MESSAGE
-                ? "/settings?focus=apiKey"
-                : lectureError === BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE ||
-                    lectureError === BASE_URL_INVALID_LECTURE_MESSAGE
-                  ? "/settings?focus=baseUrl"
-                  : "/settings"
-            }
-            data-testid={
-              lectureError === NO_BYOK_MESSAGE ||
-              lectureError === BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE ||
-              lectureError === BASE_URL_INVALID_LECTURE_MESSAGE
-                ? "goto-settings"
-                : undefined
-            }
-            className={
-              lectureError === NO_BYOK_MESSAGE ||
-              lectureError === BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE ||
-              lectureError === BASE_URL_INVALID_LECTURE_MESSAGE
-                ? "shrink-0 rounded-full border border-beam-gold/60 bg-transparent px-3 py-1 text-beam-gold transition-colors hover:border-beam-gold"
-                : "underline hover:text-chalk-100"
-            }
-          >
-            去设置
-          </Link>
+          {lectureError !== UPSTREAM_ERROR_MESSAGE && (
+            <Link
+              href={
+                lectureError === NO_BYOK_MESSAGE
+                  ? "/settings?focus=apiKey"
+                  : lectureError === BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE ||
+                      lectureError === BASE_URL_INVALID_LECTURE_MESSAGE
+                    ? "/settings?focus=baseUrl"
+                    : "/settings"
+              }
+              data-testid={
+                lectureError === NO_BYOK_MESSAGE ||
+                lectureError === BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE ||
+                lectureError === BASE_URL_INVALID_LECTURE_MESSAGE
+                  ? "goto-settings"
+                  : undefined
+              }
+              className={
+                lectureError === NO_BYOK_MESSAGE ||
+                lectureError === BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE ||
+                lectureError === BASE_URL_INVALID_LECTURE_MESSAGE
+                  ? "shrink-0 rounded-full border border-beam-gold/60 bg-transparent px-3 py-1 text-beam-gold transition-colors hover:border-beam-gold"
+                  : "underline hover:text-chalk-100"
+              }
+            >
+              去设置
+            </Link>
+          )}
         </div>
       )}
 

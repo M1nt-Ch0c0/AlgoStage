@@ -8,6 +8,7 @@ import {
   isBaseUrlNotAllowed,
   mapByokErrorMessage,
   NO_BYOK_MESSAGE,
+  UPSTREAM_ERROR_MESSAGE,
   withByok,
 } from "@/lib/byok/client";
 import { readLocalByok } from "@/lib/byok/storage";
@@ -121,6 +122,9 @@ export default function HintLadder({
           const errorCode = j.code ?? j.error;
           if (errorCode === "TIMEOUT" || res.status === 504) {
             throw new Error(SLOW_MSG);
+          }
+          if (errorCode === "UPSTREAM_ERROR" || res.status === 502) {
+            throw new Error(UPSTREAM_ERROR_MESSAGE);
           }
           if (isBaseUrlInvalid(j)) {
             throw new Error(BASE_URL_INVALID_LECTURE_MESSAGE);

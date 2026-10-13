@@ -14,6 +14,7 @@ import {
   NO_BYOK_SETTINGS_MESSAGE,
   parseFocusParam,
   type SettingsResponse,
+  UPSTREAM_ERROR_MESSAGE,
 } from "@/lib/byok/client";
 import { maskKey, readLocalByok } from "@/lib/byok/storage";
 import { useLocalByok } from "@/lib/byok/use-local-byok";
@@ -272,7 +273,7 @@ export default function SettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok && data.ok) {
         setBaseURLError("");
         setTestState({ kind: "ok", message: "接通了，老师可以上课了。" });
@@ -291,10 +292,12 @@ export default function SettingsPage() {
         });
         focusAndScroll("apiKey", true);
       } else {
+        const mapped = mapByokErrorMessage(data);
         setTestState({
           kind: "fail",
           message:
-            mapByokErrorMessage(data) ??
+            mapped ??
+            (res.status === 502 ? UPSTREAM_ERROR_MESSAGE : undefined) ??
             data.message ??
             data.error ??
             `请求失败（HTTP ${res.status}）`,
