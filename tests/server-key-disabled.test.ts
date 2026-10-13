@@ -241,7 +241,7 @@ describe.each(entries)("$name", ({ POST, accept }) => {
     const responseBody = await response.text();
     expect(responseBody).not.toContain(sentinel);
     if (scenario !== "success") expect(JSON.parse(responseBody)).toEqual(auth
-      ? { code: "UPSTREAM_AUTH", error: "UPSTREAM_AUTH", retryable: false, message: "Key 无效或没有权限" }
+      ? { code: "UPSTREAM_AUTH", error: "UPSTREAM_AUTH", retryable: false, message: "API Key 无效或没有权限" }
       : { error: "UPSTREAM_ERROR", message: AI_CONNECTION_ERROR });
     await new Promise<void>(resolve => setImmediate(resolve));
     expect(fetchMock).toHaveBeenCalled();

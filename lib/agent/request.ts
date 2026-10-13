@@ -60,7 +60,7 @@ export function settingsLocked() {
 }
 
 export function upstreamAuthError() {
-  return Response.json({ code: "UPSTREAM_AUTH", error: "UPSTREAM_AUTH", retryable: false, message: "Key 无效或没有权限" }, { status: 400 });
+  return Response.json({ code: "UPSTREAM_AUTH", error: "UPSTREAM_AUTH", retryable: false, message: "API Key 无效或没有权限" }, { status: 400 });
 }
 
 export function upstreamError(status?: number) {

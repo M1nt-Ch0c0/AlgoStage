@@ -38,7 +38,7 @@ test("上游 401/403 返回 400 UPSTREAM_AUTH，其他故障为 502，响应与�
         assert.equal(response.status, auth ? 400 : 502);
         const raw = await response.text();
         if (auth) assert.deepEqual(JSON.parse(raw), {
-          code: "UPSTREAM_AUTH", error: "UPSTREAM_AUTH", retryable: false, message: "Key 无效或没有权限",
+          code: "UPSTREAM_AUTH", error: "UPSTREAM_AUTH", retryable: false, message: "API Key 无效或没有权限",
         });
         else assert.equal(JSON.parse(raw).error, "UPSTREAM_ERROR");
         assert.ok(!raw.includes(apiKey));

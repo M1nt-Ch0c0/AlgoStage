@@ -38,7 +38,7 @@ npm run dev                   # http://localhost:3000
 
 保存前可以先点「测试连接」，确认能连上。
 
-提示、讲课和测试连接遇到上游 401/403 时返回 HTTP 400 `UPSTREAM_AUTH`（`retryable: false`，提示「Key 无效或没有权限」），不会自动重试。讲课 NDJSON 流开始后的错误事件仅含 `type: "error"`、`code`、`retryable`；首个步骤前的失败仍返回真实 HTTP 错误响应。
+提示、讲课和测试连接遇到上游 401/403 时返回 HTTP 400 `UPSTREAM_AUTH`（`retryable: false`，提示「API Key 无效或没有权限」），不会自动重试。讲课 NDJSON 流开始后的错误事件仅含 `type: "error"`、`code`、`retryable`；首个步骤前的失败仍返回真实 HTTP 错误响应。
 
 讲解通过五种教学工具逐步生成，收到步骤即可播放；只有完整教案校验成功才保存缓存。较弱模型可能无法完成讲解或正确调用工具，失败时建议重试或切换到 `gpt-6.1-sol`。备课总上限为 240 秒，非法工具参数最多重试该次调用 2 次，已完成步骤会保留。
 

@@ -9,7 +9,7 @@ import { GET, PUT } from "../app/api/settings/route";
 import { POST as testConnection } from "../app/api/settings/test-connection/route";
 import { AI_CONNECTION_ERROR, INVALID_AI_BASE_URL, MALFORMED_AI_BASE_URL } from "../lib/ai/egress-guard";
 const MALFORMED = { code: "BASE_URL_INVALID", error: "BASE_URL_INVALID", message: MALFORMED_AI_BASE_URL };
-const UPSTREAM_AUTH = { code: "UPSTREAM_AUTH", error: "UPSTREAM_AUTH", retryable: false, message: "Key 无效或没有权限" };
+const UPSTREAM_AUTH = { code: "UPSTREAM_AUTH", error: "UPSTREAM_AUTH", retryable: false, message: "API Key 无效或没有权限" };
 import { mockAIResponse } from "./support/mock-ai-response";
 
 const db = vi.hoisted(() => {

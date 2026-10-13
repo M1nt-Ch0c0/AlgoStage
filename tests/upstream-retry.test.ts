@@ -83,7 +83,7 @@ test.each([401, 403])("SDK 包装的 %i 保留鉴权状态且不重试", async s
   const response = settingsConnectionError(error);
   expect(response.status).toBe(400);
   expect(await response.json()).toEqual({
-    code: "UPSTREAM_AUTH", error: "UPSTREAM_AUTH", retryable: false, message: "Key 无效或没有权限",
+    code: "UPSTREAM_AUTH", error: "UPSTREAM_AUTH", retryable: false, message: "API Key 无效或没有权限",
   });
 });
 

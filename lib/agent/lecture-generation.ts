@@ -383,7 +383,7 @@ export async function generateLecture(input: {
           ok: false,
           status: 400,
           error: "UPSTREAM_AUTH",
-          message: "Key 无效或没有权限",
+          message: "API Key 无效或没有权限",
         };
         return {
           ok: false,
