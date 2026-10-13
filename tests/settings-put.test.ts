@@ -15,7 +15,7 @@ test("settings PUT：类型与枚举校验，失败零写入，Key 不透传，�
     ]) {
       const response = await PUT(request({ settings }));
       assert.equal(response.status, 400);
-      assert.equal((await response.json()).error, "baseURL" in settings ? "BASE_URL_NOT_ALLOWED" : "BAD_REQUEST");
+      assert.equal((await response.json()).error, "baseURL" in settings ? "BASE_URL_INVALID" : "BAD_REQUEST");
       assert.equal((await f.prisma.setting.findUnique({ where: { key_userId: { key: "model", userId: "local-default" } } }))?.value, "original");
       assert.equal(await f.prisma.setting.count(), 1);
     }

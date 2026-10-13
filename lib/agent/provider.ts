@@ -6,7 +6,7 @@
 import { DEFAULT_MODEL } from "./defaults";
 import { savedEndpoint } from "./saved-endpoint";
 import { byokRequestSchema } from "./request";
-import { aiEgressFetch, normalizeAIBaseURL } from "@/lib/ai/egress-guard";
+import { aiEgressFetch, InvalidAIBaseURLError, normalizeAIBaseURL, ServerAIBaseURLError } from "@/lib/ai/egress-guard";
 import { prisma } from "@/lib/db/prisma";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createAnthropic } from "@ai-sdk/anthropic";
@@ -141,7 +141,31 @@ export function resolveSavedByok(settings: Record<string, string>): {
 }
 
 /** Request credentials stay in memory. Never borrow a server key for an edited destination. */
+function envBaseURLMalformed(): boolean {
+  const value = process.env.AI_BASE_URL?.trim();
+  if (!value) return false;
+  try { normalizeAIBaseURL(value); return false; } catch { return true; }
+}
+
+/** 区分地址来源：请求体或设置里的坏地址（用户可修）保留 InvalidAIBaseURLError；环境变量里的坏地址转成 ServerAIBaseURLError。 */
 export async function resolveByok(bodyByok?: Partial<ByokConfig> | null): Promise<{
+  config: ByokConfig;
+  source: "request" | "settings" | "env";
+} | null> {
+  try {
+    return await resolveByokInner(bodyByok);
+  } catch (error) {
+    if (error instanceof InvalidAIBaseURLError && envBaseURLMalformed()) {
+      const rows = await prisma.setting.findMany({ where: { userId: "local-default" } });
+      const settings = Object.fromEntries(rows.map((row) => [row.key, row.value]));
+      const { useSaved, savedURL } = savedByokDefaults(settings);
+      if (!(useSaved && savedURL)) throw new ServerAIBaseURLError();
+    }
+    throw error;
+  }
+}
+
+async function resolveByokInner(bodyByok?: Partial<ByokConfig> | null): Promise<{
   config: ByokConfig;
   source: "request" | "settings" | "env";
 } | null> {

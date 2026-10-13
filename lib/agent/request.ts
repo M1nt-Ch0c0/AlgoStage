@@ -1,11 +1,11 @@
 /** AI 路由先校验参数类型，错误响应不携带输入值或 Key。 */
 import { z } from "zod";
-import { AI_CONNECTION_ERROR, INVALID_AI_BASE_URL, normalizeAIBaseURL } from "@/lib/ai/egress-guard";
+import { AI_CONNECTION_ERROR, INVALID_AI_BASE_URL, MALFORMED_AI_BASE_URL, normalizeAIBaseURL } from "@/lib/ai/egress-guard";
 
 export const aiBaseURLSchema = z.string().transform((value, ctx) => {
   try { return normalizeAIBaseURL(value); }
   catch {
-    ctx.addIssue({ code: "custom", message: INVALID_AI_BASE_URL });
+    ctx.addIssue({ code: "custom", message: MALFORMED_AI_BASE_URL });
     return z.NEVER;
   }
 });
@@ -36,7 +36,7 @@ export const hintRequestSchema = z.object({
 });
 
 export function badRequest(error?: z.ZodError, message = "请求参数不正确，请检查题目、语言、模型配置或提示级别。") {
-  if (error?.issues.some(issue => issue.path.at(-1) === "baseURL")) return baseURLNotAllowed();
+  if (error?.issues.some(issue => issue.path.at(-1) === "baseURL")) return baseURLInvalid();
   return Response.json(
     { error: "BAD_REQUEST", message },
     { status: 400 },
@@ -45,6 +45,10 @@ export function badRequest(error?: z.ZodError, message = "请求参数不正确�
 
 export function baseURLNotAllowed() {
   return Response.json({ code: "BASE_URL_NOT_ALLOWED", error: "BASE_URL_NOT_ALLOWED", message: INVALID_AI_BASE_URL }, { status: 400 });
+}
+
+export function baseURLInvalid() {
+  return Response.json({ code: "BASE_URL_INVALID", error: "BASE_URL_INVALID", message: MALFORMED_AI_BASE_URL }, { status: 400 });
 }
 
 export function byokKeyRequired() {

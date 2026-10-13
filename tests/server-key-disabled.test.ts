@@ -217,7 +217,10 @@ describe.each(entries)("$name", ({ POST, accept }) => {
     for (const baseURL of ["invalid", "file:///etc/passwd", "http://127.1/v1", "http://[::1]/v1", customURL, 42, null]) {
       const response = await POST(request({ slug: "two-sum", level: 1, byok: { apiKey: sentinel, baseURL } }, accept));
       expect(response.status).toBe(400);
-      expect(await response.json()).toMatchObject({ code: "BASE_URL_NOT_ALLOWED", error: "BASE_URL_NOT_ALLOWED", message: expect.stringContaining("只支持公网 http(s) 地址") });
+      const malformed = typeof baseURL !== "string" || !/^https?:\/\//.test(baseURL);
+      expect(await response.json()).toMatchObject(malformed
+        ? { code: "BASE_URL_INVALID", error: "BASE_URL_INVALID", message: "接口地址格式不对，要以 http:// 或 https:// 开头" }
+        : { code: "BASE_URL_NOT_ALLOWED", error: "BASE_URL_NOT_ALLOWED", message: expect.stringContaining("只支持公网 http(s) 地址") });
     }
     expect(fetchMock).not.toHaveBeenCalled();
     expect(db.prisma.lectureScriptCache.findUnique).not.toHaveBeenCalled();

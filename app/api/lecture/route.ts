@@ -15,10 +15,10 @@ import { resolveByok, ByokConfigurationError, ByokKeyRequiredError, type ByokCon
 import { buildLecturePrompt } from "@/lib/agent/modes/lecture";
 import { highlightProblem } from "@/lib/agent/lecture-highlights";
 import { validateScript } from "@/lib/teaching/validated-script";
-import { lectureRequestSchema, badRequest, byokKeyRequired, configurationError, upstreamError } from "@/lib/agent/request";
+import { lectureRequestSchema, badRequest, baseURLInvalid, byokKeyRequired, configurationError, upstreamError } from "@/lib/agent/request";
 import { localSeedSource } from "@/lib/content/local-source";
 import { prisma } from "@/lib/db/prisma";
-import { AI_CONNECTION_ERROR, InvalidAIBaseURLError } from "@/lib/ai/egress-guard";
+import { AI_CONNECTION_ERROR, InvalidAIBaseURLError, ServerAIBaseURLError } from "@/lib/ai/egress-guard";
 import { validateBaseURL } from "@/lib/agent/settings-connection";
 import { hintTimeoutMs } from "@/lib/agent/defaults";
 
@@ -60,7 +60,8 @@ export async function POST(req: NextRequest) {
   try { resolved = await resolveByok(body.byok); }
   catch (error) {
     if (error instanceof ByokKeyRequiredError) return byokKeyRequired();
-    if (error instanceof InvalidAIBaseURLError) return upstreamError();
+    if (error instanceof ServerAIBaseURLError) return upstreamError();
+    if (error instanceof InvalidAIBaseURLError) return baseURLInvalid();
     if (error instanceof ByokConfigurationError) return configurationError();
     throw error;
   }

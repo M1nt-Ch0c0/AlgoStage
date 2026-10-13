@@ -7,7 +7,8 @@ import { POST as lecture } from "../app/api/lecture/route";
 import { POST as judge } from "../app/api/judge/route";
 import { GET, PUT } from "../app/api/settings/route";
 import { POST as testConnection } from "../app/api/settings/test-connection/route";
-import { AI_CONNECTION_ERROR, INVALID_AI_BASE_URL } from "../lib/ai/egress-guard";
+import { AI_CONNECTION_ERROR, INVALID_AI_BASE_URL, MALFORMED_AI_BASE_URL } from "../lib/ai/egress-guard";
+const MALFORMED = { code: "BASE_URL_INVALID", error: "BASE_URL_INVALID", message: MALFORMED_AI_BASE_URL };
 import { mockAIResponse } from "./support/mock-ai-response";
 
 const db = vi.hoisted(() => {
@@ -54,10 +55,10 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe("settings PUT", () => {
-  test.each(invalidURLs)("拒绝 %s，400 中文错误且零写入", async baseURL => {
+  test.each([...invalidURLs, "ftp://x", "javascript:alert(1)", "file:///etc/passwd", "http://", "not-a-url"])("拒绝畸形地址 %s，400 BASE_URL_INVALID 且零写入", async baseURL => {
     const response = await PUT(request({ settings: { model: "changed", baseURL } }));
     expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({ code: "BASE_URL_NOT_ALLOWED", error: "BASE_URL_NOT_ALLOWED", message: INVALID_AI_BASE_URL });
+    expect(await response.json()).toEqual(MALFORMED);
     expect(db.prisma.$transaction).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
     expect(dns).not.toHaveBeenCalled();
@@ -73,10 +74,18 @@ describe("settings PUT", () => {
 });
 
 describe.each(entries)("$name", ({ POST, accept }) => {
-  test.each(invalidURLs)("请求 byok 拒绝 %s，400 BASE_URL_NOT_ALLOWED", async baseURL => {
+  test.each(invalidURLs)("请求 byok 拒绝 %s，400 BASE_URL_INVALID", async baseURL => {
     const response = await POST(request({ slug: "two-sum", level: 1, byok: { ...byok, baseURL } }, accept));
     expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({ code: "BASE_URL_NOT_ALLOWED", error: "BASE_URL_NOT_ALLOWED", message: INVALID_AI_BASE_URL });
+    expect(await response.json()).toEqual(MALFORMED);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(dns).not.toHaveBeenCalled();
+  });
+
+  test.each(["ftp://x", "javascript:alert(1)", "file:///etc/passwd", "http://", "not-a-url"])("QA P2：请求 byok 畸形地址 %s 返回 400 BASE_URL_INVALID 且零出站", async baseURL => {
+    const response = await POST(request({ slug: "group-anagrams", level: 1, regenerate: true, byok: { ...byok, baseURL } }, accept));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual(MALFORMED);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(dns).not.toHaveBeenCalled();
   });
@@ -168,18 +177,31 @@ test.each(["settings", "env"])("%s 中的接口同样必须经过 DNS 和地址�
   expect(fetchMock).not.toHaveBeenCalled();
 });
 
-test.each(["settings", "env"])("%s 中遗留的非法 URL 也返回固定 502", async source => {
-  if (source === "settings") {
-    for (const [key, value] of Object.entries({ ...byok, baseURL: "ftp://ai.example" })) db.settings.set(key, value);
-  } else {
-    vi.stubEnv("AI_API_KEY", "env-fixture-only");
-    vi.stubEnv("AI_BASE_URL", "ftp://ai.example");
+test("settings 中遗留的非法 URL 返回 400 BASE_URL_INVALID 且零出站", async () => {
+  for (const [key, value] of Object.entries({ ...byok, baseURL: "ftp://ai.example" })) db.settings.set(key, value);
+  for (const { POST, accept } of entries) {
+    const response = await POST(request({ slug: "two-sum", level: 1 }, accept));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual(MALFORMED);
   }
+  const response = await testConnection(request({}));
+  expect(response.status).toBe(400);
+  expect(await response.json()).toEqual(MALFORMED);
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect(dns).not.toHaveBeenCalled();
+});
+
+test("env 中遗留的非法 URL 也返回固定 502（含 test-connection）且零出站", async () => {
+  vi.stubEnv("AI_API_KEY", "env-fixture-only");
+  vi.stubEnv("AI_BASE_URL", "ftp://ai.example");
   for (const { POST, accept } of entries) {
     const response = await POST(request({ slug: "two-sum", level: 1 }, accept));
     expect(response.status).toBe(502);
     expect(await response.json()).toEqual({ error: "UPSTREAM_ERROR", message: AI_CONNECTION_ERROR });
   }
+  const response = await testConnection(request({}));
+  expect(response.status).toBe(502);
+  expect(await response.json()).toEqual({ error: "UPSTREAM_ERROR", message: AI_CONNECTION_ERROR });
   expect(fetchMock).not.toHaveBeenCalled();
   expect(dns).not.toHaveBeenCalled();
 });
@@ -257,10 +279,23 @@ describe.each(settingsEntries)("$name: 校验与原子性", ({ name, run }) => {
     const response = await run({ ...byok, baseURL });
     expect(response.status).toBe(400);
     const text = await response.text();
-    expect(JSON.parse(text)).toEqual({ code: "BASE_URL_NOT_ALLOWED", error: "BASE_URL_NOT_ALLOWED", message: INVALID_AI_BASE_URL });
-    expect(text).toContain("只支持公网 http(s) 地址");
+    expect(JSON.parse(text)).toEqual(invalidURLs.includes(baseURL) ? MALFORMED : { code: "BASE_URL_NOT_ALLOWED", error: "BASE_URL_NOT_ALLOWED", message: INVALID_AI_BASE_URL });
+    expect(text).toContain(invalidURLs.includes(baseURL) ? "接口地址格式不对" : "只支持公网 http(s) 地址");
     expect(text).not.toMatch(leakPattern);
     expect(await (await GET()).json()).toEqual(previous);
+    expect(db.prisma.$transaction).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ["私网 IPv4 在第二条", [{ address: "8.8.8.8", family: 4 }, { address: "10.0.0.1", family: 4 }]],
+    ["私网 IPv4 在第一条", [{ address: "192.168.1.10", family: 4 }, { address: "8.8.8.8", family: 4 }]],
+    ["私网 IPv6 在第一条", [{ address: "fd00::1", family: 6 }, { address: "8.8.8.8", family: 4 }]],
+  ])("多记录 DNS：%s 拒绝且不出站", async (_label, records) => {
+    dns.mockResolvedValue(records);
+    const response = await run(byok);
+    expect(response.status).toBe(400);
+    expect((await response.json()).code).toBe("BASE_URL_NOT_ALLOWED");
     expect(db.prisma.$transaction).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -392,5 +427,29 @@ describe.each([undefined, "true"])("Riley 矩阵：switch=%s（全内存 DNS/HTT
     expect(db.settings.size).toBe(0);
     expect(JSON.stringify(vi.mocked(console.warn).mock.calls)).not.toMatch(leakPattern);
     expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toMatch(leakPattern);
+  });
+});
+
+test.each(["ftp://x", "javascript:alert(1)", "file:///etc/passwd", "http://", "not-a-url"])("settings test-connection：畸形地址 %s 返回 400 BASE_URL_INVALID 且零出站", async baseURL => {
+  const response = await testConnection(request({ byok: { ...byok, baseURL } }));
+  expect(response.status).toBe(400);
+  expect(await response.json()).toEqual(MALFORMED);
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect(dns).not.toHaveBeenCalled();
+});
+
+describe("私网地址仍为 BASE_URL_NOT_ALLOWED", () => {
+  const NOT_ALLOWED = { code: "BASE_URL_NOT_ALLOWED", error: "BASE_URL_NOT_ALLOWED", message: INVALID_AI_BASE_URL };
+  const privateURL = "http://10.0.0.1/v1";
+  test.each([
+    ["hint", () => hint(request({ slug: "two-sum", level: 1, byok: { ...byok, baseURL: privateURL } }))],
+    ["lecture", () => lecture(request({ slug: "two-sum", byok: { ...byok, baseURL: privateURL } }))],
+    ["settings PUT", () => PUT(request({ settings: { ...byok, baseURL: privateURL } }))],
+    ["settings test-connection", () => testConnection(request({ byok: { ...byok, baseURL: privateURL } }))],
+  ] as const)("%s", async (_name, run) => {
+    const response = await run();
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual(NOT_ALLOWED);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

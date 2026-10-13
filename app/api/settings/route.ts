@@ -6,7 +6,7 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { byokFromEnv, savedKeySource, serverKeyDisabled } from "@/lib/agent/provider";
 import { savedEndpoint } from "@/lib/agent/saved-endpoint";
-import { aiBaseURLSchema, badRequest, baseURLNotAllowed, settingsLocked } from "@/lib/agent/request";
+import { aiBaseURLSchema, badRequest, baseURLInvalid, settingsLocked } from "@/lib/agent/request";
 import { validateBaseURL } from "@/lib/agent/settings-connection";
 import { hintTimeoutMs } from "@/lib/agent/defaults";
 
@@ -53,7 +53,7 @@ export async function PUT(req: NextRequest) {
   const parsed = settingsRequestSchema.safeParse(input);
   if (!parsed.success) {
     // 不回传 zod 原始错误或输入，避免 Key 出现在响应与日志中。
-    if (parsed.error.issues.some(issue => issue.path.at(-1) === "baseURL")) return baseURLNotAllowed();
+    if (parsed.error.issues.some(issue => issue.path.at(-1) === "baseURL")) return baseURLInvalid();
     return badRequest(parsed.error, "设置参数不正确，请检查 Key、模型和偏好设置。");
   }
   const { baseURL } = parsed.data.settings;

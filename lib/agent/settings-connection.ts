@@ -1,7 +1,7 @@
 import { APICallError, generateText } from "ai";
-import { AIBaseURLNotAllowedError, InvalidAIBaseURLError, validateAIBaseURL } from "@/lib/ai/egress-guard";
+import { AIBaseURLNotAllowedError, InvalidAIBaseURLError, ServerAIBaseURLError, validateAIBaseURL } from "@/lib/ai/egress-guard";
 import { createModel, ByokConfigurationError, ByokKeyRequiredError, type ByokConfig } from "./provider";
-import { baseURLNotAllowed, byokKeyRequired, configurationError, upstreamError } from "./request";
+import { baseURLInvalid, baseURLNotAllowed, byokKeyRequired, configurationError, upstreamError } from "./request";
 
 /** SDK wrappers can retain a cause; never expose that cause to the client. */
 export function settingsConnectionError(error: unknown): Response {
@@ -9,7 +9,9 @@ export function settingsConnectionError(error: unknown): Response {
   let current = error;
   while (current instanceof Error && !seen.has(current)) {
     seen.add(current);
-    if (current instanceof AIBaseURLNotAllowedError || current instanceof InvalidAIBaseURLError) return baseURLNotAllowed();
+    if (current instanceof ServerAIBaseURLError) return upstreamError();
+    if (current instanceof InvalidAIBaseURLError) return baseURLInvalid();
+    if (current instanceof AIBaseURLNotAllowedError) return baseURLNotAllowed();
     if (current instanceof ByokKeyRequiredError) return byokKeyRequired();
     if (current instanceof ByokConfigurationError) return configurationError();
     current = current.cause;

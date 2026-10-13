@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { NextRequest } from "next/server";
 import { resolveByok } from "@/lib/agent/provider";
-import { aiBaseURLSchema, badRequest, baseURLNotAllowed } from "@/lib/agent/request";
+import { aiBaseURLSchema, badRequest, baseURLInvalid } from "@/lib/agent/request";
 import { checkAIConnection, settingsConnectionError, validateBaseURL } from "@/lib/agent/settings-connection";
 import { hintTimeoutMs } from "@/lib/agent/defaults";
 
@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
   catch { return badRequest(); }
   const parsed = schema.safeParse(input);
   if (!parsed.success) {
-    if (parsed.error.issues.some(issue => issue.path.at(-1) === "baseURL")) return baseURLNotAllowed();
+    if (parsed.error.issues.some(issue => issue.path.at(-1) === "baseURL")) return baseURLInvalid();
     return badRequest(parsed.error);
   }
   const signal = AbortSignal.any([req.signal, AbortSignal.timeout(hintTimeoutMs())]);

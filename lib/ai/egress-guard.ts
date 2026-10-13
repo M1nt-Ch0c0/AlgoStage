@@ -3,6 +3,7 @@ import { isIP, type LookupFunction } from "node:net";
 import { Agent } from "undici";
 
 export const INVALID_AI_BASE_URL = "接口地址只支持公网 http(s) 地址。";
+export const MALFORMED_AI_BASE_URL = "接口地址格式不对，要以 http:// 或 https:// 开头";
 export const AI_CONNECTION_ERROR = "无法连接到 AI 服务，请检查接口地址。";
 
 export class InvalidAIBaseURLError extends Error {
@@ -21,6 +22,14 @@ export class AIEgressError extends Error {
 
 /** Policy failures are field errors while editing settings, fixed 502s at runtime. */
 export class AIBaseURLNotAllowedError extends AIEgressError {}
+
+/** 部署者在 AI_BASE_URL 里配错了地址：用户无法修复，统一按上游错误（502）处理。 */
+export class ServerAIBaseURLError extends Error {
+  constructor() {
+    super(AI_CONNECTION_ERROR);
+    this.name = "ServerAIBaseURLError";
+  }
+}
 
 function httpURL(value: string): URL {
   if (!/^https?:\/\/[^/\\\s]/i.test(value) || /[\\\s]/.test(value)) throw new InvalidAIBaseURLError();
