@@ -8,7 +8,9 @@ import type { TeachingScript } from "../lib/teaching/types";
 
 type AutoplayState = {
   autoAdvance: boolean;
+  autoAdvanceHydrated: boolean;
   setAutoAdvance(v: boolean): void;
+  hydrateAutoAdvance(): void;
   awaitingContinue: boolean;
   setAwaitingContinue(v: boolean): void;
 };
@@ -212,6 +214,43 @@ test("粗指针且下一步准备中时控制条不显示点「下一步」继�
   expect(container.textContent).not.toContain("点「下一步」继续");
   expect(container.textContent).not.toContain("下一步准备中…");
   expect(container.textContent).toContain("第 3 / 3 步");
+});
+
+test("未读 localStorage 时自动播放是禁用占位且没有 aria-pressed，读完后与存储一致", async () => {
+  localStorage.setItem("algostage.autoAdvance", "true");
+  await act(async () => root.unmount());
+  await act(async () => {
+    setStoreState({ autoAdvance: false, autoAdvanceHydrated: false });
+  });
+
+  let releaseHydrate: (() => void) | undefined;
+  const gate = new Promise<void>((resolve) => {
+    releaseHydrate = resolve;
+  });
+  const realHydrate = usePlayerStore.getState().hydrateAutoAdvance;
+  usePlayerStore.setState({
+    hydrateAutoAdvance: () => {
+      void gate.then(() => realHydrate());
+    },
+  });
+
+  root = createRoot(container);
+  await act(async () => root.render(createElement(PlayerControls)));
+  const placeholder = [...container.querySelectorAll("button")].find((el) => el.textContent === "自动播放")!;
+  expect(placeholder.getAttribute("aria-busy")).toBe("true");
+  expect(placeholder.hasAttribute("aria-pressed")).toBe(false);
+  expect(placeholder.disabled).toBe(true);
+  expect(usePlayerStore.getState()).toMatchObject({ autoAdvance: false, autoAdvanceHydrated: false });
+
+  await act(async () => {
+    releaseHydrate!();
+    await gate;
+  });
+  const hydrated = [...container.querySelectorAll("button")].find((el) => el.textContent === "自动播放")!;
+  expect(hydrated.getAttribute("aria-pressed")).toBe("true");
+  expect(hydrated.hasAttribute("aria-busy")).toBe(false);
+  expect(hydrated.disabled).toBe(false);
+  expect(usePlayerStore.getState().autoAdvance).toBe(true);
 });
 
 test("非 awaitingContinue 且 paused 时按 Space 切换为 playing 且不改变 currentIndex", async () => {

@@ -5,7 +5,9 @@ import type { TeachingScript } from "../lib/teaching/types";
 
 type AutoplayState = {
   autoAdvance: boolean;
+  autoAdvanceHydrated: boolean;
   setAutoAdvance(v: boolean): void;
+  hydrateAutoAdvance(): void;
   awaitingContinue: boolean;
   setAwaitingContinue(v: boolean): void;
 };
@@ -35,18 +37,24 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-test("默认 autoAdvance 为 false，setAutoAdvance(true) 写入 localStorage 并在模块重载后保持", async () => {
+test("默认 autoAdvance 为 false，setAutoAdvance(true) 写入 localStorage 并在模块重载后由 hydrate 读回", async () => {
   expect(s().autoAdvance).toBe(false);
+  expect(s().autoAdvanceHydrated).toBe(false);
   expect(s().awaitingContinue).toBe(false);
 
   s().setAutoAdvance(true);
   expect(s().autoAdvance).toBe(true);
+  expect(s().autoAdvanceHydrated).toBe(true);
   expect(localStorage.getItem("algostage.autoAdvance")).toBe("true");
 
   vi.resetModules();
   const { usePlayerStore: freshStore } = await import("../lib/player/store");
   const freshState = freshStore.getState() as unknown as ReturnType<typeof freshStore.getState> & AutoplayState;
-  expect(freshState.autoAdvance).toBe(true);
+  expect(freshState.autoAdvance).toBe(false);
+  expect(freshState.autoAdvanceHydrated).toBe(false);
+  freshStore.getState().hydrateAutoAdvance();
+  expect(freshStore.getState().autoAdvance).toBe(true);
+  expect(freshStore.getState().autoAdvanceHydrated).toBe(true);
 });
 
 test("localStorage 值为非法字符串 ('garbage') 时导入不报错且 autoAdvance 为 false", async () => {
@@ -60,6 +68,10 @@ test("localStorage 值为非法字符串 ('garbage') 时导入不报错且 autoA
   ).resolves.toBeUndefined();
   const freshState = freshStore!.getState() as unknown as ReturnType<typeof usePlayerStore.getState> & AutoplayState;
   expect(freshState.autoAdvance).toBe(false);
+  expect(freshState.autoAdvanceHydrated).toBe(false);
+  freshStore!.getState().hydrateAutoAdvance();
+  expect(freshStore!.getState().autoAdvance).toBe(false);
+  expect(freshStore!.getState().autoAdvanceHydrated).toBe(true);
 });
 
 test("localStorage.getItem 抛出异常时导入不报错且 autoAdvance 为 false", async () => {
@@ -75,6 +87,10 @@ test("localStorage.getItem 抛出异常时导入不报错且 autoAdvance 为 fal
   ).resolves.toBeUndefined();
   const freshState = freshStore!.getState() as unknown as ReturnType<typeof usePlayerStore.getState> & AutoplayState;
   expect(freshState.autoAdvance).toBe(false);
+  expect(freshState.autoAdvanceHydrated).toBe(false);
+  expect(() => freshStore!.getState().hydrateAutoAdvance()).not.toThrow();
+  expect(freshStore!.getState().autoAdvance).toBe(false);
+  expect(freshStore!.getState().autoAdvanceHydrated).toBe(true);
 });
 
 test("切题动作 (loadScript / beginStream / reset) 保留 autoAdvance 但清除 awaitingContinue", () => {

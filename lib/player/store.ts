@@ -30,7 +30,10 @@ interface PlayerState {
   effectLevel: "full" | "calm" | "minimal";
   /** 讲解默认不自动翻页；全局偏好，reset / loadScript / beginStream 不改它 */
   autoAdvance: boolean;
+  /** 挂载后才从 localStorage 读入；此前 toggle 用占位，避免服务端与首帧读到旧值 */
+  autoAdvanceHydrated: boolean;
   setAutoAdvance: (v: boolean) => void;
+  hydrateAutoAdvance: () => void;
   /** 当前步已讲完，等待用户继续；自动翻页关闭时由播放器置位 */
   awaitingContinue: boolean;
   setAwaitingContinue: (v: boolean) => void;
@@ -96,7 +99,9 @@ export const selectScriptSlug = (s: { script: TeachingScript | null }) => s.scri
 
 export const usePlayerStore = create<PlayerState>((set, get) => ({
   ...initial,
-  autoAdvance: readAutoAdvance(),
+  // 模块初始化不读 localStorage，避免服务端/首帧与挂载后不一致。
+  autoAdvance: false,
+  autoAdvanceHydrated: false,
 
   setAutoAdvance: (v) => {
     try {
@@ -106,7 +111,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     } catch {
       // localStorage 不可用时只更新内存，不把异常抛给调用方
     }
-    set({ autoAdvance: v });
+    set({ autoAdvance: v, autoAdvanceHydrated: true });
+  },
+  hydrateAutoAdvance: () => {
+    if (get().autoAdvanceHydrated) return;
+    set({ autoAdvance: readAutoAdvance(), autoAdvanceHydrated: true });
   },
   setAwaitingContinue: (v) => set({ awaitingContinue: v }),
 

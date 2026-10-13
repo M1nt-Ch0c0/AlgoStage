@@ -39,11 +39,16 @@ export default function PlayerControls({ preparing = false }: { preparing?: bool
   const speed = usePlayerStore((s) => s.speed);
   const effectLevel = usePlayerStore((s) => s.effectLevel);
   const autoAdvance = usePlayerStore((s) => s.autoAdvance);
+  const autoAdvanceHydrated = usePlayerStore((s) => s.autoAdvanceHydrated);
   const awaitingContinue = usePlayerStore((s) => s.awaitingContinue);
   const receiving = usePlayerStore((s) => s.receiving);
   const coarsePointer = useCoarsePointer();
-  const { play, pause, next, prev, goto, setSpeed, setEffectLevel, setAutoAdvance } =
+  const { play, pause, next, prev, goto, setSpeed, setEffectLevel, setAutoAdvance, hydrateAutoAdvance } =
     usePlayerStore.getState();
+
+  useEffect(() => {
+    hydrateAutoAdvance();
+  }, [hydrateAutoAdvance]);
 
   const hasScript = !preparing && steps.length > 0;
   const playing = status === "playing" || status === "streaming";
@@ -168,12 +173,15 @@ export default function PlayerControls({ preparing = false }: { preparing?: bool
         )}
       </div>
 
-      {/* 自动播放：关闭时打完本步停住，等空格或下一步继续 */}
+      {/* 自动播放：关闭时打完本步停住，等空格或下一步继续。
+          读完 localStorage 前不报 aria-pressed，避免首帧与真实偏好相反。 */}
       <button
         type="button"
-        aria-pressed={autoAdvance}
+        aria-pressed={autoAdvanceHydrated ? autoAdvance : undefined}
+        aria-busy={autoAdvanceHydrated ? undefined : true}
+        disabled={!autoAdvanceHydrated}
         onClick={() => setAutoAdvance(!autoAdvance)}
-        className={pill(autoAdvance)}
+        className={autoAdvanceHydrated ? pill(autoAdvance) : `${pill(false)} pointer-events-none opacity-50`}
       >
         自动播放
       </button>

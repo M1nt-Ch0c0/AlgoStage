@@ -135,6 +135,48 @@ test("toggle 「自动播放」 on auto-advances without hint", async ({ page })
   await expect(page.getByTestId("continue-hint")).toHaveCount(0);
 });
 
+test("autoplay stays on after reload and problem switch, and off after toggling", async ({ page }) => {
+  await mockLecture(page, "group-anagrams");
+  await page.goto("/problem/group-anagrams");
+  await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2x", exact: true }).click();
+
+  const autoPlayBtn = page.getByRole("button", { name: "自动播放", exact: true });
+  await expect(autoPlayBtn).toHaveAttribute("aria-pressed", "false");
+  await autoPlayBtn.click();
+  await expect(autoPlayBtn).toHaveAttribute("aria-pressed", "true");
+
+  await page.reload();
+  const reloaded = page.getByRole("button", { name: "自动播放", exact: true });
+  await expect(reloaded).toHaveAttribute("aria-pressed", "true");
+  await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
+  await expect(page.getByText("第 3 / 3 步")).toBeVisible();
+  await expect(page.getByText("讲完了")).toBeVisible();
+  await expect(page.getByTestId("continue-hint")).toHaveCount(0);
+
+  await page.getByRole("link", { name: "下一题", exact: true }).click();
+  await expect(page).toHaveURL(/\/problem\/longest-consecutive-sequence$/);
+  const switched = page.getByRole("button", { name: "自动播放", exact: true });
+  await expect(switched).toHaveAttribute("aria-pressed", "true");
+  await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
+  await expect(page.getByText("第 3 / 3 步")).toBeVisible();
+  await expect(page.getByText("讲完了")).toBeVisible();
+  await expect(page.getByTestId("continue-hint")).toHaveCount(0);
+
+  await page.reload();
+  const stillOn = page.getByRole("button", { name: "自动播放", exact: true });
+  await expect(stillOn).toHaveAttribute("aria-pressed", "true");
+  await stillOn.click();
+  await expect(stillOn).toHaveAttribute("aria-pressed", "false");
+
+  await page.reload();
+  const turnedOff = page.getByRole("button", { name: "自动播放", exact: true });
+  await expect(turnedOff).toHaveAttribute("aria-pressed", "false");
+  await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
+  await expect(page.getByText("第 1 / 3 步")).toBeVisible();
+  await expect(page.getByTestId("continue-hint")).toHaveText("按空格继续");
+  await expect(page.getByText("讲完了")).toHaveCount(0);
+});
+
 test("after finish shows 「下一题」 link to next problem", async ({ page }) => {
   await mockLecture(page, "group-anagrams");
   await page.goto("/problem/group-anagrams");
