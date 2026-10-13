@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import HintLadder from "../components/hint/hint-ladder";
 import {
   BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE,
+  BASE_URL_NOT_ALLOWED_MESSAGE,
   fetchServerKeyDisabled,
   mapByokErrorMessage,
   resetServerKeyDisabledCache,
@@ -114,7 +115,10 @@ describe("lib/byok/client pure helpers & fetchServerKeyDisabled", () => {
       "用自定义地址时需要同时填你自己的 Key",
     );
     expect(mapByokErrorMessage({ code: "BASE_URL_NOT_ALLOWED" })).toBe(
-      "只支持公网 http(s) 地址",
+      "接口地址只支持公网 http(s) 地址",
+    );
+    expect(BASE_URL_NOT_ALLOWED_MESSAGE).toBe(
+      "接口地址只支持公网 http(s) 地址",
     );
     expect(mapByokErrorMessage({ code: "SETTINGS_LOCKED" })).toBe(
       "公共实例不支持修改服务器设置",

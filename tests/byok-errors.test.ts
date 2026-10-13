@@ -8,6 +8,7 @@ import {
   BASE_URL_INVALID_LECTURE_MESSAGE,
   BASE_URL_INVALID_MESSAGE,
   BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE,
+  BASE_URL_NOT_ALLOWED_MESSAGE,
   isBaseUrlInvalid,
   mapByokErrorMessage,
   resetServerKeyDisabledCache,
@@ -45,7 +46,7 @@ const EXPECTED_MAPPINGS = [
   },
   {
     code: "BASE_URL_NOT_ALLOWED",
-    expected: "只支持公网 http(s) 地址",
+    expected: "接口地址只支持公网 http(s) 地址",
   },
   {
     code: "SETTINGS_LOCKED",
@@ -127,6 +128,9 @@ describe("mapByokErrorMessage pure unit tests", () => {
     );
     expect(BASE_URL_INVALID_LECTURE_MESSAGE).toBe(
       "接口地址格式不对，要以 http:// 或 https:// 开头，去设置页改一下就能开讲。",
+    );
+    expect(BASE_URL_NOT_ALLOWED_MESSAGE).toBe(
+      "接口地址只支持公网 http(s) 地址",
     );
   });
 });
