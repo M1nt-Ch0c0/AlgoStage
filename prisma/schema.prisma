@@ -66,9 +66,23 @@ model HintUsage {
 }
 
 model LectureScriptCache {
-  key       String   @id // hash(slug+model+lang+mode)
+  key       String          @id // hash(slug+model+lang+mode)
   script    String // TeachingScript JSON
-  createdAt DateTime @default(now())
+  createdAt DateTime        @default(now())
+  answers   LectureAnswer[]
+}
+
+model LectureAnswer {
+  id            String   @id // StepAnswer.id（requestId）；同一 id 只存一行
+  cacheKey      String
+  scriptVersion String // sha1(lesson)，40 位 hex
+  stepId        String
+  payload       String // StepAnswer JSON（v:1；不含截图、Key）
+  createdAt     DateTime @default(now())
+  cache         LectureScriptCache @relation(fields: [cacheKey], references: [key], onDelete: Cascade)
+
+  @@index([cacheKey, scriptVersion, stepId])
+  @@index([cacheKey, createdAt])
 }
 
 model ReviewCard {
