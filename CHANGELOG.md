@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.2.0-alpha.1] - 未发布
+## [0.2.0-alpha.2] - 2026-10-13
 
 ### 升级须知
 - 更新后先执行 `npm ci` 与 `npm run db:push`（补 `Submission.judgedBy`；不跑则看板可能 500）。Docker 启动会自动 `db push`。
@@ -18,10 +18,16 @@
 - 移除在线体验版（Demo）及 `NEXT_PUBLIC_ALGOSTAGE_DEMO`。
 - 已 solved 不因 WA/RE/TLE 或重听课退回 learning。
 - Key 与接口地址必须同一来源；安装改用 `npm ci`。
+- 部署改为 docker buildx build（服务器用 --allow network.host --network host）+ --load，再 docker compose up --no-build；镜像 tag 由 ALGOSTAGE_IMAGE_TAG 指定，默认取当前版本。
 
 ### 修复
 - 讲解流代理缓冲关闭与超时透传（见 deploy/README nginx 回归）。
 - 拒绝伪造的客户端 JS/TS AC；上游错误不透传。
+- Docker 入口：Prisma 7 的 db push 不再使用 --skip-generate。
 
 ### 安全与依赖
 - Next.js 16.4.0、Prisma 7.10.0；【待定 S13】等 10/14 补丁结论。
+
+## [0.2.0-alpha.1] - 2026-10-12
+
+首个预发布版，含浏览器判题和讲解工具调用。
