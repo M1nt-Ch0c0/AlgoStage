@@ -13,7 +13,7 @@ it("runs the final Docker stage as UID/GID 1001 with owned runtime and data file
   expect(runtime).toMatch(/groupadd --gid 1001 algostage/);
   expect(runtime).toMatch(/useradd --uid 1001 --gid algostage\b/);
   expect(runtime).toContain("mkdir -p /app/data /data");
-  expect(runtime).toContain("chown -R algostage:algostage /app /data");
+  expect(runtime).toContain("chown -R algostage:algostage /app/.next /app/data /data");
   expect(runtime).toContain('DATA_DIR="/data"');
   expect(runtime).toContain('DATABASE_URL="file:/data/algostage.db"');
   const user = runtime.match(/^USER\s+(?:1001(?::1001)?|algostage(?::algostage)?)\s*$/m);

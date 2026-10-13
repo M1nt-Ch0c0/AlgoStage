@@ -29,7 +29,7 @@ ENV NODE_ENV=production
 RUN groupadd --gid 1001 algostage \
   && useradd --uid 1001 --gid algostage --home-dir /app --no-create-home --shell /usr/sbin/nologin algostage \
   && mkdir -p /app/data /data \
-  && chown -R algostage:algostage /app /data
+  && chown -R algostage:algostage /app/.next /app/data /data
 
 EXPOSE 3000
 VOLUME /data
