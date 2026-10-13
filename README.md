@@ -42,6 +42,8 @@ npm run dev                   # http://localhost:3000
 
 使用环境变量 Key 时，请同时填写 `AI_BASE_URL`，并按服务商配置 `AI_PROVIDER`；设置页可单独覆盖模型名，接口和 Key 必须保持同一来源。设置页只保存实际修改的字段；保存新 Key 时请同时填写对应接口地址和服务商，来源混用会被拒绝，不会发出模型请求。
 
+公网部署可用 `ALGOSTAGE_ALLOW_PRIVATE_BASE_URL=false` 禁止连接私网/回环接口地址，用 `ALGOSTAGE_DISABLE_SERVER_KEY=true` 让服务器不保存、不使用服务器 Key（用户在请求中自带 Key），详见 [deploy/README.md](deploy/README.md#环境变量自托管)。
+
 验证命令：`npm run lint`、`npm run typecheck`、`npm test`、`npm run test:e2e`、`npm run build`。
 
 ## 从旧版本升级

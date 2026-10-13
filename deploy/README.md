@@ -88,7 +88,7 @@ docker compose -f deploy/compose.yaml stop
 
 `ALGOSTAGE_DISABLE_SERVER_KEY` 默认 `false`，此公网 Compose 明确设为 `true`。打开后，`GET /api/settings` 返回 `serverKeyDisabled: true`、`keySource: "none"`，不返回任何 Key 掩码；`PUT /api/settings` 一律返回 403 `SETTINGS_LOCKED`（「公共实例不支持修改服务器设置」），已有设置保持原样。讲课、提示和显式测试连接必须在 POST 请求体的 `byok.apiKey` 中带上自己的 Key，否则返回 400 `NO_BYOK`，绝不回退到环境变量或数据库 Key。请求 Key 只用于当次上游鉴权，不放入 URL，也不写入数据库、讲课缓存、提示消耗记录或日志（含错误日志）。`byok.baseURL`、`byok.model` 可选。
 
-无论此开关是否打开，服务器 Key 只发送到服务器配置的接口地址。请求中的 `byok.baseURL` 规范化后与服务器地址不同时，必须同时提供 `byok.apiKey`，否则返回 400 `BYOK_KEY_REQUIRED`（「用自定义地址时需要同时填你自己的 Key」），不发起模型请求。关闭开关时，地址相同且未传 Key 的请求可以使用服务器 Key。请求中的新地址在查缓存或调用模型前完成语法、IP 和 DNS 校验；非法或被拦截的地址返回 400 `BASE_URL_NOT_ALLOWED`（「只支持公网 http(s) 地址」），连接失败、重定向和上游错误仍统一返回固定文案的 502。上述新错误码同时提供 `code`、`error` 与友好的 `message`，兼容现有调用方。
+无论此开关是否打开，服务器 Key 只发送到服务器配置的接口地址。请求中的 `byok.baseURL` 规范化后与服务器地址不同时，必须同时提供 `byok.apiKey`，否则返回 400 `BYOK_KEY_REQUIRED`（「用自定义地址时需要同时填你自己的 Key」），不发起模型请求。关闭开关时，地址相同且未传 Key 的请求可以使用服务器 Key。请求中的新地址在查缓存或调用模型前完成语法、IP 和 DNS 校验；非法或被拦截的地址返回 400 `BASE_URL_NOT_ALLOWED`（「接口地址只支持公网 http(s) 地址。」），连接失败、重定向和上游错误仍统一返回固定文案的 502。上述新错误码同时提供 `code`、`error` 与友好的 `message`，兼容现有调用方。
 
 `ALGOSTAGE_ALLOW_PRIVATE_BASE_URL` 默认 `true`，允许自托管连接本地模型。此公网 Compose 明确设为 `false`：AI 接口的 IP 或任一 DNS 结果为私网、回环或保留地址时拒绝连接；连接固定到验证过的 IP，所有模式均禁止上游重定向。如需连接内网模型，请仅在可信自托管环境中改为 `true`。
 
