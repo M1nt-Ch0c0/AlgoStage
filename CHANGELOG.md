@@ -13,7 +13,7 @@
 
 ### 修复
 - 加强了接口地址校验：只接受 http(s)，不跟随重定向；公共部署可通过 `ALGOSTAGE_ALLOW_PRIVATE_BASE_URL=false` 禁止内网地址，自托管默认（`true`）仍可连本机或内网模型。格式不对返回 `BASE_URL_INVALID`，被拦截的内网地址返回 `BASE_URL_NOT_ALLOWED`；服务器 API Key 只发往服务器配置的接口地址。
-- 【待合入 p2-upstream-auth】API Key 无效或没有权限（模型服务返回 401/403）时显示「API Key 无效或没有权限」，错误码 `UPSTREAM_AUTH`，不再自动重试。请到设置页检查 API Key 是否正确，以及 API Key 和接口地址是否来自同一家服务。
+- 【服务端待合入 p2-upstream-auth；文案待合入 A5】模型服务返回 401/403 时改为返回 400 `UPSTREAM_AUTH`，不再自动重试（目前 m1-fixes 仍返回 502 `UPSTREAM_ERROR`）。讲课和提示区显示「API Key 无效或没有权限，去设置页检查一下就能开讲。」，只有「去设置」按钮；设置页在 API Key 输入框下显示红字「API Key 无效或没有权限」。
 - 备课时显示「备课中」，不再显示满格的「1/1」进度。
 - 49 题示例表格自动换行，不再截断或横向滚动。
 - 设置页接口地址输入框改用普通字体，`https://` 显示正常、不错位。

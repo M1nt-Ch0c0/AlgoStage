@@ -57,11 +57,11 @@ npm run dev                   # http://localhost:3000
 
 | 错误码 | 什么时候出现 | 怎么处理 |
 | --- | --- | --- |
-| `UPSTREAM_AUTH`（HTTP 400）【待合入 p2-upstream-auth】 | 模型服务返回 401/403。提示「API Key 无效或没有权限」，不会自动重试。 | 到设置页检查 API Key 是否正确、有没有该模型的权限，并确认 API Key 和接口地址来自同一家服务。 |
-| `BYOK_KEY_REQUIRED`（HTTP 400） | 用了与服务器配置不同的接口地址，但没有填自己的 API Key。提示「用自定义地址时需要同时填你自己的 Key」。 | 在设置页同时填写该接口地址对应的 API Key。 |
-| `BASE_URL_INVALID`（HTTP 400） | 接口地址格式不对（不是 http(s)、缺少主机等）。提示「接口地址格式不对，要以 http:// 或 https:// 开头」；讲课和提示页的「去设置」按钮【待合入 A5】。 | 改成以 `http://` 或 `https://` 开头的完整地址。 |
-| `BASE_URL_NOT_ALLOWED`（HTTP 400） | 仅在 `ALGOSTAGE_ALLOW_PRIVATE_BASE_URL` 关闭时（如 Docker 默认部署），接口地址指向内网、本机或保留地址。提示「接口地址只支持公网 http(s) 地址。」 | 改用公网接口地址；自托管需要连本机或内网模型时，在可信环境中把该开关设为 `true`。 |
-| `UPSTREAM_ERROR`（HTTP 502） | 连不上模型服务，或部署者在 `AI_BASE_URL` 里配了畸形地址（此时不发起出站请求）。服务器提示「无法连接到 AI 服务，请检查接口地址。」；【待合入 A5】讲课和提示页改为显示「AI 服务暂时连不上，请稍后再试。」，只有「重试」。 | 稍后重试；自托管请检查环境变量 `AI_BASE_URL`。 |
+| `UPSTREAM_AUTH`（HTTP 400）【服务端待合入 p2-upstream-auth；文案待合入 A5】 | 模型服务返回 401/403，不会自动重试。讲课和提示区显示「API Key 无效或没有权限，去设置页检查一下就能开讲。」，只有「去设置」按钮；设置页在 API Key 输入框下显示红字「API Key 无效或没有权限」，不放按钮。目前 m1-fixes 仍返回 502 `UPSTREAM_ERROR`。 | 到设置页检查 API Key 是否正确、有没有该模型的权限，并确认 API Key 和接口地址来自同一家服务。 |
+| `BYOK_KEY_REQUIRED`（HTTP 400） | 用了与服务器配置不同的接口地址，但没有填自己的 API Key。【待合入 A5】提示「用自定义接口地址时，需要同时填你自己的 API Key」。 | 在设置页同时填写该接口地址对应的 API Key。 |
+| `BASE_URL_INVALID`（HTTP 400） | 接口地址格式不对（不是 http(s)、缺少主机等）。【待合入 A5】设置页在接口地址输入框下显示红字「接口地址格式不对，要以 http:// 或 https:// 开头」；讲课和提示区显示「接口地址格式不对，要以 http:// 或 https:// 开头，去设置页改一下就能开讲。」，带「去设置」按钮。 | 改成以 `http://` 或 `https://` 开头的完整地址。 |
+| `BASE_URL_NOT_ALLOWED`（HTTP 400） | 仅在 `ALGOSTAGE_ALLOW_PRIVATE_BASE_URL` 关闭时（如 Docker 默认部署），接口地址指向内网、本机或保留地址。【待合入 A5】设置页在接口地址输入框下显示红字「接口地址只支持公网 http(s) 地址」；讲课和提示区显示「接口地址只支持公网 http(s) 地址，去设置页改一下就能开讲。」，带「去设置」按钮。 | 改用公网接口地址；自托管需要连本机或内网模型时，在可信环境中把该开关设为 `true`。 |
+| `UPSTREAM_ERROR`（HTTP 502） | 连不上模型服务，或部署者在 `AI_BASE_URL` 里配了畸形地址（此时不发起出站请求）。【待合入 A5】讲课和提示区显示「AI 服务暂时连不上，请稍后再试。」，只有「重试」，不带「去设置」。 | 稍后重试；自托管请检查环境变量 `AI_BASE_URL`。 |
 
 验证命令：`npm run lint`、`npm run typecheck`、`npm test`、`npm run test:e2e`、`npm run build`。
 
