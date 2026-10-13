@@ -1,8 +1,10 @@
 "use client";
 
 import {
+  BASE_URL_INVALID_MESSAGE,
   BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE,
   fetchServerKeyDisabled,
+  isBaseUrlInvalid,
   isBaseUrlNotAllowed,
   mapByokErrorMessage,
   NO_BYOK_MESSAGE,
@@ -120,6 +122,9 @@ export default function HintLadder({
           if (errorCode === "TIMEOUT" || res.status === 504) {
             throw new Error(SLOW_MSG);
           }
+          if (isBaseUrlInvalid(j)) {
+            throw new Error(BASE_URL_INVALID_MESSAGE);
+          }
           if (isBaseUrlNotAllowed(j)) {
             throw new Error(BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE);
           }
@@ -211,7 +216,8 @@ export default function HintLadder({
         >
           <p>{hintError}</p>
           {(hintError === NO_BYOK_MESSAGE ||
-            hintError === BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE) && (
+            hintError === BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE ||
+            hintError === BASE_URL_INVALID_MESSAGE) && (
             <Link
               href={
                 hintError === NO_BYOK_MESSAGE

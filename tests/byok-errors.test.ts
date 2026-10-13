@@ -4,7 +4,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import HintLadder from "../components/hint/hint-ladder";
 import {
+  BASE_URL_INVALID_MESSAGE,
   BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE,
+  isBaseUrlInvalid,
   mapByokErrorMessage,
   resetServerKeyDisabledCache,
 } from "../lib/byok/client";
@@ -25,6 +27,10 @@ const EXPECTED_MAPPINGS = [
   {
     code: "BYOK_KEY_REQUIRED",
     expected: "用自定义地址时需要同时填你自己的 Key",
+  },
+  {
+    code: "BASE_URL_INVALID",
+    expected: BASE_URL_INVALID_MESSAGE,
   },
   {
     code: "BASE_URL_NOT_ALLOWED",
@@ -95,6 +101,11 @@ describe("mapByokErrorMessage pure unit tests", () => {
         message: "Key 无效或没有权限，请检查设置。",
       }),
     ).toBe("Key 无效或没有权限，请检查设置。");
+
+    expect(isBaseUrlInvalid({ error: "BASE_URL_INVALID" })).toBe(true);
+    expect(isBaseUrlInvalid({ code: "BASE_URL_INVALID" })).toBe(true);
+    expect(isBaseUrlInvalid({ error: "BASE_URL_NOT_ALLOWED" })).toBe(false);
+    expect(isBaseUrlInvalid(null)).toBe(false);
   });
 });
 
@@ -228,7 +239,11 @@ describe("Rendered UI error messages in HintLadder and ProblemPage", () => {
       const settingsLink = Array.from(alert!.querySelectorAll("a")).find(
         (a) => a.textContent === "去设置",
       );
-      if (code === "NO_BYOK" || code === "BASE_URL_NOT_ALLOWED") {
+      if (
+        code === "NO_BYOK" ||
+        code === "BASE_URL_NOT_ALLOWED" ||
+        code === "BASE_URL_INVALID"
+      ) {
         expect(settingsLink).toBeDefined();
         expect(settingsLink!.getAttribute("data-testid")).toBe("goto-settings");
         expect(settingsLink!.getAttribute("href")).toBe(
@@ -335,7 +350,11 @@ describe("Rendered UI error messages in HintLadder and ProblemPage", () => {
         (a) => a.textContent === "去设置",
       );
       expect(settingsLink).toBeDefined();
-      if (code === "NO_BYOK" || code === "BASE_URL_NOT_ALLOWED") {
+      if (
+        code === "NO_BYOK" ||
+        code === "BASE_URL_NOT_ALLOWED" ||
+        code === "BASE_URL_INVALID"
+      ) {
         expect(settingsLink!.getAttribute("data-testid")).toBe("goto-settings");
         expect(settingsLink!.getAttribute("href")).toBe(
           code === "NO_BYOK"

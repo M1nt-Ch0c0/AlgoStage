@@ -4,7 +4,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import AiSetupPrompt from "../components/settings/ai-setup-prompt";
 import {
+  BASE_URL_INVALID_MESSAGE,
   BASE_URL_NOT_ALLOWED_SETTINGS_MESSAGE,
+  isBaseUrlInvalid,
   isBaseUrlNotAllowed,
   isValidHttpBaseUrl,
   NO_BYOK_SETTINGS_MESSAGE,
@@ -385,19 +387,20 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
     expect(apiKeyInput.classList.contains("ring-beam-gold")).toBe(false);
   });
 
-  test("BASE_URL_NOT_ALLOWED on save and testConnection shows inline copy, focuses Base URL, no toast or testState fail, and clears on edit", async () => {
+  test("BASE_URL_NOT_ALLOWED and BASE_URL_INVALID on save and testConnection show respective inline copy, focus Base URL, render no 去设置 link/button, no toast or testState fail, and clear on edit", async () => {
     let serverKeyDisabledMode = false;
+    let errorCodeToReturn: "BASE_URL_NOT_ALLOWED" | "BASE_URL_INVALID" = "BASE_URL_NOT_ALLOWED";
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const url = String(input);
       if (init?.method === "PUT") {
         return Response.json(
-          { error: "BASE_URL_NOT_ALLOWED", message: "Custom server message should be ignored" },
+          { error: errorCodeToReturn, message: "Custom server message should be ignored" },
           { status: 400 },
         );
       }
       if (url.endsWith("/api/settings/test-connection")) {
         return Response.json(
-          { code: "BASE_URL_NOT_ALLOWED", message: "Custom server message" },
+          { code: errorCodeToReturn, message: "Custom server message" },
           { status: 400 },
         );
       }
@@ -433,6 +436,9 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
     expect(document.activeElement).toBe(baseInput);
     expect(settingsContainer.textContent).not.toContain("Custom server message");
     expect(settingsContainer.textContent).not.toContain("设置保存失败");
+    expect(settingsContainer.textContent).not.toContain("去设置");
+    expect(settingsContainer.querySelector('[data-testid="goto-settings"]')).toBeNull();
+    expect(settingsContainer.querySelector('a[href*="/settings"]')).toBeNull();
     expect(settingsContainer.querySelectorAll('[role="alert"]')).toHaveLength(1);
 
     // Clear when edited
@@ -454,6 +460,50 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
     expect(errElAfterTest!.textContent).toBe(BASE_URL_NOT_ALLOWED_SETTINGS_MESSAGE);
     expect(document.activeElement).toBe(baseInput);
     expect(settingsContainer.textContent).not.toContain("✗");
+    expect(settingsContainer.textContent).not.toContain("去设置");
+    expect(settingsContainer.querySelector('[data-testid="goto-settings"]')).toBeNull();
+    expect(settingsContainer.querySelector('a[href*="/settings"]')).toBeNull();
+
+    // Now test server BASE_URL_INVALID on save and testConnection
+    errorCodeToReturn = "BASE_URL_INVALID";
+    await act(async () => {
+      setInputValue(baseInput, "https://valid-looking-but-server-rejected.example.com");
+    });
+    expect(settingsContainer.querySelector("#baseURL-error")).toBeNull();
+
+    await act(async () => {
+      saveBtn.click();
+    });
+
+    const errElInvalidSave = settingsContainer.querySelector("#baseURL-error");
+    expect(errElInvalidSave).not.toBeNull();
+    expect(errElInvalidSave!.textContent).toBe(BASE_URL_INVALID_MESSAGE);
+    expect(document.activeElement).toBe(baseInput);
+    expect(settingsContainer.textContent).not.toContain("Custom server message");
+    expect(settingsContainer.textContent).not.toContain("设置保存失败");
+    expect(settingsContainer.textContent).not.toContain("去设置");
+    expect(settingsContainer.querySelector('[data-testid="goto-settings"]')).toBeNull();
+    expect(settingsContainer.querySelector('a[href*="/settings"]')).toBeNull();
+    expect(settingsContainer.querySelectorAll('[role="alert"]')).toHaveLength(1);
+
+    // Clear on edit and test connection with BASE_URL_INVALID
+    await act(async () => {
+      setInputValue(baseInput, "https://another-rejected.example.com");
+    });
+    expect(settingsContainer.querySelector("#baseURL-error")).toBeNull();
+
+    await act(async () => {
+      testBtn.click();
+    });
+
+    const errElInvalidTest = settingsContainer.querySelector("#baseURL-error");
+    expect(errElInvalidTest).not.toBeNull();
+    expect(errElInvalidTest!.textContent).toBe(BASE_URL_INVALID_MESSAGE);
+    expect(document.activeElement).toBe(baseInput);
+    expect(settingsContainer.textContent).not.toContain("✗");
+    expect(settingsContainer.textContent).not.toContain("去设置");
+    expect(settingsContainer.querySelector('[data-testid="goto-settings"]')).toBeNull();
+    expect(settingsContainer.querySelector('a[href*="/settings"]')).toBeNull();
 
     // Local validation in serverKeyDisabled mode
     serverKeyDisabledMode = true;
@@ -480,11 +530,13 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
     });
 
     expect(settingsContainer.querySelector("#baseURL-error")?.textContent).toBe(
-      BASE_URL_NOT_ALLOWED_SETTINGS_MESSAGE,
+      BASE_URL_INVALID_MESSAGE,
     );
     expect(document.activeElement).toBe(localBaseInput);
     expect(readLocalByok()).toBeNull();
     expect(settingsContainer.textContent).not.toContain("已保存");
+    expect(settingsContainer.textContent).not.toContain("去设置");
+    expect(settingsContainer.querySelector('[data-testid="goto-settings"]')).toBeNull();
   });
 
   test("baseURL frontend validation: typing invalid shows no error; blur invalid shows error; editing clears; empty ok on blur and save; save invalid blocked; http://192.168.1.2 passes and saves", async () => {
@@ -527,9 +579,10 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
       baseInput.blur();
     });
     expect(settingsContainer.querySelector("#baseURL-error")?.textContent).toBe(
-      BASE_URL_NOT_ALLOWED_SETTINGS_MESSAGE,
+      BASE_URL_INVALID_MESSAGE,
     );
     expect(document.activeElement).toBe(baseInput);
+    expect(settingsContainer.textContent).not.toContain("去设置");
 
     // 3. Editing after shows clears error immediately
     await act(async () => {
@@ -542,7 +595,7 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
       saveBtn.click();
     });
     expect(settingsContainer.querySelector("#baseURL-error")?.textContent).toBe(
-      BASE_URL_NOT_ALLOWED_SETTINGS_MESSAGE,
+      BASE_URL_INVALID_MESSAGE,
     );
     expect(document.activeElement).toBe(baseInput);
     expect(putCalls).toHaveLength(0);
@@ -701,6 +754,10 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
     expect(isBaseUrlNotAllowed({ error: "BASE_URL_NOT_ALLOWED" })).toBe(true);
     expect(isBaseUrlNotAllowed({ code: "BASE_URL_NOT_ALLOWED" })).toBe(true);
     expect(isBaseUrlNotAllowed({ error: "OTHER" })).toBe(false);
+
+    expect(isBaseUrlInvalid({ error: "BASE_URL_INVALID" })).toBe(true);
+    expect(isBaseUrlInvalid({ code: "BASE_URL_INVALID" })).toBe(true);
+    expect(isBaseUrlInvalid({ error: "OTHER" })).toBe(false);
 
     expect(isValidHttpBaseUrl("")).toBe(true);
     expect(isValidHttpBaseUrl("   ")).toBe(true);

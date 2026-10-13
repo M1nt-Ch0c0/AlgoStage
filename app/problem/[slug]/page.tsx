@@ -8,6 +8,7 @@
 
 import { LECTURE_TIMEOUT_MS } from "@/lib/agent/defaults";
 import {
+  BASE_URL_INVALID_MESSAGE,
   BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE,
   BASE_URL_NOT_ALLOWED_MESSAGE,
   fetchServerKeyDisabled,
@@ -599,19 +600,22 @@ export default function ProblemPage() {
             href={
               lectureError === NO_BYOK_MESSAGE
                 ? "/settings?focus=apiKey"
-                : lectureError === BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE
+                : lectureError === BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE ||
+                    lectureError === BASE_URL_INVALID_MESSAGE
                   ? "/settings?focus=baseUrl"
                   : "/settings"
             }
             data-testid={
               lectureError === NO_BYOK_MESSAGE ||
-              lectureError === BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE
+              lectureError === BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE ||
+              lectureError === BASE_URL_INVALID_MESSAGE
                 ? "goto-settings"
                 : undefined
             }
             className={
               lectureError === NO_BYOK_MESSAGE ||
-              lectureError === BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE
+              lectureError === BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE ||
+              lectureError === BASE_URL_INVALID_MESSAGE
                 ? "shrink-0 rounded-full border border-beam-gold/60 bg-transparent px-3 py-1 text-beam-gold transition-colors hover:border-beam-gold"
                 : "underline hover:text-chalk-100"
             }

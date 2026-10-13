@@ -4,7 +4,9 @@ import { KeySourceBadge, type KeySource } from "@/components/settings/key-source
 import { DEFAULT_MODEL } from "@/lib/agent/defaults";
 import { savedEndpoint } from "@/lib/agent/saved-endpoint";
 import {
+  BASE_URL_INVALID_MESSAGE,
   BASE_URL_NOT_ALLOWED_SETTINGS_MESSAGE,
+  isBaseUrlInvalid,
   isBaseUrlNotAllowed,
   isNoByokError,
   isValidHttpBaseUrl,
@@ -167,7 +169,7 @@ export default function SettingsPage() {
 
   function validateBaseURL(): boolean {
     if (!isValidHttpBaseUrl(baseURL)) {
-      setBaseURLError(BASE_URL_NOT_ALLOWED_SETTINGS_MESSAGE);
+      setBaseURLError(BASE_URL_INVALID_MESSAGE);
       setSaveState("idle");
       focusAndScroll("baseURL", false);
       return false;
@@ -210,7 +212,10 @@ export default function SettingsPage() {
       });
       if (!res.ok) {
         const data = await res.json();
-        if (isBaseUrlNotAllowed(data)) {
+        if (isBaseUrlInvalid(data)) {
+          setBaseURLError(BASE_URL_INVALID_MESSAGE);
+          focusAndScroll("baseURL", false);
+        } else if (isBaseUrlNotAllowed(data)) {
           setBaseURLError(BASE_URL_NOT_ALLOWED_SETTINGS_MESSAGE);
           focusAndScroll("baseURL", false);
         } else {
@@ -271,6 +276,10 @@ export default function SettingsPage() {
       if (res.ok && data.ok) {
         setBaseURLError("");
         setTestState({ kind: "ok", message: "接通了，老师可以上课了。" });
+      } else if (isBaseUrlInvalid(data)) {
+        setBaseURLError(BASE_URL_INVALID_MESSAGE);
+        setTestState({ kind: "idle" });
+        focusAndScroll("baseURL", false);
       } else if (isBaseUrlNotAllowed(data)) {
         setBaseURLError(BASE_URL_NOT_ALLOWED_SETTINGS_MESSAGE);
         setTestState({ kind: "idle" });
