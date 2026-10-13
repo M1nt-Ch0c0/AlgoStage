@@ -96,6 +96,8 @@ export default function ProblemPage() {
   const lectureInFlight = useRef<boolean>(false);
   // 超时/中断时已收到部分步骤：保留可播放，进度显示「已收到 N 步，备课中断」。
   const [lectureInterrupted, setLectureInterrupted] = useState(false);
+  // 同步记录中断态，重试时据此立即清掉旧的半份教案（不等新流首步）。
+  const lectureInterruptedRef = useRef(false);
   const lectureAbort = useRef<AbortController | null>(null);
   const [lectureError, setLectureError] = useState<{
     code: string;
@@ -183,6 +185,9 @@ export default function ProblemPage() {
     setLectureError(null);
     setLectureComplete(false);
     setLectureInterrupted(false);
+    // 中断后重试：旧的已收到步骤未保存，立刻清掉，避免头部短暂显示旧「已收到 N 步」和「继续」。
+    const retryAfterCutOff = lectureInterruptedRef.current;
+    lectureInterruptedRef.current = false;
     if (practice) saveDraft(slug, language, code);
     setPractice(false);
     if (!detail) {
@@ -195,7 +200,7 @@ export default function ProblemPage() {
     lectureInFlight.current = true;
     lectureAbort.current?.abort();
     // 重新生成立刻停掉旧播放并清掉步骤；reset 保留 autoAdvance。失败后步骤为空，stopStream 会停在 idle。
-    if (regenerate) usePlayerStore.getState().reset();
+    if (regenerate || retryAfterCutOff) usePlayerStore.getState().reset();
     const abort = new AbortController();
     lectureAbort.current = abort;
     let timedOut = false;
@@ -325,6 +330,7 @@ export default function ProblemPage() {
         if (nextError && streaming && (timedOut || isLectureCutOff(nextError, received)) && received > 0) {
           // 超时、中途断开或上游断开（UPSTREAM_ERROR）、已收到步骤：保留可播放（v0.2.1 Paige 决定），只停止接收；不保存教案。其他错误仍清空。
           usePlayerStore.getState().stopStream();
+          lectureInterruptedRef.current = true;
           setLectureInterrupted(true);
         } else {
           // 没收到步骤：清空半份教案，避免残留字幕与代码锚点；错误提示独立保留。
@@ -607,9 +613,11 @@ export default function ProblemPage() {
 
       {lectureBusy && (
         <div className="flex items-center gap-3 text-sm text-chalk-300">
-          <p role="status" aria-live="polite">
-            {lectureProgress}
-          </p>
+          {/* 非 live：步数由播放控件里的 role=status「已收到 N 步…」播报，避免重复；
+              步骤到达后服务端的「已生成 N 步…」与其重复，不再显示。 */}
+          {!(stepCount > 0 && /^已生成 \d+ 步/.test(lectureProgress)) && (
+            <p data-lecture-progress>{lectureProgress}</p>
+          )}
           <button
             type="button"
             className="rounded-full border border-board-600 px-3 py-1"

@@ -185,3 +185,56 @@ test.each([
     expect(container.querySelector('[data-pending-step]')).toBeNull();
   } finally { await act(async () => root.unmount()); }
 });
+
+test("中断后点重试：立即清掉旧步数和「继续」；备课进度只由一个 live region 播报", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const detail = await localSeedSource.detail("3sum");
+  const mk = (id: string): TeachingStep => ({ id, narration: id, targets: [{ kind: "code-line", start: 2 }], effects: [] });
+  const streams: ReadableStreamDefaultController[] = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async input => {
+    if (String(input).endsWith("/api/lecture"))
+      return new Response(new ReadableStream({ start(c) { streams.push(c); } }), { headers: { "Content-Type": "application/x-ndjson" } });
+    if (String(input).endsWith("/api/settings")) return Response.json({ keySource: "env" });
+    if (String(input).endsWith("/api/problems/3sum")) return Response.json({ problem: detail });
+    return Response.json({ ok: true });
+  });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const send = (event: unknown) => streams.at(-1)!.enqueue(new TextEncoder().encode(JSON.stringify(event) + "\n"));
+  const headerButtons = () => Array.from(container.querySelectorAll<HTMLButtonElement>("header button")).map(b => b.textContent);
+  const live = () => Array.from(container.querySelectorAll('[aria-live]:not([aria-live="off"]),[role="status"]'));
+  try {
+    await act(async () => root.render(createElement(ProblemPage)));
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("header button"))
+      .find(button => button.textContent === "开始讲课")!.click());
+    await act(async () => {
+      send({ type: "step", step: mk("s1") });
+      send({ type: "step", step: mk("s2") });
+      send({ type: "progress", attempt: 1, message: "已生成 2 步，正在备课并播放…" });
+    });
+    // 只有一个 live region 播报步数，服务端「已生成 N 步」不重复显示
+    const announcing = live().filter(el => /步/.test(el.textContent ?? ""));
+    expect(announcing.map(el => el.textContent)).toEqual(["已收到 2 步，仍在备课…"]);
+    expect(container.textContent).not.toContain("已生成 2 步");
+    expect(container.textContent).toContain("取消备课");
+
+    await act(async () => { send({ type: "error", code: "TIMEOUT", retryable: true }); streams.at(-1)!.close(); });
+    expect(container.textContent).toContain("已收到 2 步");
+    expect(headerButtons()).toContain("继续");
+
+    const retry = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="alert"] button')).find(b => b.textContent === "重试讲课")!;
+    // 新流还没有任何事件：头部和主按钮必须已经是新一轮的状态
+    await act(async () => retry.click());
+    expect(streams).toHaveLength(2);
+    expect(usePlayerStore.getState().steps).toHaveLength(0);
+    expect(container.textContent).not.toContain("已收到 2 步");
+    expect(headerButtons()).not.toContain("继续");
+    expect(headerButtons()).toContain("备课中…");
+    expect(container.querySelector('[data-pending-step="broken"]')).toBeNull();
+
+    await act(async () => send({ type: "step", step: mk("n1") }));
+    expect(usePlayerStore.getState().steps.map(s => s.id)).toEqual(["n1"]);
+    expect(container.textContent).toContain("已收到 1 步");
+  } finally { await act(async () => root.unmount()); }
+});
