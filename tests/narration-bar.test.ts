@@ -79,6 +79,14 @@ test("默认 autoAdvance 为 false：打完停留在第 0 步并提示按空格�
   expect(visible()).toBe(sentences[0]);
 });
 
+test("流式停在最后一步且等待继续时提示下一步准备中", async () => {
+  usePlayerStore.setState({ receiving: true, currentIndex: sentences.length - 1, awaitingContinue: true });
+  await act(async () => root.render(createElement(NarrationBar)));
+  const hint = container.querySelector("[data-testid='continue-hint']");
+  expect(hint?.textContent).toBe("下一步准备中…");
+  expect(container.textContent).not.toContain("按空格继续");
+});
+
 test("setAutoAdvance(true) 打完并停留 dwellMs 后进入下一步", async () => {
   usePlayerStore.getState().setAutoAdvance(true);
   usePlayerStore.getState().play();

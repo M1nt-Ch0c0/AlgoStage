@@ -27,7 +27,12 @@ export default function NarrationBar() {
   const nextItem = nextProblem(currentSlug ?? "");
   const autoAdvance = usePlayerStore((s) => s.autoAdvance);
   const awaitingContinue = usePlayerStore((s) => s.awaitingContinue);
+  const receiving = usePlayerStore((s) => s.receiving);
+  const currentIndex = usePlayerStore((s) => s.currentIndex);
+  const receivedCount = usePlayerStore((s) => s.steps.length);
   const setAwaitingContinue = usePlayerStore((s) => s.setAwaitingContinue);
+  const preparingNext =
+    awaitingContinue && receiving && receivedCount > 0 && currentIndex === receivedCount - 1;
   const reduced = usePrefersReducedMotion();
 
   const segments = useMemo(
@@ -111,7 +116,9 @@ export default function NarrationBar() {
         </p>
       )}
       {awaitingContinue && (
-        <p data-testid="continue-hint" className="mt-1 text-xs text-beam-gold/80">按空格继续</p>
+        <p data-testid="continue-hint" className="mt-1 text-xs text-beam-gold/80">
+          {preparingNext ? "下一步准备中…" : "按空格继续"}
+        </p>
       )}
       {status === "finished" && step && (
         <div>
