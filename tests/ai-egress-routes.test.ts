@@ -20,7 +20,8 @@ const db = vi.hoisted(() => {
     upsert: vi.fn(async ({ create }: { create: { key: string; value: string } }) => { settings.set(create.key, create.value); }),
   };
   const lectureScriptCache = { findUnique: vi.fn(async () => null), upsert: vi.fn(), delete: vi.fn() };
-  const transaction = { setting, lectureScriptCache };
+  const lectureAnswer = { findMany: vi.fn(async () => []), deleteMany: vi.fn(async () => ({ count: 0 })) };
+  const transaction = { setting, lectureScriptCache, lectureAnswer };
   return { settings, prisma: { ...transaction, $transaction: vi.fn(async (run: (tx: typeof transaction) => Promise<unknown>) => run(transaction)) } };
 });
 vi.mock("@/lib/db/prisma", () => ({ prisma: db.prisma }));
