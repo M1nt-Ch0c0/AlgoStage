@@ -59,6 +59,7 @@ import LessonPlan from "@/components/board/lesson-plan";
 import HintLadder from "@/components/hint/hint-ladder";
 import { InlineMarkdown } from "@/components/board/inline-markdown";
 import ArrayVisualizer from "@/components/viz/array-visualizer";
+import RegenConfirmDialog from "@/components/problem/regen-confirm-dialog";
 
 const STATEMENT_IDS = ["intro", "insight", "summary"] as const;
 
@@ -390,6 +391,8 @@ export default function ProblemPage() {
   const inLecture = status !== "idle";
   const [moreOpen, setMoreOpen] = useState(false);
   const [confirmRegen, setConfirmRegen] = useState(false);
+  const moreButtonRef = useRef<HTMLButtonElement | null>(null);
+  const playerAreaRef = useRef<HTMLDivElement | null>(null);
   // 各题共用同一套主按钮：未开始 / 备课中 / 暂停 / 继续。结束面板显示时主按钮不渲染。
   const playing = status === "playing" || (status === "streaming" && stepCount > 0);
   const canResume = (status === "paused" || status === "interrupted") && stepCount > 0;
@@ -545,6 +548,7 @@ export default function ProblemPage() {
           {showRegenerate && (
             <div className="relative">
               <button
+                ref={moreButtonRef}
                 type="button"
                 aria-label="更多"
                 aria-haspopup="menu"
@@ -577,36 +581,16 @@ export default function ProblemPage() {
           )}
         </div>
       </header>
-      {confirmRegen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
-        >
-          <div className="flex max-w-sm flex-col gap-3 rounded-2xl border border-board-600 bg-board-900 p-4 text-sm text-chalk-100">
-            <p>重新生成会清掉当前教案，确定吗？</p>
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setConfirmRegen(false)}
-                className="rounded-full border border-board-600 px-3 py-1.5 text-chalk-300 hover:text-chalk-100"
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setConfirmRegen(false);
-                  void startLecture(true);
-                }}
-                className="rounded-full bg-beam-gold px-3 py-1.5 font-semibold text-on-accent"
-              >
-                确定重新生成
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <RegenConfirmDialog
+        open={confirmRegen}
+        onCancel={() => setConfirmRegen(false)}
+        onConfirm={() => {
+          setConfirmRegen(false);
+          void startLecture(true);
+        }}
+        returnFocusRef={moreButtonRef}
+        fallbackFocusRef={playerAreaRef}
+      />
 
       {lectureBusy && (
         <div className="flex items-center gap-3 text-sm text-chalk-300">
@@ -836,7 +820,12 @@ export default function ProblemPage() {
       </div>
 
       {/* ── 底部播放器控制条 ── */}
-      <div className="z-30 max-lg:sticky max-lg:bottom-2">
+      <div
+        ref={playerAreaRef}
+        tabIndex={-1}
+        aria-label="讲解播放区"
+        className="z-30 max-lg:sticky max-lg:bottom-2"
+      >
         <PlayerControls
           preparing={lectureBusy && (!receiving || stepCount === 0)}
           lectureBusy={lectureBusy}
