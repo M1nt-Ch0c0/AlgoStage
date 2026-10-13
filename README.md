@@ -21,12 +21,20 @@ AlgoStage 是一个**纯本地运行**的 LeetCode Hot 100 AI 学习系统：内
 
 ```bash
 npm ci                        # 按 package-lock.json 安装，与 CI 一致
-cp .env.example .env          # 可选：也可以启动后在设置页填 Key
+cp .env.example .env          # 可选：也可以启动后在设置页填 Key（见下方三步）
 npm run db:push && npm run db:seed   # 初始化本地 SQLite + 灌入 Hot 100
 npm run dev                   # http://localhost:3000
 ```
 
-首次打开进入设置页，填入 API Key 和模型名（默认并推荐 `gpt-6.1-sol`），即可让 AI 老师开课；不配置 Key 也能体验「两数之和」的内置旗舰讲解（含全部特效）。
+线上实例：<https://demo.m1ntch0c0.com/algostage>（自托管，没有 Demo 模式）。
+
+只有「两数之和」自带内置讲解（含全部特效），不需要 Key；其余题目都要先配好 Key 才能讲解和要提示。打开设置页，按三步填写：
+
+1. **接口地址（base URL）**：先选服务商，再填对应地址。OpenAI 兼容服务留空时使用 `https://api.openai.com/v1`；Anthropic、Google 留空使用官方接口。
+2. **API Key**：填写与上面接口同一来源的 Key，来源混用会被拒绝。
+3. **模型名**：推荐 `gpt-6.1-sol`（设置页默认值）。较弱模型可能无法完成教案或正确调用教学工具，失败时请重试或更换模型。
+
+保存前可以先点「测试连接」，确认能连上。
 
 讲解通过五种教学工具逐步生成，收到步骤即可播放；只有完整教案校验成功才保存缓存。较弱模型可能无法完成讲解或正确调用工具，失败时建议重试或切换到 `gpt-6.1-sol`。备课总上限为 240 秒，非法工具参数最多重试该次调用 2 次，已完成步骤会保留。
 
