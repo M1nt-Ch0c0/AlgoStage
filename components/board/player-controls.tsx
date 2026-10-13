@@ -7,8 +7,8 @@
  * 粗指针下上一步、播放暂停、下一步（含非等待态）热区至少 44px；时间线圆点视觉仍是细条，点按高度 44px 且相邻热区不重叠。细指针尺寸不变。
  * 粗指针且下一步已就绪时，把「点「下一步」继续」放在这条控制条里（窄屏单独成行，吸底仍可见）。
  * 输入框、contenteditable、Monaco 编辑器内以及带 Ctrl/Meta/Alt 的按键不拦截。
- * 焦点在 button、链接或 role=dialog 内时把 Space / → 留给控件本身（重播、语速、重新生成确认）。
- * 页面上存在 aria-modal="true" 的对话框时忽略全部播放器快捷键，即使焦点在 document.body 上。
+ * 焦点在 button 或链接上时只把 Space 留给控件本身（重播、语速）；←/→ 仍步进。
+ * 焦点在 role=dialog 内，或页面上存在 aria-modal="true" 的对话框时，忽略全部播放器快捷键。
  */
 "use client";
 
@@ -35,9 +35,9 @@ function isTypingTarget(target: EventTarget | null): boolean {
   );
 }
 
-/** 按钮、链接和对话框自己处理 Space / →，播放器不能 preventDefault 掉原生激活。 */
-function isNativeActivationTarget(target: EventTarget | null): boolean {
-  return target instanceof Element && target.closest("button, a, [role=dialog]") !== null;
+/** 按钮和链接自己处理 Space，播放器不能 preventDefault 掉原生激活。方向键仍由播放器步进。 */
+function isSpaceActivationTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest("button, a") !== null;
 }
 
 export default function PlayerControls({
@@ -77,11 +77,15 @@ export default function PlayerControls({
   // 键盘：←/→ 步进、Space 播放暂停；等待继续时 Space 与 → 都下一步。输入区与修饰键忽略。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // 模态框打开时焦点常停在 document.body，仍要丢掉 Space / 方向键等全部快捷键。
-      if (document.querySelector('[aria-modal="true"]')) return;
       if (isTypingTarget(e.target)) return;
-      if (isNativeActivationTarget(e.target)) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
+      // 按钮 / 链接只接管 Space；←/→ 在点过「下一步」之后仍要步进。
+      if (e.key === " " && isSpaceActivationTarget(e.target)) return;
+      // 对话框内，或任意 aria-modal 打开（焦点常停在 body）时，丢掉全部快捷键。
+      // 放在结束面板判断之前，避免面板的 preventDefault 抢走对话框里的 Space。
+      const target = e.target;
+      const insideDialog = target instanceof Element && target.closest("[role=dialog]") !== null;
+      if (insideDialog || document.querySelector('[aria-modal="true"]')) return;
       // 结束面板出现后空格与 → 不再回退到最后一步；← 仍可回看。备课中面板不显示，按键照常。
       if (panelShowing && (e.key === " " || e.key === "ArrowRight")) {
         e.preventDefault();

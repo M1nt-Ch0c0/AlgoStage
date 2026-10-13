@@ -86,7 +86,7 @@ test("aria-modal 对话框打开时忽略 Space 与 ArrowRight，关掉后快捷
   expect(usePlayerStore.getState().currentIndex).toBe(1);
 });
 
-test("焦点在 button、链接或 role=dialog 内时 Space 与 → 不拦截，交给控件自己", async () => {
+test("焦点在 button 或链接上时只放行 Space，方向键仍步进；对话框内全部按键忽略", async () => {
   await act(async () => {
     setStoreState({ awaitingContinue: true, speed: 2 });
   });
@@ -105,13 +105,22 @@ test("焦点在 button、链接或 role=dialog 内时 Space 与 → 不拦截，
   expect(usePlayerStore.getState().speed).toBe(1);
   expect(usePlayerStore.getState().currentIndex).toBe(0);
 
+  await act(async () => {
+    pressKey(speedButton, "ArrowRight");
+  });
+  expect(usePlayerStore.getState().currentIndex).toBe(1);
+
   const link = document.createElement("a");
   link.href = "/roadmap";
   link.textContent = "回路线图";
   container.append(link);
-  const linkEvent = pressKey(link, "ArrowRight");
-  expect(linkEvent.defaultPrevented).toBe(false);
-  expect(usePlayerStore.getState().currentIndex).toBe(0);
+  const linkSpace = pressKey(link, " ");
+  expect(linkSpace.defaultPrevented).toBe(false);
+  expect(usePlayerStore.getState().currentIndex).toBe(1);
+  await act(async () => {
+    pressKey(link, "ArrowRight");
+  });
+  expect(usePlayerStore.getState().currentIndex).toBe(2);
 
   const dialog = document.createElement("div");
   dialog.setAttribute("role", "dialog");
@@ -126,11 +135,31 @@ test("焦点在 button、链接或 role=dialog 内时 Space 与 → 不拦截，
   document.body.append(dialog);
   const dialogEvent = pressKey(confirm, " ");
   expect(dialogEvent.defaultPrevented).toBe(false);
-  expect(usePlayerStore.getState().currentIndex).toBe(0);
+  expect(usePlayerStore.getState().currentIndex).toBe(2);
   if (!confirmClicks) confirm.click();
   expect(confirmClicks).toBe(1);
-  expect(usePlayerStore.getState().currentIndex).toBe(0);
+  expect(usePlayerStore.getState().currentIndex).toBe(2);
+  const dialogArrow = pressKey(confirm, "ArrowRight");
+  expect(dialogArrow.defaultPrevented).toBe(false);
+  expect(usePlayerStore.getState().currentIndex).toBe(2);
   dialog.remove();
+});
+
+test("after clicking 下一步, → still advances", async () => {
+  await act(async () => {
+    setStoreState({ awaitingContinue: true, currentIndex: 0 });
+  });
+  const button = container.querySelector<HTMLButtonElement>('button[aria-label="下一步"]')!;
+  await act(async () => button.click());
+  expect(usePlayerStore.getState().currentIndex).toBe(1);
+  button.focus();
+  expect(document.activeElement).toBe(button);
+
+  await act(async () => {
+    setStoreState({ awaitingContinue: true });
+    pressKey(button, "ArrowRight");
+  });
+  expect(usePlayerStore.getState().currentIndex).toBe(2);
 });
 
 test("完成态焦点在「重播」上按 Space 不拦截，激活按钮后从第 0 步重播", async () => {
