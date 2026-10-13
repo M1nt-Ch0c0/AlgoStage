@@ -12,7 +12,6 @@
 - 49 题示例表格自动换行，不再截断或横向滚动。
 - 设置页 base URL 输入框改用普通字体，`https://` 显示正常、不错位。
 - Key 掩码只显示后 4 位。
-- 推荐模型三处统一为 `gpt-6.1-sol`（代码默认值、设置页、README），已加测试锁定。
 - 【待合入，随 A1】换题后不残留上一题的可视化。
 
 ### 部署
@@ -21,6 +20,9 @@
 
 ### 升级说明
 - 由旧版（root 运行）容器创建的数据卷归 root 所有，升级前必须先改属主：停止旧容器并备份数据库（含 `-wal` / `-shm`），执行一次 `docker run --rm -v algostage-data:/data alpine chown -R 1001:1001 /data`，再切换新镜像。不处理则容器启动时报 `Error: data directory /data is not writable (uid 1001).` 并退出。详见 [部署说明](deploy/README.md#升级至-021非-root-运行)。
+
+### 其他
+- 补充测试：锁定推荐模型 `gpt-6.1-sol` 在代码默认值、设置页、README 三处一致。
 
 ## [0.2.0-alpha.2] - 2026-10-13
 
