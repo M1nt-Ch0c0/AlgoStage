@@ -23,6 +23,7 @@ test("S1：请求 > 设置 > 环境变量；已保存 Key 可直接要提示且�
     assert.equal(settings.keySource, "settings");
     assert.equal(settings.envConfigured, true);
     assert.equal(settings.settings.apiKey, undefined);
+    assert.equal(settings.settings.apiKeyMasked, "••••-key");
     assert.ok(!JSON.stringify(settings).includes("saved-test-key"));
     // 模型可独立回退；密钥和接口不能跨来源混用。
     await f.save({ model: "  " });

@@ -28,9 +28,9 @@ export async function GET() {
   const envConfigured = Boolean(byokFromEnv());
   const keySource = savedKeySource(settings);
   // 不回传完整 Key，只回掩码
-  if (settings.apiKey) {
-    const k = settings.apiKey as string;
-    settings.apiKeyMasked = k.length > 8 ? `${k.slice(0, 4)}…${k.slice(-4)}` : "已配置";
+  if (settings.apiKey?.trim()) {
+    const k = settings.apiKey.trim();
+    settings.apiKeyMasked = k.length > 4 ? `••••${k.slice(-4)}` : "••••";
   }
   delete settings.apiKey;
   if (settings.baseURL) settings.baseURL = savedEndpoint(settings) ?? "";

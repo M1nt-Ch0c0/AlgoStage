@@ -80,7 +80,7 @@ test.each([
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     if (String(input).endsWith("/api/hint")) { hints.push(JSON.parse(String(init?.body))); return Response.json({ hint: "mock" }); }
     if (init?.method === "PUT") { writes.push(JSON.parse(String(init.body)).settings); return Response.json({ ok: true }); }
-    return Response.json({ settings: { ...initial, ...(writes.length ? { apiKeyMasked: "已配置" } : {}) }, keySource: writes.length ? "settings" : "env" });
+    return Response.json({ settings: { ...initial, ...(writes.length ? { apiKeyMasked: "••••-key" } : {}) }, keySource: writes.length ? "settings" : "env" });
   });
   const container = document.createElement("div"); document.body.append(container);
   const root = createRoot(container);
@@ -98,6 +98,7 @@ test.each([
     expect(writes[0].provider).toBe(initial.provider ?? "openai-compatible");
     expect(writes[0].apiKey).toBe("fake-new-key");
     expect(container.querySelector<HTMLInputElement>("#apiKey")!.value).toBe("");
+    expect(container.querySelector('label[for="apiKey"]')!.textContent).toBe("API Key已配置 ••••-key");
     await click("测试连接");
     expect(hints[1].byok).toBeUndefined();
   } finally { await act(async () => root.unmount()); }
@@ -141,4 +142,20 @@ test("openai-compatible 接口地址留空：环境变量 Key 提示沿用环境
 test("非 openai-compatible 服务商不显示留空提示", async () => {
   const { root, hint } = await renderWith({ settings: { provider: "anthropic" }, keySource: "none" });
   try { expect(hint()).toBeNull(); } finally { await act(async () => root.unmount()); }
+});
+
+test("接口地址使用正常字距且禁用连字，读取和编辑均保留 https:// 双斜线", async () => {
+  const { root, container, type } = await renderWith({
+    settings: { baseURL: "https://api.openai.com/v1" }, keySource: "settings",
+  });
+  try {
+    const input = container.querySelector<HTMLInputElement>("#baseURL")!;
+    expect(input.value).toBe("https://api.openai.com/v1");
+    expect(input.classList.contains("font-sans")).toBe(true);
+    expect(input.classList.contains("font-mono")).toBe(false);
+    expect(input.classList.contains("tracking-normal")).toBe(true);
+    expect(input.classList.contains("[font-variant-ligatures:none]")).toBe(true);
+    await type("baseURL", "https://proxy.example/v1");
+    expect(input.value).toBe("https://proxy.example/v1");
+  } finally { await act(async () => root.unmount()); }
 });

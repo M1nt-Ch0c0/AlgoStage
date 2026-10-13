@@ -83,6 +83,7 @@ export default function ProblemPage() {
 
   const step = usePlayerStore((s) => s.steps[s.currentIndex]);
   const status = usePlayerStore((s) => s.status);
+  const receiving = usePlayerStore((s) => s.receiving);
   const stepCount = usePlayerStore((s) => s.steps.length);
   const { loadScript, play, pause, replay, reset } = usePlayerStore.getState();
 
@@ -509,7 +510,7 @@ export default function ProblemPage() {
           {detail?.testCases && detail.testCases.length > 0 && (
             <div className="mt-1">
               <h3 className="mb-2 text-xs font-medium text-chalk-500">示例</h3>
-              <table className="w-full border-separate border-spacing-y-1.5 font-mono text-xs">
+              <table className="w-full table-fixed border-separate border-spacing-y-1.5 font-mono text-xs">
                 <thead className="sr-only">
                   <tr>
                     <th>输入</th>
@@ -519,10 +520,10 @@ export default function ProblemPage() {
                 <tbody>
                   {detail.testCases.map((t, i) => (
                     <tr key={i} className="bg-board-800">
-                      <td className="rounded-l-lg px-3 py-2 text-chalk-300">
+                      <td className="rounded-l-lg px-3 py-2 align-top whitespace-normal text-chalk-300 [overflow-wrap:anywhere]">
                         {t.input}
                       </td>
-                      <td className="w-px rounded-r-lg py-2 pr-3 pl-1 whitespace-nowrap text-beam-mint">
+                      <td className="rounded-r-lg py-2 pr-3 pl-1 align-top whitespace-normal text-beam-mint [overflow-wrap:anywhere]">
                         → {t.expected}
                       </td>
                     </tr>
@@ -650,7 +651,7 @@ export default function ProblemPage() {
 
       {/* ── 底部播放器控制条 ── */}
       <div className="z-30 max-lg:sticky max-lg:bottom-2">
-        <PlayerControls />
+        <PlayerControls preparing={lectureBusy && (!receiving || stepCount === 0)} />
       </div>
 
       {/* 特效舞台 */}

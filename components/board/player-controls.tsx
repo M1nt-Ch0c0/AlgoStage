@@ -16,7 +16,7 @@ const LEVELS = [
   { value: "minimal", label: "极简" },
 ] as const;
 
-export default function PlayerControls() {
+export default function PlayerControls({ preparing = false }: { preparing?: boolean }) {
   const status = usePlayerStore((s) => s.status);
   const steps = usePlayerStore((s) => s.steps);
   const currentIndex = usePlayerStore((s) => s.currentIndex);
@@ -25,7 +25,7 @@ export default function PlayerControls() {
   const { play, pause, next, prev, goto, setSpeed, setEffectLevel } =
     usePlayerStore.getState();
 
-  const hasScript = steps.length > 0;
+  const hasScript = !preparing && steps.length > 0;
   const playing = status === "playing" || status === "streaming";
 
   // 键盘操作：←/→ 步进、Space 播放暂停
@@ -85,7 +85,9 @@ export default function PlayerControls() {
 
       {/* 步骤指示 + 时间线：每一步一段，可点击跳转 */}
       <div className="flex min-w-[10rem] flex-1 items-center gap-3">
-        {hasScript ? (
+        {preparing ? (
+          <span role="status" className="text-xs text-chalk-500">备课中…</span>
+        ) : hasScript ? (
           <>
             <span className="shrink-0 font-mono text-xs text-chalk-300 tabular-nums">
               第 {Math.min(currentIndex + 1, steps.length)} / {steps.length} 步
