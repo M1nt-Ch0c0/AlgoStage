@@ -46,7 +46,7 @@ npm run dev                   # http://localhost:3000
 
 | 环境变量 | 默认值 | 可选值 | 作用 |
 | --- | --- | --- | --- |
-| `ALGOSTAGE_DISABLE_SERVER_KEY` | `false` | `true`/`false`、`on`/`off`、`1`/`0`、`yes`/`no`（不区分大小写） | 设为开启时，服务器不保存、不使用服务器 API Key，设置页不能修改服务器设置，讲课和提示请求需自带 API Key。`deploy/compose.yaml` 设为 `true`。设置页提示「API Key 只保存在你这台浏览器里，不会存到服务器。」，讲课和提示请求自动带上，可点「清除本机 API Key」。 |
+| `ALGOSTAGE_DISABLE_SERVER_KEY` | `false` | `true`/`false`、`on`/`off`、`1`/`0`、`yes`/`no`（不区分大小写） | 设为开启时，服务器不保存、不使用服务器 API Key，设置页不能修改服务器设置，讲课和提示请求需自带 API Key。`deploy/compose.yaml` 设为 `true`。设置页提示「API Key 只保存在你这台浏览器里，不会存到服务器。」，讲课和提示请求自动带上，可点「清除本机 API Key」。语速（「0.5×」「1×（默认）」「1.5×」「2×」）和特效强度只保存在本机浏览器，和讲课页共用同一份设置，改哪边都会同步；不写入服务器。 |
 | `ALGOSTAGE_ALLOW_PRIVATE_BASE_URL` | `true` | 同上 | 关闭时拒绝内网、本机和保留地址的接口地址。默认允许，方便自托管连接本机或内网模型；`deploy/compose.yaml` 设为 `false`。 |
 
 接口地址只接受 http(s)，不跟随重定向。服务器 API Key 只会发往服务器配置的接口地址；改用其他接口地址时需要同时填你自己的 API Key。详见 [deploy/README.md](deploy/README.md#环境变量自托管)。
@@ -108,7 +108,7 @@ docker run --rm -v algostage-data:/data alpine chown -R 1001:1001 /data
 
 - `v0.2.0-alpha.2` 指向 `7fd9024`。
 - `v0.2.0-alpha.3`（Pre-release）指向 `32ad289`，在 alpha.2 基础上只修了 Docker 入口（Prisma 7 的 `db push` 去掉 `--skip-generate`）；该 tag 中 `package.json` 仍写 `0.2.0-alpha.1`。
-- 当前版本为 v0.2.1：`package.json`、`deploy/compose.yaml` 镜像标签和 CHANGELOG 均为 `0.2.1`。
+- 当前版本为 v0.2.1：`package.json`、`deploy/compose.yaml` 镜像标签和 CHANGELOG 均为 `0.2.1`。下一版 v0.2.2 的 CHANGELOG 已起草（见上方「未发布」段）；发版时由 Max 把 package/compose 镜像标签改为 `0.2.2`。
 
 ## 子路径 + nginx
 
