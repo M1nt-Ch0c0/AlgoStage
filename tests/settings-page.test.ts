@@ -128,29 +128,49 @@ test.each([
 ] as const)("%s 拒绝 %s：持久行内提示，有新 Key：%s", async (action, baseURL, newKey) => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   const { root, container, type } = await renderWith({ settings: {}, keySource: "settings" });
-  const message = "接口地址只支持公网 http(s) 地址";
+  const isInvalidFormat = !/^https?:\/\//i.test(baseURL);
+  const expectedMessage = isInvalidFormat
+    ? "接口地址格式不对，要以 http:// 或 https:// 开头"
+    : "接口地址只支持公网 http(s) 地址";
   try {
+    const input = container.querySelector<HTMLInputElement>("#baseURL")!;
     await type("baseURL", baseURL);
+    if (isInvalidFormat) {
+      await act(async () => { input.focus(); input.blur(); });
+      expect(container.querySelector("#baseURL-error")?.textContent).toBe(expectedMessage);
+      expect(document.activeElement).toBe(input);
+      await type("baseURL", `${baseURL} `);
+      await type("baseURL", baseURL);
+      expect(container.querySelector("#baseURL-error")).toBeNull();
+    }
     if (newKey) await type("apiKey", "test-only-credential");
-    vi.mocked(globalThis.fetch).mockResolvedValueOnce(Response.json({ error: "BASE_URL_NOT_ALLOWED", message }, { status: 400 }));
+    const blockedOnClient = action === "保存设置" && isInvalidFormat;
+    if (!blockedOnClient) {
+      vi.mocked(globalThis.fetch).mockResolvedValueOnce(Response.json({ error: "BASE_URL_NOT_ALLOWED", message: "接口地址只支持公网 http(s) 地址" }, { status: 400 }));
+    }
     await act(async () => Array.from(container.querySelectorAll("button")).find(b => b.textContent?.includes(action))!.click());
-    const [path, init] = vi.mocked(globalThis.fetch).mock.lastCall!;
-    expect(String(path)).toContain(action === "保存设置" ? "/api/settings" : "/api/settings/test-connection");
-    expect(JSON.parse(String(init?.body))[action === "保存设置" ? "settings" : "byok"].baseURL).toBe(baseURL);
-    expect(globalThis.fetch).toHaveBeenCalledTimes(2); // No refresh after a rejected PUT.
-    const input = container.querySelector("#baseURL")!;
+    const finalMessage = blockedOnClient ? "接口地址格式不对，要以 http:// 或 https:// 开头" : "接口地址只支持公网 http(s) 地址";
+    if (blockedOnClient) {
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    } else {
+      const [path, init] = vi.mocked(globalThis.fetch).mock.lastCall!;
+      expect(String(path)).toContain(action === "保存设置" ? "/api/settings" : "/api/settings/test-connection");
+      expect(JSON.parse(String(init?.body))[action === "保存设置" ? "settings" : "byok"].baseURL).toBe(baseURL);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(2); // No refresh after a rejected PUT.
+    }
     const error = container.querySelector("#baseURL-error")!;
-    expect(error.textContent).toBe(message);
+    expect(error.textContent).toBe(finalMessage);
     expect(error.parentElement).toBe(input.parentElement);
     expect(error.getAttribute("role")).toBe("alert");
     expect(input.getAttribute("aria-invalid")).toBe("true");
     expect(input.getAttribute("aria-describedby")).toContain("baseURL-error");
+    expect(document.activeElement).toBe(input);
     expect(container.querySelector("#baseURL-policy")!.textContent).toContain("需要公网 http(s) 地址");
     expect(container.querySelector("#baseURL-policy")!.textContent).toContain("自托管");
     expect(container.textContent).not.toContain("已保存");
     await act(async () => vi.advanceTimersByTime(30_000));
     await type("model", "another-model");
-    expect(container.querySelector("#baseURL-error")?.textContent).toBe(message);
+    expect(container.querySelector("#baseURL-error")?.textContent).toBe(finalMessage);
     expect(container.textContent).not.toContain("已保存");
     await type("baseURL", "https://public.example/v1");
     expect(container.querySelector("#baseURL-error")).toBeNull();
@@ -190,7 +210,7 @@ test("接口地址使用正常字距且禁用连字，读取和编辑均保留 h
   try {
     const input = container.querySelector<HTMLInputElement>("#baseURL")!;
     expect(input.value).toBe("https://api.openai.com/v1");
-    expect(input.classList.contains("font-sans")).toBe(true);
+    expect(input.classList.contains("font-sans")).toBe(false);
     expect(input.classList.contains("font-mono")).toBe(false);
     expect(input.classList.contains("tracking-normal")).toBe(true);
     expect(input.classList.contains("[font-variant-ligatures:none]")).toBe(true);
