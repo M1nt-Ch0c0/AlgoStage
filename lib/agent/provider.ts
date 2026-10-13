@@ -21,7 +21,7 @@ export interface ByokConfig {
 }
 
 export function serverKeyDisabled(): boolean {
-  return process.env.ALGOSTAGE_DISABLE_SERVER_KEY?.trim().toLowerCase() === "true";
+  return ["true", "1", "on", "yes"].includes(process.env.ALGOSTAGE_DISABLE_SERVER_KEY?.trim().toLowerCase() ?? "");
 }
 
 export class ByokKeyRequiredError extends Error {

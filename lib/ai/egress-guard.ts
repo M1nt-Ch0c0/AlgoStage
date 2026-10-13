@@ -115,7 +115,7 @@ function isAllowlisted(hostname: string): boolean {
 
 async function validatedAddresses(url: URL, signal?: AbortSignal | null) {
   const hostname = url.hostname.replace(/^\[|\]$/g, "");
-  const allowPrivate = process.env.ALGOSTAGE_ALLOW_PRIVATE_BASE_URL?.trim().toLowerCase() !== "false" || isAllowlisted(url.hostname);
+  const allowPrivate = !["false", "0", "off", "no"].includes(process.env.ALGOSTAGE_ALLOW_PRIVATE_BASE_URL?.trim().toLowerCase() ?? "") || isAllowlisted(url.hostname);
   const name = normalizedHostname(hostname);
   if (!allowPrivate && (name === "localhost" || name.endsWith(".localhost"))) throw new AIBaseURLNotAllowedError();
 
