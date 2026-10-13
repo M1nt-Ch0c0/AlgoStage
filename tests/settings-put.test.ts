@@ -4,7 +4,7 @@ import { NextRequest } from "next/server";
 import { createFixture, request } from "./api-fixture";
 
 test("settings PUT：类型与枚举校验，失败零写入，Key 不透传，合法更新原子保存", async () => {
-  const f = await createFixture();
+  const f = await createFixture({ modelServer: false });
   try {
     const { PUT, GET } = await import("../app/api/settings/route");
     await f.save({ model: "original" });
@@ -29,6 +29,7 @@ test("settings PUT：类型与枚举校验，失败零写入，Key 不透传，�
     assert.equal(saved.keySource, "settings");
     assert.equal(saved.settings.theme, "light");
     assert.equal(saved.settings.unknown, undefined);
+    assert.equal(saved.settings.apiKeyMasked, "••••cret");
     assert.ok(!JSON.stringify(saved).includes(secret));
   } finally { await f.close(); }
 });
