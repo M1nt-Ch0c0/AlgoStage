@@ -135,6 +135,22 @@ test("最后一步默认模式下「下一步」可点，点击、Space、→ �
   expect(usePlayerStore.getState()).toMatchObject({ status: "finished", currentIndex: 2 });
 });
 
+test("完成态下面板已显示时 Space 与 → 不离开 finished，也不改 currentIndex", async () => {
+  await act(async () => {
+    setStoreState({ status: "finished", currentIndex: script.steps.length - 1, awaitingContinue: false });
+  });
+
+  await act(async () => {
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+  });
+  expect(usePlayerStore.getState()).toMatchObject({ status: "finished", currentIndex: 2 });
+
+  await act(async () => {
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+  });
+  expect(usePlayerStore.getState()).toMatchObject({ status: "finished", currentIndex: 2 });
+});
+
 test("非 awaitingContinue 时下一步保持图标按钮", async () => {
   const button = container.querySelector<HTMLButtonElement>('button[aria-label="下一步"]')!;
   expect(button.textContent).toBe("");

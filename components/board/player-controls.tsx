@@ -2,6 +2,7 @@
  * PlayerControls · 讲解播放器控制条（docs/02 §5.4 底部）
  * 上一步/播放暂停/下一步 · 步骤指示 · 可点击时间线圆点 · 自动播放 · 语速 · 特效强度档位。
  * 键盘可达：←/→ 步进、Space 播放暂停；等待继续时 Space/→ 均下一步（docs/02 §7）。
+ * 结束面板出现后 Space 与 → 不再操作播放器。
  * 等待继续时「下一步」改为图标加文字的按钮，热区至少 44px；平时仍是图标按钮。
  * 粗指针且下一步已就绪时，把「点「下一步」继续」放在这条控制条里（窄屏单独成行，吸底仍可见）。
  * 输入框、contenteditable、Monaco 编辑器内以及带 Ctrl/Meta/Alt 的按键不拦截。
@@ -57,6 +58,11 @@ export default function PlayerControls({ preparing = false }: { preparing?: bool
       if (!hasScript) return;
       if (isTypingTarget(e.target)) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
+      // 结束面板出现后空格与 → 不再回退到最后一步；← 仍可回看。
+      if (status === "finished" && (e.key === " " || e.key === "ArrowRight")) {
+        e.preventDefault();
+        return;
+      }
       if (e.key === "ArrowLeft") {
         e.preventDefault();
         prev();
@@ -72,7 +78,7 @@ export default function PlayerControls({ preparing = false }: { preparing?: bool
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [hasScript, playing, awaitingContinue, play, pause, next, prev]);
+  }, [hasScript, playing, awaitingContinue, status, play, pause, next, prev]);
 
   const btn =
     "flex size-8 items-center justify-center rounded-full text-chalk-300 transition-colors hover:bg-board-700 hover:text-chalk-100 disabled:pointer-events-none disabled:opacity-30";

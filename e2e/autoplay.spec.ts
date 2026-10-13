@@ -104,6 +104,22 @@ test("last step ArrowRight shows finished panel and exactly one 「重播」", a
   await expectFinishedReplay(page);
 });
 
+test("after the finished panel shows, Space and ArrowRight leave it in place", async ({ page }) => {
+  await reachLastStep(page);
+  await page.keyboard.press("Space");
+  await expectFinishedReplay(page);
+
+  await page.keyboard.press("Space");
+  await expect(page.getByText("讲完了")).toBeVisible();
+  await expect(page.getByText("第 3 / 3 步")).toBeVisible();
+  await expect(page.getByRole("button", { name: "重播", exact: true })).toHaveCount(1);
+
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByText("讲完了")).toBeVisible();
+  await expect(page.getByText("第 3 / 3 步")).toBeVisible();
+  await expect(page.getByRole("button", { name: "重播", exact: true })).toHaveCount(1);
+});
+
 test("toggle 「自动播放」 on auto-advances without hint", async ({ page }) => {
   await mockLecture(page, "group-anagrams");
   await page.goto("/problem/group-anagrams");
