@@ -14,6 +14,7 @@ const env = {
   AI_MODEL: "",
   AI_PROVIDER: "",
   AI_BASE_URL: "http://127.0.0.1:1/no-model",
+  ALGOSTAGE_ALLOW_PRIVATE_BASE_URL: process.env.ALGOSTAGE_ALLOW_PRIVATE_BASE_URL || "false",
 };
 
 process.on("exit", () => rmSync(directory, { recursive: true, force: true }));

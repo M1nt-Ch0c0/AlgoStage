@@ -1,7 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const port = process.env.E2E_PORT || "4173";
+const byokPort = process.env.E2E_BYOK_PORT || "4174";
 const baseURL = `http://127.0.0.1:${port}`;
+const byokBaseURL = `http://127.0.0.1:${byokPort}`;
 
 export default defineConfig({
   testDir: "./e2e",
@@ -18,13 +20,30 @@ export default defineConfig({
     screenshot: "only-on-failure",
     serviceWorkers: "block",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
-  webServer: {
-    command: "node --import tsx e2e/server.ts",
-    env: { E2E_PORT: port },
-    url: baseURL,
-    reuseExistingServer: false,
-    timeout: 120_000,
-    gracefulShutdown: { signal: "SIGTERM", timeout: 10_000 },
-  },
+  projects: [
+    { name: "chromium", testIgnore: /byok-baseurl\.spec\.ts/, use: { ...devices["Desktop Chrome"] } },
+    { name: "byok-baseurl", testMatch: /byok-baseurl\.spec\.ts/, use: { ...devices["Desktop Chrome"], baseURL: byokBaseURL } },
+  ],
+  webServer: [
+    {
+      command: "node --import tsx e2e/server.ts",
+      env: { E2E_PORT: port },
+      url: baseURL,
+      reuseExistingServer: false,
+      timeout: 120_000,
+      gracefulShutdown: { signal: "SIGTERM", timeout: 10_000 },
+    },
+    {
+      command: "node --import tsx e2e/server.ts",
+      env: {
+        E2E_PORT: byokPort,
+        ALGOSTAGE_DISABLE_SERVER_KEY: "true",
+        ALGOSTAGE_ALLOW_PRIVATE_BASE_URL: "false",
+      },
+      url: byokBaseURL,
+      reuseExistingServer: false,
+      timeout: 120_000,
+      gracefulShutdown: { signal: "SIGTERM", timeout: 10_000 },
+    },
+  ],
 });
