@@ -1,3 +1,5 @@
+import { createServer, type Server } from "node:http";
+import type { AddressInfo, Socket } from "node:net";
 import { expect, test, type Page } from "@playwright/test";
 
 const step = (id: string, narration: string) => ({
@@ -10,6 +12,61 @@ const step = (id: string, narration: string) => ({
 
 function lectureSteps(count: number) {
   return Array.from({ length: count }, (_, index) => step(`s${index + 1}`, `第${index + 1}步`));
+}
+
+/**
+ * 只写出前 count 步，连接保持打开，播放器停在「下一步准备中…」。
+ * route.fulfill 会等整个 body，所以改把请求续到本机的分块响应。
+ */
+async function mockPartialLecture(page: Page, problemSlug: string, count: number) {
+  const steps = lectureSteps(count);
+  const payload = [
+    JSON.stringify({ type: "progress", attempt: 1, message: `${problemSlug} 备课中` }),
+    ...steps.map((item) => JSON.stringify({ type: "step", step: item })),
+    "",
+  ].join("\n");
+  const timers = new Set<ReturnType<typeof setInterval>>();
+  const sockets = new Set<Socket>();
+  const server: Server = createServer((req, res) => {
+    req.resume();
+    res.writeHead(200, {
+      "Content-Type": "application/x-ndjson",
+      "Cache-Control": "no-cache, no-transform",
+    });
+    res.write(payload);
+    const timer = setInterval(() => {
+      if (!res.writableEnded) res.write(" \n");
+    }, 400);
+    timers.add(timer);
+    res.on("close", () => {
+      clearInterval(timer);
+      timers.delete(timer);
+    });
+  });
+  server.on("connection", (socket) => {
+    sockets.add(socket);
+    socket.on("close", () => sockets.delete(socket));
+  });
+  await new Promise<void>((resolve) => {
+    server.listen(0, "127.0.0.1", () => resolve());
+  });
+  const { port } = server.address() as AddressInfo;
+  await page.route("**/api/lecture", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.port === String(port)) {
+      await route.continue();
+      return;
+    }
+    await route.continue({ url: `http://127.0.0.1:${port}/api/lecture` });
+  });
+  return async () => {
+    for (const timer of timers) clearInterval(timer);
+    timers.clear();
+    for (const socket of sockets) socket.destroy();
+    sockets.clear();
+    if (!server.listening) return;
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  };
 }
 
 async function mockLecture(page: Page, problemSlug: string, count = 3) {
@@ -37,9 +94,12 @@ async function mockLecture(page: Page, problemSlug: string, count = 3) {
 
 test.beforeEach(async ({ context, baseURL }) => {
   // The real app serves every asset locally; smoke tests must never call AI/CDNs.
+  // 备课中的用例把 /api/lecture 续到 127.0.0.1 的分块响应，这个端口也放行。
   await context.route(/^https?:\/\//, (route) => {
-    if (new URL(route.request().url()).origin === baseURL) return route.continue();
-    throw new Error(`Unexpected external request: ${new URL(route.request().url()).origin}`);
+    const url = new URL(route.request().url());
+    const partialLecture = url.hostname === "127.0.0.1" && url.pathname === "/api/lecture";
+    if (url.origin === baseURL || partialLecture) return route.continue();
+    throw new Error(`Unexpected external request: ${url.origin}`);
   });
 });
 
@@ -463,6 +523,11 @@ async function readSettledDot(dot: ReturnType<Page["getByRole"]>) {
   return { box, bar };
 }
 
+/** 时间线轨道：圆点按钮的父级。占位条若存在也在这一层，不另算进圆点等分。 */
+function timelineTrack(page: Page) {
+  return page.locator("[data-testid='player-controls'] [data-dot-visual]").first().locator("xpath=..").locator("xpath=..");
+}
+
 test.describe("coarse pointer hit areas 390", () => {
   test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
   touchHitTests({ width: 390, height: 844 });
@@ -479,7 +544,7 @@ test.describe("coarse pointer hit areas 390", () => {
 
     const dots = page.getByRole("button", { name: /^跳到第 \d+ 步$/ });
     await expect(dots).toHaveCount(count);
-    const track = page.locator("[data-testid='player-controls'] [data-dot-visual]").first().locator("xpath=..").locator("xpath=..");
+    const track = timelineTrack(page);
     const boxes: LayoutBox[] = [];
     for (let i = 0; i < count; i++) {
       const { box } = await readSettledDot(dots.nth(i));
@@ -517,6 +582,63 @@ test.describe("coarse pointer hit areas 390", () => {
     const next = await expectTouchHitArea(page, "下一步");
     expect(prev.width).toBeGreaterThanOrEqual(44);
     expect(next.width).toBeGreaterThanOrEqual(44);
+  });
+
+  test("备课中只按真实圆点均分，占位条不计入等分", async ({ page }) => {
+    const count = 4;
+    const close = await mockPartialLecture(page, "group-anagrams", count);
+    try {
+      await page.goto("/problem/group-anagrams");
+      await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2x", exact: true }).click();
+      await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
+      await expect(page.getByText(`第 1 / ${count} 步`)).toBeVisible();
+      await page.getByRole("button", { name: `跳到第 ${count} 步`, exact: true }).tap();
+      await expect(page.getByText(`第 ${count} / ${count} 步`)).toBeVisible();
+      await expect(page.getByText("下一步准备中…")).toBeVisible();
+
+      const dots = page.getByRole("button", { name: /^跳到第 \d+ 步$/ });
+      await expect(dots).toHaveCount(count);
+      const pending = page.locator("[data-pending-step]");
+      const pendingCount = await pending.count();
+      const boxes: LayoutBox[] = [];
+      for (let i = 0; i < count; i++) {
+        const { box } = await readSettledDot(dots.nth(i));
+        boxes.push(box);
+      }
+      const sorted = [...boxes].sort((a, b) => a.x - b.x);
+      const track = timelineTrack(page);
+      const container = await track.evaluate((el) => {
+        const rect = el.getBoundingClientRect();
+        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+      });
+
+      expect(Math.abs(sorted[0]!.x - container.x)).toBeLessThanOrEqual(1);
+      for (const box of sorted) expect(box.height).toBeGreaterThanOrEqual(44);
+      for (let i = 1; i < sorted.length; i++) {
+        const prevBox = sorted[i - 1]!;
+        const nextBox = sorted[i]!;
+        expect(Math.abs(nextBox.width - prevBox.width)).toBeLessThanOrEqual(1);
+        expect(nextBox.x).toBeGreaterThanOrEqual(prevBox.x + prevBox.width - 1);
+        expect(nextBox.x - (prevBox.x + prevBox.width)).toBeLessThanOrEqual(1);
+      }
+
+      const last = sorted[sorted.length - 1]!;
+      if (pendingCount === 0) {
+        expect(Math.abs(last.x + last.width - (container.x + container.width))).toBeLessThanOrEqual(1);
+      } else {
+        await expect(pending).toHaveCount(1);
+        const placeholder = await pending.evaluate((el) => {
+          const rect = el.getBoundingClientRect();
+          return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+        });
+        expect(placeholder.width).toBeLessThanOrEqual(32);
+        expect(placeholder.x).toBeGreaterThanOrEqual(last.x + last.width - 1);
+        expect(placeholder.x - (last.x + last.width)).toBeLessThanOrEqual(1);
+        expect(Math.abs(placeholder.x + placeholder.width - (container.x + container.width))).toBeLessThanOrEqual(1);
+      }
+    } finally {
+      await close();
+    }
   });
 });
 
