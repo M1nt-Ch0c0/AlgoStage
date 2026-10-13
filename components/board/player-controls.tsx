@@ -257,7 +257,7 @@ export default function PlayerControls({
       <div role="group" aria-label="语速" className="flex items-center gap-0.5 rounded-full border border-board-700/70 p-0.5">
         {SPEEDS.map((v) => (
           <button type="button" key={v} onClick={() => setSpeed(v)} aria-pressed={speed === v} className={`${pill(speed === v)} font-mono`}>
-            {v}x
+            {v}×
           </button>
         ))}
       </div>

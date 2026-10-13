@@ -29,7 +29,7 @@ test("switching to next problem after lecture finishes resets finished state and
   });
 
   await page.goto("/problem/group-anagrams");
-  await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2x", exact: true }).click();
+  await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2×", exact: true }).click();
   await page.getByRole("button", { name: "自动播放", exact: true }).click();
   await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
 

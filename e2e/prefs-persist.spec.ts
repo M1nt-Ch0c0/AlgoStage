@@ -60,7 +60,7 @@ for (const mode of modes) {
       const playerControls = page.getByTestId("player-controls");
       await expect(playerControls).toBeVisible();
 
-      const playerSpeed = playerControls.getByRole("group", { name: "语速" }).getByRole("button", { name: "1.5x" });
+      const playerSpeed = playerControls.getByRole("group", { name: "语速" }).getByRole("button", { name: "1.5×" });
       await expect(playerSpeed).toHaveAttribute("aria-pressed", "true");
 
       const playerEffect = playerControls.getByRole("group", { name: "特效强度" }).getByRole("button", { name: "克制" });
@@ -73,8 +73,8 @@ for (const mode of modes) {
       await expect(playerControls).toBeVisible();
 
       const playerSpeedGroup = playerControls.getByRole("group", { name: "语速" });
-      await playerSpeedGroup.getByRole("button", { name: "2x" }).click();
-      await expect(playerSpeedGroup.getByRole("button", { name: "2x" })).toHaveAttribute("aria-pressed", "true");
+      await playerSpeedGroup.getByRole("button", { name: "2×" }).click();
+      await expect(playerSpeedGroup.getByRole("button", { name: "2×" })).toHaveAttribute("aria-pressed", "true");
 
       const playerEffectGroup = playerControls.getByRole("group", { name: "特效强度" });
       await playerEffectGroup.getByRole("button", { name: "极简" }).click();
@@ -114,11 +114,11 @@ for (const mode of modes) {
       // Page2 (player) updates via storage event without reload
       const speedGroup2 = playerControls2.getByRole("group", { name: "语速" });
       const effectGroup2 = playerControls2.getByRole("group", { name: "特效强度" });
-      await expect(speedGroup2.getByRole("button", { name: "1.5x" })).toHaveAttribute("aria-pressed", "true");
+      await expect(speedGroup2.getByRole("button", { name: "1.5×" })).toHaveAttribute("aria-pressed", "true");
       await expect(effectGroup2.getByRole("button", { name: "克制" })).toHaveAttribute("aria-pressed", "true");
 
       // Now change in player (page2), page1 (settings) updates via storage event
-      await speedGroup2.getByRole("button", { name: "0.5x" }).click();
+      await speedGroup2.getByRole("button", { name: "0.5×" }).click();
       await expect(speedGroup1.getByRole("button", { name: "0.5×" })).toHaveAttribute("aria-pressed", "true");
 
       await page1.close();
@@ -157,8 +157,8 @@ for (const mode of modes) {
 
       // 改倍速
       const playerSpeedGroup = playerControls.getByRole("group", { name: "语速" });
-      await playerSpeedGroup.getByRole("button", { name: "2x" }).click();
-      await expect(playerSpeedGroup.getByRole("button", { name: "2x" })).toHaveAttribute("aria-pressed", "true");
+      await playerSpeedGroup.getByRole("button", { name: "2×" }).click();
+      await expect(playerSpeedGroup.getByRole("button", { name: "2×" })).toHaveAttribute("aria-pressed", "true");
 
       // 通过站内链接点击进设置页（不用 page.goto、不 reload）
       await page.getByRole("link", { name: "设置" }).click();
@@ -184,7 +184,7 @@ for (const mode of modes) {
       const returnPlayerControls = page.getByTestId("player-controls");
       await expect(returnPlayerControls).toBeVisible();
 
-      const returnSpeed = returnPlayerControls.getByRole("group", { name: "语速" }).getByRole("button", { name: "1.5x" });
+      const returnSpeed = returnPlayerControls.getByRole("group", { name: "语速" }).getByRole("button", { name: "1.5×" });
       await expect(returnSpeed).toHaveAttribute("aria-pressed", "true");
 
       const returnEffect = returnPlayerControls.getByRole("group", { name: "特效强度" }).getByRole("button", { name: "克制" });
