@@ -60,4 +60,6 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+      - run: mkdir -p backups && touch prisma/ci-decoy.db backups/ci-decoy.tgz .env.ci-decoy
       - run: docker build --tag algostage:ci .
+      - run: docker run --rm --entrypoint bash -v "$PWD/scripts/check-image-contents.sh:/check.sh:ro" algostage:ci /check.sh /app
