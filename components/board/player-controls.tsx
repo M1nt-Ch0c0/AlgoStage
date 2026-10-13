@@ -15,7 +15,7 @@
 
 import { useEffect } from "react";
 import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
-import { endPanelShowing, usePlayerStore } from "@/lib/player/store";
+import { endPanelShowing, syncPrefsFromStorage, usePlayerStore } from "@/lib/player/store";
 import { useCoarsePointer } from "./use-coarse-pointer";
 
 const SPEEDS = [0.5, 1, 1.5, 2] as const;
@@ -90,6 +90,11 @@ export default function PlayerControls({
     hydrateAutoAdvance();
     hydratePrefs();
   }, [hydrateAutoAdvance, hydratePrefs]);
+
+  useEffect(() => {
+    window.addEventListener("storage", syncPrefsFromStorage);
+    return () => window.removeEventListener("storage", syncPrefsFromStorage);
+  }, []);
 
   const hasScript = !preparing && steps.length > 0;
   const playing = status === "playing" || status === "streaming";
@@ -252,7 +257,7 @@ export default function PlayerControls({
       <div role="group" aria-label="语速" className="flex items-center gap-0.5 rounded-full border border-board-700/70 p-0.5">
         {SPEEDS.map((v) => (
           <button type="button" key={v} onClick={() => setSpeed(v)} aria-pressed={speed === v} className={`${pill(speed === v)} font-mono`}>
-            {v}x
+            {v}×
           </button>
         ))}
       </div>
