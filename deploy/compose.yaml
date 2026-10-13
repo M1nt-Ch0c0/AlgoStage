@@ -2,7 +2,7 @@ name: algostage
 
 services:
   web:
-    image: algostage:${ALGOSTAGE_IMAGE_TAG:-0.2.1}
+    image: algostage:${ALGOSTAGE_IMAGE_TAG:-0.2.2}
     build:
       context: ..
       network: host
