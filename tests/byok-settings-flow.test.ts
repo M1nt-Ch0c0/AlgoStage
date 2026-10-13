@@ -6,11 +6,13 @@ import AiSetupPrompt from "../components/settings/ai-setup-prompt";
 import {
   BASE_URL_INVALID_MESSAGE,
   BASE_URL_NOT_ALLOWED_SETTINGS_MESSAGE,
+  ENDPOINT_SAVED_NEED_KEY_MESSAGE,
   isBaseUrlInvalid,
   isBaseUrlNotAllowed,
   isValidHttpBaseUrl,
   NO_BYOK_SETTINGS_MESSAGE,
   parseFocusParam,
+  readLocalBaseUrl,
   resetServerKeyDisabledCache,
 } from "../lib/byok/client";
 import { BYOK_STORAGE_KEY, maskKey, readLocalByok } from "../lib/byok/storage";
@@ -862,5 +864,83 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
     });
     expect(problemContainer.textContent).toBe("");
     expect(document.body.innerHTML).not.toContain("sk-switch-slug-test-key-1234");
+  });
+
+  test("serverKeyDisabled mode: (a) saving valid baseURL without API key shows ENDPOINT_SAVED_NEED_KEY_MESSAGE, saves baseURL locally, and focuses #apiKey; (b) with both filled shows only 已保存; (c) with saved key and only baseURL changed shows 已保存", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json({ settings: {}, keySource: "none", serverKeyDisabled: true }),
+    );
+
+    await act(async () => {
+      settingsRoot.render(createElement(SettingsPage));
+    });
+
+    const baseInput = settingsContainer.querySelector<HTMLInputElement>("#baseURL")!;
+    const keyInput = settingsContainer.querySelector<HTMLInputElement>("#apiKey")!;
+    const getSaveBtn = () =>
+      Array.from(settingsContainer.querySelectorAll("button")).find(
+        (b) =>
+          b.textContent?.includes("保存设置") ||
+          b.textContent?.includes("已保存") ||
+          b.textContent?.includes(ENDPOINT_SAVED_NEED_KEY_MESSAGE),
+      )!;
+
+    // (a) Valid baseURL, no API key typed and none saved
+    await act(async () => {
+      setInputValue(baseInput, "https://api.deepseek.com/v1");
+    });
+    await act(async () => {
+      getSaveBtn().click();
+    });
+
+    expect(getSaveBtn().textContent).toBe(ENDPOINT_SAVED_NEED_KEY_MESSAGE);
+    expect(settingsContainer.textContent).toContain(ENDPOINT_SAVED_NEED_KEY_MESSAGE);
+    expect(readLocalBaseUrl()).toBe("https://api.deepseek.com/v1");
+    expect(readLocalByok()).toBeNull();
+    expect(settingsContainer.textContent).toContain(
+      "已保存接口地址：https://api.deepseek.com/v1",
+    );
+    expect(document.activeElement).toBe(keyInput);
+    expect(keyInput.getAttribute("data-highlight")).toBe("true");
+
+    // (b) Both baseURL and API key filled -> shows only 已保存 and not the need-key message
+    await act(async () => {
+      setInputValue(baseInput, "https://api.openai.com/v1");
+      setInputValue(keyInput, "sk-both-filled-test-key-12345");
+    });
+    await act(async () => {
+      getSaveBtn().click();
+    });
+
+    expect(getSaveBtn().textContent).toBe("已保存");
+    expect(settingsContainer.textContent).toContain("已保存");
+    expect(settingsContainer.textContent).not.toContain(
+      ENDPOINT_SAVED_NEED_KEY_MESSAGE,
+    );
+    expect(readLocalByok()).toMatchObject({
+      apiKey: "sk-both-filled-test-key-12345",
+      baseURL: "https://api.openai.com/v1",
+    });
+    expect(readLocalBaseUrl()).toBe("https://api.openai.com/v1");
+    expect(keyInput.value).toBe("");
+
+    // (c) Key already saved locally and only baseURL changed -> shows 已保存
+    await act(async () => {
+      setInputValue(baseInput, "https://proxy.example.com/v1");
+    });
+    await act(async () => {
+      getSaveBtn().click();
+    });
+
+    expect(getSaveBtn().textContent).toBe("已保存");
+    expect(settingsContainer.textContent).toContain("已保存");
+    expect(settingsContainer.textContent).not.toContain(
+      ENDPOINT_SAVED_NEED_KEY_MESSAGE,
+    );
+    expect(readLocalByok()).toMatchObject({
+      apiKey: "sk-both-filled-test-key-12345",
+      baseURL: "https://proxy.example.com/v1",
+    });
+    expect(readLocalBaseUrl()).toBe("https://proxy.example.com/v1");
   });
 });
