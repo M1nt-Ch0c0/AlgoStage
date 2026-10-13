@@ -122,3 +122,37 @@ test("localStorage 读写异常时 readSpeed / readEffectLevel / setSpeed / setE
   expect(() => s().setEffectLevel("minimal")).not.toThrow();
   expect(s().effectLevel).toBe("minimal");
 });
+
+test("setSpeed(2) 在 hydrate 前调用且 localStorage 中有 effectLevel='calm'，hydratePrefs 后 speed 保持 2 且 effectLevel 变为 'calm'（及镜像用例）", async () => {
+  localStorage.setItem(SPEED_KEY, "1.5");
+  localStorage.setItem(EFFECT_LEVEL_KEY, "calm");
+  vi.resetModules();
+  let fresh = await import("../lib/player/store");
+  let store = fresh.usePlayerStore;
+  expect(store.getState().speed).toBe(1);
+  expect(store.getState().effectLevel).toBe("full");
+
+  store.getState().setSpeed(2);
+  expect(store.getState().speed).toBe(2);
+
+  store.getState().hydratePrefs();
+  expect(store.getState().speed).toBe(2);
+  expect(store.getState().effectLevel).toBe("calm");
+
+  // 镜像用例：setEffectLevel 在 hydrate 前调用，localStorage 中有 speed
+  localStorage.clear();
+  localStorage.setItem(SPEED_KEY, "1.5");
+  localStorage.setItem(EFFECT_LEVEL_KEY, "minimal");
+  vi.resetModules();
+  fresh = await import("../lib/player/store");
+  store = fresh.usePlayerStore;
+  expect(store.getState().speed).toBe(1);
+  expect(store.getState().effectLevel).toBe("full");
+
+  store.getState().setEffectLevel("calm");
+  expect(store.getState().effectLevel).toBe("calm");
+
+  store.getState().hydratePrefs();
+  expect(store.getState().effectLevel).toBe("calm");
+  expect(store.getState().speed).toBe(1.5);
+});

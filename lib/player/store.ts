@@ -48,6 +48,8 @@ interface PlayerState {
   autoAdvanceHydrated: boolean;
   setAutoAdvance: (v: boolean) => void;
   hydrateAutoAdvance: () => void;
+  speedUserSet: boolean;
+  effectLevelUserSet: boolean;
   prefsHydrated: boolean;
   hydratePrefs: () => void;
   /** 当前步已讲完，等待用户继续；自动翻页关闭时由播放器置位 */
@@ -148,6 +150,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   // 模块初始化不读 localStorage，避免服务端/首帧与挂载后不一致。
   autoAdvance: false,
   autoAdvanceHydrated: false,
+  speedUserSet: false,
+  effectLevelUserSet: false,
   prefsHydrated: false,
 
   setAutoAdvance: (v) => {
@@ -166,7 +170,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
   hydratePrefs: () => {
     if (get().prefsHydrated) return;
-    set({ speed: readSpeed(), effectLevel: readEffectLevel(), prefsHydrated: true });
+    const { speedUserSet, effectLevelUserSet } = get();
+    set({
+      ...(speedUserSet ? {} : { speed: readSpeed() }),
+      ...(effectLevelUserSet ? {} : { effectLevel: readEffectLevel() }),
+      prefsHydrated: true,
+    });
   },
   setAwaitingContinue: (v) => set({ awaitingContinue: v }),
 
@@ -296,7 +305,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     } catch {
       // localStorage 不可用时只更新内存，不把异常抛给调用方
     }
-    set({ speed, prefsHydrated: true });
+    set({ speed, speedUserSet: true });
   },
   setEffectLevel: (effectLevel) => {
     try {
@@ -306,7 +315,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     } catch {
       // localStorage 不可用时只更新内存，不把异常抛给调用方
     }
-    set({ effectLevel, prefsHydrated: true });
+    set({ effectLevel, effectLevelUserSet: true });
   },
 
   reset: () =>
