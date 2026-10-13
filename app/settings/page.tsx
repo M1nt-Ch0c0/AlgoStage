@@ -381,13 +381,13 @@ export default function SettingsPage() {
         {/* BYOK */}
         <Panel
           title="接上你的 AI 老师"
-          desc="AlgoStage 自己不带 AI，需要接上一个你自己的 AI 账号，老师才能给其余的题备课。账号的钥匙（API Key）只存在这台电脑上，不会发给任何人。"
+          desc="AlgoStage 自己不带 AI，需要接上一个你自己的 AI 账号，老师才能给其余的题备课。你的 API Key 只存在这台电脑上，不会发给任何人。"
         >
           <div className="mb-4"><KeySourceBadge source={effectiveKeySource} /></div>
           {serverKeyDisabled ? (
-            <p className="mb-4 text-xs text-chalk-500">Key 只保存在你这台浏览器里，不会存到服务器</p>
+            <p className="mb-4 text-xs text-chalk-500">API Key 只保存在你这台浏览器里，不会存到服务器。</p>
           ) : (
-            <p className="mb-4 text-xs text-chalk-500">只保存你改动的字段。使用环境变量 Key 时，接口地址和服务商也沿用环境变量；可单独修改模型名。保存新 Key 时，请同时填写对应接口地址和服务商。</p>
+            <p className="mb-4 text-xs text-chalk-500">只保存你改动的字段。使用环境变量里的 API Key 时，接口地址和服务商也沿用环境变量；可单独修改模型名。保存新 API Key 时，请同时填写对应接口地址和服务商。</p>
           )}
           <fieldset>
             <legend className={labelClass}>用哪家的 AI</legend>
@@ -440,7 +440,7 @@ export default function SettingsPage() {
                   value={baseURL}
                   onChange={(e) => edit("baseURL", e.target.value, setBaseURL)}
                   onBlur={validateBaseURL}
-                  placeholder={provider === "openai-compatible" ? "环境变量 Key 沿用环境地址；新 Key 留空使用默认地址" : "留空使用该服务商官方接口"}
+                  placeholder={provider === "openai-compatible" ? "用环境变量里的 API Key 时沿用环境地址；新 API Key 留空使用默认地址" : "留空使用该服务商官方接口"}
                   className={`${inputClass} min-w-0 tracking-normal [font-variant-ligatures:none]${highlightBaseURL ? " ring-2 ring-beam-gold" : ""}`}
                   data-highlight={highlightBaseURL ? "true" : undefined}
                   aria-invalid={Boolean(baseURLError)}
@@ -473,7 +473,7 @@ export default function SettingsPage() {
                   type={showKey ? "text" : "password"}
                   value={apiKey}
                   onChange={(e) => edit("apiKey", e.target.value, setApiKey)}
-                  placeholder={displayedMaskedKey ? "输入新的 Key 以更换" : "sk-…"}
+                  placeholder={displayedMaskedKey ? "输入新的 API Key 以更换" : "sk-…"}
                   className={`${inputClass} pr-10 font-mono${highlightApiKey ? " ring-2 ring-beam-gold" : ""}`}
                   data-highlight={highlightApiKey ? "true" : undefined}
                   aria-invalid={Boolean(apiKeyError)}
@@ -483,14 +483,14 @@ export default function SettingsPage() {
                 <button
                   type="button"
                   onClick={() => setShowKey((v) => !v)}
-                  aria-label={showKey ? "隐藏 Key" : "显示 Key"}
+                  aria-label={showKey ? "隐藏 API Key" : "显示 API Key"}
                   className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-chalk-500 hover:text-chalk-100"
                 >
                   {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
               </div>
               {apiKeyError && <p id="apiKey-error" role="alert" className="mt-2 text-xs leading-5 text-beam-rose">{apiKeyError}</p>}
-              {!serverKeyDisabled && apiKeyMasked && <button type="button" className="mt-2 text-xs text-beam-cyan" onClick={() => edit("apiKey", "", setApiKey)}>清除已保存 Key，改用环境变量（保存后生效）</button>}
+              {!serverKeyDisabled && apiKeyMasked && <button type="button" className="mt-2 text-xs text-beam-cyan" onClick={() => edit("apiKey", "", setApiKey)}>清除已保存的 API Key，改用环境变量（保存后生效）</button>}
             </div>
           </div>
 
@@ -541,7 +541,7 @@ export default function SettingsPage() {
                 onClick={clearLocalKey}
                 className="rounded-full border border-board-600 px-5 py-2 text-sm text-chalk-300 transition-colors hover:border-beam-rose/60 hover:text-beam-rose"
               >
-                清除本机 Key
+                清除本机 API Key
               </button>
             )}
             {testState.kind === "ok" && (

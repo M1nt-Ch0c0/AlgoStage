@@ -218,3 +218,23 @@ test("接口地址使用正常字距且禁用连字，读取和编辑均保留 h
     expect(input.value).toBe("https://proxy.example/v1");
   } finally { await act(async () => root.unmount()); }
 });
+
+test("设置页 API Key 相关文案：顶栏说明、表单说明、占位符、显隐按钮与清除按钮", async () => {
+  const { root, container } = await renderWith({
+    settings: { provider: "openai-compatible", apiKeyMasked: "••••-key" },
+    keySource: "settings",
+  });
+  try {
+    expect(container.textContent).toContain("AlgoStage 自己不带 AI，需要接上一个你自己的 AI 账号，老师才能给其余的题备课。你的 API Key 只存在这台电脑上，不会发给任何人。");
+    expect(container.textContent).toContain("只保存你改动的字段。使用环境变量里的 API Key 时，接口地址和服务商也沿用环境变量；可单独修改模型名。保存新 API Key 时，请同时填写对应接口地址和服务商。");
+    expect(container.textContent).toContain("API Key 来源：设置页");
+    expect(container.querySelector<HTMLInputElement>("#baseURL")!.placeholder).toBe("用环境变量里的 API Key 时沿用环境地址；新 API Key 留空使用默认地址");
+    expect(container.querySelector<HTMLInputElement>("#apiKey")!.placeholder).toBe("输入新的 API Key 以更换");
+    const toggleBtn = container.querySelector<HTMLButtonElement>('button[aria-label="显示 API Key"]')!;
+    expect(toggleBtn).not.toBeNull();
+    await act(async () => { toggleBtn.click(); });
+    expect(container.querySelector<HTMLButtonElement>('button[aria-label="隐藏 API Key"]')).not.toBeNull();
+    expect(Array.from(container.querySelectorAll("button")).some(b => b.textContent === "清除已保存的 API Key，改用环境变量（保存后生效）")).toBe(true);
+  } finally { await act(async () => root.unmount()); }
+});
+

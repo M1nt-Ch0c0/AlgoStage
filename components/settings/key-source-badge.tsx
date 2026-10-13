@@ -24,7 +24,7 @@ export function KeySourceBadge({ source }: { source: KeySource }) {
       className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium ${color}`}
     >
       <span aria-hidden="true" className="size-1.5 rounded-full bg-current" />
-      Key 来源：{label}
+      API Key 来源：{label}
     </span>
   );
 }

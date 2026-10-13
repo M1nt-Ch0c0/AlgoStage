@@ -41,7 +41,7 @@ import ProblemPage from "../app/problem/[slug]/page";
 import SettingsPage from "../app/settings/page";
 
 const PROBLEM_HINT = "这道题的 AI 讲解需要你自己的 API Key。";
-const LOCAL_ONLY_COPY = "Key 只保存在你这台浏览器里，不会存到服务器";
+const LOCAL_ONLY_COPY = "API Key 只保存在你这台浏览器里，不会存到服务器。";
 const FORBIDDEN_COPY = "保存到服务器";
 
 const step = {
@@ -285,9 +285,9 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
     });
     assertNoRawKeyLeak();
 
-    // 5. Click '清除本机 Key' -> storage cleared, masked key gone, prompt shows again
+    // 5. Click '清除本机 API Key' -> storage cleared, masked key gone, prompt shows again
     const clearBtn = Array.from(settingsContainer.querySelectorAll("button")).find(
-      (b) => b.textContent === "清除本机 Key",
+      (b) => b.textContent === "清除本机 API Key",
     )!;
     expect(clearBtn).toBeDefined();
     await act(async () => {

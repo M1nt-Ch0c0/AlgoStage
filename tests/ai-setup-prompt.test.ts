@@ -62,6 +62,9 @@ describe.each([
     if (slug) params.slug = slug;
     await render(Page);
     expect(fetch).toHaveBeenCalledWith("/classroom/api/settings", expect.objectContaining({ cache: "no-store" }));
+    if (!slug) {
+      expect(container.textContent).toContain("在设置里填上你自己的 API Key，老师就能给其余的题备课了。");
+    }
     if (source === "none") {
       expect(container.textContent).toContain(hint);
       expect(link("去设置")?.getAttribute("href")).toBe("/classroom/settings");

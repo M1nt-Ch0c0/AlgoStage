@@ -29,7 +29,7 @@ const LESSON_FLOW = [
 /* 第一次来，按这个顺序走 */
 const GET_STARTED = [
   { title: "先听一节试试", desc: "打开「两数之和」，跟着光走一遍，看看这种上课方式合不合你胃口。", href: "/problem/two-sum" },
-  { title: "接上你的 AI", desc: "在设置里填上 AI 账号的钥匙，老师就能给其余的题备课了。", href: "/settings" },
+  { title: "接上你的 AI", desc: "在设置里填上你自己的 API Key，老师就能给其余的题备课了。", href: "/settings" },
   { title: "挑下一题", desc: "回到路线图，按章节一题一题往下学。", href: "/roadmap" },
 ];
 

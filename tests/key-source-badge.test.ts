@@ -14,7 +14,7 @@ test("设置页 Key 来源徽标：三个来源都有明确标签、不同颜色
     const html = renderToStaticMarkup(
       createElement(KeySourceBadge, { source }),
     );
-    assert.ok(html.includes(`Key 来源：${label}`));
+    assert.ok(html.includes(`API Key 来源：${label}`));
     assert.ok(html.includes(color));
     assert.ok(html.includes('role="status"'));
     assert.ok(html.includes('aria-live="polite"'));
