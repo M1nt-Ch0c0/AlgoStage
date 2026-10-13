@@ -142,3 +142,19 @@ test("非 openai-compatible 服务商不显示留空提示", async () => {
   const { root, hint } = await renderWith({ settings: { provider: "anthropic" }, keySource: "none" });
   try { expect(hint()).toBeNull(); } finally { await act(async () => root.unmount()); }
 });
+
+test("接口地址使用正常字距且禁用连字，读取和编辑均保留 https:// 双斜线", async () => {
+  const { root, container, type } = await renderWith({
+    settings: { baseURL: "https://api.openai.com/v1" }, keySource: "settings",
+  });
+  try {
+    const input = container.querySelector<HTMLInputElement>("#baseURL")!;
+    expect(input.value).toBe("https://api.openai.com/v1");
+    expect(input.classList.contains("font-sans")).toBe(true);
+    expect(input.classList.contains("font-mono")).toBe(false);
+    expect(input.classList.contains("tracking-normal")).toBe(true);
+    expect(input.classList.contains("[font-variant-ligatures:none]")).toBe(true);
+    await type("baseURL", "https://proxy.example/v1");
+    expect(input.value).toBe("https://proxy.example/v1");
+  } finally { await act(async () => root.unmount()); }
+});

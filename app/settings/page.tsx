@@ -231,7 +231,7 @@ export default function SettingsPage() {
                   value={baseURL}
                   onChange={(e) => edit("baseURL", e.target.value, setBaseURL)}
                   placeholder={provider === "openai-compatible" ? "环境变量 Key 沿用环境地址；新 Key 留空使用默认地址" : "留空使用该服务商官方接口"}
-                  className={`${inputClass} font-mono`}
+                  className={`${inputClass} font-sans tracking-normal [font-variant-ligatures:none]`}
                   aria-describedby={provider === "openai-compatible" && !baseURL.trim() ? "baseURL-hint" : undefined}
                 />
                 {provider === "openai-compatible" && !baseURL.trim() && (
