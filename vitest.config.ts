@@ -32,6 +32,7 @@ export default defineConfig({
         "lib/agent/modes/ask.ts",
         "lib/player/*.ts",
         "app/api/lecture/route.ts",
+        "app/api/lecture/ask/route.ts",
         "app/api/progress/route.ts",
         "lib/content/local-source.ts",
         "lib/anchors.ts",
