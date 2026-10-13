@@ -1247,13 +1247,13 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
       expect(keyInput.getAttribute("aria-invalid")).toBe("false");
 
       // Trigger on save (PUT)
-    const saveBtn = Array.from(settingsContainer.querySelectorAll("button")).find(
-      (b) => b.textContent?.includes("保存设置"),
-    )!;
-    expect(saveBtn.className).toContain("pointer-coarse:min-h-11");
-    await act(async () => {
-      saveBtn.click();
-    });
+      const saveBtn = Array.from(settingsContainer.querySelectorAll("button")).find(
+        (b) => b.textContent?.includes("保存设置"),
+      )!;
+      expect(saveBtn.className).toContain("pointer-coarse:min-h-11");
+      await act(async () => {
+        saveBtn.click();
+      });
 
       const errAfterSave = settingsContainer.querySelector("#apiKey-error");
       expect(errAfterSave).not.toBeNull();

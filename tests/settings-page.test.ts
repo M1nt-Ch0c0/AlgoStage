@@ -5,6 +5,7 @@ import { act, createElement, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
 import SettingsPage from "../app/settings/page";
+import { NO_BYOK_SETTINGS_MESSAGE } from "../lib/byok/client";
 
 // 表单测试不启用保存勾选动画，避免 DOM 模拟器在卸载时产生动画取消拒绝。
 vi.mock("motion/react", () => ({ motion: {
@@ -241,7 +242,6 @@ test("设置页 API Key 相关文案：顶栏说明、表单说明、占位符�
 });
 
 test("测试连接无 API Key：聚焦 #apiKey，下一帧在 [role=status] 显示文案且全页仅一份，无红色失败与 ✗，输入 API Key 时清空", async () => {
-  const NO_BYOK_SETTINGS_MESSAGE = "还没填 API Key。在下面填入你自己的 API Key 就能开讲。";
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
     const url = String(input);
