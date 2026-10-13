@@ -180,6 +180,12 @@ export const BASE_URL_INVALID_LECTURE_MESSAGE = "接口地址格式不对，要�
 export const BASE_URL_NOT_ALLOWED_MESSAGE = "接口地址只支持公网 http(s) 地址";
 export const BASE_URL_NOT_ALLOWED_SETTINGS_MESSAGE = "接口地址只支持公网 http(s) 地址";
 export const BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE = "接口地址只支持公网 http(s) 地址，去设置页改一下就能开讲。";
+export const UPSTREAM_AUTH_LECTURE_MESSAGE = "API Key 无效或没有权限，去设置页检查一下就能开讲。";
+export const UPSTREAM_AUTH_SETTINGS_MESSAGE = "API Key 无效或没有权限";
+export const BYOK_KEY_REQUIRED_MESSAGE = "用自定义接口地址时，需要同时填你自己的 API Key";
+export const SETTINGS_LOCKED_MESSAGE = "公共实例不支持修改服务器设置";
+export const LECTURE_TIMEOUT_MESSAGE = "备课超时（总上限 240 秒），未保存教案。";
+export const HINT_TIMEOUT_MESSAGE = "提示请求超时，请重试。";
 
 const BYOK_BASE_URL_STORAGE_KEY = "algostage.byok.baseURL";
 
@@ -220,13 +226,20 @@ export function clearLocalBaseUrl(): void {
 }
 
 const BYOK_ERROR_MAP: Record<string, string> = {
-  BYOK_KEY_REQUIRED: "用自定义地址时需要同时填你自己的 Key",
+  BYOK_KEY_REQUIRED: BYOK_KEY_REQUIRED_MESSAGE,
   BASE_URL_INVALID: BASE_URL_INVALID_MESSAGE,
   BASE_URL_NOT_ALLOWED: BASE_URL_NOT_ALLOWED_MESSAGE,
-  SETTINGS_LOCKED: "公共实例不支持修改服务器设置",
+  SETTINGS_LOCKED: SETTINGS_LOCKED_MESSAGE,
   NO_BYOK: NO_BYOK_MESSAGE,
   UPSTREAM_ERROR: UPSTREAM_ERROR_MESSAGE,
+  UPSTREAM_AUTH: UPSTREAM_AUTH_LECTURE_MESSAGE,
 };
+
+export function isUpstreamAuth(data: unknown): boolean {
+  if (!data || typeof data !== "object") return false;
+  const rec = data as Record<string, unknown>;
+  return rec.error === "UPSTREAM_AUTH" || rec.code === "UPSTREAM_AUTH";
+}
 
 export function isBaseUrlInvalid(data: unknown): boolean {
   if (!data || typeof data !== "object") return false;

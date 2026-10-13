@@ -84,7 +84,7 @@ test("请求中显示已用时与取消，取消会 abort", async () => {
   await act(async () => {});
 });
 
-test("超时失败显示慢提示与重试，重试再次请求", async () => {
+test("超时失败显示超时提示与重试，重试再次请求", async () => {
   const fetchMock = vi
     .fn()
     .mockResolvedValueOnce(
@@ -103,7 +103,7 @@ test("超时失败显示慢提示与重试，重试再次请求", async () => {
     levelButton("观察").click();
   });
   await act(async () => {});
-  expect(container.textContent).toContain("老师这会儿有点慢");
+  expect(container.textContent).toContain("提示请求超时，请重试。");
   const retry = Array.from(container.querySelectorAll("button")).find(
     (b) => b.textContent === "重试",
   )!;

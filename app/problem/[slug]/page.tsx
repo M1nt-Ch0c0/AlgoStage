@@ -12,8 +12,10 @@ import {
   BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE,
   ByokError,
   fetchServerKeyDisabled,
+  LECTURE_TIMEOUT_MESSAGE,
   resolveByokError,
   ServerKeyStatusError,
+  UPSTREAM_AUTH_LECTURE_MESSAGE,
   UPSTREAM_ERROR_MESSAGE,
   withByok,
 } from "@/lib/byok/client";
@@ -287,7 +289,7 @@ export default function ProblemPage() {
         if (timedOut) {
           nextError = {
             code: "TIMEOUT",
-            message: "备课超时，请点击重试或换用推荐模型 gpt-6.1-sol。",
+            message: LECTURE_TIMEOUT_MESSAGE,
           };
         } else if (!abort.signal.aborted) {
           const resolved =
@@ -304,7 +306,11 @@ export default function ProblemPage() {
               ? BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE
               : code === "BASE_URL_INVALID"
                 ? BASE_URL_INVALID_LECTURE_MESSAGE
-                : (resolved?.message ?? "老师这次没备好课，请重试。");
+                : code === "UPSTREAM_AUTH"
+                  ? UPSTREAM_AUTH_LECTURE_MESSAGE
+                  : code === "TIMEOUT"
+                    ? LECTURE_TIMEOUT_MESSAGE
+                    : (resolved?.message ?? "老师这次没备好课，请重试。");
           nextError = { code, message };
         }
         // 失败也清空半份教案，避免残留字幕与代码锚点；错误提示独立保留。
@@ -627,42 +633,51 @@ export default function ProblemPage() {
           className="flex items-center gap-3 text-sm text-beam-rose"
         >
           <p>{lectureError.message}</p>
-          <button
-            type="button"
-            onClick={() => startLecture()}
-            disabled={lectureBusy || !detail}
-            className="inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-full border border-beam-rose px-3 py-1 disabled:opacity-40"
-          >
-            {lectureError.code === "UPSTREAM_ERROR" ? "重试" : "重试讲课"}
-          </button>
-          {lectureError.code !== "UPSTREAM_ERROR" && (
-            <Link
-              href={
-                lectureError.code === "NO_BYOK"
-                  ? "/settings?focus=apiKey"
-                  : lectureError.code === "BASE_URL_NOT_ALLOWED" ||
-                      lectureError.code === "BASE_URL_INVALID"
-                    ? "/settings?focus=baseUrl"
-                    : "/settings"
-              }
-              data-testid={
-                lectureError.code === "NO_BYOK" ||
-                lectureError.code === "BASE_URL_NOT_ALLOWED" ||
-                lectureError.code === "BASE_URL_INVALID"
-                  ? "goto-settings"
-                  : undefined
-              }
-              className={
-                lectureError.code === "NO_BYOK" ||
-                lectureError.code === "BASE_URL_NOT_ALLOWED" ||
-                lectureError.code === "BASE_URL_INVALID"
-                  ? "inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-full border border-beam-gold/60 bg-transparent px-3 py-1 text-beam-gold transition-colors hover:border-beam-gold"
-                  : "inline-flex min-h-11 shrink-0 items-center whitespace-nowrap underline hover:text-chalk-100"
-              }
+          {lectureError.code !== "UPSTREAM_AUTH" && (
+            <button
+              type="button"
+              onClick={() => startLecture()}
+              disabled={lectureBusy || !detail}
+              className="inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-full border border-beam-rose px-3 py-1 disabled:opacity-40"
             >
-              去设置
-            </Link>
+              {lectureError.code === "UPSTREAM_ERROR" ||
+              lectureError.code === "TIMEOUT"
+                ? "重试"
+                : "重试讲课"}
+            </button>
           )}
+          {lectureError.code !== "UPSTREAM_ERROR" &&
+            lectureError.code !== "TIMEOUT" && (
+              <Link
+                href={
+                  lectureError.code === "NO_BYOK" ||
+                  lectureError.code === "UPSTREAM_AUTH"
+                    ? "/settings?focus=apiKey"
+                    : lectureError.code === "BASE_URL_NOT_ALLOWED" ||
+                        lectureError.code === "BASE_URL_INVALID"
+                      ? "/settings?focus=baseUrl"
+                      : "/settings"
+                }
+                data-testid={
+                  lectureError.code === "NO_BYOK" ||
+                  lectureError.code === "UPSTREAM_AUTH" ||
+                  lectureError.code === "BASE_URL_NOT_ALLOWED" ||
+                  lectureError.code === "BASE_URL_INVALID"
+                    ? "goto-settings"
+                    : undefined
+                }
+                className={
+                  lectureError.code === "NO_BYOK" ||
+                  lectureError.code === "UPSTREAM_AUTH" ||
+                  lectureError.code === "BASE_URL_NOT_ALLOWED" ||
+                  lectureError.code === "BASE_URL_INVALID"
+                    ? "inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-full border border-beam-gold/60 bg-transparent px-3 py-1 text-beam-gold transition-colors hover:border-beam-gold"
+                    : "inline-flex min-h-11 shrink-0 items-center whitespace-nowrap underline hover:text-chalk-100"
+                }
+              >
+                去设置
+              </Link>
+            )}
         </div>
       )}
 

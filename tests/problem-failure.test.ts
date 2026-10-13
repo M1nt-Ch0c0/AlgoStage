@@ -2,7 +2,11 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
-import { UPSTREAM_ERROR_MESSAGE } from "../lib/byok/client";
+import {
+  LECTURE_TIMEOUT_MESSAGE,
+  UPSTREAM_AUTH_LECTURE_MESSAGE,
+  UPSTREAM_ERROR_MESSAGE,
+} from "../lib/byok/client";
 import { usePlayerStore } from "../lib/player/store";
 import { localSeedSource } from "../lib/content/local-source";
 
@@ -15,10 +19,11 @@ import ProblemPage from "../app/problem/[slug]/page";
 afterEach(() => { usePlayerStore.getState().reset(); vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.innerHTML = ""; });
 
 test.each([
-  { error: "AUTH_ERROR", message: "Key 无效或没有权限，请检查设置。" },
-  { error: "TIMEOUT", message: "备课超时，请重试。" },
+  { error: "UPSTREAM_AUTH", message: UPSTREAM_AUTH_LECTURE_MESSAGE },
+  { error: "AUTH_ERROR", message: UPSTREAM_AUTH_LECTURE_MESSAGE },
+  { error: "TIMEOUT", message: LECTURE_TIMEOUT_MESSAGE },
   { error: "INVALID_SCRIPT", message: "教案不合法，请换用 gpt-6.1-sol。" },
-])("流式备课失败清空半份教案，保留错误、重试和设置入口：%j", async ({ error, message }) => {
+])("流式备课失败清空半份教案，保留对应错误和操作入口：%j", async ({ error, message }) => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const detail = await localSeedSource.detail("3sum");
   let stream!: ReadableStreamDefaultController;
@@ -39,13 +44,28 @@ test.each([
     await act(async () => send({ type: "step", step: { id: "s1", narration: "先排序", targets: [{ kind: "code-line", start: 2 }], effects: [], dwellMs: 5000 } }));
     expect(usePlayerStore.getState().steps).toHaveLength(1);
     expect(usePlayerStore.getState().status).toBe("playing");
-    await act(async () => { send({ type: "error", error, message }); stream.close(); });
+    await act(async () => { send({ type: "error", code: error, error, retryable: error === "TIMEOUT" }); stream.close(); });
     expect(usePlayerStore.getState()).toMatchObject({ steps: [], status: "idle", script: null, receiving: false });
     expect(container.querySelector("[data-editor]")?.textContent).toBe(detail.referenceSolutions!.find(s => s.language === "typescript")!.code);
     const alert = container.querySelector('[role="alert"]')!;
     expect(alert.textContent).toContain(message);
-    expect(alert.textContent).toContain("重试讲课");
-    expect(alert.querySelector('a[href="/settings"]')?.textContent).toBe("去设置");
+    if (error === "UPSTREAM_AUTH" || error === "AUTH_ERROR") {
+      expect(alert.querySelectorAll("button")).toHaveLength(0);
+      expect(alert.textContent).not.toContain("重试");
+      const link = alert.querySelector('[data-testid="goto-settings"]') as HTMLAnchorElement;
+      expect(link).not.toBeNull();
+      expect(link.getAttribute("href")).toBe("/settings?focus=apiKey");
+      expect(link.textContent).toBe("去设置");
+    } else if (error === "TIMEOUT") {
+      const buttons = Array.from(alert.querySelectorAll("button"));
+      expect(buttons).toHaveLength(1);
+      expect(buttons[0].textContent).toBe("重试");
+      expect(alert.querySelectorAll("a")).toHaveLength(0);
+      expect(alert.textContent).not.toContain("去设置");
+    } else {
+      expect(alert.textContent).toContain("重试讲课");
+      expect(alert.querySelector('a[href="/settings"]')?.textContent).toBe("去设置");
+    }
     expect(container.textContent).not.toContain("这道题的 AI 讲解需要你自己的 API Key。");
   } finally { await act(async () => root.unmount()); }
 });
@@ -128,7 +148,8 @@ test("生成期间主按钮可暂停并补全字幕，完成提示独立于播�
 
 test.each([
   { error: "UPSTREAM_ERROR", label: "重试" },
-  { error: "TIMEOUT", label: "重试讲课" },
+  { error: "TIMEOUT", label: "重试" },
+  { error: "INVALID_SCRIPT", label: "重试讲课" },
 ])("同一 tick 连续三次点击 $label 仅发起一次 /api/lecture 请求，完成后再次点击可发起新请求", async ({ error, label }) => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.spyOn(console, "warn").mockImplementation(() => {});

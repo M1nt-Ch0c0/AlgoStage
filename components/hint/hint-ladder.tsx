@@ -5,12 +5,15 @@ import {
   BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE,
   ByokError,
   fetchServerKeyDisabled,
+  HINT_TIMEOUT_MESSAGE,
   isBaseUrlInvalid,
   isBaseUrlNotAllowed,
   isNoByokError,
+  isUpstreamAuth,
   NO_BYOK_MESSAGE,
   resolveByokError,
   ServerKeyStatusError,
+  UPSTREAM_AUTH_LECTURE_MESSAGE,
   UPSTREAM_ERROR_MESSAGE,
   withByok,
 } from "@/lib/byok/client";
@@ -133,7 +136,13 @@ export default function HintLadder({
         if (!res.ok) {
           const errorCode = j.code ?? j.error;
           if (errorCode === "TIMEOUT" || res.status === 504) {
-            throw new ByokError("TIMEOUT", SLOW_MSG);
+            throw new ByokError("TIMEOUT", HINT_TIMEOUT_MESSAGE);
+          }
+          if (isUpstreamAuth(j)) {
+            throw new ByokError(
+              "UPSTREAM_AUTH",
+              UPSTREAM_AUTH_LECTURE_MESSAGE,
+            );
           }
           if (isBaseUrlInvalid(j)) {
             throw new ByokError(
@@ -260,11 +269,13 @@ export default function HintLadder({
         >
           <p>{hintError.message}</p>
           {(hintError.code === "NO_BYOK" ||
+            hintError.code === "UPSTREAM_AUTH" ||
             hintError.code === "BASE_URL_NOT_ALLOWED" ||
             hintError.code === "BASE_URL_INVALID") && (
             <Link
               href={
-                hintError.code === "NO_BYOK"
+                hintError.code === "NO_BYOK" ||
+                hintError.code === "UPSTREAM_AUTH"
                   ? "/settings?focus=apiKey"
                   : "/settings?focus=baseUrl"
               }
@@ -274,7 +285,7 @@ export default function HintLadder({
               去设置
             </Link>
           )}
-          {retryLevel !== null && (
+          {retryLevel !== null && hintError.code !== "UPSTREAM_AUTH" && (
             <button
               type="button"
               onClick={() => askHint(retryLevel)}

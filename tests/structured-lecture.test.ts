@@ -493,7 +493,7 @@ test("进度/步骤流跨字节分片读取，超时与中断提示重试", asyn
   );
   await assert.rejects(
     readLectureResponse(response, (m) => messages.push(m)),
-    /备课失败.*重试/,
+    /备课超时（总上限 240 秒），未保存教案。/,
   );
   assert.deepEqual(messages, ["正在重试该调用"]);
 });

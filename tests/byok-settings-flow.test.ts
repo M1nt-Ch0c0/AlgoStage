@@ -14,6 +14,7 @@ import {
   parseFocusParam,
   readLocalBaseUrl,
   resetServerKeyDisabledCache,
+  UPSTREAM_AUTH_SETTINGS_MESSAGE,
 } from "../lib/byok/client";
 import { BYOK_STORAGE_KEY, maskKey, readLocalByok } from "../lib/byok/storage";
 import { localSeedSource } from "../lib/content/local-source";
@@ -943,4 +944,95 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
     });
     expect(readLocalBaseUrl()).toBe("https://proxy.example.com/v1");
   });
+
+  test.each([
+    { shape: "code", payload: { code: "UPSTREAM_AUTH", retryable: false } },
+    { shape: "error", payload: { error: "UPSTREAM_AUTH" } },
+  ])(
+    "UPSTREAM_AUTH ($shape) on testConnection and save shows inline red text under #apiKey, focuses #apiKey, no button, no toast, and clears when key is edited",
+    async ({ payload }) => {
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+        const url = String(input);
+        if (init?.method === "PUT") {
+          return Response.json(payload, { status: 400 });
+        }
+        if (url.endsWith("/api/settings/test-connection")) {
+          return Response.json(payload, { status: 400 });
+        }
+        if (url.endsWith("/api/settings")) {
+          return Response.json({
+            settings: {},
+            keySource: "settings",
+            serverKeyDisabled: false,
+          });
+        }
+        return Response.json({ ok: true });
+      });
+
+      await act(async () => {
+        settingsRoot.render(createElement(SettingsPage));
+      });
+
+      const keyInput = settingsContainer.querySelector<HTMLInputElement>("#apiKey")!;
+      await act(async () => {
+        setInputValue(keyInput, "sk-bad-key");
+      });
+
+      const testBtn = Array.from(settingsContainer.querySelectorAll("button")).find(
+        (b) => b.textContent?.includes("测试连接"),
+      )!;
+      await act(async () => {
+        testBtn.click();
+      });
+
+      const errAfterTest = settingsContainer.querySelector("#apiKey-error");
+      expect(errAfterTest).not.toBeNull();
+      expect(errAfterTest!.textContent).toBe(UPSTREAM_AUTH_SETTINGS_MESSAGE);
+      expect(errAfterTest!.classList.contains("text-beam-rose")).toBe(true);
+      expect(errAfterTest!.getAttribute("role")).toBe("alert");
+      expect(keyInput.getAttribute("aria-invalid")).toBe("true");
+      expect(keyInput.getAttribute("aria-describedby")).toBe("apiKey-error");
+      expect(document.activeElement).toBe(keyInput);
+      // No toast / testState fail / saveError / 去设置 button or link
+      expect(settingsContainer.textContent).not.toContain("✗");
+      expect(settingsContainer.textContent).not.toContain("设置保存失败");
+      expect(settingsContainer.textContent).not.toContain("去设置");
+      expect(settingsContainer.querySelector('[data-testid="goto-settings"]')).toBeNull();
+      expect(settingsContainer.querySelectorAll('[role="alert"]')).toHaveLength(1);
+      expect(errAfterTest!.querySelectorAll("button, a")).toHaveLength(0);
+
+      // Clears when key is edited
+      await act(async () => {
+        setInputValue(keyInput, "sk-bad-key-edited");
+      });
+      expect(settingsContainer.querySelector("#apiKey-error")).toBeNull();
+      expect(keyInput.getAttribute("aria-invalid")).toBe("false");
+
+      // Trigger on save (PUT)
+      const saveBtn = Array.from(settingsContainer.querySelectorAll("button")).find(
+        (b) => b.textContent?.includes("保存设置"),
+      )!;
+      await act(async () => {
+        saveBtn.click();
+      });
+
+      const errAfterSave = settingsContainer.querySelector("#apiKey-error");
+      expect(errAfterSave).not.toBeNull();
+      expect(errAfterSave!.textContent).toBe(UPSTREAM_AUTH_SETTINGS_MESSAGE);
+      expect(errAfterSave!.classList.contains("text-beam-rose")).toBe(true);
+      expect(document.activeElement).toBe(keyInput);
+      expect(settingsContainer.textContent).not.toContain("已保存");
+      expect(settingsContainer.textContent).not.toContain("✗");
+      expect(settingsContainer.textContent).not.toContain("设置保存失败");
+      expect(settingsContainer.textContent).not.toContain("去设置");
+      expect(settingsContainer.querySelectorAll('[role="alert"]')).toHaveLength(1);
+      expect(errAfterSave!.querySelectorAll("button, a")).toHaveLength(0);
+
+      // Clears when key is edited
+      await act(async () => {
+        setInputValue(keyInput, "sk-new-valid-key");
+      });
+      expect(settingsContainer.querySelector("#apiKey-error")).toBeNull();
+    },
+  );
 });

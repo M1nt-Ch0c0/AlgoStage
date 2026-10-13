@@ -11,12 +11,14 @@ import {
   isBaseUrlInvalid,
   isBaseUrlNotAllowed,
   isNoByokError,
+  isUpstreamAuth,
   isValidHttpBaseUrl,
   mapByokErrorMessage,
   NO_BYOK_SETTINGS_MESSAGE,
   parseFocusParam,
   readLocalBaseUrl,
   type SettingsResponse,
+  UPSTREAM_AUTH_SETTINGS_MESSAGE,
   UPSTREAM_ERROR_MESSAGE,
   writeLocalBaseUrl,
 } from "@/lib/byok/client";
@@ -70,6 +72,7 @@ export default function SettingsPage() {
   const [baseURL, setBaseURL] = useState("");
   const [baseURLError, setBaseURLError] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [apiKeyError, setApiKeyError] = useState("");
   const [apiKeyMasked, setApiKeyMasked] = useState("");
   const [keySource, setKeySource] = useState<KeySource>("none");
   const [model, setModel] = useState<string>(DEFAULT_MODEL);
@@ -100,6 +103,7 @@ export default function SettingsPage() {
       setHighlightBaseURL(false);
     }
     if (field === "apiKey") {
+      setApiKeyError("");
       setHighlightApiKey(false);
     }
   }
@@ -172,6 +176,7 @@ export default function SettingsPage() {
     clearLocalBaseUrl();
     setLocalSavedBaseURL("");
     setApiKey("");
+    setApiKeyError("");
     delete edits.current.apiKey;
     setSaveState("idle");
     setTestState({ kind: "idle" });
@@ -249,6 +254,9 @@ export default function SettingsPage() {
         } else if (isBaseUrlNotAllowed(data)) {
           setBaseURLError(BASE_URL_NOT_ALLOWED_SETTINGS_MESSAGE);
           focusAndScroll("baseURL", false);
+        } else if (isUpstreamAuth(data)) {
+          setApiKeyError(UPSTREAM_AUTH_SETTINGS_MESSAGE);
+          focusAndScroll("apiKey", false);
         } else {
           setSaveError(data.message ?? "设置保存失败，请重试。");
         }
@@ -256,6 +264,7 @@ export default function SettingsPage() {
         return;
       }
       setBaseURLError("");
+      setApiKeyError("");
       const saved = await fetch(apiPath("/api/settings")).then((r) => r.json());
       setKeySource(saved.keySource ?? "none");
       setApiKeyMasked(saved.settings?.apiKeyMasked ?? "");
@@ -306,6 +315,7 @@ export default function SettingsPage() {
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.ok) {
         setBaseURLError("");
+        setApiKeyError("");
         setTestState({ kind: "ok", message: "接通了，老师可以上课了。" });
       } else if (isBaseUrlInvalid(data)) {
         setBaseURLError(BASE_URL_INVALID_MESSAGE);
@@ -315,6 +325,10 @@ export default function SettingsPage() {
         setBaseURLError(BASE_URL_NOT_ALLOWED_SETTINGS_MESSAGE);
         setTestState({ kind: "idle" });
         focusAndScroll("baseURL", false);
+      } else if (isUpstreamAuth(data)) {
+        setApiKeyError(UPSTREAM_AUTH_SETTINGS_MESSAGE);
+        setTestState({ kind: "idle" });
+        focusAndScroll("apiKey", false);
       } else if (isNoByokError(data)) {
         setTestState({
           kind: "fail",
@@ -462,6 +476,8 @@ export default function SettingsPage() {
                   placeholder={displayedMaskedKey ? "输入新的 Key 以更换" : "sk-…"}
                   className={`${inputClass} pr-10 font-mono${highlightApiKey ? " ring-2 ring-beam-gold" : ""}`}
                   data-highlight={highlightApiKey ? "true" : undefined}
+                  aria-invalid={Boolean(apiKeyError)}
+                  aria-describedby={apiKeyError ? "apiKey-error" : undefined}
                   autoComplete="off"
                 />
                 <button
@@ -473,6 +489,7 @@ export default function SettingsPage() {
                   {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
               </div>
+              {apiKeyError && <p id="apiKey-error" role="alert" className="mt-2 text-xs leading-5 text-beam-rose">{apiKeyError}</p>}
               {!serverKeyDisabled && apiKeyMasked && <button type="button" className="mt-2 text-xs text-beam-cyan" onClick={() => edit("apiKey", "", setApiKey)}>清除已保存 Key，改用环境变量（保存后生效）</button>}
             </div>
           </div>

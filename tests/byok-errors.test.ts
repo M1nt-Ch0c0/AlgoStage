@@ -10,10 +10,15 @@ import {
   BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE,
   BASE_URL_NOT_ALLOWED_MESSAGE,
   ByokError,
+  HINT_TIMEOUT_MESSAGE,
   isBaseUrlInvalid,
+  isUpstreamAuth,
+  LECTURE_TIMEOUT_MESSAGE,
   mapByokErrorMessage,
   resetServerKeyDisabledCache,
   toByokError,
+  UPSTREAM_AUTH_LECTURE_MESSAGE,
+  UPSTREAM_AUTH_SETTINGS_MESSAGE,
   UPSTREAM_ERROR_MESSAGE,
 } from "../lib/byok/client";
 import { localSeedSource } from "../lib/content/local-source";
@@ -40,7 +45,7 @@ import ProblemPage from "../app/problem/[slug]/page";
 const EXPECTED_MAPPINGS = [
   {
     code: "BYOK_KEY_REQUIRED",
-    expected: "用自定义地址时需要同时填你自己的 Key",
+    expected: "用自定义接口地址时，需要同时填你自己的 API Key",
   },
   {
     code: "BASE_URL_INVALID",
@@ -61,6 +66,10 @@ const EXPECTED_MAPPINGS = [
   {
     code: "UPSTREAM_ERROR",
     expected: UPSTREAM_ERROR_MESSAGE,
+  },
+  {
+    code: "UPSTREAM_AUTH",
+    expected: UPSTREAM_AUTH_LECTURE_MESSAGE,
   },
 ] as const;
 
@@ -121,6 +130,19 @@ describe("mapByokErrorMessage pure unit tests", () => {
     ).toBe("Key 无效或没有权限，请检查设置。");
 
     expect(UPSTREAM_ERROR_MESSAGE).toBe("AI 服务暂时连不上，请稍后再试。");
+    expect(UPSTREAM_AUTH_LECTURE_MESSAGE).toBe(
+      "API Key 无效或没有权限，去设置页检查一下就能开讲。",
+    );
+    expect(UPSTREAM_AUTH_SETTINGS_MESSAGE).toBe("API Key 无效或没有权限");
+    expect(LECTURE_TIMEOUT_MESSAGE).toBe("备课超时（总上限 240 秒），未保存教案。");
+    expect(HINT_TIMEOUT_MESSAGE).toBe("提示请求超时，请重试。");
+    expect(mapByokErrorMessage({ code: "BYOK_KEY_REQUIRED" })).toBe(
+      "用自定义接口地址时，需要同时填你自己的 API Key",
+    );
+    expect(isUpstreamAuth({ error: "UPSTREAM_AUTH" })).toBe(true);
+    expect(isUpstreamAuth({ code: "UPSTREAM_AUTH", retryable: false })).toBe(true);
+    expect(isUpstreamAuth({ error: "UPSTREAM_ERROR" })).toBe(false);
+    expect(isUpstreamAuth(null)).toBe(false);
     expect(isBaseUrlInvalid({ error: "BASE_URL_INVALID" })).toBe(true);
     expect(isBaseUrlInvalid({ code: "BASE_URL_INVALID" })).toBe(true);
     expect(isBaseUrlInvalid({ error: "BASE_URL_NOT_ALLOWED" })).toBe(false);
@@ -286,15 +308,20 @@ describe("Rendered UI error messages in HintLadder and ProblemPage", () => {
       const retryBtn = Array.from(alert!.querySelectorAll("button")).find(
         (b) => b.textContent === "重试",
       );
-      expect(retryBtn).toBeDefined();
-      for (const cls of [
-        "min-h-11",
-        "inline-flex",
-        "items-center",
-        "whitespace-nowrap",
-        "shrink-0",
-      ]) {
-        expect(retryBtn!.classList.contains(cls)).toBe(true);
+      if (code === "UPSTREAM_AUTH") {
+        expect(retryBtn).toBeUndefined();
+        expect(alert!.querySelectorAll("button")).toHaveLength(0);
+      } else {
+        expect(retryBtn).toBeDefined();
+        for (const cls of [
+          "min-h-11",
+          "inline-flex",
+          "items-center",
+          "whitespace-nowrap",
+          "shrink-0",
+        ]) {
+          expect(retryBtn!.classList.contains(cls)).toBe(true);
+        }
       }
 
       const settingsLink = Array.from(alert!.querySelectorAll("a")).find(
@@ -302,13 +329,14 @@ describe("Rendered UI error messages in HintLadder and ProblemPage", () => {
       );
       if (
         code === "NO_BYOK" ||
+        code === "UPSTREAM_AUTH" ||
         code === "BASE_URL_NOT_ALLOWED" ||
         code === "BASE_URL_INVALID"
       ) {
         expect(settingsLink).toBeDefined();
         expect(settingsLink!.getAttribute("data-testid")).toBe("goto-settings");
         expect(settingsLink!.getAttribute("href")).toBe(
-          code === "NO_BYOK"
+          code === "NO_BYOK" || code === "UPSTREAM_AUTH"
             ? "/settings?focus=apiKey"
             : "/settings?focus=baseUrl",
         );
@@ -421,18 +449,23 @@ describe("Rendered UI error messages in HintLadder and ProblemPage", () => {
       expect(alert!.textContent).not.toContain(code);
 
       const buttons = Array.from(alert!.querySelectorAll("button"));
-      expect(buttons).toHaveLength(1);
-      expect(buttons[0].textContent).toBe(
-        code === "UPSTREAM_ERROR" ? "重试" : "重试讲课",
-      );
-      for (const cls of [
-        "min-h-11",
-        "inline-flex",
-        "items-center",
-        "whitespace-nowrap",
-        "shrink-0",
-      ]) {
-        expect(buttons[0].classList.contains(cls)).toBe(true);
+      if (code === "UPSTREAM_AUTH") {
+        expect(buttons).toHaveLength(0);
+        expect(alert!.textContent).not.toContain("重试");
+      } else {
+        expect(buttons).toHaveLength(1);
+        expect(buttons[0].textContent).toBe(
+          code === "UPSTREAM_ERROR" ? "重试" : "重试讲课",
+        );
+        for (const cls of [
+          "min-h-11",
+          "inline-flex",
+          "items-center",
+          "whitespace-nowrap",
+          "shrink-0",
+        ]) {
+          expect(buttons[0].classList.contains(cls)).toBe(true);
+        }
       }
 
       const settingsLink = Array.from(alert!.querySelectorAll("a")).find(
@@ -455,12 +488,13 @@ describe("Rendered UI error messages in HintLadder and ProblemPage", () => {
         }
         if (
           code === "NO_BYOK" ||
+          code === "UPSTREAM_AUTH" ||
           code === "BASE_URL_NOT_ALLOWED" ||
           code === "BASE_URL_INVALID"
         ) {
           expect(settingsLink!.getAttribute("data-testid")).toBe("goto-settings");
           expect(settingsLink!.getAttribute("href")).toBe(
-            code === "NO_BYOK"
+            code === "NO_BYOK" || code === "UPSTREAM_AUTH"
               ? "/settings?focus=apiKey"
               : "/settings?focus=baseUrl",
           );
@@ -754,5 +788,283 @@ describe("Rendered UI error messages in HintLadder and ProblemPage", () => {
       expect(container.querySelector('a[href*="/settings"]')).toBeNull();
     },
   );
+
+  test.each([
+    { label: "HTTP 400 {code: UPSTREAM_AUTH, retryable: false} (no message)", mode: "http" as const, payload: { code: "UPSTREAM_AUTH", retryable: false } },
+    { label: "HTTP 400 {error: UPSTREAM_AUTH} (no message)", mode: "http" as const, payload: { error: "UPSTREAM_AUTH" } },
+    { label: "streamed NDJSON {type: error, code: UPSTREAM_AUTH, retryable: false} (no message)", mode: "stream" as const, payload: { type: "error", code: "UPSTREAM_AUTH", retryable: false } },
+    { label: "streamed NDJSON {type: error, error: UPSTREAM_AUTH} (no message)", mode: "stream" as const, payload: { type: "error", error: "UPSTREAM_AUTH" } },
+  ])(
+    "ProblemPage lecture UPSTREAM_AUTH ($label): shows UPSTREAM_AUTH_LECTURE_MESSAGE + ONLY 去设置 outline link to /settings?focus=apiKey (no 重试/重试讲课)",
+    async ({ mode, payload }) => {
+      const detail = await localSeedSource.detail("3sum");
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+        const url = String(input);
+        if (url.endsWith("/api/settings")) {
+          return Response.json({ serverKeyDisabled: true });
+        }
+        if (url.endsWith("/api/problems/3sum")) {
+          return Response.json({ problem: detail });
+        }
+        if (url.endsWith("/api/lecture")) {
+          if (mode === "http") {
+            return Response.json(payload, { status: 400 });
+          }
+          return new Response(JSON.stringify(payload) + "\n", {
+            headers: { "Content-Type": "application/x-ndjson" },
+          });
+        }
+        return Response.json({ ok: true });
+      });
+
+      await act(async () => {
+        root.render(createElement(ProblemPage));
+      });
+
+      const startBtn = Array.from(
+        container.querySelectorAll<HTMLButtonElement>("header button"),
+      ).find((b) => b.textContent === "开始讲课")!;
+      await act(async () => {
+        startBtn.click();
+      });
+
+      const alert = container.querySelector('[role="alert"]');
+      expect(alert).not.toBeNull();
+      expect(alert!.textContent).toContain(UPSTREAM_AUTH_LECTURE_MESSAGE);
+      expect(alert!.textContent).not.toContain("UPSTREAM_AUTH");
+      expect(alert!.textContent).not.toContain("重试");
+      expect(alert!.querySelectorAll("button")).toHaveLength(0);
+
+      const settingsLink = alert!.querySelector('[data-testid="goto-settings"]');
+      expect(settingsLink).not.toBeNull();
+      expect(settingsLink!.textContent).toBe("去设置");
+      expect(settingsLink!.getAttribute("href")).toBe("/settings?focus=apiKey");
+      expect(settingsLink!.classList.contains("border")).toBe(true);
+      expect(settingsLink!.classList.contains("border-beam-gold/60")).toBe(true);
+      expect(settingsLink!.classList.contains("text-beam-gold")).toBe(true);
+      expect(settingsLink!.classList.contains("bg-transparent")).toBe(true);
+    },
+  );
+
+  test.each([
+    { label: "{code: UPSTREAM_AUTH, retryable: false}", payload: { code: "UPSTREAM_AUTH", retryable: false } },
+    { label: "{error: UPSTREAM_AUTH}", payload: { error: "UPSTREAM_AUTH" } },
+  ])(
+    "HintLadder UPSTREAM_AUTH ($label): shows UPSTREAM_AUTH_LECTURE_MESSAGE + ONLY 去设置 outline link to /settings?focus=apiKey (no 重试 button)",
+    async ({ payload }) => {
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+        const url = String(input);
+        if (url.endsWith("/api/settings")) {
+          return Response.json({ serverKeyDisabled: true });
+        }
+        if (url.endsWith("/api/hint")) {
+          return Response.json(payload, { status: 400 });
+        }
+        return Response.json({ ok: true });
+      });
+
+      await act(async () => {
+        root.render(createElement(HintLadder, { slug: "3sum" }));
+      });
+
+      const btn = Array.from(container.querySelectorAll("button")).find(
+        (b) =>
+          b.textContent?.includes("观察") ||
+          b.getAttribute("title")?.includes("观察"),
+      )!;
+      await act(async () => {
+        btn.click();
+      });
+
+      const alert = container.querySelector('[role="alert"]');
+      expect(alert).not.toBeNull();
+      expect(alert!.textContent).toContain(UPSTREAM_AUTH_LECTURE_MESSAGE);
+      expect(alert!.textContent).not.toContain("UPSTREAM_AUTH");
+      expect(alert!.textContent).not.toContain("重试");
+      expect(alert!.querySelectorAll("button")).toHaveLength(0);
+
+      const settingsLink = alert!.querySelector('[data-testid="goto-settings"]');
+      expect(settingsLink).not.toBeNull();
+      expect(settingsLink!.textContent).toBe("去设置");
+      expect(settingsLink!.getAttribute("href")).toBe("/settings?focus=apiKey");
+      expect(settingsLink!.classList.contains("border")).toBe(true);
+      expect(settingsLink!.classList.contains("border-beam-gold/60")).toBe(true);
+      expect(settingsLink!.classList.contains("text-beam-gold")).toBe(true);
+      expect(settingsLink!.classList.contains("bg-transparent")).toBe(true);
+    },
+  );
+
+  test("ProblemPage streamed TIMEOUT with no message shows LECTURE_TIMEOUT_MESSAGE with action 重试 only (no model name, no recommendation)", async () => {
+    const detail = await localSeedSource.detail("3sum");
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/api/settings")) {
+        return Response.json({ serverKeyDisabled: true });
+      }
+      if (url.endsWith("/api/problems/3sum")) {
+        return Response.json({ problem: detail });
+      }
+      if (url.endsWith("/api/lecture")) {
+        const ndjson =
+          JSON.stringify({ type: "error", code: "TIMEOUT", retryable: true }) + "\n";
+        return new Response(ndjson, {
+          headers: { "Content-Type": "application/x-ndjson" },
+        });
+      }
+      return Response.json({ ok: true });
+    });
+
+    await act(async () => {
+      root.render(createElement(ProblemPage));
+    });
+
+    const startBtn = Array.from(
+      container.querySelectorAll<HTMLButtonElement>("header button"),
+    ).find((b) => b.textContent === "开始讲课")!;
+    await act(async () => {
+      startBtn.click();
+    });
+
+    const alert = container.querySelector('[role="alert"]');
+    expect(alert).not.toBeNull();
+    expect(alert!.querySelector("p")?.textContent).toBe(LECTURE_TIMEOUT_MESSAGE);
+    expect(alert!.textContent).not.toContain("gpt-6.1-sol");
+    expect(alert!.textContent).not.toContain("重试讲课");
+    const buttons = Array.from(alert!.querySelectorAll("button"));
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0].textContent).toBe("重试");
+    expect(alert!.querySelectorAll("a")).toHaveLength(0);
+    expect(alert!.textContent).not.toContain("去设置");
+  });
+
+  test("HintLadder TIMEOUT shows 提示请求超时，请重试。 with 重试 button", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/api/settings")) {
+        return Response.json({ serverKeyDisabled: true });
+      }
+      if (url.endsWith("/api/hint")) {
+        return Response.json({ code: "TIMEOUT", retryable: true }, { status: 504 });
+      }
+      return Response.json({ ok: true });
+    });
+
+    await act(async () => {
+      root.render(createElement(HintLadder, { slug: "3sum" }));
+    });
+
+    const btn = Array.from(container.querySelectorAll("button")).find(
+      (b) =>
+        b.textContent?.includes("观察") ||
+        b.getAttribute("title")?.includes("观察"),
+    )!;
+    await act(async () => {
+      btn.click();
+    });
+
+    const alert = container.querySelector('[role="alert"]');
+    expect(alert).not.toBeNull();
+    expect(alert!.querySelector("p")?.textContent).toBe("提示请求超时，请重试。");
+    const buttons = Array.from(alert!.querySelectorAll("button"));
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0].textContent).toBe("重试");
+    expect(alert!.querySelectorAll("a")).toHaveLength(0);
+  });
+
+  test("ProblemPage unknown streamed error code maps to UPSTREAM_ERROR_MESSAGE with 重试 only and console.warn logs code (never undefined)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const detail = await localSeedSource.detail("3sum");
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/api/settings")) {
+        return Response.json({ serverKeyDisabled: true });
+      }
+      if (url.endsWith("/api/problems/3sum")) {
+        return Response.json({ problem: detail });
+      }
+      if (url.endsWith("/api/lecture")) {
+        const ndjson =
+          JSON.stringify({
+            type: "error",
+            code: "BRAND_NEW_STREAM_CODE",
+            retryable: true,
+          }) + "\n";
+        return new Response(ndjson, {
+          headers: { "Content-Type": "application/x-ndjson" },
+        });
+      }
+      return Response.json({ ok: true });
+    });
+
+    await act(async () => {
+      root.render(createElement(ProblemPage));
+    });
+
+    const startBtn = Array.from(
+      container.querySelectorAll<HTMLButtonElement>("header button"),
+    ).find((b) => b.textContent === "开始讲课")!;
+    await act(async () => {
+      startBtn.click();
+    });
+
+    const alert = container.querySelector('[role="alert"]');
+    expect(alert).not.toBeNull();
+    expect(alert!.querySelector("p")?.textContent).toBe(UPSTREAM_ERROR_MESSAGE);
+    expect(alert!.textContent).not.toContain("BRAND_NEW_STREAM_CODE");
+    expect(warnSpy).toHaveBeenCalledWith("BRAND_NEW_STREAM_CODE");
+    for (const call of warnSpy.mock.calls) {
+      expect(call).not.toContain(undefined);
+      expect(call.map(String)).not.toContain("undefined");
+    }
+
+    const buttons = Array.from(alert!.querySelectorAll("button"));
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0].textContent).toBe("重试");
+    expect(alert!.querySelectorAll("a")).toHaveLength(0);
+    expect(alert!.textContent).not.toContain("去设置");
+  });
+
+  test("ProblemPage streamed UPSTREAM_ERROR with no message logs UPSTREAM_ERROR (never undefined)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const detail = await localSeedSource.detail("3sum");
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/api/settings")) {
+        return Response.json({ serverKeyDisabled: true });
+      }
+      if (url.endsWith("/api/problems/3sum")) {
+        return Response.json({ problem: detail });
+      }
+      if (url.endsWith("/api/lecture")) {
+        const ndjson =
+          JSON.stringify({
+            type: "error",
+            code: "UPSTREAM_ERROR",
+            retryable: true,
+          }) + "\n";
+        return new Response(ndjson, {
+          headers: { "Content-Type": "application/x-ndjson" },
+        });
+      }
+      return Response.json({ ok: true });
+    });
+
+    await act(async () => {
+      root.render(createElement(ProblemPage));
+    });
+
+    const startBtn = Array.from(
+      container.querySelectorAll<HTMLButtonElement>("header button"),
+    ).find((b) => b.textContent === "开始讲课")!;
+    await act(async () => {
+      startBtn.click();
+    });
+
+    expect(warnSpy).toHaveBeenCalledWith("UPSTREAM_ERROR");
+    for (const call of warnSpy.mock.calls) {
+      expect(call).not.toContain(undefined);
+      expect(call.map(String)).not.toContain("undefined");
+    }
+  });
 });
 

@@ -214,7 +214,7 @@ describe("lib/byok/client pure helpers & fetchServerKeyDisabled", () => {
 
   test("mapByokErrorMessage maps error codes to Chinese copy and never returns raw error codes", () => {
     expect(mapByokErrorMessage({ code: "BYOK_KEY_REQUIRED" })).toBe(
-      "用自定义地址时需要同时填你自己的 Key",
+      "用自定义接口地址时，需要同时填你自己的 API Key",
     );
     expect(mapByokErrorMessage({ code: "BASE_URL_NOT_ALLOWED" })).toBe(
       "接口地址只支持公网 http(s) 地址",
@@ -402,7 +402,7 @@ describe("Error code mapping in HintLadder and ProblemPage", () => {
   test.each([
     {
       code: "BYOK_KEY_REQUIRED",
-      expected: "用自定义地址时需要同时填你自己的 Key",
+      expected: "用自定义接口地址时，需要同时填你自己的 API Key",
     },
     {
       code: "BASE_URL_NOT_ALLOWED",
@@ -463,7 +463,7 @@ describe("Error code mapping in HintLadder and ProblemPage", () => {
   test.each([
     {
       code: "BYOK_KEY_REQUIRED",
-      expected: "用自定义地址时需要同时填你自己的 Key",
+      expected: "用自定义接口地址时，需要同时填你自己的 API Key",
     },
     {
       code: "BASE_URL_NOT_ALLOWED",

@@ -1,7 +1,26 @@
 /** 增量读取已校验步骤；完整 result 到达前不能当作完成的教案。 */
-import { ByokError, resolveByokError, toByokError } from "@/lib/byok/client";
+import {
+  ByokError,
+  LECTURE_TIMEOUT_MESSAGE,
+  resolveByokError,
+  toByokError,
+  UPSTREAM_AUTH_LECTURE_MESSAGE,
+  UPSTREAM_ERROR_MESSAGE,
+} from "@/lib/byok/client";
 import { teachingStepSchema } from "@/lib/teaching/schema";
 import type { TeachingStep } from "@/lib/teaching/types";
+
+export { LECTURE_TIMEOUT_MESSAGE } from "@/lib/byok/client";
+
+const STREAM_ERROR_MAP: Record<string, string> = {
+  TIMEOUT: LECTURE_TIMEOUT_MESSAGE,
+  UPSTREAM_AUTH: UPSTREAM_AUTH_LECTURE_MESSAGE,
+  AUTH_ERROR: UPSTREAM_AUTH_LECTURE_MESSAGE,
+  INVALID_SCRIPT: "教案不合法，请换用 gpt-6.1-sol。",
+  CANCELLED: "备课已取消，未保存教案。",
+  UPSTREAM_ERROR: UPSTREAM_ERROR_MESSAGE,
+};
+
 export async function readLectureResponse(
   response: Response,
   onProgress: (message: string) => void,
@@ -46,13 +65,26 @@ export async function readLectureResponse(
       script = event.script;
       complete = true;
     } else if (event.type === "error") {
-      const resolved = resolveByokError(event);
-      if (resolved?.code === "UPSTREAM_ERROR" && resolved.rawMessage) {
-        console.warn(resolved.rawMessage);
+      const rawCode = event.code ?? event.error;
+      const code = typeof rawCode === "string" ? rawCode.trim() : "";
+      if (!code) {
+        throw new ByokError("STREAM_ERROR", "备课失败，请重试或换用 gpt-6.1-sol。");
       }
-      throw resolved
-        ? new ByokError(resolved.code, resolved.message)
-        : new ByokError("STREAM_ERROR", "备课失败，请重试或换用 gpt-6.1-sol。");
+      const rawMsg =
+        typeof event.message === "string" ? event.message.trim() : "";
+      const resolved = resolveByokError({ code, error: code });
+      if (resolved) {
+        if (resolved.code === "UPSTREAM_ERROR") {
+          console.warn(rawMsg && rawMsg !== resolved.code ? rawMsg : resolved.code);
+        }
+        throw new ByokError(resolved.code, resolved.message);
+      }
+      if (Object.hasOwn(STREAM_ERROR_MAP, code)) {
+        const mappedCode = code === "AUTH_ERROR" ? "UPSTREAM_AUTH" : code;
+        throw new ByokError(mappedCode, STREAM_ERROR_MAP[code]);
+      }
+      console.warn(rawMsg && rawMsg !== code ? rawMsg : code);
+      throw new ByokError("UPSTREAM_ERROR", UPSTREAM_ERROR_MESSAGE);
     } else
       throw new ByokError("INVALID_STREAM", "备课数据无法读取，请重试或换用 gpt-6.1-sol。");
   };
