@@ -39,7 +39,7 @@ export function validateScript(value: unknown, referenceCode: string, opts?: Val
   return validated;
 }
 
-/** Non-empty step ids that appear exactly once. */
+/** Non-empty, non-whitespace-only step ids that appear exactly once. */
 export function askableStepIds(script: Pick<TeachingScript, "steps">): Set<string> {
   const counts = new Map<string, number>();
   for (const step of script.steps) {
@@ -47,7 +47,7 @@ export function askableStepIds(script: Pick<TeachingScript, "steps">): Set<strin
   }
   const askable = new Set<string>();
   for (const [id, count] of counts) {
-    if (id !== "" && count === 1) askable.add(id);
+    if (id.trim() !== "" && count === 1) askable.add(id);
   }
   return askable;
 }
