@@ -55,7 +55,7 @@ v0.2.0 给 `Submission` 加了 `judgedBy`。保留旧库却不跑 `db:push` 时�
 ## Docker 自托管
 
 ```bash
-docker buildx build --allow network.host --network host --build-arg BASE_PATH=/algostage -t algostage:0.2.0-alpha.1 --load .
+docker buildx build --build-arg BASE_PATH=/algostage -t algostage:0.2.0-alpha.1 --load .
 # 或
 ALGOSTAGE_IMAGE_TAG=0.2.0-alpha.1 docker compose -f deploy/compose.yaml up -d --no-build --wait
 ```

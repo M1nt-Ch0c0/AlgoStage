@@ -29,6 +29,9 @@ describe("deploy buildx 与启动配置", () => {
   it("README.md 包含 docker buildx build 与 --no-build", () => {
     const readme = read("README.md");
     expect(readme).toContain("docker buildx build");
+    expect(readme).toContain("--load");
+    expect(readme).not.toContain("--allow network.host");
+    expect(readme).not.toContain("--network host");
     expect(readme).toContain("--no-build");
   });
 });
