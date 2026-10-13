@@ -29,6 +29,21 @@ test("流式逐步播完再 completeStream，回看排序步仍有锚点且能�
   expect(usePlayerStore.getState()).toMatchObject({ status: "playing", currentIndex: 1 });
 });
 
+test("awaitingContinue 时点击当前时间线节点不清除 awaitingContinue", () => {
+  const store = usePlayerStore.getState();
+  store.loadScript(script);
+  store.play();
+  usePlayerStore.setState({ awaitingContinue: true, currentIndex: 1 });
+  store.goto(1);
+  expect(usePlayerStore.getState()).toMatchObject({
+    status: "playing",
+    currentIndex: 1,
+    awaitingContinue: true,
+  });
+  store.goto(0);
+  expect(usePlayerStore.getState()).toMatchObject({ currentIndex: 0, awaitingContinue: false });
+});
+
 test.each(["goto", "prev"] as const)("结束后 %s 进入 paused，当前步可继续播放", action => {
   const store = usePlayerStore.getState();
   store.loadScript(script);

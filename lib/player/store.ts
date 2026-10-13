@@ -223,11 +223,16 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     })),
 
   goto: (index) =>
-    set((s) => ({
-      currentIndex: Math.max(0, Math.min(index, s.steps.length - 1)),
-      status: s.status === "finished" ? "paused" : s.status === "streaming" && s.steps.length ? "playing" : s.status,
-      awaitingContinue: false,
-    })),
+    set((s) => {
+      const currentIndex = Math.max(0, Math.min(index, s.steps.length - 1));
+      // 点当前时间线节点只是再选中本步，不能清掉「等用户继续」。
+      const sameStep = currentIndex === s.currentIndex;
+      return {
+        currentIndex,
+        status: s.status === "finished" ? "paused" : s.status === "streaming" && s.steps.length ? "playing" : s.status,
+        awaitingContinue: sameStep ? s.awaitingContinue : false,
+      };
+    }),
 
   interrupt: () => set({ status: "interrupted", awaitingContinue: false }),
   resume: () => set({ status: "paused" }),

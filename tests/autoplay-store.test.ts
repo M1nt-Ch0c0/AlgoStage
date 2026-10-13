@@ -134,6 +134,11 @@ test("next / prev / goto / replay 清除 awaitingContinue，且 awaitingContinue
   expect(s().currentIndex).toBe(2);
   expect(s().awaitingContinue).toBe(false);
 
+  s().setAwaitingContinue(true);
+  s().goto(2);
+  expect(s().currentIndex).toBe(2);
+  expect(s().awaitingContinue).toBe(true);
+
   // 推进到完成态后测试 replay
   s().next();
   expect(s().status).toBe("finished");
