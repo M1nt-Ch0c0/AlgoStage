@@ -15,13 +15,15 @@
 
 import { useMemo } from "react";
 import { AnimatePresence } from "motion/react";
-import { usePlayerStore } from "@/lib/player/store";
+import { selectAskPresentation, usePlayerStore } from "@/lib/player/store";
 import { getEffect } from "@/lib/effects/registry";
-import type { EffectCall } from "@/lib/teaching/types";
+import type { EffectCall, EffectTarget } from "@/lib/teaching/types";
 import { FxContext, usePrefersReducedMotion, type EffectLevel } from "./fx-context";
 import "./index"; // 注册全部内置特效
 
 const MAX_ACTIVE = 3;
+const EMPTY_TARGETS: EffectTarget[] = [];
+const EMPTY_EFFECTS: EffectCall[] = [];
 
 function filterByLevel(calls: EffectCall[], level: EffectLevel): EffectCall[] {
   if (level === "minimal") return calls.filter((c) => c.effect === "spotlight-beam");
@@ -34,13 +36,17 @@ export default function EffectStage() {
   const step = usePlayerStore((s) => s.steps[s.currentIndex]);
   const status = usePlayerStore((s) => s.status);
   const effectLevel = usePlayerStore((s) => s.effectLevel);
+  const segment = usePlayerStore(selectAskPresentation);
   const reduced = usePrefersReducedMotion();
 
   const active = step != null && status !== "idle" && status !== "finished";
+  // 回答段在播时只用该段的 targets/effects；缺省按空数组，不回落到原步。
+  const targets = segment ? (segment.targets ?? EMPTY_TARGETS) : (step?.targets ?? EMPTY_TARGETS);
+  const effects = segment ? (segment.effects ?? EMPTY_EFFECTS) : (step?.effects ?? EMPTY_EFFECTS);
 
   const fx = useMemo(
-    () => (active ? filterByLevel(step.effects, effectLevel).slice(0, MAX_ACTIVE) : []),
-    [active, step, effectLevel],
+    () => (active ? filterByLevel(effects, effectLevel).slice(0, MAX_ACTIVE) : []),
+    [active, effects, effectLevel],
   );
 
   const ctx = useMemo(
@@ -54,7 +60,7 @@ export default function EffectStage() {
         <AnimatePresence>
           {fx.map((call) => {
             const plugin = getEffect(call.effect);
-            const target = step?.targets[call.targetIndex ?? 0];
+            const target = targets[call.targetIndex ?? 0];
             if (!plugin || !target) return null;
             const Component = plugin.component;
             return (

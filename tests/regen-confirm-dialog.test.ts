@@ -230,3 +230,31 @@ test("trigger removed/hidden after confirm -> focus lands on fallback element (a
   expect(pageSource).not.toMatch(/aria-label=\{[^}]*讲解播放区/);
 });
 
+test("answerCount 为 0 时确认文案不变；大于 0 时追加「你问过的 N 个问题会被清掉」", async () => {
+  function CopyHarness({ answerCount }: { answerCount: number }) {
+    const triggerRef = useRef<HTMLButtonElement | null>(null);
+    return createElement(RegenConfirmDialog, {
+      open: true,
+      answerCount,
+      onCancel: () => {},
+      onConfirm: () => {},
+      returnFocusRef: triggerRef,
+    });
+  }
+
+  await act(async () => {
+    root.render(createElement(CopyHarness, { answerCount: 0 }));
+  });
+  const title = () => {
+    const dialog = container.querySelector('[role="dialog"][aria-modal="true"]');
+    const labelledBy = dialog?.getAttribute("aria-labelledby");
+    return document.getElementById(labelledBy!)?.textContent;
+  };
+  expect(title()).toBe("重新生成会清掉当前教案，确定吗？");
+
+  await act(async () => {
+    root.render(createElement(CopyHarness, { answerCount: 3 }));
+  });
+  expect(title()).toBe("重新生成会清掉当前教案，确定吗？你问过的 3 个问题会被清掉");
+});
+

@@ -11,9 +11,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { usePlayerStore } from "@/lib/player/store";
+import type { AnswerSegment } from "@/lib/ask/types";
+import { selectAskPresentation, usePlayerStore } from "@/lib/player/store";
 import { ANCHOR_REFRESH_EVENT } from "@/components/effects/use-anchor-rect";
-import type { TeachingStep } from "@/lib/teaching/types";
+import type { EffectCall, EffectTarget, TeachingStep } from "@/lib/teaching/types";
+
+const EMPTY_TARGETS: EffectTarget[] = [];
+const EMPTY_EFFECTS: EffectCall[] = [];
 
 type MonacoApi = typeof import("monaco-editor");
 type IEditor = import("monaco-editor").editor.IStandaloneCodeEditor;
@@ -198,7 +202,7 @@ export default function CodeEditor({
 
   // 订阅播放器：注入光束 decorations + 平滑滚动跟随
   useEffect(() => {
-    const apply = (step: TeachingStep | undefined, status: string) => {
+    const apply = (step: TeachingStep | undefined, status: string, segment: AnswerSegment | null) => {
       const monaco = monacoRef.current;
       const editor = editorRef.current;
       const collection = decorationsRef.current;
@@ -211,17 +215,21 @@ export default function CodeEditor({
         return;
       }
 
+      // 回答段在播时只用该段的 targets/effects；缺省按空数组，不回落到原步。
+      const targets = segment ? (segment.targets ?? EMPTY_TARGETS) : step.targets;
+      const effects = segment ? (segment.effects ?? EMPTY_EFFECTS) : step.effects;
+
       const decos: import("monaco-editor").editor.IModelDeltaDecoration[] = [];
       let beamColor: string | null = null;
       let revealLine: number | null = null;
 
-      step.targets.forEach((t, i) => {
+      targets.forEach((t, i) => {
         if (t.kind !== "code-line" && t.kind !== "code-token") return;
         const rawStart = t.kind === "code-line" ? t.start : t.line;
         const rawEnd = t.kind === "code-line" ? (t.end ?? t.start) : t.line;
         const start = Math.max(1, Math.min(rawStart, model.getLineCount()));
         const end = Math.max(start, Math.min(rawEnd, model.getLineCount()));
-        const call = step.effects.find(
+        const call = effects.find(
           (c) => c.effect === "spotlight-beam" && (c.targetIndex ?? 0) === i,
         );
         beamColor = beamColor ?? BEAM_COLOR_VARS[call?.color ?? "gold"];
@@ -244,13 +252,13 @@ export default function CodeEditor({
       }
     };
 
-    apply(
-      usePlayerStore.getState().steps[usePlayerStore.getState().currentIndex],
-      usePlayerStore.getState().status,
-    );
-    const unsub = usePlayerStore.subscribe((s) =>
-      apply(s.steps[s.currentIndex], s.status),
-    );
+    const publish = (s: Parameters<typeof selectAskPresentation>[0] & {
+      steps: TeachingStep[];
+      currentIndex: number;
+      status: string;
+    }) => apply(s.steps[s.currentIndex], s.status, selectAskPresentation(s));
+    publish(usePlayerStore.getState());
+    const unsub = usePlayerStore.subscribe(publish);
     return unsub;
   // 恢复参考代码会清掉 Monaco 装饰，代码同步后也要重新应用当前步骤。
   }, [editorReady, value]);

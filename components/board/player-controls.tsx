@@ -7,6 +7,8 @@
  * 粗指针下上一步、播放暂停、下一步（含非等待态）热区至少 44×44；时间线圆点视觉仍是 20px 居中细条，点按高度至少 44px，宽度均分整条且相邻热区边对边贴合、不重叠。细指针尺寸不变。
  * 自动播放、语速与特效强度仍用 pill 的 py-0.5 视觉；粗指针用透明 after 把点按高度扩到至少 44px，pill 宽至少 44px 且文字居中，换行 gap-y 加大以免相邻行热区重叠。
  * 粗指针且下一步已就绪时，把「点「下一步」继续」放在这条控制条里（窄屏单独成行，吸底仍可见）。
+ * 某步已有提问时，时间线圆点内加一枚不接收指针的小标记；无障碍名称改为「跳到第 N 步，有 M 个提问」。
+ * 回答播放中：暂停只暂停当前段，播放继续当前段，下一步切到下一段，不推进原课。
  * 输入框、contenteditable、Monaco 编辑器内以及带 Ctrl/Meta/Alt 的按键不拦截。
  * 焦点在 button 或链接上时只把 Space 留给控件本身（重播、语速）；←/→ 仍步进。
  * 焦点在 role=dialog 内，或页面上存在 aria-modal="true" 的对话框时，忽略全部播放器快捷键。
@@ -72,6 +74,10 @@ export default function PlayerControls({
   const autoAdvanceHydrated = usePlayerStore((s) => s.autoAdvanceHydrated);
   const awaitingContinue = usePlayerStore((s) => s.awaitingContinue);
   const receiving = usePlayerStore((s) => s.receiving);
+  const answers = usePlayerStore((s) => s.answers);
+  const askPhase = usePlayerStore((s) => s.askPhase);
+  const askPlaybackPaused = usePlayerStore((s) => s.askPlaybackPaused);
+  const askPlaybackRun = usePlayerStore((s) => s.askPlaybackRun);
   const coarsePointer = useCoarsePointer();
   const {
     play,
@@ -84,6 +90,8 @@ export default function PlayerControls({
     setAutoAdvance,
     hydrateAutoAdvance,
     hydratePrefs,
+    setAnswerPlaybackPaused,
+    nextAnswerSegment,
   } = usePlayerStore.getState();
 
   useEffect(() => {
@@ -92,7 +100,9 @@ export default function PlayerControls({
   }, [hydrateAutoAdvance, hydratePrefs]);
 
   const hasScript = !preparing && steps.length > 0;
-  const playing = status === "playing" || status === "streaming";
+  const answerPlayback = askPhase === "playing";
+  // 回答播放时图标跟段暂停，不跟原课 status（此时是 interrupted）。
+  const playing = answerPlayback ? !askPlaybackPaused : status === "playing" || status === "streaming";
   // 流式停在最后一步时「下一步准备中…」仍由字幕条显示，这里不插提示。
   const preparingNext =
     awaitingContinue && receiving && steps.length > 0 && currentIndex === steps.length - 1;
@@ -123,17 +133,34 @@ export default function PlayerControls({
         prev();
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
-        next();
+        // 回答播放只切段，不走 next()，避免推进 currentIndex。
+        if (answerPlayback) nextAnswerSegment(askPlaybackRun);
+        else next();
       } else if (e.key === " ") {
         e.preventDefault();
-        if (awaitingContinue) next();
+        if (answerPlayback) setAnswerPlaybackPaused(!askPlaybackPaused);
+        else if (awaitingContinue) next();
         else if (playing) pause();
         else play();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [hasScript, playing, awaitingContinue, panelShowing, play, pause, next, prev]);
+  }, [
+    hasScript,
+    playing,
+    awaitingContinue,
+    panelShowing,
+    answerPlayback,
+    askPlaybackPaused,
+    askPlaybackRun,
+    play,
+    pause,
+    next,
+    prev,
+    setAnswerPlaybackPaused,
+    nextAnswerSegment,
+  ]);
 
   const btn =
     "flex size-8 shrink-0 items-center whitespace-nowrap justify-center rounded-full text-chalk-300 transition-colors hover:bg-board-700 hover:text-chalk-100 disabled:pointer-events-none disabled:opacity-30 pointer-coarse:size-11";
@@ -155,7 +182,14 @@ export default function PlayerControls({
         <button
           type="button"
           className="flex size-9 shrink-0 items-center whitespace-nowrap justify-center rounded-full bg-beam-gold text-on-accent transition-transform hover:scale-105 disabled:pointer-events-none disabled:bg-board-700 disabled:text-chalk-700 pointer-coarse:size-11"
-          onClick={() => (playing ? pause() : play())}
+          onClick={() => {
+            if (answerPlayback) {
+              setAnswerPlaybackPaused(!askPlaybackPaused);
+              return;
+            }
+            if (playing) pause();
+            else play();
+          }}
           disabled={!hasScript}
           aria-label={playing ? "暂停" : "播放"}
         >
@@ -168,8 +202,17 @@ export default function PlayerControls({
               ? "flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1 rounded-full px-3 text-xs font-semibold transition-colors bg-beam-gold text-on-accent hover:brightness-110 disabled:pointer-events-none disabled:opacity-30"
               : btn
           }
-          onClick={next}
-          disabled={!hasScript || (currentIndex >= steps.length - 1 && (receiving || status === "finished"))}
+          onClick={() => {
+            if (answerPlayback) {
+              nextAnswerSegment(askPlaybackRun);
+              return;
+            }
+            next();
+          }}
+          disabled={
+            !hasScript ||
+            (!answerPlayback && currentIndex >= steps.length - 1 && (receiving || status === "finished"))
+          }
           aria-label="下一步"
           data-awaiting={awaitingContinue ? "true" : undefined}
         >
@@ -206,27 +249,40 @@ export default function PlayerControls({
             )}
             {/* 时间线轨道：圆点 flex-1 等宽均分；占位段 w-8 shrink-0 贴在同一轨道末尾，不参与均分。 */}
             <div className="flex min-w-0 flex-1 items-center">
-              {steps.map((s, i) => (
-                <button
-                  type="button"
-                  key={s.id}
-                  onClick={() => goto(i)}
-                  aria-label={`跳到第 ${i + 1} 步`}
-                  aria-current={i === currentIndex ? "step" : undefined}
-                  className="group flex h-5 min-w-0 flex-1 items-center justify-center pointer-coarse:h-11"
-                >
-                  <span
-                    data-dot-visual=""
-                    className={`block h-1.5 w-full rounded-full transition-colors ${
-                      i === currentIndex
-                        ? "bg-beam-gold"
-                        : i < currentIndex
-                          ? "bg-chalk-500 group-hover:bg-chalk-300"
-                          : "bg-board-600 group-hover:bg-chalk-700"
-                    }`}
-                  />
-                </button>
-              ))}
+              {steps.map((s, i) => {
+                const asked = answers[s.id]?.length ?? 0;
+                return (
+                  <button
+                    type="button"
+                    key={s.id}
+                    onClick={() => goto(i)}
+                    aria-label={asked > 0 ? `跳到第 ${i + 1} 步，有 ${asked} 个提问` : `跳到第 ${i + 1} 步`}
+                    aria-current={i === currentIndex ? "step" : undefined}
+                    className="group flex h-5 min-w-0 flex-1 items-center justify-center pointer-coarse:h-11"
+                  >
+                    <span
+                      data-dot-visual=""
+                      className={`relative block h-1.5 w-full rounded-full transition-colors ${
+                        i === currentIndex
+                          ? "bg-beam-gold"
+                          : i < currentIndex
+                            ? "bg-chalk-500 group-hover:bg-chalk-300"
+                            : "bg-board-600 group-hover:bg-chalk-700"
+                      }`}
+                    >
+                      {asked > 0 && (
+                        <span
+                          data-answer-mark=""
+                          aria-hidden="true"
+                          className={`pointer-events-none absolute top-1/2 left-1/2 size-1 -translate-x-1/2 -translate-y-1/2 rounded-full ${
+                            i === currentIndex ? "bg-board-950" : "bg-beam-gold"
+                          }`}
+                        />
+                      )}
+                    </span>
+                  </button>
+                );
+              })}
               {(generating || interrupted) && <PendingSegment broken={interrupted} />}
             </div>
           </>
