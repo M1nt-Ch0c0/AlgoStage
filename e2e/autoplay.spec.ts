@@ -593,14 +593,17 @@ test.describe("coarse pointer hit areas 390", () => {
       await page.goto("/problem/group-anagrams");
       await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2x", exact: true }).click();
       await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
-      await expect(page.getByText(`第 1 / ${count} 步`)).toBeVisible();
+      // 备课中控制栏不显示「第 x / N 步」（v0.2.1），改等 role=status 的「已收到 N 步…」。
+      await expect(page.getByRole("status").filter({ hasText: `已收到 ${count} 步，仍在备课…` })).toBeVisible();
       await page.getByRole("button", { name: `跳到第 ${count} 步`, exact: true }).tap();
-      await expect(page.getByText(`第 ${count} / ${count} 步`)).toBeVisible();
+      await expect(page.getByRole("button", { name: `跳到第 ${count} 步`, exact: true })).toHaveAttribute("aria-current", "step");
       await expect(page.getByText("下一步准备中…")).toBeVisible();
 
       const dots = page.getByRole("button", { name: /^跳到第 \d+ 步$/ });
       await expect(dots).toHaveCount(count);
       const pending = page.locator("[data-pending-step]");
+      // 本分支已实现占位条：必须走占位分支。
+      await expect(pending).toHaveCount(1);
       const pendingCount = await pending.count();
       const boxes: LayoutBox[] = [];
       for (let i = 0; i < count; i++) {
