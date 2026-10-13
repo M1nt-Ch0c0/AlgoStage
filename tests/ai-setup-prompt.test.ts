@@ -142,7 +142,8 @@ test("首页提示卡片在按钮行下方、限宽，「去设置」为描边�
   expect(wrapper.className).toBe("mt-5 max-w-[34rem]");
   expect(wrapper.querySelector('a[href="/classroom/roadmap"]')).toBeNull();
   const button = link("去设置")!;
-  for (const c of ["border", "border-beam-gold/60", "text-beam-gold", "bg-transparent"]) expect(button.classList.contains(c)).toBe(true);
+  for (const c of ["shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-beam-gold)_60%,transparent)]", "text-beam-gold", "bg-transparent"]) expect(button.classList.contains(c)).toBe(true);
+  expect(button.classList.contains("border")).toBe(false);
   expect(button.classList.contains("bg-beam-gold")).toBe(false);
   await act(async () => root.render(null));
   await act(async () => root.render(createElement(AiSetupPrompt, { problemSlug: "3sum" })));
