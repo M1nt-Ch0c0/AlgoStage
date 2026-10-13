@@ -32,19 +32,25 @@ ALGOSTAGE_IMAGE_TAG=<版本> docker compose -f deploy/compose.yaml ps
 
 镜像改用 `algostage` 用户（UID/GID `1001:1001`）运行。镜像内 `DATA_DIR=/data`，继续使用现有数据卷和 `/data/algostage.db`；入口脚本会先检查数据目录是否可写，失败时输出当前 UID 和修复命令并退出，不在应用容器内执行 `chown`。
 
-旧卷若由 root 拥有，请按顺序升级：
+旧卷若由 root 拥有，请按顺序升级。下面命令中的 `<你的数据卷名>` 必须换成**实际挂在 `/data` 上的卷名**，不要直接照抄 `algostage-data`：Compose 可能给卷名加上项目名前缀（例如旧部署的 `algostage-demo-algostage-data`），写错卷名时 `docker run -v` 会静默新建一个空卷。先这样确认：
+
+```sh
+docker volume ls                                   # 列出所有卷
+docker inspect -f '{{range .Mounts}}{{.Name}} -> {{.Destination}}{{"\n"}}{{end}}' algostage   # 看容器 /data 实际挂的卷
+ALGOSTAGE_IMAGE_TAG=<旧版本> docker compose -f deploy/compose.yaml config --volumes   # 查看 compose 声明的卷
+```
 
 1. 停止旧容器（`ALGOSTAGE_IMAGE_TAG=<旧版本> docker compose -f deploy/compose.yaml stop`），再把整个数据卷打包备份，包含 `/data/algostage.db` 以及仍存在的 SQLite `algostage.db-wal` / `algostage.db-shm` 文件：
 
    ```sh
-   docker run --rm -v algostage-data:/data -v "$PWD":/backup alpine tar czf /backup/algostage-data-$(date +%F).tgz -C /data .
+   docker run --rm -v <你的数据卷名>:/data -v "$PWD":/backup alpine tar czf /backup/algostage-data-$(date +%F).tgz -C /data .
    tar tzf algostage-data-$(date +%F).tgz   # 确认备份里有 algostage.db
    ```
 
 2. 对旧卷执行一次权限修复：
 
    ```sh
-   docker run --rm -v algostage-data:/data alpine chown -R 1001:1001 /data
+   docker run --rm -v <你的数据卷名>:/data alpine chown -R 1001:1001 /data
    ```
 
 3. 切换至新镜像，按「构建与启动」中的 Compose 命令启动。

@@ -5,8 +5,9 @@ set -e
 DATA_DIR="${DATA_DIR:-/data}"
 if ! write_test=$(mktemp "$DATA_DIR/.algostage-write-test.XXXXXX" 2>/dev/null); then
   printf 'Error: data directory %s is not writable (uid %s).\n' "$DATA_DIR" "$(id -u)" >&2
-  printf '%s\n' 'For an existing root-owned algostage-data volume, run this one-time fix before switching images:' >&2
-  printf '%s\n' 'docker run --rm -v algostage-data:/data alpine chown -R 1001:1001 /data' >&2
+  printf '%s\n' 'For an existing root-owned data volume, run this one-time fix before switching images:' >&2
+  printf '%s\n' 'docker run --rm -v <你的数据卷名>:/data alpine chown -R 1001:1001 /data' >&2
+  printf '%s\n' 'Find <你的数据卷名> with `docker volume ls` or `docker inspect -f '"'"'{{range .Mounts}}{{.Name}} {{.Destination}}{{"\n"}}{{end}}'"'"' <容器名>` (the volume mounted at /data; Compose may prefix the project name, e.g. algostage-demo-algostage-data).' >&2
   exit 1
 fi
 rm -f "$write_test"
