@@ -6,6 +6,8 @@ import { savedEndpoint } from "@/lib/agent/saved-endpoint";
 import {
   BASE_URL_INVALID_MESSAGE,
   BASE_URL_NOT_ALLOWED_SETTINGS_MESSAGE,
+  clearLocalBaseUrl,
+  ENDPOINT_SAVED_NEED_KEY_MESSAGE,
   isBaseUrlInvalid,
   isBaseUrlNotAllowed,
   isNoByokError,
@@ -13,8 +15,10 @@ import {
   mapByokErrorMessage,
   NO_BYOK_SETTINGS_MESSAGE,
   parseFocusParam,
+  readLocalBaseUrl,
   type SettingsResponse,
   UPSTREAM_ERROR_MESSAGE,
+  writeLocalBaseUrl,
 } from "@/lib/byok/client";
 import { maskKey, readLocalByok } from "@/lib/byok/storage";
 import { useLocalByok } from "@/lib/byok/use-local-byok";
@@ -73,13 +77,14 @@ export default function SettingsPage() {
   const [showKey, setShowKey] = useState(false);
   const [effectLevel, setEffectLevel] = useState("full");
   const [narrationSpeed, setNarrationSpeed] = useState("22");
-  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "saved-need-key">("idle");
   const [saveError, setSaveError] = useState("");
   const [testState, setTestState] = useState<TestState>({ kind: "idle" });
   const [serverKeyDisabled, setServerKeyDisabled] = useState(false);
   const [highlightApiKey, setHighlightApiKey] = useState(false);
   const [highlightBaseURL, setHighlightBaseURL] = useState(false);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [localSavedBaseURL, setLocalSavedBaseURL] = useState("");
   const { byok: localByok, save: saveLocalByok, clear: clearLocalByokState } = useLocalByok();
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 只记录真实编辑；预填文案和从服务端读到的旧值都不能隐式写回。
@@ -125,7 +130,9 @@ export default function SettingsPage() {
         if (settings.provider) setProvider(settings.provider);
         if (disabled) {
           const stored = readLocalByok();
-          setBaseURL(stored?.baseURL ?? savedEndpoint(settings) ?? "");
+          const storedBase = stored?.baseURL ?? readLocalBaseUrl();
+          setLocalSavedBaseURL(storedBase);
+          setBaseURL(storedBase || (savedEndpoint(settings) ?? ""));
           if (stored?.model) setModel(stored.model);
           else if (settings.model) setModel(settings.model);
         } else {
@@ -162,6 +169,8 @@ export default function SettingsPage() {
 
   function clearLocalKey() {
     clearLocalByokState();
+    clearLocalBaseUrl();
+    setLocalSavedBaseURL("");
     setApiKey("");
     delete edits.current.apiKey;
     setSaveState("idle");
@@ -185,13 +194,34 @@ export default function SettingsPage() {
     }
     if (serverKeyDisabled) {
       const nextKey = apiKey.trim() || localByok?.apiKey || "";
+      const trimmedBase = baseURL.trim();
       if (nextKey) {
         saveLocalByok({
           apiKey: nextKey,
-          baseURL: baseURL.trim() || undefined,
+          baseURL: trimmedBase || undefined,
           model: model.trim() || undefined,
         });
+        writeLocalBaseUrl(trimmedBase);
+        setLocalSavedBaseURL(trimmedBase);
+        setApiKey("");
+        edits.current = {};
+        setSaveState("saved");
+        if (saveTimer.current) clearTimeout(saveTimer.current);
+        saveTimer.current = setTimeout(() => setSaveState("idle"), 2000);
+        return;
       }
+      if (trimmedBase) {
+        writeLocalBaseUrl(trimmedBase);
+        setLocalSavedBaseURL(trimmedBase);
+        edits.current = {};
+        setSaveState("saved-need-key");
+        focusAndScroll("apiKey", true);
+        if (saveTimer.current) clearTimeout(saveTimer.current);
+        saveTimer.current = setTimeout(() => setSaveState("idle"), 2000);
+        return;
+      }
+      writeLocalBaseUrl("");
+      setLocalSavedBaseURL("");
       setApiKey("");
       edits.current = {};
       setSaveState("saved");
@@ -311,6 +341,9 @@ export default function SettingsPage() {
   const displayedMaskedKey = serverKeyDisabled
     ? (localByok ? maskKey(localByok.apiKey) : "")
     : apiKeyMasked;
+  const displayedSavedBaseURL = serverKeyDisabled
+    ? (localByok?.baseURL || localSavedBaseURL)
+    : "";
   const effectiveKeySource: KeySource = serverKeyDisabled
     ? (localByok ? "settings" : "none")
     : keySource;
@@ -401,9 +434,9 @@ export default function SettingsPage() {
                 />
                 {baseURLError && <p id="baseURL-error" role="alert" className="mt-2 text-xs leading-5 text-beam-rose">{baseURLError}</p>}
                 <p id="baseURL-policy" className="mt-2 text-xs leading-5 text-chalk-500">需要公网 http(s) 地址；自托管实例可由管理员允许连接本地模型。</p>
-                {serverKeyDisabled && localByok?.baseURL && (
+                {serverKeyDisabled && displayedSavedBaseURL && (
                   <p className="mt-2 break-all text-xs leading-5 text-chalk-500">
-                    已保存接口地址：{localByok.baseURL}
+                    已保存接口地址：{displayedSavedBaseURL}
                   </p>
                 )}
                 {provider === "openai-compatible" && !baseURL.trim() && (
@@ -451,7 +484,7 @@ export default function SettingsPage() {
               disabled={saveState === "saving"}
               className="inline-flex items-center gap-2 rounded-full bg-beam-gold px-5 py-2 text-sm font-semibold text-on-accent transition-transform duration-150 hover:scale-105 active:scale-95 disabled:opacity-60"
             >
-              {saveState === "saved" ? (
+              {saveState === "saved" || saveState === "saved-need-key" ? (
                 <motion.svg
                   viewBox="0 0 24 24"
                   className="size-4"
@@ -469,7 +502,13 @@ export default function SettingsPage() {
                   />
                 </motion.svg>
               ) : null}
-              {saveState === "saving" ? "保存中…" : saveState === "saved" ? "已保存" : "保存设置"}
+              {saveState === "saving"
+                ? "保存中…"
+                : saveState === "saved"
+                  ? "已保存"
+                  : saveState === "saved-need-key"
+                    ? ENDPOINT_SAVED_NEED_KEY_MESSAGE
+                    : "保存设置"}
             </button>
             <button
               type="button"

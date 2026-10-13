@@ -6,11 +6,13 @@ import AiSetupPrompt from "../components/settings/ai-setup-prompt";
 import {
   BASE_URL_INVALID_MESSAGE,
   BASE_URL_NOT_ALLOWED_SETTINGS_MESSAGE,
+  ENDPOINT_SAVED_NEED_KEY_MESSAGE,
   isBaseUrlInvalid,
   isBaseUrlNotAllowed,
   isValidHttpBaseUrl,
   NO_BYOK_SETTINGS_MESSAGE,
   parseFocusParam,
+  readLocalBaseUrl,
   resetServerKeyDisabledCache,
 } from "../lib/byok/client";
 import { BYOK_STORAGE_KEY, maskKey, readLocalByok } from "../lib/byok/storage";

@@ -174,11 +174,50 @@ export function withByok<T extends Record<string, unknown>>(
 
 export const NO_BYOK_MESSAGE = "还没填 API Key。先去设置页填入你自己的 API Key 就能开讲。";
 export const NO_BYOK_SETTINGS_MESSAGE = "还没填 API Key。在下面填入你自己的 API Key 就能开讲。";
+export const ENDPOINT_SAVED_NEED_KEY_MESSAGE = "接口地址已保存，还要填 API Key 才能开讲。";
 export const BASE_URL_INVALID_MESSAGE = "接口地址格式不对，要以 http:// 或 https:// 开头";
 export const BASE_URL_INVALID_LECTURE_MESSAGE = "接口地址格式不对，要以 http:// 或 https:// 开头，去设置页改一下就能开讲。";
 export const BASE_URL_NOT_ALLOWED_MESSAGE = "接口地址只支持公网 http(s) 地址";
 export const BASE_URL_NOT_ALLOWED_SETTINGS_MESSAGE = "接口地址只支持公网 http(s) 地址";
 export const BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE = "接口地址只支持公网 http(s) 地址，去设置页改一下就能开讲。";
+
+const BYOK_BASE_URL_STORAGE_KEY = "algostage.byok.baseURL";
+
+export function readLocalBaseUrl(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    const stored = readLocalByok();
+    if (stored?.baseURL) return stored.baseURL;
+    const raw = window.localStorage.getItem(BYOK_BASE_URL_STORAGE_KEY);
+    return typeof raw === "string" ? raw.trim() : "";
+  } catch {
+    return "";
+  }
+}
+
+export function writeLocalBaseUrl(baseURL: string): string {
+  if (typeof window === "undefined") return "";
+  const trimmed = baseURL.trim();
+  try {
+    if (trimmed) {
+      window.localStorage.setItem(BYOK_BASE_URL_STORAGE_KEY, trimmed);
+    } else {
+      window.localStorage.removeItem(BYOK_BASE_URL_STORAGE_KEY);
+    }
+  } catch {
+    // Ignore storage errors
+  }
+  return trimmed;
+}
+
+export function clearLocalBaseUrl(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(BYOK_BASE_URL_STORAGE_KEY);
+  } catch {
+    // Ignore storage errors
+  }
+}
 
 const BYOK_ERROR_MAP: Record<string, string> = {
   BYOK_KEY_REQUIRED: "用自定义地址时需要同时填你自己的 Key",
