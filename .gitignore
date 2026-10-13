@@ -20,3 +20,13 @@ public/judge/
 coverage/
 playwright-report/
 test-results/
+
+# 数据库与备份：不要提交（含数据库和明文 Key）
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+/algostage.db
+prisma/*.db
+*.tgz
+backups/
