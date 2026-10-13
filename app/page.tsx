@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRight, Map as MapIcon } from "lucide-react";
 import { DemoBoard } from "@/components/landing/demo-board";
 import { GestureCards } from "@/components/landing/gesture-cards";
+import AiSetupPrompt from "@/components/settings/ai-setup-prompt";
 import { HOT100, HOT100_CATEGORIES } from "@/lib/content/hot100";
 import { EFFECT_WHITELIST } from "@/lib/teaching/types";
 
@@ -68,6 +69,7 @@ export default function LandingPage() {
               <MapIcon size={15} />
               看路线图
             </Link>
+            <AiSetupPrompt />
           </div>
           <dl className="mt-10 grid max-w-sm grid-cols-3 gap-4 border-t border-board-700/60 pt-5">
             {[

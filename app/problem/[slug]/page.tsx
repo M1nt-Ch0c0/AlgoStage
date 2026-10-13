@@ -68,7 +68,6 @@ export default function ProblemPage() {
   const { slug } = useParams<{ slug: string }>();
   const [detail, setDetail] = useState<ProblemDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [keySource, setKeySource] = useState<unknown>(null);
 
   const [practice, setPractice] = useState(false);
   const [code, setCode] = useState("");
@@ -86,15 +85,6 @@ export default function ProblemPage() {
   const status = usePlayerStore((s) => s.status);
   const stepCount = usePlayerStore((s) => s.steps.length);
   const { loadScript, play, pause, replay, reset } = usePlayerStore.getState();
-
-  useEffect(() => {
-    const abort = new AbortController();
-    setKeySource(null);
-    fetch(apiPath("/api/settings"), { signal: abort.signal })
-      .then(async res => { if (res.ok) setKeySource((await res.json()).keySource); })
-      .catch(() => {});
-    return () => abort.abort();
-  }, [slug]);
 
   useEffect(() => {
     setLectureBusy(false);
@@ -625,6 +615,8 @@ export default function ProblemPage() {
               AI 导师
             </ColumnLabel>
 
+            <AiSetupPrompt problemSlug={slug} />
+
             <NarrationBar />
 
             {inLecture ? (
@@ -644,12 +636,9 @@ export default function ProblemPage() {
                     </p>
                   </>
                 ) : (
-                  <>
-                    <p>
-                      这道题老师还没备课。点「开始讲课」，老师会先花十几秒准备一下。
-                    </p>
-                    <AiSetupPrompt keySource={keySource} />
-                  </>
+                  <p>
+                    这道题老师还没备课。点「开始讲课」，老师会先花十几秒准备一下。
+                  </p>
                 )}
               </div>
             )}

@@ -41,7 +41,7 @@ test.each(["Key 无效或没有权限，请检查设置。", "备课超时，请
     expect(alert.textContent).toContain(message);
     expect(alert.textContent).toContain("重试讲课");
     expect(alert.querySelector('a[href="/settings"]')?.textContent).toBe("去设置");
-    expect(container.textContent).not.toContain("还没接上 AI？去设置");
+    expect(container.textContent).not.toContain("这道题的 AI 讲解需要你自己的 API Key。");
   } finally { await act(async () => root.unmount()); }
 });
 
