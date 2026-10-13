@@ -1,6 +1,11 @@
 /** AI 路由先校验参数类型，错误响应不携带输入值或 Key。 */
 import { z } from "zod";
 import { AI_CONNECTION_ERROR, INVALID_AI_BASE_URL, MALFORMED_AI_BASE_URL, normalizeAIBaseURL } from "@/lib/ai/egress-guard";
+import { askSelectionSchema } from "@/lib/ask/schema";
+import { summarizeSelection } from "@/lib/ask/answers";
+import { ASK_LIMITS } from "@/lib/ask/types";
+import type { AskSelection } from "@/lib/ask/types";
+import { CAPTURE_DEFAULTS, decodedBase64Bytes } from "@/lib/ask/capture";
 
 export const aiBaseURLSchema = z.string().transform((value, ctx) => {
   try { return normalizeAIBaseURL(value); }
@@ -34,6 +39,55 @@ export const hintRequestSchema = z.object({
   level: z.number().int().min(1).max(5),
   userCode: z.string().optional(),
 });
+
+/** 整个提问请求的 UTF-8 字节上限。 */
+export const ASK_BODY_MAX_BYTES = 768 * 1024;
+
+/** 规范化选区摘要的 JSON UTF-8 字节上限，防止未限制的 id/nodeIds 占满上下文。 */
+export const ASK_SELECTION_SUMMARY_MAX_BYTES = 16 * 1024;
+
+const sha1Hex = z.string().regex(/^[0-9a-f]{40}$/);
+const canonicalBase64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+
+export const askImageSchema = z.object({
+  mime: z.enum(["image/webp", "image/jpeg"]),
+  dataBase64: z.string().min(1)
+    .max(4 * Math.ceil(CAPTURE_DEFAULTS.maxBytes / 3))
+    .regex(canonicalBase64)
+    .refine(v => Buffer.from(v, "base64").toString("base64") === v)
+    .refine(v => decodedBase64Bytes(v) <= CAPTURE_DEFAULTS.maxBytes),
+});
+
+export const askRequestSchema = z.object({
+  problemSlug: z.string().trim().min(1),
+  cacheKey: sha1Hex,
+  scriptVersion: sha1Hex,
+  stepId: z.string().min(1), // id 不 trim，不改变现有 id 的含义
+  question: z.string().trim().min(1).max(ASK_LIMITS.questionMax),
+  selection: askSelectionSchema,
+  image: askImageSchema.nullable().optional(),
+  byok: lectureRequestSchema.shape.byok,
+}).superRefine((v, ctx) => {
+  if (v.stepId !== v.selection.stepId)
+    ctx.addIssue({ code: "custom", path: ["selection", "stepId"], message: "stepId mismatch" });
+  if (v.question !== v.selection.question) // 两边已经 trim
+    ctx.addIssue({ code: "custom", path: ["selection", "question"], message: "question mismatch" });
+  if (v.selection.targets.length === 0)
+    ctx.addIssue({ code: "custom", path: ["selection", "targets"], message: "selection required" });
+  v.selection.targets.forEach((t, i) => {
+    if (t.stepId !== undefined && t.stepId !== v.stepId)
+      ctx.addIssue({ code: "custom", path: ["selection", "targets", i, "stepId"], message: "target stepId mismatch" });
+  });
+  if (!selectionSummaryWithinLimit(v.selection))
+    ctx.addIssue({ code: "custom", path: ["selection"], message: "selection summary too large" });
+});
+export type AskRequest = z.infer<typeof askRequestSchema>;
+
+/** 规范化选区摘要的 JSON UTF-8 字节是否不超过 16 KiB。 */
+export function selectionSummaryWithinLimit(selection: AskSelection): boolean {
+  const summary = summarizeSelection(selection);
+  return Buffer.byteLength(JSON.stringify(summary), "utf8") <= ASK_SELECTION_SUMMARY_MAX_BYTES;
+}
 
 export function badRequest(error?: z.ZodError, message = "请求参数不正确，请检查题目、语言、模型配置或提示级别。") {
   if (error?.issues.some(issue => issue.path.at(-1) === "baseURL")) return baseURLInvalid();
@@ -90,7 +144,139 @@ const streamErrorRetryable = {
   BAD_JSON: false,
   NOT_FOUND: false,
   SETTINGS_LOCKED: false,
+  INVALID_ANSWER: true,
+  STEP_NOT_FOUND: false,
+  ASK_BUSY: true,
+  RATE_LIMITED: true,
+  PAYLOAD_TOO_LARGE: false,
 } as const;
+
+const ASK_ERROR_MESSAGES = {
+  BAD_JSON: "请求内容无效，请重新发送。",
+  BAD_REQUEST: "提问参数不正确，请检查问题和选区。",
+  PAYLOAD_TOO_LARGE: "请求过大，请移除截图后重新提问。",
+  CANCELLED: "已取消。",
+} as const;
+
+export type AskErrorCode = keyof typeof ASK_ERROR_MESSAGES;
+
+/** 提问接口固定错误体：code、error、retryable、message 四字段。 */
+export function askError(code: AskErrorCode, status: number, message?: string, headers?: HeadersInit) {
+  return Response.json(
+    { code, error: code, retryable: streamErrorRetryable[code], message: message ?? ASK_ERROR_MESSAGES[code] },
+    { status, headers },
+  );
+}
+
+export type AskBodyResult =
+  | { ok: true; text: string }
+  | { ok: false; response: Response };
+
+function invalidContentLength(raw: string): boolean {
+  return !/^(?:0|[1-9]\d*)$/.test(raw);
+}
+
+/**
+ * 读提问请求体：先按 content-length 拒绝，再按真实 UTF-8 字节计数。
+ * 取消中途返回 CANCELLED，不把中断误报成 BAD_JSON。
+ */
+export async function readAskBody(req: Request, signal?: AbortSignal): Promise<AskBodyResult> {
+  const abortSignal = signal ?? req.signal;
+  if (abortSignal.aborted) return { ok: false, response: askError("CANCELLED", 499) };
+
+  const declared = req.headers.get("content-length");
+  if (declared !== null) {
+    const raw = declared.trim();
+    if (invalidContentLength(raw)) return { ok: false, response: askError("BAD_REQUEST", 400) };
+    if (BigInt(raw) > BigInt(ASK_BODY_MAX_BYTES)) {
+      await req.body?.cancel();
+      return { ok: false, response: askError("PAYLOAD_TOO_LARGE", 413) };
+    }
+  }
+
+  if (!req.body) return { ok: false, response: askError("BAD_JSON", 400) };
+
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  let cancelSettled: Promise<void> | undefined;
+  const cancelReader = () => {
+    cancelSettled ??= reader.cancel().then(() => undefined, () => undefined);
+    return cancelSettled;
+  };
+  let onAbort: (() => void) | undefined;
+  const aborted = new Promise<void>(resolve => {
+    onAbort = () => resolve();
+    if (abortSignal.aborted) resolve();
+    else abortSignal.addEventListener("abort", onAbort, { once: true });
+  });
+  try {
+    for (;;) {
+      const read = reader.read().then(
+        value => ({ kind: "chunk" as const, value }),
+        (error: unknown) => ({ kind: "error" as const, error }),
+      );
+      const winner = await Promise.race([
+        read,
+        aborted.then(() => ({ kind: "abort" as const })),
+      ]);
+      if (winner.kind === "abort") {
+        await cancelReader();
+        return { ok: false, response: askError("CANCELLED", 499) };
+      }
+      if (winner.kind === "error") {
+        await cancelReader();
+        const error = winner.error;
+        if (abortSignal.aborted || (error instanceof Error && error.name === "AbortError")) {
+          return { ok: false, response: askError("CANCELLED", 499) };
+        }
+        return { ok: false, response: askError("BAD_JSON", 400) };
+      }
+      const { done, value } = winner.value;
+      if (done) break;
+      const size = value.byteLength;
+      if (total + size > ASK_BODY_MAX_BYTES) {
+        chunks.length = 0;
+        await cancelReader();
+        return { ok: false, response: askError("PAYLOAD_TOO_LARGE", 413) };
+      }
+      total += size;
+      chunks.push(value);
+    }
+  } finally {
+    if (onAbort) abortSignal.removeEventListener("abort", onAbort);
+  }
+
+  if (total === 0) return { ok: false, response: askError("BAD_JSON", 400) };
+
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(concatChunks(chunks, total));
+  } catch {
+    return { ok: false, response: askError("BAD_JSON", 400) };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return { ok: false, response: askError("BAD_JSON", 400) };
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { ok: false, response: askError("BAD_JSON", 400) };
+  }
+  return { ok: true, text };
+}
+
+function concatChunks(chunks: Uint8Array[], total: number): Uint8Array {
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out;
+}
 
 /** NDJSON 错误只允许固定错误码和重试标志，绝不携带原始异常或额外字段。 */
 export function streamErrorEvent(value: unknown) {

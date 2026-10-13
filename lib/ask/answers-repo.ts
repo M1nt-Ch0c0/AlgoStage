@@ -4,7 +4,7 @@
  */
 import { groupAnswersByStep } from "@/lib/ask/answers";
 import { stepAnswerSchema } from "@/lib/ask/schema";
-import type { StepAnswersMap } from "@/lib/ask/types";
+import type { StepAnswer, StepAnswersMap } from "@/lib/ask/types";
 
 export interface LectureAnswerRow {
   id: string;
@@ -62,4 +62,46 @@ export async function listAnswers(
 export async function deleteAnswersForCacheKey(tx: PrismaLike, cacheKey: string): Promise<number> {
   const result = await tx.lectureAnswer.deleteMany({ where: { cacheKey } });
   return result.count;
+}
+
+export interface AnswerInsertDb {
+  lectureAnswer: {
+    create(args: { data: LectureAnswerRow }): Promise<LectureAnswerRow>;
+  };
+}
+
+export async function insertAnswer(
+  db: AnswerInsertDb,
+  input: {
+    id: string;
+    cacheKey: string;
+    scriptVersion: string;
+    stepId: string;
+    payload: StepAnswer;
+  },
+): Promise<StepAnswer> {
+  const parsed = stepAnswerSchema.parse(input.payload);
+  if (parsed.id !== input.id || parsed.stepId !== input.stepId) {
+    throw new Error("answer metadata mismatch");
+  }
+  const payload: StepAnswer = {
+    v: 1,
+    id: parsed.id,
+    stepId: parsed.stepId,
+    question: parsed.question,
+    selection: parsed.selection,
+    segments: parsed.segments,
+    createdAt: parsed.createdAt,
+  };
+  await db.lectureAnswer.create({
+    data: {
+      id: input.id,
+      cacheKey: input.cacheKey,
+      scriptVersion: input.scriptVersion,
+      stepId: input.stepId,
+      payload: JSON.stringify(payload),
+      createdAt: new Date(payload.createdAt),
+    },
+  });
+  return payload;
 }
