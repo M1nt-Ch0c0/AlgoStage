@@ -3,7 +3,7 @@
 - 地址（自托管实例 URL，沿用现网 DNS）：<https://demo.m1ntch0c0.com/algostage>
 - 服务器：`root@cpa-direct.m1ntch0c0.com`
 - 源码目录：`/opt/algostage`（现网旧路径待 D5 迁移）
-- 镜像：`algostage:0.2.0-alpha.2`（无 Demo 模式）
+- 镜像：`algostage:0.2.1`
 - 容器：`algostage`，仅绑定 `127.0.0.1:3100`
 - 数据卷：`algostage-data`，SQLite 位于 `/data/algostage.db`
 - DNS：`demo.m1ntch0c0.com` 的 A 记录指向 `43.255.156.149`，DNS only
@@ -12,7 +12,7 @@
 
 ## 构建与启动
 
-在服务器源码目录执行（`<版本>` 取 `package.json` 的 `version`，例如 `0.2.0-alpha.2`；`compose.yaml` 中 `ALGOSTAGE_IMAGE_TAG` 默认也是该版本）：
+在服务器源码目录执行（`<版本>` 取 `package.json` 的 `version`，例如 `0.2.1`；`compose.yaml` 中 `ALGOSTAGE_IMAGE_TAG` 默认也是该版本）：
 
 ```sh
 docker buildx build --allow network.host --network host --build-arg BASE_PATH=/algostage -t algostage:<版本> --load .
@@ -26,7 +26,7 @@ ALGOSTAGE_IMAGE_TAG=<版本> docker compose -f deploy/compose.yaml ps
 
 ## 数据卷迁移说明
 
-若从旧卷 `algostage-demo-algostage-data` 迁移至 `algostage-data`，可先创建外部命名卷并用一次性容器拷贝 `/data` 数据（如 `docker volume create algostage-data` 后挂载两卷复制 `algostage.db`）。迁移与维护期间**切勿**运行 `docker compose down -v`，以免误删持久化数据卷。
+旧版部署遗留：若服务器上仍有旧卷 `algostage-demo-algostage-data`，需迁移至 `algostage-data`，可先创建外部命名卷并用一次性容器拷贝 `/data` 数据（如 `docker volume create algostage-data` 后挂载两卷复制 `algostage.db`）。迁移与维护期间**切勿**运行 `docker compose down -v`，以免误删持久化数据卷。
 
 ### 升级至 0.2.1：非 root 运行
 
@@ -55,7 +55,7 @@ docker inspect -f '{{range .Mounts}}{{.Name}} -> {{.Destination}}{{"\n"}}{{end}}
    docker run --rm -v <你的数据卷名>:/data alpine chown -R 1001:1001 /data
    ```
 
-3. 切换至新镜像，按「构建与启动」中的 Compose 命令启动。
+3. 切换至新镜像（启动失败时会输出 `Error: data directory /data is not writable (uid 1001).`，下一行给出上面的修复命令），按「构建与启动」中的 Compose 命令启动。
 
 ## 首次配置 nginx 与证书
 
