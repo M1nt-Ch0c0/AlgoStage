@@ -154,6 +154,14 @@ export async function sendAsk(capture: CaptureResult | null): Promise<void> {
       body: JSON.stringify(body),
       signal: controller.signal,
     });
+    // Status-only failures (401 HTML, empty 403) have no error code. Hand the
+    // Response to resolveAskError so 401 → settings, and do not keep the body.
+    if (!res.ok) {
+      const peeked: unknown = await res.clone().json().catch(() => null);
+      const record = peeked !== null && typeof peeked === "object" ? (peeked as Record<string, unknown>) : null;
+      const rawCode = record?.code ?? record?.error;
+      if (typeof rawCode !== "string" || rawCode.trim() === "") throw res;
+    }
     const answer = await readAskResponse(
       res,
       {
