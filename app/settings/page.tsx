@@ -518,7 +518,7 @@ export default function SettingsPage() {
                   value={apiKey}
                   onChange={(e) => edit("apiKey", e.target.value, setApiKey)}
                   placeholder={displayedMaskedKey ? "输入新的 API Key 以更换" : "sk-…"}
-                  className={`${inputClass} pr-10 font-mono${highlightApiKey ? " ring-2 ring-beam-gold" : ""}`}
+                  className={`${inputClass} pr-10 pointer-coarse:pr-11 pointer-coarse:min-h-11 font-mono${highlightApiKey ? " ring-2 ring-beam-gold" : ""}`}
                   data-highlight={highlightApiKey ? "true" : undefined}
                   aria-invalid={Boolean(apiKeyError)}
                   aria-describedby={apiKeyError ? "apiKey-error" : undefined}
@@ -528,7 +528,7 @@ export default function SettingsPage() {
                   type="button"
                   onClick={() => setShowKey((v) => !v)}
                   aria-label={showKey ? "隐藏 API Key" : "显示 API Key"}
-                  className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-chalk-500 hover:text-chalk-100"
+                  className="absolute inset-y-0 right-0 flex w-10 pointer-coarse:w-11 pointer-coarse:min-h-11 items-center justify-center text-chalk-500 hover:text-chalk-100"
                 >
                   {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
@@ -649,7 +649,7 @@ export default function SettingsPage() {
                     type="button"
                     aria-pressed={narrationSpeed === sp.id}
                     onClick={() => edit("narrationSpeed", sp.id, setNarrationSpeed)}
-                    className={`rounded-full border px-4 py-1.5 text-sm transition-colors ${
+                    className={`rounded-full border px-4 py-1.5 text-sm transition-colors pointer-coarse:min-h-11 pointer-coarse:min-w-11 ${
                       narrationSpeed === sp.id
                         ? "border-beam-gold/70 text-beam-gold"
                         : "border-board-700 text-chalk-500 hover:text-chalk-300"
@@ -682,7 +682,7 @@ export default function SettingsPage() {
               a.click();
               URL.revokeObjectURL(url);
             }}
-            className="rounded-full border border-board-600 px-5 py-2 text-sm text-chalk-300 transition-colors hover:border-beam-gold/60 hover:text-beam-gold"
+            className="rounded-full border border-board-600 px-5 py-2 text-sm text-chalk-300 transition-colors hover:border-beam-gold/60 hover:text-beam-gold pointer-coarse:min-h-11"
           >
             导出学习记录
           </button>
