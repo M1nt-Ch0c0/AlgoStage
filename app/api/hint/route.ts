@@ -9,6 +9,7 @@ import {
   resolveByok,
   ByokConfigurationError,
   ByokKeyRequiredError,
+  savedBaseURLOf
 } from "@/lib/agent/provider";
 import {
   hintRequestSchema,
@@ -77,8 +78,9 @@ export async function POST(req: NextRequest) {
   }
   const timeout = AbortSignal.timeout(hintTimeoutMs());
   const signal = AbortSignal.any([req.signal, timeout]);
-  if (body.byok?.baseURL) {
-    const invalid = await validateBaseURL(body.byok.baseURL, signal);
+  const checkURL = body.byok?.baseURL || savedBaseURLOf(byok);
+  if (checkURL) {
+    const invalid = await validateBaseURL(checkURL, signal);
     if (invalid && signal.aborted) {
       return Response.json(
         timeout.aborted

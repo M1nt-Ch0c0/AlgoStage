@@ -11,7 +11,7 @@ import {
 } from "@/lib/agent/lecture-generation";
 import { createHash } from "crypto";
 import { NextRequest } from "next/server";
-import { resolveByok, ByokConfigurationError, ByokKeyRequiredError, type ByokConfig } from "@/lib/agent/provider";
+import { resolveByok, ByokConfigurationError, ByokKeyRequiredError, type ByokConfig, savedBaseURLOf } from "@/lib/agent/provider";
 import { buildLecturePrompt } from "@/lib/agent/modes/lecture";
 import { highlightProblem } from "@/lib/agent/lecture-highlights";
 import { validateScript } from "@/lib/teaching/validated-script";
@@ -73,8 +73,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  if (body.byok?.baseURL) {
-    const invalid = await validateBaseURL(body.byok.baseURL, AbortSignal.any([req.signal, AbortSignal.timeout(hintTimeoutMs())]));
+  const checkURL = body.byok?.baseURL || savedBaseURLOf(byok);
+  if (checkURL) {
+    const invalid = await validateBaseURL(checkURL, AbortSignal.any([req.signal, AbortSignal.timeout(hintTimeoutMs())]));
     if (invalid && req.signal.aborted) return Response.json({ error: "CANCELLED", message: "讲课请求已取消。" }, { status: 499 });
     if (invalid) return invalid;
   }

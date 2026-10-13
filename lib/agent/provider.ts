@@ -37,6 +37,13 @@ type CredentialOrigin = {
   destination: string; providerId: ByokConfig["provider"];
 };
 const origins = new WeakMap<ByokConfig, CredentialOrigin>();
+/** Configs whose baseURL came from saved settings (user-fixable), not from env. */
+const savedURLConfigs = new WeakSet<ByokConfig>();
+
+/** The saved-settings baseURL this config will call, if any; env-sourced URLs return undefined. */
+export function savedBaseURLOf(config: ByokConfig): string | undefined {
+  return savedURLConfigs.has(config) ? config.baseURL : undefined;
+}
 
 /** 发送前硬校验；即使调用者复制配置或修改 URL，也不能把环境 Key 送往其他接口。 */
 export function assertCredentialDestination(config: ByokConfig) {
@@ -136,6 +143,7 @@ export function resolveSavedByok(settings: Record<string, string>): {
     destination: effectiveBaseURL(config),
     providerId: config.provider,
   });
+  if (useSaved && savedURL && config.baseURL) savedURLConfigs.add(config);
   assertCredentialDestination(config);
   return { config, source };
 }
@@ -189,6 +197,7 @@ async function resolveByokInner(bodyByok?: Partial<ByokConfig> | null): Promise<
       baseURL: request.baseURL ?? (request.provider ? undefined : server.baseURL),
     });
     if (!config) throw new ByokConfigurationError();
+    if (request.baseURL === undefined && !request.provider && defaults.useSaved && defaults.savedURL && config.baseURL) savedURLConfigs.add(config);
     if (config.apiKey === settings.apiKey?.trim() && (effectiveBaseURL(config) !== effectiveBaseURL(server) || config.provider !== server.provider)) throw new ByokConfigurationError();
     assertCredentialDestination(config);
     return { config, source: "request" };

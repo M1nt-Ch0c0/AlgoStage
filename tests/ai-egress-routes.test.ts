@@ -171,8 +171,9 @@ test.each(["settings", "env"])("%s 中的接口同样必须经过 DNS 和地址�
   }
   for (const POST of [hint, lecture]) {
     const response = await POST(request({ slug: "two-sum", level: 1 }));
-    expect(response.status).toBe(502);
-    expect(await response.json()).toEqual({ error: "UPSTREAM_ERROR", message: AI_CONNECTION_ERROR });
+    // 库里存的地址用户可修：400；env 地址用户改不了：固定 502。
+    expect(response.status).toBe(source === "settings" ? 400 : 502);
+    expect(await response.json()).toEqual(source === "settings" ? { code: "BASE_URL_NOT_ALLOWED", error: "BASE_URL_NOT_ALLOWED", message: INVALID_AI_BASE_URL } : { error: "UPSTREAM_ERROR", message: AI_CONNECTION_ERROR });
   }
   expect(fetchMock).not.toHaveBeenCalled();
 });
@@ -369,14 +370,14 @@ test("settings 拒绝后不落库，不带 byok 的 hint 不能使用被拒地�
   expect(fetchMock).not.toHaveBeenCalled();
 });
 
-test("保存后 DNS 从公网变私网，已保存设置路径仍返回固定 502", async () => {
+test("保存后 DNS 从公网变私网，已保存设置路径预检返回 400 BASE_URL_NOT_ALLOWED", async () => {
   expect((await PUT(request({ settings: byok }))).status).toBe(200);
   fetchMock.mockClear();
   dns.mockResolvedValue([{ address: "127.0.0.1", family: 4 }]);
   for (const POST of [hint, lecture]) {
     const response = await POST(request({ slug: "group-anagrams", level: 1, regenerate: true }));
-    expect(response.status).toBe(502);
-    expect(await response.json()).toEqual({ error: "UPSTREAM_ERROR", message: AI_CONNECTION_ERROR });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ code: "BASE_URL_NOT_ALLOWED", error: "BASE_URL_NOT_ALLOWED", message: INVALID_AI_BASE_URL });
   }
   expect(fetchMock).not.toHaveBeenCalled();
 });
@@ -451,5 +452,45 @@ describe("私网地址仍为 BASE_URL_NOT_ALLOWED", () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual(NOT_ALLOWED);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("QA P2：库里存的内网地址在 hint/lecture 返回 400 BASE_URL_NOT_ALLOWED", () => {
+  const NOT_ALLOWED = { code: "BASE_URL_NOT_ALLOWED", error: "BASE_URL_NOT_ALLOWED", message: INVALID_AI_BASE_URL };
+  describe.each(entries)("$name", ({ POST, accept }) => {
+    test.each(["http://127.0.0.1/v1", "http://localhost:11434/v1"])("库里存 %s", async baseURL => {
+      for (const [key, value] of Object.entries({ ...byok, baseURL, baseURLProvider: "openai-compatible" })) db.settings.set(key, value);
+      const response = await POST(request({ slug: "two-sum", level: 1 }, accept));
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual(NOT_ALLOWED);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(db.prisma.lectureScriptCache.upsert).not.toHaveBeenCalled();
+    });
+    test("库里存的域名 DNS 解析到内网 IP 时预检返回 400，且是真 HTTP 400", async () => {
+      for (const [key, value] of Object.entries({ ...byok, baseURL: "https://internal.example/v1", baseURLProvider: "openai-compatible" })) db.settings.set(key, value);
+      dns.mockResolvedValue([{ address: "10.0.0.5", family: 4 }]);
+      const response = await POST(request({ slug: "two-sum", level: 1 }, accept));
+      expect(response.status).toBe(400);
+      expect(response.headers.get("content-type")).toContain("application/json");
+      expect(await response.json()).toEqual(NOT_ALLOWED);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+    test("库里存地址预检后 DNS 重绑定：出站时重新解析并拦截，仍为 502", async () => {
+      for (const [key, value] of Object.entries({ ...byok, baseURLProvider: "openai-compatible" })) db.settings.set(key, value);
+      dns.mockResolvedValueOnce([{ address: "8.8.8.8", family: 4 }]).mockResolvedValue([{ address: "10.0.0.1", family: 4 }]);
+      const response = await POST(request({ slug: "two-sum", level: 1 }, accept));
+      expect(response.status).toBe(502);
+      expect((await response.json()).error).toBe("UPSTREAM_ERROR");
+      expect(dns.mock.calls.length).toBeGreaterThanOrEqual(2);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+    test("env AI_BASE_URL 为内网地址仍是 502 UPSTREAM_ERROR", async () => {
+      vi.stubEnv("AI_API_KEY", "env-only-credential");
+      vi.stubEnv("AI_BASE_URL", "http://127.0.0.1/v1");
+      const response = await POST(request({ slug: "two-sum", level: 1 }, accept));
+      expect(response.status).toBe(502);
+      expect((await response.json()).error).toBe("UPSTREAM_ERROR");
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
   });
 });
