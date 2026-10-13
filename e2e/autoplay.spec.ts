@@ -334,11 +334,17 @@ function touchHitTests(viewport: { width: number; height: number }) {
       const visual = await dot.locator("span").boundingBox();
       expect(visual).toBeTruthy();
       expect(visual!.height).toBeLessThanOrEqual(20);
+      const visualCenter = visual!.x + visual!.width / 2;
+      expect(visualCenter).toBeGreaterThanOrEqual(box!.x);
+      expect(visualCenter).toBeLessThanOrEqual(box!.x + box!.width);
       boxes.push(box!);
     }
     const sorted = [...boxes].sort((a, b) => a.x - b.x);
     for (let i = 1; i < sorted.length; i++) {
-      expect(sorted[i - 1]!.x + sorted[i - 1]!.width).toBeLessThanOrEqual(sorted[i]!.x + 0.5);
+      const prevBox = sorted[i - 1]!;
+      const nextBox = sorted[i]!;
+      expect(prevBox.x + prevBox.width).toBeLessThanOrEqual(nextBox.x + 0.5);
+      expect(nextBox.x - (prevBox.x + prevBox.width)).toBeLessThanOrEqual(1);
     }
 
     await nextButton.tap();

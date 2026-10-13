@@ -342,7 +342,7 @@ test("非 awaitingContinue 时下一步保持图标按钮", async () => {
   expect(button.classList.contains("size-8")).toBe(true);
 });
 
-test("粗指针下步进按钮热区至少 44px，时间线圆点视觉仍是细条且热区不靠负边距重叠", async () => {
+test("粗指针下步进按钮热区至少 44px，时间线圆点视觉 20px 居中且热区均分贴合、不靠负边距", async () => {
   const prev = container.querySelector<HTMLButtonElement>('button[aria-label="上一步"]')!;
   const play = container.querySelector<HTMLButtonElement>('button[aria-label="播放"]')!;
   const next = container.querySelector<HTMLButtonElement>('button[aria-label="下一步"]')!;
@@ -355,9 +355,16 @@ test("粗指针下步进按钮热区至少 44px，时间线圆点视觉仍是细
 
   const dots = [...container.querySelectorAll<HTMLButtonElement>('button[aria-label^="跳到第"]')];
   expect(dots.length).toBe(script.steps.length);
+  const track = dots[0]!.parentElement!;
+  expect(track.className).toContain("flex");
+  expect(track.className).not.toMatch(/\bgap-/);
   for (const dot of dots) {
     expect(dot.className).toContain("h-5");
+    expect(dot.className).toContain("min-w-0");
+    expect(dot.className).toContain("flex-1");
+    expect(dot.className).toContain("justify-center");
     expect(dot.className).toContain("pointer-coarse:h-11");
+    expect(dot.className).not.toMatch(/min-w-11|pointer-coarse:min-w|pointer-coarse:w-11/);
     expect(dot.className).not.toMatch(/-m[xytrbl]?-/);
     const bar = dot.querySelector("span")!;
     expect(bar.className).toContain("h-1.5");
