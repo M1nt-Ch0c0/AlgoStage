@@ -182,6 +182,80 @@ test.describe("390 mobile touch targets", () => {
       await expect(btn).toHaveAttribute("aria-pressed", "true");
     }
   });
+
+  test("home page AI setup prompt link has >=44x44 hit area under pointer: coarse", async ({ page }) => {
+    await page.goto("/");
+
+    const isPointerCoarse = await page.evaluate(() => matchMedia("(pointer: coarse)").matches);
+    expect(isPointerCoarse).toBe(true);
+
+    const link = page.getByRole("link", { name: "去设置" });
+    await link.scrollIntoViewIfNeeded();
+
+    const handle = await link.elementHandle();
+    const result = await page.evaluate((el) => {
+      if (!el) throw new Error("Link element not found");
+      const rect = el.getBoundingClientRect();
+      const cx = Math.floor(rect.left + rect.width / 2);
+      const cy = Math.floor(rect.top + rect.height / 2);
+
+      const centerHit = document.elementFromPoint(cx, cy);
+      const centerHits = centerHit !== null && centerHit.closest("a") === el;
+
+      let left = 0;
+      for (let step = 1; step <= 120; step++) {
+        const hit = document.elementFromPoint(cx - step, cy);
+        if (hit && hit.closest("a") === el) {
+          left = step;
+        } else {
+          break;
+        }
+      }
+
+      let right = 0;
+      for (let step = 1; step <= 120; step++) {
+        const hit = document.elementFromPoint(cx + step, cy);
+        if (hit && hit.closest("a") === el) {
+          right = step;
+        } else {
+          break;
+        }
+      }
+
+      let up = 0;
+      for (let step = 1; step <= 120; step++) {
+        const hit = document.elementFromPoint(cx, cy - step);
+        if (hit && hit.closest("a") === el) {
+          up = step;
+        } else {
+          break;
+        }
+      }
+
+      let down = 0;
+      for (let step = 1; step <= 120; step++) {
+        const hit = document.elementFromPoint(cx, cy + step);
+        if (hit && hit.closest("a") === el) {
+          down = step;
+        } else {
+          break;
+        }
+      }
+
+      const width = Math.min(120, left + right + 1);
+      const height = Math.min(120, up + down + 1);
+
+      return {
+        centerHits,
+        width,
+        height,
+      };
+    }, handle);
+
+    expect(result.centerHits).toBe(true);
+    expect(result.width).toBeGreaterThanOrEqual(44);
+    expect(result.height).toBeGreaterThanOrEqual(44);
+  });
 });
 
 test.describe("1280 desktop layout sanity", () => {
@@ -224,88 +298,6 @@ test.describe("1280 desktop layout sanity", () => {
       }
     }
   });
-});
-
-test("home page AI setup prompt link has >=44x44 hit area under pointer: coarse", async ({ page }) => {
-  await page.goto("/");
-
-  const isPointerCoarse = await page.evaluate(() => matchMedia("(pointer: coarse)").matches);
-  expect(isPointerCoarse).toBe(true);
-
-  const link = page.getByRole("link", { name: "去设置" });
-  await link.scrollIntoViewIfNeeded();
-
-  const handle = await link.elementHandle();
-  const result = await page.evaluate((el) => {
-    if (!el) throw new Error("Link element not found");
-    const rect = el.getBoundingClientRect();
-    const cx = Math.floor(rect.left + rect.width / 2);
-    const cy = Math.floor(rect.top + rect.height / 2);
-
-    const centerHit = document.elementFromPoint(cx, cy);
-    const centerHits = centerHit !== null && centerHit.closest("a") === el;
-
-    let left = 0;
-    for (let step = 1; step <= 120; step++) {
-      const hit = document.elementFromPoint(cx - step, cy);
-      if (hit && hit.closest("a") === el) {
-        left = step;
-      } else {
-        break;
-      }
-    }
-
-    let right = 0;
-    for (let step = 1; step <= 120; step++) {
-      const hit = document.elementFromPoint(cx + step, cy);
-      if (hit && hit.closest("a") === el) {
-        right = step;
-      } else {
-        break;
-      }
-    }
-
-    let up = 0;
-    for (let step = 1; step <= 120; step++) {
-      const hit = document.elementFromPoint(cx, cy - step);
-      if (hit && hit.closest("a") === el) {
-        up = step;
-      } else {
-        break;
-      }
-    }
-
-    let down = 0;
-    for (let step = 1; step <= 120; step++) {
-      const hit = document.elementFromPoint(cx, cy + step);
-      if (hit && hit.closest("a") === el) {
-        down = step;
-      } else {
-        break;
-      }
-    }
-
-    const width = Math.min(120, left + right + 1);
-    const height = Math.min(120, up + down + 1);
-
-    return {
-      centerHits,
-      width,
-      height,
-    };
-  }, handle);
-
-  expect(result.centerHits).toBe(true);
-  expect(result.width).toBeGreaterThanOrEqual(44);
-  expect(result.height).toBeGreaterThanOrEqual(44);
-});
-
-test.describe("1280 desktop layout sanity", () => {
-  test.use({
-    viewport: { width: 1280, height: 800 },
-    hasTouch: false,
-    isMobile: false,
-  });
 
   test("home page 去设置 uses inset shadow with zero border width at 1280", async ({ page }) => {
     await page.addInitScript(() => {
@@ -340,4 +332,3 @@ test.describe("1280 desktop layout sanity", () => {
     expect(box!.height).toBeGreaterThan(0);
   });
 });
-
