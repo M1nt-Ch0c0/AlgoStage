@@ -21,19 +21,19 @@ AlgoStage 是一个**纯本地运行**的 LeetCode Hot 100 AI 学习系统：内
 
 ```bash
 npm ci                        # 按 package-lock.json 安装，与 CI 一致
-cp .env.example .env          # 可选：也可以启动后在设置页填 Key（见下方三步）
+cp .env.example .env          # 可选：也可以启动后在设置页填 API Key（见下方三步）
 npm run db:push && npm run db:seed   # 初始化本地 SQLite + 灌入 Hot 100
 npm run dev                   # http://localhost:3000
 ```
 
-想先看看效果：打开 <https://demo.m1ntch0c0.com/algostage>，选「两数之和」，这道题自带内置讲解（含全部特效），不需要 Key。
+想先看看效果：打开 <https://demo.m1ntch0c0.com/algostage>，选「两数之和」，这道题自带内置讲解（含全部特效），不需要 API Key。
 
-> ⚠️ 这是公共实例，设置页保存的 Key 对所有访客生效、掩码所有人可见。**不要在公共实例上填你自己的 Key。**
+> ⚠️ 这是公共实例，设置页保存的 API Key 对所有访客生效、掩码所有人可见。**不要在公共实例上填你自己的 API Key。**
 
-其余题目都要先配好 Key 才能讲解和要提示。请先按上面的步骤自托管或本地部署，再在你自己实例的设置页按三步填写：
+其余题目都要先配好 API Key 才能讲解和要提示。请先按上面的步骤自托管或本地部署，再在你自己实例的设置页按三步填写：
 
 1. **接口地址**：先选服务商，再填对应地址。OpenAI 兼容服务留空时使用 `https://api.openai.com/v1`；Anthropic、Google 留空使用官方接口。
-2. **API Key**：填写与上面接口地址同一来源的 Key，来源混用会被拒绝。
+2. **API Key**：填写与上面接口地址同一来源的 API Key，来源混用会被拒绝。
 3. **模型名**：推荐 `gpt-6.1-sol`（设置页默认值）。较弱模型可能无法完成教案或正确调用教学工具，失败时请重试或更换模型。
 
 保存前可以先点「测试连接」，确认能连上。
@@ -42,20 +42,26 @@ npm run dev                   # http://localhost:3000
 
 讲解通过五种教学工具逐步生成，收到步骤即可播放；只有完整教案校验成功才保存缓存。较弱模型可能无法完成讲解或正确调用工具，失败时建议重试或切换到 `gpt-6.1-sol`。备课总上限为 240 秒，非法工具参数最多重试该次调用 2 次，已完成步骤会保留。
 
-使用环境变量 Key 时，请同时填写 `AI_BASE_URL`，并按服务商配置 `AI_PROVIDER`；设置页可单独覆盖模型名，接口地址和 Key 必须保持同一来源。设置页只保存实际修改的字段；保存新 Key 时请同时填写对应接口地址和服务商，来源混用会被拒绝，不会发出模型请求。
+使用环境变量 API Key 时，请同时填写 `AI_BASE_URL`，并按服务商配置 `AI_PROVIDER`；设置页可单独覆盖模型名，接口地址和 API Key 必须保持同一来源。设置页只保存实际修改的字段；保存新 API Key 时请同时填写对应接口地址和服务商，来源混用会被拒绝，不会发出模型请求。
 
-### 服务器 Key 与接口地址（v0.2.1，待合入）
-
-> 以下两个开关随 v0.2.1 合入，当前分支代码中尚未生效。
+### 服务器 API Key 与接口地址（v0.2.1）
 
 | 环境变量 | 默认值 | 可选值 | 作用 |
 | --- | --- | --- | --- |
-| `ALGOSTAGE_DISABLE_SERVER_KEY` | `false` | `true`/`false`、`on`/`off`、`1`/`0`、`yes`/`no`（不区分大小写） | 设为开启时，服务器不保存、不使用服务器 Key，设置页不能修改服务器设置；Key 只保存在你自己的浏览器里，讲课和提示请求自动带上，可在设置页「清除本机 Key」。 |
-| `ALGOSTAGE_ALLOW_PRIVATE_BASE_URL` | `true` | 同上 | 关闭时拒绝内网、本机和保留地址的接口地址。默认允许，方便自托管连接本机或内网模型。 |
+| `ALGOSTAGE_DISABLE_SERVER_KEY` | `false` | `true`/`false`、`on`/`off`、`1`/`0`、`yes`/`no`（不区分大小写） | 设为开启时，服务器不保存、不使用服务器 API Key，设置页不能修改服务器设置，讲课和提示请求需自带 API Key。`deploy/compose.yaml` 设为 `true`。【待合入 A5】设置页的浏览器本机保存：API Key 只保存在你自己的浏览器里，讲课和提示请求自动带上，可点「清除本机 Key」。 |
+| `ALGOSTAGE_ALLOW_PRIVATE_BASE_URL` | `true` | 同上 | 关闭时拒绝内网、本机和保留地址的接口地址。默认允许，方便自托管连接本机或内网模型；`deploy/compose.yaml` 设为 `false`。 |
 
-接口地址只接受 http(s)；公共部署可通过 `ALGOSTAGE_ALLOW_PRIVATE_BASE_URL=false` 禁止内网地址（合入后 `deploy/compose.yaml` 即这样设置）。服务器 Key 只会发往服务器配置的接口地址；改用其他接口地址时需要同时填你自己的 Key。详见 [deploy/README.md](deploy/README.md)。
+接口地址只接受 http(s)，不跟随重定向。服务器 API Key 只会发往服务器配置的接口地址；改用其他接口地址时需要同时填你自己的 API Key。详见 [deploy/README.md](deploy/README.md#环境变量自托管)。
 
-公网部署可用 `ALGOSTAGE_ALLOW_PRIVATE_BASE_URL=false` 禁止连接私网/回环接口地址，用 `ALGOSTAGE_DISABLE_SERVER_KEY=true` 让服务器不保存、不使用服务器 Key（用户在请求中自带 Key），详见 [deploy/README.md](deploy/README.md#环境变量自托管)。
+### 常见错误
+
+| 错误码 | 什么时候出现 | 怎么处理 |
+| --- | --- | --- |
+| `UPSTREAM_AUTH`（HTTP 400）【待合入 p2-upstream-auth】 | 模型服务返回 401/403。提示「API Key 无效或没有权限」，不会自动重试。 | 到设置页检查 API Key 是否正确、有没有该模型的权限，并确认 API Key 和接口地址来自同一家服务。 |
+| `BYOK_KEY_REQUIRED`（HTTP 400） | 用了与服务器配置不同的接口地址，但没有填自己的 API Key。提示「用自定义地址时需要同时填你自己的 Key」。 | 在设置页同时填写该接口地址对应的 API Key。 |
+| `BASE_URL_INVALID`（HTTP 400） | 接口地址格式不对（不是 http(s)、缺少主机等）。提示「接口地址格式不对，要以 http:// 或 https:// 开头」；讲课和提示页的「去设置」按钮【待合入 A5】。 | 改成以 `http://` 或 `https://` 开头的完整地址。 |
+| `BASE_URL_NOT_ALLOWED`（HTTP 400） | 仅在 `ALGOSTAGE_ALLOW_PRIVATE_BASE_URL` 关闭时（如 Docker 默认部署），接口地址指向内网、本机或保留地址。提示「接口地址只支持公网 http(s) 地址。」 | 改用公网接口地址；自托管需要连本机或内网模型时，在可信环境中把该开关设为 `true`。 |
+| `UPSTREAM_ERROR`（HTTP 502） | 连不上模型服务，或部署者在 `AI_BASE_URL` 里配了畸形地址（此时不发起出站请求）。服务器提示「无法连接到 AI 服务，请检查接口地址。」；【待合入 A5】讲课和提示页改为显示「AI 服务暂时连不上，请稍后再试。」，只有「重试」。 | 稍后重试；自托管请检查环境变量 `AI_BASE_URL`。 |
 
 验证命令：`npm run lint`、`npm run typecheck`、`npm test`、`npm run test:e2e`、`npm run build`。
 

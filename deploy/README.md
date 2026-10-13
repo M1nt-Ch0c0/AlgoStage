@@ -55,7 +55,7 @@ docker inspect -f '{{range .Mounts}}{{.Name}} -> {{.Destination}}{{"\n"}}{{end}}
    docker run --rm -v <你的数据卷名>:/data alpine chown -R 1001:1001 /data
    ```
 
-3. 切换至新镜像，按「构建与启动」中的 Compose 命令启动。
+3. 切换至新镜像（启动失败时会输出 `Error: data directory /data is not writable (uid 1001).`，下一行给出上面的修复命令），按「构建与启动」中的 Compose 命令启动。
 
 ## 首次配置 nginx 与证书
 
