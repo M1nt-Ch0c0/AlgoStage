@@ -66,8 +66,8 @@ test("last step shows 「讲完了」 and 「重播」", async ({ page }) => {
   }
 
   await expect(page.getByText("讲完了")).toBeVisible();
-  await expect(page.locator("header").getByRole("button", { name: "重播", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "重播", exact: true })).toHaveCount(2);
+  await expect(page.locator("header").getByRole("button", { name: "重播", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "重播", exact: true })).toHaveCount(1);
 });
 
 test("toggle 「自动播放」 on auto-advances without hint", async ({ page }) => {

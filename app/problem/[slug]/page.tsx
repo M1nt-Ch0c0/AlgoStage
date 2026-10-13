@@ -17,7 +17,6 @@ import {
   Pencil,
   Pause,
   Play,
-  RotateCcw,
   Sparkles,
 } from "lucide-react";
 import type { ProblemDetail } from "@/lib/content/types";
@@ -85,7 +84,7 @@ export default function ProblemPage() {
   const status = usePlayerStore((s) => s.status);
   const receiving = usePlayerStore((s) => s.receiving);
   const stepCount = usePlayerStore((s) => s.steps.length);
-  const { loadScript, play, pause, replay, reset } = usePlayerStore.getState();
+  const { loadScript, play, pause, reset } = usePlayerStore.getState();
 
   // 讲解进度埋点（看板数据源）
   const lastReportedRef = useRef(-1);
@@ -315,10 +314,11 @@ export default function ProblemPage() {
   const inLecture = status !== "idle";
   const [moreOpen, setMoreOpen] = useState(false);
   const [confirmRegen, setConfirmRegen] = useState(false);
-  // 各题共用同一套主按钮：未开始 / 备课中 / 暂停 / 继续 / 重播。
+  // 各题共用同一套主按钮：未开始 / 备课中 / 暂停 / 继续。结束面板显示时主按钮不渲染。
   const playing = status === "playing" || (status === "streaming" && stepCount > 0);
   const canResume = (status === "paused" || status === "interrupted") && stepCount > 0;
-  const canReplay = status === "finished" && stepCount > 0 && !lectureBusy;
+  // 与字幕条「讲完了」面板同一条件，且未在备课（备课中主按钮仍是「备课中…」）。
+  const endPanelShowing = status === "finished" && step != null && !lectureBusy;
   const showRegenerate =
     (status === "paused" || status === "finished") && stepCount > 0 && !lectureBusy;
   const regenerateMenuOpen = moreOpen && showRegenerate;
@@ -331,9 +331,7 @@ export default function ProblemPage() {
       ? "继续"
       : lectureBusy
         ? "备课中…"
-        : canReplay
-          ? "重播"
-          : "开始讲课";
+        : "开始讲课";
 
   if (loadError) {
     return (
@@ -445,30 +443,29 @@ export default function ProblemPage() {
               练习
             </button>
           </div>
-          <button
-            type="button"
-            // 完成态「重播」只本地重放；重新生成在「更多」里确认后才请求。
-            onClick={() => {
-              setMoreOpen(false);
-              if (playing) pause();
-              else if (canResume) play();
-              else if (canReplay) replay();
-              else void startLecture();
-            }}
-            disabled={!detail || mainLabel === "备课中…"}
-            className="flex items-center gap-1.5 rounded-full bg-beam-gold px-4 py-2 text-sm font-semibold text-on-accent transition-transform hover:scale-[1.03] disabled:pointer-events-none disabled:opacity-50"
-          >
-            {mainLabel === "暂停" ? (
-              <Pause size={15} />
-            ) : mainLabel === "备课中…" ? (
-              <Sparkles size={15} className="animate-pulse" />
-            ) : mainLabel === "重播" ? (
-              <RotateCcw size={15} />
-            ) : (
-              <Play size={15} />
-            )}
-            {mainLabel}
-          </button>
+          {/* 结束面板已有「重播」时顶栏主按钮让位，避免同一屏两个重播。 */}
+          {!endPanelShowing && (
+            <button
+              type="button"
+              onClick={() => {
+                setMoreOpen(false);
+                if (playing) pause();
+                else if (canResume) play();
+                else void startLecture();
+              }}
+              disabled={!detail || mainLabel === "备课中…"}
+              className="flex items-center gap-1.5 rounded-full bg-beam-gold px-4 py-2 text-sm font-semibold text-on-accent transition-transform hover:scale-[1.03] disabled:pointer-events-none disabled:opacity-50"
+            >
+              {mainLabel === "暂停" ? (
+                <Pause size={15} />
+              ) : mainLabel === "备课中…" ? (
+                <Sparkles size={15} className="animate-pulse" />
+              ) : (
+                <Play size={15} />
+              )}
+              {mainLabel}
+            </button>
+          )}
           {showRegenerate && (
             <div className="relative">
               <button

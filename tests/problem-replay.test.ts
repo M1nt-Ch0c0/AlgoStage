@@ -17,6 +17,10 @@ function moreButton(container: HTMLElement) {
   return container.querySelector<HTMLButtonElement>('header button[aria-label="更多"]');
 }
 
+function replayButtons(container: HTMLElement) {
+  return Array.from(container.querySelectorAll("button")).filter((button) => button.textContent === "重播");
+}
+
 /** 「更多」→「重新生成」→「确定重新生成」 */
 async function confirmRegenerate(container: HTMLElement) {
   await act(async () => moreButton(container)!.click());
@@ -26,6 +30,44 @@ async function confirmRegenerate(container: HTMLElement) {
   const confirm = Array.from(container.querySelectorAll("button")).find(b => b.textContent === "确定重新生成") as HTMLButtonElement;
   await act(async () => confirm.click());
 }
+
+test("结束面板显示时全页只有面板上的一个「重播」，顶栏主按钮不渲染", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const detail = await localSeedSource.detail("3sum");
+  const steps = [
+    { id: "s1", narration: "先排序", targets: [{ kind: "code-line", start: 2 }], effects: [], dwellMs: 5000 },
+    { id: "s2", narration: "再双指针", targets: [{ kind: "code-line", start: 4 }], effects: [], dwellMs: 5000 },
+  ];
+  const lectureBody = () => steps.map(step => JSON.stringify({ type: "step", step })).join("\n") + "\n" +
+    JSON.stringify({ type: "result", script: { problemSlug: "3sum", mode: "lecture", solutionLanguage: "typescript", language: "zh", steps } }) + "\n";
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+    const path = String(input);
+    if (path.endsWith("/api/lecture")) return new Response(lectureBody(), { headers: { "Content-Type": "application/x-ndjson" } });
+    if (path.endsWith("/api/settings")) return Response.json({ keySource: "env" });
+    if (path.endsWith("/api/problems/3sum")) return Response.json({ problem: detail });
+    return Response.json({ ok: true });
+  });
+  const container = document.createElement("div"); document.body.append(container);
+  const root = createRoot(container);
+  const headerButton = (label: string) => Array.from(container.querySelectorAll("header button")).find(b => b.textContent === label) as HTMLButtonElement | undefined;
+  try {
+    await act(async () => root.render(createElement(ProblemPage)));
+    expect(headerButton("开始讲课")?.textContent).toBe("开始讲课");
+    expect(replayButtons(container)).toHaveLength(0);
+    await act(async () => headerButton("开始讲课")!.click());
+    expect(headerButton("暂停")?.textContent).toBe("暂停");
+    expect(replayButtons(container)).toHaveLength(0);
+    await act(async () => { usePlayerStore.setState({ currentIndex: 1, status: "playing" }); usePlayerStore.getState().next(); });
+    expect(usePlayerStore.getState().status).toBe("finished");
+    expect(container.textContent).toContain("讲完了");
+    const replays = replayButtons(container);
+    expect(replays).toHaveLength(1);
+    expect(replays[0]?.closest("header")).toBeNull();
+    expect(headerButton("重播")).toBeUndefined();
+    expect(headerButton("开始讲课")).toBeUndefined();
+    expect(headerButton("暂停")).toBeUndefined();
+  } finally { await act(async () => root.unmount()); }
+});
 
 test("完成态「重播」本地重播不发请求，「重新生成」重新请求讲解", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -64,10 +106,14 @@ test("完成态「重播」本地重播不发请求，「重新生成」重新�
     expect(usePlayerStore.getState().steps).toHaveLength(2);
     await act(async () => { usePlayerStore.setState({ currentIndex: 1, status: "playing" }); usePlayerStore.getState().next(); });
     expect(usePlayerStore.getState().status).toBe("finished");
+    const replays = replayButtons(container);
+    expect(replays).toHaveLength(1);
+    expect(replays[0]?.closest("header")).toBeNull();
+    expect(container.textContent).toContain("讲完了");
 
     const lectureSteps = () => progressBodies.filter(body => body.type === "lecture-step");
     const reportedBeforeReplay = lectureSteps().length;
-    await act(async () => button("重播")!.click());
+    await act(async () => replays[0]!.click());
     expect(lectureCalls).toBe(1);
     expect(usePlayerStore.getState()).toMatchObject({ status: "playing", currentIndex: 0 });
     expect(usePlayerStore.getState().steps.map(s => s.id)).toEqual(["s1", "s2"]);
@@ -159,10 +205,13 @@ test("重新生成后恢复 lecture-step 进度上报", async () => {
     await act(async () => button("开始讲课")!.click());
     await act(async () => { usePlayerStore.setState({ currentIndex: 1, status: "playing" }); usePlayerStore.getState().next(); });
     expect(usePlayerStore.getState().status).toBe("finished");
+    const replays = replayButtons(container);
+    expect(replays).toHaveLength(1);
+    expect(replays[0]?.closest("header")).toBeNull();
 
     const lectureSteps = () => progressBodies.filter(body => body.type === "lecture-step");
     const beforeReplay = lectureSteps().length;
-    await act(async () => button("重播")!.click());
+    await act(async () => replays[0]!.click());
     await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="下一步"]')!.click());
     expect(lectureSteps()).toHaveLength(beforeReplay);
 
