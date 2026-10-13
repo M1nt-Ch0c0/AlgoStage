@@ -25,7 +25,7 @@ export function serverKeyDisabled(): boolean {
 }
 
 export class ByokKeyRequiredError extends Error {
-  constructor() { super("用自定义地址时需要同时填你自己的 Key"); }
+  constructor() { super("用自定义接口地址时，需要同时填你自己的 API Key"); }
 }
 
 export class ByokConfigurationError extends Error {

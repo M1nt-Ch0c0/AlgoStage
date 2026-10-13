@@ -145,7 +145,7 @@ describe.each(entries)("$name", ({ POST, accept }) => {
         for (const apiKey of [undefined, "", "  "]) {
           const response = await POST(request({ slug: "two-sum", level: 1, byok: { baseURL, apiKey } }, accept));
           expect(response.status).toBe(400);
-          expect(await response.json()).toEqual({ code: "BYOK_KEY_REQUIRED", error: "BYOK_KEY_REQUIRED", message: "用自定义地址时需要同时填你自己的 Key" });
+          expect(await response.json()).toEqual({ code: "BYOK_KEY_REQUIRED", error: "BYOK_KEY_REQUIRED", message: "用自定义接口地址时，需要同时填你自己的 API Key" });
         }
       }
       expect(fetchMock).not.toHaveBeenCalled();

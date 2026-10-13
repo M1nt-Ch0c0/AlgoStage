@@ -52,7 +52,7 @@ export function baseURLInvalid() {
 }
 
 export function byokKeyRequired() {
-  return Response.json({ code: "BYOK_KEY_REQUIRED", error: "BYOK_KEY_REQUIRED", message: "用自定义地址时需要同时填你自己的 Key" }, { status: 400 });
+  return Response.json({ code: "BYOK_KEY_REQUIRED", error: "BYOK_KEY_REQUIRED", message: "用自定义接口地址时，需要同时填你自己的 API Key" }, { status: 400 });
 }
 
 export function settingsLocked() {
