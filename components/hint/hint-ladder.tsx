@@ -3,11 +3,13 @@
 import {
   BASE_URL_INVALID_LECTURE_MESSAGE,
   BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE,
+  ByokError,
   fetchServerKeyDisabled,
   isBaseUrlInvalid,
   isBaseUrlNotAllowed,
-  mapByokErrorMessage,
+  isNoByokError,
   NO_BYOK_MESSAGE,
+  resolveByokError,
   ServerKeyStatusError,
   UPSTREAM_ERROR_MESSAGE,
   withByok,
@@ -38,7 +40,10 @@ export default function HintLadder({
 }) {
   const [hints, setHints] = useState<{ level: number; text: string }[]>([]);
   const [hintBusy, setHintBusy] = useState<number | null>(null);
-  const [hintError, setHintError] = useState<string | null>(null);
+  const [hintError, setHintError] = useState<{
+    code: string;
+    message: string;
+  } | null>(null);
   const [hintElapsed, setHintElapsed] = useState(0);
   const [retryLevel, setRetryLevel] = useState<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -122,18 +127,31 @@ export default function HintLadder({
         if (!res.ok) {
           const errorCode = j.code ?? j.error;
           if (errorCode === "TIMEOUT" || res.status === 504) {
-            throw new Error(SLOW_MSG);
-          }
-          if (errorCode === "UPSTREAM_ERROR" || res.status === 502) {
-            throw new Error(UPSTREAM_ERROR_MESSAGE);
+            throw new ByokError("TIMEOUT", SLOW_MSG);
           }
           if (isBaseUrlInvalid(j)) {
-            throw new Error(BASE_URL_INVALID_LECTURE_MESSAGE);
+            throw new ByokError(
+              "BASE_URL_INVALID",
+              BASE_URL_INVALID_LECTURE_MESSAGE,
+            );
           }
           if (isBaseUrlNotAllowed(j)) {
-            throw new Error(BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE);
+            throw new ByokError(
+              "BASE_URL_NOT_ALLOWED",
+              BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE,
+            );
           }
-          throw new Error(mapByokErrorMessage(j) ?? SLOW_MSG);
+          if (isNoByokError(j)) {
+            throw new ByokError("NO_BYOK", NO_BYOK_MESSAGE);
+          }
+          const resolved = resolveByokError(j);
+          if (resolved) {
+            throw new ByokError(resolved.code, resolved.message);
+          }
+          if (errorCode === "UPSTREAM_ERROR" || res.status === 502) {
+            throw new ByokError("UPSTREAM_ERROR", UPSTREAM_ERROR_MESSAGE);
+          }
+          throw new ByokError(errorCode || "HINT_FAILED", SLOW_MSG);
         }
         setHints((h) => [
           ...h.filter((x) => x.level !== j.level),
@@ -148,10 +166,16 @@ export default function HintLadder({
         if (ac.signal.aborted || isAbortError(e)) {
           // cancelled: no scary error
         } else if (e instanceof ServerKeyStatusError) {
-          setHintError(UPSTREAM_ERROR_MESSAGE);
+          setHintError({ code: "UPSTREAM_ERROR", message: UPSTREAM_ERROR_MESSAGE });
+          setRetryLevel(level);
+        } else if (e instanceof ByokError) {
+          setHintError({ code: e.code, message: e.message });
           setRetryLevel(level);
         } else {
-          setHintError(e instanceof Error ? e.message : SLOW_MSG);
+          setHintError({
+            code: "HINT_FAILED",
+            message: e instanceof Error ? e.message : SLOW_MSG,
+          });
           setRetryLevel(level);
         }
       } finally {
@@ -222,13 +246,13 @@ export default function HintLadder({
           role="alert"
           className="mt-2 flex items-center gap-2 text-xs leading-5 text-beam-rose"
         >
-          <p>{hintError}</p>
-          {(hintError === NO_BYOK_MESSAGE ||
-            hintError === BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE ||
-            hintError === BASE_URL_INVALID_LECTURE_MESSAGE) && (
+          <p>{hintError.message}</p>
+          {(hintError.code === "NO_BYOK" ||
+            hintError.code === "BASE_URL_NOT_ALLOWED" ||
+            hintError.code === "BASE_URL_INVALID") && (
             <Link
               href={
-                hintError === NO_BYOK_MESSAGE
+                hintError.code === "NO_BYOK"
                   ? "/settings?focus=apiKey"
                   : "/settings?focus=baseUrl"
               }

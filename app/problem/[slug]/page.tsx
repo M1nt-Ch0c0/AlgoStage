@@ -9,12 +9,10 @@
 import { LECTURE_TIMEOUT_MS } from "@/lib/agent/defaults";
 import {
   BASE_URL_INVALID_LECTURE_MESSAGE,
-  BASE_URL_INVALID_MESSAGE,
   BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE,
-  BASE_URL_NOT_ALLOWED_MESSAGE,
+  ByokError,
   fetchServerKeyDisabled,
-  mapByokErrorMessage,
-  NO_BYOK_MESSAGE,
+  resolveByokError,
   ServerKeyStatusError,
   UPSTREAM_ERROR_MESSAGE,
   withByok,
@@ -91,7 +89,10 @@ export default function ProblemPage() {
   const [lectureProgress, setLectureProgress] = useState("");
   const [lectureComplete, setLectureComplete] = useState(false);
   const lectureAbort = useRef<AbortController | null>(null);
-  const [lectureError, setLectureError] = useState<string | null>(null);
+  const [lectureError, setLectureError] = useState<{
+    code: string;
+    message: string;
+  } | null>(null);
 
   const steps = usePlayerStore((s) => s.steps);
   const currentIndex = usePlayerStore((s) => s.currentIndex);
@@ -172,7 +173,10 @@ export default function ProblemPage() {
     if (practice) saveDraft(slug, language, code);
     setPractice(false);
     if (!detail) {
-      setLectureError("题目和参考代码还没加载好，请稍后再试。");
+      setLectureError({
+        code: "NOT_READY",
+        message: "题目和参考代码还没加载好，请稍后再试。",
+      });
       return;
     }
     lectureAbort.current?.abort();
@@ -220,12 +224,11 @@ export default function ProblemPage() {
       });
       if (!res.ok && res.status === 502) {
         const errData = (await res.json().catch(() => null)) as Record<string, unknown> | null;
-        const errCode = typeof errData?.code === "string" ? errData.code : typeof errData?.error === "string" ? errData.error : "";
-        throw new Error(
-          errCode === "UPSTREAM_ERROR"
-            ? UPSTREAM_ERROR_MESSAGE
-            : (mapByokErrorMessage(errData) ?? UPSTREAM_ERROR_MESSAGE),
-        );
+        const resolved = resolveByokError(errData);
+        if (resolved) {
+          throw new ByokError(resolved.code, resolved.message);
+        }
+        throw new ByokError("UPSTREAM_ERROR", UPSTREAM_ERROR_MESSAGE);
       }
       let streaming = false;
       let guard: StreamGuard | undefined;
@@ -275,24 +278,34 @@ export default function ProblemPage() {
       setLectureComplete(true);
     } catch (e) {
       if (lectureAbort.current === abort) {
-        const rawMessage = e instanceof Error ? e.message : "";
-        const mappedMessage =
-          e instanceof ServerKeyStatusError
-            ? UPSTREAM_ERROR_MESSAGE
-            : mapByokErrorMessage({ message: rawMessage });
-        const message = timedOut
-          ? "备课超时，请点击重试或换用推荐模型 gpt-6.1-sol。"
-          : !abort.signal.aborted
-            ? (mappedMessage === BASE_URL_NOT_ALLOWED_MESSAGE
-                ? BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE
-                : mappedMessage === BASE_URL_INVALID_MESSAGE
-                  ? BASE_URL_INVALID_LECTURE_MESSAGE
-                  : (mappedMessage ?? "老师这次没备好课，请重试。"))
-            : null;
+        let nextError: { code: string; message: string } | null = null;
+        if (timedOut) {
+          nextError = {
+            code: "TIMEOUT",
+            message: "备课超时，请点击重试或换用推荐模型 gpt-6.1-sol。",
+          };
+        } else if (!abort.signal.aborted) {
+          const resolved =
+            e instanceof ServerKeyStatusError
+              ? { code: "UPSTREAM_ERROR", message: UPSTREAM_ERROR_MESSAGE }
+              : e instanceof ByokError
+                ? { code: e.code, message: e.message }
+                : resolveByokError({
+                    message: e instanceof Error ? e.message : "",
+                  });
+          const code = resolved?.code ?? "LECTURE_FAILED";
+          const message =
+            code === "BASE_URL_NOT_ALLOWED"
+              ? BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE
+              : code === "BASE_URL_INVALID"
+                ? BASE_URL_INVALID_LECTURE_MESSAGE
+                : (resolved?.message ?? "老师这次没备好课，请重试。");
+          nextError = { code, message };
+        }
         // 失败也清空半份教案，避免残留字幕与代码锚点；错误提示独立保留。
         cancelLectureForPlayback(detail, language, { abort: () => abort.abort(), reset, setCode });
         lastReportedRef.current = -1;
-        if (message) setLectureError(message);
+        if (nextError) setLectureError(nextError);
       }
     } finally {
       clearTimeout(deadline);
@@ -604,36 +617,36 @@ export default function ProblemPage() {
           role="alert"
           className="flex items-center gap-3 text-sm text-beam-rose"
         >
-          <p>{lectureError}</p>
+          <p>{lectureError.message}</p>
           <button
             type="button"
             onClick={() => startLecture()}
             disabled={lectureBusy || !detail}
             className="rounded-full border border-beam-rose px-3 py-1 disabled:opacity-40"
           >
-            {lectureError === UPSTREAM_ERROR_MESSAGE ? "重试" : "重试讲课"}
+            {lectureError.code === "UPSTREAM_ERROR" ? "重试" : "重试讲课"}
           </button>
-          {lectureError !== UPSTREAM_ERROR_MESSAGE && (
+          {lectureError.code !== "UPSTREAM_ERROR" && (
             <Link
               href={
-                lectureError === NO_BYOK_MESSAGE
+                lectureError.code === "NO_BYOK"
                   ? "/settings?focus=apiKey"
-                  : lectureError === BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE ||
-                      lectureError === BASE_URL_INVALID_LECTURE_MESSAGE
+                  : lectureError.code === "BASE_URL_NOT_ALLOWED" ||
+                      lectureError.code === "BASE_URL_INVALID"
                     ? "/settings?focus=baseUrl"
                     : "/settings"
               }
               data-testid={
-                lectureError === NO_BYOK_MESSAGE ||
-                lectureError === BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE ||
-                lectureError === BASE_URL_INVALID_LECTURE_MESSAGE
+                lectureError.code === "NO_BYOK" ||
+                lectureError.code === "BASE_URL_NOT_ALLOWED" ||
+                lectureError.code === "BASE_URL_INVALID"
                   ? "goto-settings"
                   : undefined
               }
               className={
-                lectureError === NO_BYOK_MESSAGE ||
-                lectureError === BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE ||
-                lectureError === BASE_URL_INVALID_LECTURE_MESSAGE
+                lectureError.code === "NO_BYOK" ||
+                lectureError.code === "BASE_URL_NOT_ALLOWED" ||
+                lectureError.code === "BASE_URL_INVALID"
                   ? "shrink-0 rounded-full border border-beam-gold/60 bg-transparent px-3 py-1 text-beam-gold transition-colors hover:border-beam-gold"
                   : "underline hover:text-chalk-100"
               }

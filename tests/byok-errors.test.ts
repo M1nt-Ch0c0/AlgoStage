@@ -9,9 +9,11 @@ import {
   BASE_URL_INVALID_MESSAGE,
   BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE,
   BASE_URL_NOT_ALLOWED_MESSAGE,
+  ByokError,
   isBaseUrlInvalid,
   mapByokErrorMessage,
   resetServerKeyDisabledCache,
+  toByokError,
   UPSTREAM_ERROR_MESSAGE,
 } from "../lib/byok/client";
 import { localSeedSource } from "../lib/content/local-source";
@@ -133,6 +135,20 @@ describe("mapByokErrorMessage pure unit tests", () => {
       "接口地址只支持公网 http(s) 地址",
     );
   });
+
+  test("Object.hasOwn safety: prototype keys like constructor and toString do not map to a function", () => {
+    for (const protoKey of ["constructor", "toString", "valueOf", "__proto__"]) {
+      expect(mapByokErrorMessage(protoKey)).toBeUndefined();
+      expect(mapByokErrorMessage({ code: protoKey })).toBeUndefined();
+      expect(mapByokErrorMessage({ error: protoKey })).toBeUndefined();
+      expect(mapByokErrorMessage({ message: protoKey })).toBe(protoKey);
+      expect(typeof mapByokErrorMessage({ code: protoKey })).not.toBe("function");
+      const err = toByokError({ code: protoKey }, "fallback");
+      expect(err).toBeInstanceOf(ByokError);
+      expect(err.code).toBe("UNKNOWN");
+      expect(err.message).toBe("fallback");
+    }
+  });
 });
 
 describe("readLectureResponse BYOK error mapping", () => {
@@ -187,6 +203,7 @@ describe("readLectureResponse BYOK error mapping", () => {
       "这次备课未能完成，请重试或换用 gpt-6.1-sol。",
     );
     expect(caughtError!.message).not.toContain(rawCode);
+    expect((caughtError as ByokError).code).toBe("UNKNOWN");
   });
 });
 
@@ -476,6 +493,94 @@ describe("Rendered UI error messages in HintLadder and ProblemPage", () => {
       expect(container.textContent).toContain("双指针思路");
     },
   );
+
+  test("HintLadder 502 with BASE_URL_INVALID body shows BASE_URL_INVALID copy and 去设置 link", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/api/settings")) {
+        return Response.json({ serverKeyDisabled: true });
+      }
+      if (url.endsWith("/api/hint")) {
+        return Response.json(
+          { code: "BASE_URL_INVALID", error: "BASE_URL_INVALID", message: "bad url" },
+          { status: 502 },
+        );
+      }
+      return Response.json({ ok: true });
+    });
+
+    await act(async () => {
+      root.render(createElement(HintLadder, { slug: "3sum" }));
+    });
+
+    const btn = Array.from(container.querySelectorAll("button")).find(
+      (b) =>
+        b.textContent?.includes("观察") ||
+        b.getAttribute("title")?.includes("观察"),
+    )!;
+    await act(async () => {
+      btn.click();
+    });
+
+    const alert = container.querySelector('[role="alert"]');
+    expect(alert).not.toBeNull();
+    expect(alert!.textContent).toContain(BASE_URL_INVALID_LECTURE_MESSAGE);
+    expect(alert!.textContent).not.toContain(UPSTREAM_ERROR_MESSAGE);
+    const settingsLink = alert!.querySelector('[data-testid="goto-settings"]');
+    expect(settingsLink).not.toBeNull();
+    expect(settingsLink!.getAttribute("href")).toBe("/settings?focus=baseUrl");
+  });
+
+  test("ProblemPage streamed UPSTREAM_ERROR shows fixed copy + only 重试, raw server message not in DOM, console.warn called with it", async () => {
+    const rawServerMsg = "raw upstream gateway error detail 502 bad gateway";
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const detail = await localSeedSource.detail("3sum");
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/api/settings")) {
+        return Response.json({ serverKeyDisabled: true });
+      }
+      if (url.endsWith("/api/problems/3sum")) {
+        return Response.json({ problem: detail });
+      }
+      if (url.endsWith("/api/lecture")) {
+        const ndjson =
+          JSON.stringify({
+            type: "error",
+            error: "UPSTREAM_ERROR",
+            message: rawServerMsg,
+          }) + "\n";
+        return new Response(ndjson, {
+          headers: { "Content-Type": "application/x-ndjson" },
+        });
+      }
+      return Response.json({ ok: true });
+    });
+
+    await act(async () => {
+      root.render(createElement(ProblemPage));
+    });
+
+    const startBtn = Array.from(
+      container.querySelectorAll<HTMLButtonElement>("header button"),
+    ).find((b) => b.textContent === "开始讲课")!;
+    await act(async () => {
+      startBtn.click();
+    });
+
+    const alert = container.querySelector('[role="alert"]');
+    expect(alert).not.toBeNull();
+    expect(alert!.textContent).toContain(UPSTREAM_ERROR_MESSAGE);
+    expect(container.textContent).not.toContain(rawServerMsg);
+    expect(warnSpy).toHaveBeenCalledWith(rawServerMsg);
+
+    const buttons = Array.from(alert!.querySelectorAll("button"));
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0].textContent).toBe("重试");
+    expect(alert!.querySelectorAll("a")).toHaveLength(0);
+    expect(alert!.textContent).not.toContain("去设置");
+  });
 
   test.each([
     { label: "502 + error: UPSTREAM_ERROR", status: 502, payload: { error: "UPSTREAM_ERROR", message: "无法连接到 AI 服务，请检查接口地址。" } },

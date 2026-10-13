@@ -10,9 +10,19 @@ export type SettingsResponse = {
 
 export const UPSTREAM_ERROR_MESSAGE = "AI 服务暂时连不上，请稍后再试。";
 
-export class ServerKeyStatusError extends Error {
-  constructor(message = UPSTREAM_ERROR_MESSAGE) {
+export class ByokError extends Error {
+  readonly code: string;
+
+  constructor(code: string, message: string) {
     super(message);
+    this.name = "ByokError";
+    this.code = code;
+  }
+}
+
+export class ServerKeyStatusError extends ByokError {
+  constructor(message = UPSTREAM_ERROR_MESSAGE) {
+    super("UPSTREAM_ERROR", message);
     this.name = "ServerKeyStatusError";
   }
 }
@@ -234,10 +244,10 @@ function isRawErrorCode(str: string): boolean {
   return /^[A-Z0-9_]+$/.test(str);
 }
 
-export function mapByokErrorMessage(
+export function resolveByokError(
   data?: unknown,
   fallbackMessage?: unknown,
-): string | undefined {
+): { code: string; message: string; rawMessage?: string } | undefined {
   let code = "";
   let msg = "";
 
@@ -260,25 +270,35 @@ export function mapByokErrorMessage(
     msg = fallbackMessage.trim();
   }
 
-  if (code && code in BYOK_ERROR_MAP) {
-    if (
-      code === "UPSTREAM_ERROR" &&
-      data &&
-      typeof data === "object" &&
-      (data as Record<string, unknown>).type === "error" &&
-      msg &&
-      msg !== code &&
-      !isRawErrorCode(msg)
-    ) {
-      return msg;
-    }
-    return BYOK_ERROR_MAP[code];
+  if (code && Object.hasOwn(BYOK_ERROR_MAP, code)) {
+    const rawMessage =
+      msg && msg !== code && !isRawErrorCode(msg) ? msg : undefined;
+    return { code, message: BYOK_ERROR_MAP[code], rawMessage };
   }
-  if (msg && msg in BYOK_ERROR_MAP) {
-    return BYOK_ERROR_MAP[msg];
+  if (msg && Object.hasOwn(BYOK_ERROR_MAP, msg)) {
+    return { code: msg, message: BYOK_ERROR_MAP[msg] };
   }
   if (msg && msg !== code && !isRawErrorCode(msg)) {
-    return msg;
+    return { code: code || "UNKNOWN", message: msg };
   }
   return undefined;
+}
+
+export function toByokError(
+  data?: unknown,
+  fallbackMessage?: string,
+  fallbackCode = "UNKNOWN",
+): ByokError {
+  const resolved = resolveByokError(data);
+  if (resolved) {
+    return new ByokError(resolved.code, resolved.message);
+  }
+  return new ByokError(fallbackCode, fallbackMessage ?? "");
+}
+
+export function mapByokErrorMessage(
+  data?: unknown,
+  fallbackMessage?: unknown,
+): string | undefined {
+  return resolveByokError(data, fallbackMessage)?.message;
 }
