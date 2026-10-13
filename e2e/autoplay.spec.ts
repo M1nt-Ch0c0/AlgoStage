@@ -752,7 +752,7 @@ async function checkToggles(page: Page) {
 
   await expect(async () => {
     const measured = await page.getByTestId("player-controls").evaluate((el) => {
-      const children: Array<{ top: number; bottom: number; centerY: number; label: string | null }> = [];
+      const children: Array<{ top: number; bottom: number; centerY: number; label: string | null; text: string }> = [];
       for (const child of el.children) {
         const box = child.getBoundingClientRect();
         if (box.width <= 0 || box.height <= 0) continue;
@@ -761,6 +761,8 @@ async function checkToggles(page: Page) {
           bottom: box.bottom,
           centerY: box.top + box.height / 2,
           label: child.getAttribute("aria-label"),
+          // 自动播放按钮没有 aria-label，可访问名就是正文。
+          text: (child.textContent ?? "").trim(),
         });
       }
 
@@ -777,15 +779,33 @@ async function checkToggles(page: Page) {
       }
 
       const centerY = (label: string) => children.find((child) => child.label === label)?.centerY ?? null;
+      // 语速 / 特效强度用 aria-label。自动播放与时间线同一行，按钮本身没有 aria-label。
+      const toggleChildren = children.filter(
+        (child) => child.label === "语速" || child.label === "特效强度" || child.text === "自动播放",
+      );
+      const toggleRows: Array<{ top: number; bottom: number }> = [];
+      for (const child of toggleChildren) {
+        const row = rows.find((candidate) => child.centerY >= candidate.top && child.centerY <= candidate.bottom);
+        if (row && !toggleRows.includes(row)) toggleRows.push(row);
+      }
+      toggleRows.sort((a, b) => a.top - b.top);
+      const upperToggleRow = toggleRows[0];
+      const lowerToggleRow = toggleRows[toggleRows.length - 1];
+      const toggleGap =
+        upperToggleRow && lowerToggleRow && upperToggleRow !== lowerToggleRow
+          ? lowerToggleRow.top - upperToggleRow.bottom
+          : null;
       return {
         count: rows.length,
         centres: rows.map((row) => (row.top + row.bottom) / 2),
         speedCenterY: centerY("语速"),
         effectCenterY: centerY("特效强度"),
+        toggleRowCount: toggleRows.length,
+        toggleGap,
       };
     });
     console.log(
-      `[player-controls rows] count=${measured.count} centres=${measured.centres.join(",")}`,
+      `[player-controls rows] count=${measured.count} centres=${measured.centres.join(",")} toggleRows=${measured.toggleRowCount} toggleGap=${measured.toggleGap}`,
     );
     expect(measured.count).toBeLessThanOrEqual(4);
     expect(measured.speedCenterY).not.toBeNull();
@@ -810,7 +830,7 @@ test.describe("coarse pointer toggle hit areas 390", () => {
     try {
       await page.goto("/problem/group-anagrams");
       await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
-      await expect(page.getByText(/备课中…|第 1 \/ 2 步/).first()).toBeVisible();
+      await expect(page.getByText("备课中…").first()).toBeVisible();
       await checkToggles(page);
     } finally {
       await cleanup();
