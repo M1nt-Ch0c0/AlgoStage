@@ -5,12 +5,14 @@ import { baseURLInvalid, baseURLNotAllowed, byokKeyRequired, configurationError,
 import { upstreamStatusCode } from "./upstream-retry";
 
 /** SDK wrappers can retain a cause; never expose that cause to the client. */
-export function settingsConnectionError(error: unknown): Response {
+export function settingsConnectionError(error: unknown, options: { envBaseURL?: boolean } = {}): Response {
   const seen = new Set<unknown>();
   let current = error;
   while (current instanceof Error && !seen.has(current)) {
     seen.add(current);
     if (current instanceof ServerAIBaseURLError) return upstreamError();
+    // 环境变量地址由部署方配置，与 hint/lecture 一致统一 502，不提示用户去改设置。
+    if (options.envBaseURL && (current instanceof InvalidAIBaseURLError || current instanceof AIBaseURLNotAllowedError)) return upstreamError();
     if (current instanceof InvalidAIBaseURLError) return baseURLInvalid();
     if (current instanceof AIBaseURLNotAllowedError) return baseURLNotAllowed();
     if (current instanceof ByokKeyRequiredError) return byokKeyRequired();
@@ -31,7 +33,7 @@ export async function validateBaseURL(baseURL: string, signal: AbortSignal): Pro
 }
 
 /** A small probe uses the same SDK, credential checks and pinned fetch as runtime. */
-export async function checkAIConnection(config: ByokConfig, signal: AbortSignal): Promise<Response | null> {
+export async function checkAIConnection(config: ByokConfig, signal: AbortSignal, options: { envBaseURL?: boolean } = {}): Promise<Response | null> {
   try {
     await generateText({
       model: createModel(config),
@@ -42,6 +44,6 @@ export async function checkAIConnection(config: ByokConfig, signal: AbortSignal)
     });
     return null;
   } catch (error) {
-    return settingsConnectionError(error);
+    return settingsConnectionError(error, options);
   }
 }

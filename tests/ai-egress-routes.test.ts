@@ -638,3 +638,39 @@ describe("QA P2：库里存的内网地址在 hint/lecture 返回 400 BASE_URL_N
     });
   });
 });
+
+describe("环境变量 AI_BASE_URL 不合法或被拦：四个入口统一 502 UPSTREAM_ERROR，零出站", () => {
+  const all = [...entries, { name: "test-connection", POST: testConnection, accept: "application/json" }];
+  const cases = [
+    { kind: "格式不合法", url: "ftp://ai.example/v1" },
+    { kind: "内网 IP", url: "http://10.0.0.5/v1" },
+    { kind: "域名解析到内网", url: "https://internal.example/v1", dnsPrivate: true },
+  ];
+  for (const c of cases) test.each(all)(`${c.kind} → $name 502`, async ({ POST, accept }) => {
+    vi.stubEnv("AI_API_KEY", "env-only-credential");
+    vi.stubEnv("AI_BASE_URL", c.url);
+    vi.stubEnv("AI_MODEL", "env-model");
+    if (c.dnsPrivate) dns.mockResolvedValue([{ address: "10.0.0.5", family: 4 }]);
+    const response = await POST(request(POST === testConnection ? {} : { slug: "two-sum", level: 1 }, accept));
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual(UPSTREAM_ERROR);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test.each(["http://10.0.0.5/v1", "ftp://ai.example/v1"])("测试连接：保存的地址 %s 仍返回 400 BASE_URL_*", async baseURL => {
+    db.settings.set("apiKey", "saved-credential");
+    db.settings.set("baseURL", baseURL);
+    db.settings.set("model", "saved-model");
+    const response = await testConnection(request({}));
+    expect(response.status).toBe(400);
+    expect((await response.json()).code).toMatch(/^BASE_URL_(INVALID|NOT_ALLOWED)$/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test("测试连接：请求里的内网地址仍返回 400 BASE_URL_NOT_ALLOWED", async () => {
+    const response = await testConnection(request({ byok: { ...byok, baseURL: "http://10.0.0.5/v1" } }));
+    expect(response.status).toBe(400);
+    expect((await response.json()).code).toBe("BASE_URL_NOT_ALLOWED");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
