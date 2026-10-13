@@ -33,6 +33,16 @@ export function upstreamStatusCode(error: unknown): number | undefined {
       // body or `{error:{...}}` sent to a non-stream request). Look for the
       // same structured auth markers the streaming path reads from raw chunks.
       if (code !== undefined && (code < 200 || code >= 300)) return code;
+      // Known limit (P3, v0.2.2): if the relay sends an SSE auth-error line and
+      // then destroys the socket instead of ending the response, the SDK's
+      // non-stream path (`response.text()` in generateText) rejects with
+      // TypeError("terminated") <- undici SocketError(UND_ERR_SOCKET) and
+      // `responseBody` is undefined: undici drops the partially received
+      // bytes, so there is nothing structured to scan here. Hint and
+      // test-connection therefore map that case to UPSTREAM_ERROR (502,
+      // retryable). Verified with ai 7.0.99 / @ai-sdk/openai-compatible
+      // 3.0.48. Fixing it needs those routes to use streaming requests (same
+      // change as the known no-body-disconnect P3), not body scraping here.
       pending.push(current.data, ...structuredBodies(current.responseBody));
       if (code !== undefined) fallback ??= code;
     }
@@ -56,7 +66,14 @@ export function upstreamStatusCode(error: unknown): number | undefined {
   return fallback;
 }
 
-/** Parse a JSON or SSE body into objects for marker checks only; never logged. */
+/**
+ * Parse a JSON or SSE body into objects for marker checks only; never logged.
+ * Intentional cap: bodies over 1,000,000 chars are not parsed, so a 2xx body
+ * that large is never read as an auth error and hint/test-connection return
+ * 502 UPSTREAM_ERROR. Lecture still reports 400 UPSTREAM_AUTH there because it
+ * streams and classifies per chunk, not through this whole-body path. The cap
+ * keeps the error path bounded (no multi-MB JSON.parse/split per failure).
+ */
 function structuredBodies(body: unknown): unknown[] {
   if (typeof body !== "string" || body.length > 1_000_000) return [];
   const parse = (text: string) => { try { return [JSON.parse(text)]; } catch { return []; } };

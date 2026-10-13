@@ -252,3 +252,29 @@ test("错误分类：网络超时/断连可重试，参数/协议错误、普通
     ),
   ).toBe(false);
 });
+
+test("documented limit: 2xx body lost to socket destroy (no responseBody) is not an auth error; >1MB 2xx body is not parsed", () => {
+  const destroyed = new APICallError({
+    statusCode: 200,
+    message: "Failed to process successful response",
+    url: "https://fake.invalid",
+    requestBodyValues: {},
+    cause: new TypeError("terminated", {
+      cause: Object.assign(new Error("other side closed"), { code: "UND_ERR_SOCKET" }),
+    }),
+  });
+  expect(upstreamStatusCode(destroyed)).toBe(200);
+  const authLine = `data: ${JSON.stringify({ error: { type: "authentication_error", code: "invalid_api_key" } })}\n\n`;
+  const big = new APICallError({
+    statusCode: 200,
+    message: "Invalid JSON response",
+    url: "https://fake.invalid",
+    requestBodyValues: {},
+    responseBody: authLine + "x".repeat(1_000_001),
+  });
+  expect(upstreamStatusCode(big)).toBe(200);
+  expect(upstreamStatusCode(new APICallError({
+    statusCode: 200, message: "Invalid JSON response", url: "https://fake.invalid",
+    requestBodyValues: {}, responseBody: authLine,
+  }))).toBe(401);
+});
