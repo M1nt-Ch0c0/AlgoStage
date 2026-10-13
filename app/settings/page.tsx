@@ -3,6 +3,9 @@
 import { KeySourceBadge, type KeySource } from "@/components/settings/key-source-badge";
 import { DEFAULT_MODEL } from "@/lib/agent/defaults";
 import { savedEndpoint } from "@/lib/agent/saved-endpoint";
+import { mapByokErrorMessage, type SettingsResponse } from "@/lib/byok/client";
+import { maskKey, readLocalByok } from "@/lib/byok/storage";
+import { useLocalByok } from "@/lib/byok/use-local-byok";
 import { apiPath } from "@/lib/runtime";
 import { useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
@@ -61,6 +64,8 @@ export default function SettingsPage() {
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const [saveError, setSaveError] = useState("");
   const [testState, setTestState] = useState<TestState>({ kind: "idle" });
+  const [serverKeyDisabled, setServerKeyDisabled] = useState(false);
+  const { byok: localByok, save: saveLocalByok, clear: clearLocalByokState } = useLocalByok();
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 只记录真实编辑；预填文案和从服务端读到的旧值都不能隐式写回。
   const edits = useRef<Record<string, string>>({});
@@ -80,12 +85,22 @@ export default function SettingsPage() {
   useEffect(() => {
     fetch(apiPath("/api/settings"))
       .then((r) => r.json())
-      .then(({ settings, keySource }) => {
-        setKeySource(keySource ?? "none");
+      .then((data: SettingsResponse) => {
+        const settings = data.settings ?? {};
+        const disabled = data.serverKeyDisabled === true;
+        setServerKeyDisabled(disabled);
+        setKeySource((data.keySource as KeySource) ?? "none");
         if (settings.provider) setProvider(settings.provider);
-        setBaseURL(savedEndpoint(settings) ?? "");
-        if (settings.apiKeyMasked) setApiKeyMasked(settings.apiKeyMasked);
-        if (settings.model) setModel(settings.model);
+        if (disabled) {
+          const stored = readLocalByok();
+          setBaseURL(stored?.baseURL ?? savedEndpoint(settings) ?? "");
+          if (stored?.model) setModel(stored.model);
+          else if (settings.model) setModel(settings.model);
+        } else {
+          setBaseURL(savedEndpoint(settings) ?? "");
+          if (settings.apiKeyMasked) setApiKeyMasked(settings.apiKeyMasked);
+          if (settings.model) setModel(settings.model);
+        }
         if (settings.effectLevel) setEffectLevel(settings.effectLevel);
         if (settings.narrationSpeed) setNarrationSpeed(settings.narrationSpeed);
       })
@@ -102,7 +117,32 @@ export default function SettingsPage() {
     return { provider, model: model.trim() || DEFAULT_MODEL, apiKey: apiKey.trim(), baseURL: baseURL.trim() };
   }
 
+  function clearLocalKey() {
+    clearLocalByokState();
+    setApiKey("");
+    delete edits.current.apiKey;
+    setSaveState("idle");
+    setTestState({ kind: "idle" });
+  }
+
   async function save() {
+    if (serverKeyDisabled) {
+      const nextKey = apiKey.trim() || localByok?.apiKey || "";
+      if (nextKey) {
+        saveLocalByok({
+          apiKey: nextKey,
+          baseURL: baseURL.trim() || undefined,
+          model: model.trim() || undefined,
+        });
+      }
+      setApiKey("");
+      edits.current = {};
+      setSaveState("saved");
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(() => setSaveState("idle"), 2000);
+      return;
+    }
+
     setSaveState("saving");
     setSaveError("");
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -145,7 +185,19 @@ export default function SettingsPage() {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     try {
       const body: Record<string, unknown> = {};
-      if (apiKey.trim()) {
+      if (serverKeyDisabled) {
+        const keyToUse = apiKey.trim() || localByok?.apiKey || "";
+        if (keyToUse) {
+          const nextByok: { apiKey: string; baseURL?: string; model?: string } = {
+            apiKey: keyToUse,
+          };
+          const trimmedBase = baseURL.trim() || localByok?.baseURL;
+          const trimmedModel = model.trim() || localByok?.model;
+          if (trimmedBase) nextByok.baseURL = trimmedBase;
+          if (trimmedModel) nextByok.model = trimmedModel;
+          body.byok = nextByok;
+        }
+      } else if (apiKey.trim()) {
         const fields = credentialFields();
         body.byok = { ...fields, baseURL: fields.baseURL || undefined };
       } else {
@@ -164,7 +216,7 @@ export default function SettingsPage() {
       } else if (data.error === "BASE_URL_NOT_ALLOWED") {
         setBaseURLError(data.message);
         setTestState({ kind: "idle" });
-      } else if (data.error === "NO_BYOK") {
+      } else if (data.error === "NO_BYOK" && !serverKeyDisabled) {
         setTestState({
           kind: "fail",
           message: "请填好 API Key 和模型名，或在环境变量中配置后再测试。",
@@ -172,13 +224,24 @@ export default function SettingsPage() {
       } else {
         setTestState({
           kind: "fail",
-          message: data.message ?? data.error ?? `请求失败（HTTP ${res.status}）`,
+          message:
+            mapByokErrorMessage(data) ??
+            data.message ??
+            data.error ??
+            `请求失败（HTTP ${res.status}）`,
         });
       }
     } catch {
       setTestState({ kind: "fail", message: "连不上 AlgoStage，刷新页面再试一次。" });
     }
   }
+
+  const displayedMaskedKey = serverKeyDisabled
+    ? (localByok ? maskKey(localByok.apiKey) : "")
+    : apiKeyMasked;
+  const effectiveKeySource: KeySource = serverKeyDisabled
+    ? (localByok ? "settings" : "none")
+    : keySource;
 
   const preset = PROVIDER_OPTIONS.find((p) => p.id === provider);
 
@@ -201,8 +264,12 @@ export default function SettingsPage() {
           title="接上你的 AI 老师"
           desc="AlgoStage 自己不带 AI，需要接上一个你自己的 AI 账号，老师才能给其余的题备课。账号的钥匙（API Key）只存在这台电脑上，不会发给任何人。"
         >
-          <div className="mb-4"><KeySourceBadge source={keySource} /></div>
-          <p className="mb-4 text-xs text-chalk-500">只保存你改动的字段。使用环境变量 Key 时，接口地址和服务商也沿用环境变量；可单独修改模型名。保存新 Key 时，请同时填写对应接口地址和服务商。</p>
+          <div className="mb-4"><KeySourceBadge source={effectiveKeySource} /></div>
+          {serverKeyDisabled ? (
+            <p className="mb-4 text-xs text-chalk-500">Key 只保存在你这台浏览器里，不会存到服务器</p>
+          ) : (
+            <p className="mb-4 text-xs text-chalk-500">只保存你改动的字段。使用环境变量 Key 时，接口地址和服务商也沿用环境变量；可单独修改模型名。保存新 Key 时，请同时填写对应接口地址和服务商。</p>
+          )}
           <fieldset>
             <legend className={labelClass}>用哪家的 AI</legend>
             <div className="grid gap-2 sm:grid-cols-3">
@@ -262,7 +329,7 @@ export default function SettingsPage() {
                 <p id="baseURL-policy" className="mt-2 text-xs leading-5 text-chalk-500">需要公网 http(s) 地址；自托管实例可由管理员允许连接本地模型。</p>
                 {provider === "openai-compatible" && !baseURL.trim() && (
                   <p id="baseURL-hint" className="mt-2 text-xs leading-5 text-chalk-500">
-                    {keySource === "env" && !apiKey.trim()
+                    {!serverKeyDisabled && keySource === "env" && !apiKey.trim()
                       ? "留空：沿用环境变量里配置的接口地址。"
                       : "留空将使用 OpenAI 官方地址 https://api.openai.com/v1；DeepSeek、通义、Kimi 等请填写对应服务商的地址。"}
                   </p>
@@ -272,7 +339,7 @@ export default function SettingsPage() {
             <div className="sm:col-span-2">
               <label className={labelClass} htmlFor="apiKey">
                 API Key
-                {apiKeyMasked && <span className="ml-2 text-beam-mint">已配置 {apiKeyMasked}</span>}
+                {displayedMaskedKey && <span className="ml-2 text-beam-mint">已配置 {displayedMaskedKey}</span>}
               </label>
               <div className="relative">
                 <input
@@ -280,7 +347,7 @@ export default function SettingsPage() {
                   type={showKey ? "text" : "password"}
                   value={apiKey}
                   onChange={(e) => edit("apiKey", e.target.value, setApiKey)}
-                  placeholder={apiKeyMasked ? "输入新的 Key 以更换" : "sk-…"}
+                  placeholder={displayedMaskedKey ? "输入新的 Key 以更换" : "sk-…"}
                   className={`${inputClass} pr-10 font-mono`}
                   autoComplete="off"
                 />
@@ -293,7 +360,7 @@ export default function SettingsPage() {
                   {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
               </div>
-              {apiKeyMasked && <button type="button" className="mt-2 text-xs text-beam-cyan" onClick={() => edit("apiKey", "", setApiKey)}>清除已保存 Key，改用环境变量（保存后生效）</button>}
+              {!serverKeyDisabled && apiKeyMasked && <button type="button" className="mt-2 text-xs text-beam-cyan" onClick={() => edit("apiKey", "", setApiKey)}>清除已保存 Key，改用环境变量（保存后生效）</button>}
             </div>
           </div>
 
@@ -332,6 +399,15 @@ export default function SettingsPage() {
             >
               {testState.kind === "testing" ? "正在试着连一下…" : "测试连接"}
             </button>
+            {serverKeyDisabled && (
+              <button
+                type="button"
+                onClick={clearLocalKey}
+                className="rounded-full border border-board-600 px-5 py-2 text-sm text-chalk-300 transition-colors hover:border-beam-rose/60 hover:text-beam-rose"
+              >
+                清除本机 Key
+              </button>
+            )}
             {testState.kind === "ok" && (
               <motion.span initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-sm text-beam-mint">
                 ✓ {testState.message}

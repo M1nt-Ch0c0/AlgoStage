@@ -4,26 +4,38 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { KeyRound } from "lucide-react";
 import { apiPath } from "@/lib/runtime";
+import { useLocalByok } from "@/lib/byok/use-local-byok";
 
 /** 未获取到设置或请求失败时不推断为未配置，避免误导已接入的用户。 */
 export default function AiSetupPrompt({ problemSlug }: { problemSlug?: string }) {
   const [keySource, setKeySource] = useState<unknown>(null);
+  const [serverKeyDisabled, setServerKeyDisabled] = useState(false);
+  const { byok, ready } = useLocalByok();
 
   useEffect(() => {
     if (problemSlug === "two-sum") return;
     const abort = new AbortController();
     setKeySource(null);
+    setServerKeyDisabled(false);
     fetch(apiPath("/api/settings"), { signal: abort.signal, cache: "no-store" })
       .then(async res => {
         if (!res.ok) return;
         const settings = await res.json();
-        if (!abort.signal.aborted) setKeySource(settings.keySource);
+        if (!abort.signal.aborted) {
+          setServerKeyDisabled(settings.serverKeyDisabled === true);
+          setKeySource(settings.keySource);
+        }
       })
       .catch(() => {});
     return () => abort.abort();
   }, [problemSlug]);
 
-  if (keySource !== "none" || problemSlug === "two-sum") return null;
+  if (problemSlug === "two-sum") return null;
+  if (serverKeyDisabled) {
+    if (!ready || Boolean(byok?.apiKey)) return null;
+  } else if (keySource !== "none") {
+    return null;
+  }
   return (
     <div className="flex w-full shrink-0 flex-col gap-3 rounded-xl border border-board-700/70 bg-board-900/80 p-4 text-sm leading-6 text-chalk-300">
       <p>{problemSlug
