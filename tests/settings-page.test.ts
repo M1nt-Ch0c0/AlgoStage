@@ -1,8 +1,11 @@
 // @vitest-environment happy-dom
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { act, createElement, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
 import SettingsPage from "../app/settings/page";
+import { NO_BYOK_SETTINGS_MESSAGE } from "../lib/byok/client";
 
 // 表单测试不启用保存勾选动画，避免 DOM 模拟器在卸载时产生动画取消拒绝。
 vi.mock("motion/react", () => ({ motion: {
@@ -237,4 +240,108 @@ test("设置页 API Key 相关文案：顶栏说明、表单说明、占位符�
     expect(Array.from(container.querySelectorAll("button")).some(b => b.textContent === "清除已保存的 API Key，改用环境变量（保存后生效）")).toBe(true);
   } finally { await act(async () => root.unmount()); }
 });
+
+test("测试连接无 API Key：聚焦 #apiKey，下一帧在 [role=status] 显示文案且全页仅一份，无红色失败与 ✗，输入 API Key 时清空", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+    const url = String(input);
+    if (url.endsWith("/api/settings")) {
+      return Response.json({ settings: {}, keySource: "none" });
+    }
+    if (url.endsWith("/api/settings/test-connection")) {
+      return Response.json({ code: "NO_BYOK", error: "NO_BYOK" }, { status: 400 });
+    }
+    return Response.json({ ok: true });
+  });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      root.render(createElement(SettingsPage));
+    });
+    const apiKeyInput = container.querySelector<HTMLInputElement>("#apiKey")!;
+    const testBtn = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.textContent?.includes("测试连接"),
+    )!;
+    await act(async () => {
+      testBtn.click();
+    });
+
+    expect(document.activeElement).toBe(apiKeyInput);
+
+    await act(async () => {
+      await new Promise<void>((resolve) => {
+        if (typeof requestAnimationFrame === "function") {
+          requestAnimationFrame(() => resolve());
+        } else {
+          setTimeout(resolve, 0);
+        }
+      });
+    });
+
+    const occurrences = (
+      document.body.textContent?.match(new RegExp(NO_BYOK_SETTINGS_MESSAGE, "g")) || []
+    ).length;
+    expect(occurrences).toBe(1);
+
+    const statusEl = document.body.querySelector<HTMLElement>("#settings-status");
+    expect(statusEl).not.toBeNull();
+    expect(statusEl?.getAttribute("role")).toBe("status");
+    expect(statusEl?.textContent).toBe(NO_BYOK_SETTINGS_MESSAGE);
+    expect(
+      Array.from(document.body.querySelectorAll('[role="status"]')).some(
+        (el) => el.textContent?.includes(NO_BYOK_SETTINGS_MESSAGE),
+      ),
+    ).toBe(true);
+
+    const roseElements = Array.from(document.body.querySelectorAll(".text-beam-rose"));
+    for (const el of roseElements) {
+      expect(el.textContent).not.toContain(NO_BYOK_SETTINGS_MESSAGE);
+    }
+    expect(document.body.textContent).not.toContain("✗");
+
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(apiKeyInput, "sk-typing");
+      apiKeyInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(statusEl?.textContent).toBe("");
+    expect(document.body.textContent).not.toContain(NO_BYOK_SETTINGS_MESSAGE);
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+test("serverKeyDisabled 模式下「保存设置」「测试连接」「清除本机 API Key」按钮均包含 pointer-coarse:min-h-11 类名", async () => {
+  const { root, container } = await renderWith({
+    settings: {},
+    keySource: "none",
+    serverKeyDisabled: true,
+  });
+  try {
+    const buttons = Array.from(container.querySelectorAll("button"));
+    const saveBtn = buttons.find((b) => b.textContent?.includes("保存设置") || b.textContent?.includes("已保存"));
+    const testBtn = buttons.find((b) => b.textContent?.includes("测试连接"));
+    const clearBtn = buttons.find((b) => b.textContent?.includes("清除本机 API Key"));
+
+    expect(saveBtn).toBeDefined();
+    expect(testBtn).toBeDefined();
+    expect(clearBtn).toBeDefined();
+
+    expect(saveBtn?.className).toContain("pointer-coarse:min-h-11");
+    expect(testBtn?.className).toContain("pointer-coarse:min-h-11");
+    expect(clearBtn?.className).toContain("pointer-coarse:min-h-11");
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+test("构建时静态检查：app/settings/page.tsx 中「保存设置」「测试连接」「清除本机 API Key」直接包含 pointer-coarse:min-h-11 类名", () => {
+  const source = readFileSync(resolve(__dirname, "../app/settings/page.tsx"), "utf8");
+  expect(source).toContain("pointer-coarse:min-h-11");
+  const occurrences = (source.match(/pointer-coarse:min-h-11/g) || []).length;
+  expect(occurrences).toBe(3);
+});
+
+
 
