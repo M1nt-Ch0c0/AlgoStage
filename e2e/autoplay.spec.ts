@@ -814,6 +814,81 @@ async function checkToggles(page: Page) {
   }).toPass();
 }
 
+/** 从每个 toggle 中心向四边逐像素探连续自命中，并量相邻行热区是否重叠。 */
+async function probeToggleHits(page: Page, tag: string) {
+  const measured = await page.evaluate(() => {
+    const bar = document.querySelector('[data-testid="player-controls"]');
+    if (!(bar instanceof HTMLElement)) throw new Error("player-controls missing");
+
+    const isSelfHit = (button: HTMLButtonElement, hit: Element | null) =>
+      hit === button || (hit !== null && button.contains(hit));
+
+    const toggles = [...bar.querySelectorAll<HTMLButtonElement>("button[aria-pressed]")].map((button) => {
+      const box = button.getBoundingClientRect();
+      const centerX = box.left + box.width / 2;
+      const centerY = box.top + box.height / 2;
+      const extent = (stepX: number, stepY: number) => {
+        let distance = 0;
+        for (let step = 1; step <= 80; step += 1) {
+          const hit = document.elementFromPoint(centerX + stepX * step, centerY + stepY * step);
+          if (!isSelfHit(button, hit)) break;
+          distance = step;
+        }
+        return distance;
+      };
+      const up = extent(0, -1);
+      const down = extent(0, 1);
+      const left = extent(-1, 0);
+      const right = extent(1, 0);
+      return {
+        label: (button.textContent ?? "").trim(),
+        centerY,
+        up,
+        down,
+        selfHitHeight: up + down + 1,
+        selfHitWidth: left + right + 1,
+      };
+    });
+
+    const rows: Array<typeof toggles> = [];
+    for (const toggle of [...toggles].sort((a, b) => a.centerY - b.centerY)) {
+      const row = rows.find((candidate) =>
+        candidate.some((member) => Math.abs(member.centerY - toggle.centerY) <= 4),
+      );
+      if (row) row.push(toggle);
+      else rows.push([toggle]);
+    }
+
+    const overlaps: number[] = [];
+    for (let index = 0; index < rows.length - 1; index += 1) {
+      const upper = rows[index];
+      const lower = rows[index + 1];
+      const upperBottomHit = Math.min(...upper.map((toggle) => toggle.centerY + toggle.down));
+      const lowerTopHit = Math.max(...lower.map((toggle) => toggle.centerY - toggle.up));
+      overlaps.push(upperBottomHit - lowerTopHit);
+    }
+    const rowOverlapPx = overlaps.length > 0 ? Math.max(...overlaps) : 0;
+
+    return {
+      barHeight: bar.getBoundingClientRect().height,
+      rows: rows.length,
+      rowOverlapPx,
+      toggles,
+    };
+  });
+
+  const summary = measured.toggles.map((toggle) => `${toggle.label}:${toggle.selfHitWidth}x${toggle.selfHitHeight}`).join(" ");
+  console.log(
+    `[toggle-probe ${tag}] barHeight=${measured.barHeight} rows=${measured.rows} rowOverlapPx=${measured.rowOverlapPx} ${summary}`,
+  );
+
+  for (const toggle of measured.toggles) {
+    expect(toggle.selfHitHeight).toBeGreaterThanOrEqual(44);
+    expect(toggle.selfHitWidth).toBeGreaterThanOrEqual(44);
+  }
+  expect(measured.rowOverlapPx).toBeLessThanOrEqual(0);
+}
+
 test.describe("coarse pointer toggle hit areas 390", () => {
   test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
 
@@ -823,6 +898,7 @@ test.describe("coarse pointer toggle hit areas 390", () => {
     await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
     await expect(page.getByText("第 1 / 3 步")).toBeVisible();
     await checkToggles(page);
+    await probeToggleHits(page, "844-playing");
   });
 
   test("same while preparing", async ({ page }) => {
@@ -832,6 +908,33 @@ test.describe("coarse pointer toggle hit areas 390", () => {
       await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
       await expect(page.getByText("备课中…").first()).toBeVisible();
       await checkToggles(page);
+      await probeToggleHits(page, "844-preparing");
+    } finally {
+      await cleanup();
+    }
+  });
+});
+
+test.describe("coarse pointer toggle hit areas 390x667", () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 667 } });
+
+  test("toggles keep own 44x44 hit area and speed and effect groups share a row while playing", async ({ page }) => {
+    await mockLecture(page, "group-anagrams");
+    await page.goto("/problem/group-anagrams");
+    await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
+    await expect(page.getByText("第 1 / 3 步")).toBeVisible();
+    await checkToggles(page);
+    await probeToggleHits(page, "667-playing");
+  });
+
+  test("same while preparing", async ({ page }) => {
+    const cleanup = await mockPartialLecture(page, "group-anagrams", 2);
+    try {
+      await page.goto("/problem/group-anagrams");
+      await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
+      await expect(page.getByText("备课中…").first()).toBeVisible();
+      await checkToggles(page);
+      await probeToggleHits(page, "667-preparing");
     } finally {
       await cleanup();
     }

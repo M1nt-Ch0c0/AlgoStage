@@ -145,7 +145,7 @@ export default function PlayerControls({
   return (
     <div
       data-testid="player-controls"
-      className="flex flex-wrap items-center gap-x-4 pointer-coarse:gap-x-2 gap-y-2 pointer-coarse:gap-y-6 rounded-2xl border border-board-700/70 bg-board-900/90 px-3 py-2 backdrop-blur-md"
+      className="flex flex-wrap items-center gap-x-4 pointer-coarse:gap-x-2 gap-y-2 pointer-coarse:gap-y-5 rounded-2xl border border-board-700/70 bg-board-900/90 px-3 py-2 backdrop-blur-md"
     >
       {/* 步进控制 */}
       <div className="flex items-center gap-1">

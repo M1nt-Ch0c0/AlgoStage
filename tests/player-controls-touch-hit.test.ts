@@ -62,5 +62,5 @@ test("粗指针下自动播放、语速和特效强度热区至少 44px，视觉
   expect(bar!.className).toContain("gap-x-4");
   expect(bar!.className).toContain("pointer-coarse:gap-x-2");
   expect(bar!.className).toContain("gap-y-2");
-  expect(bar!.className).toContain("pointer-coarse:gap-y-6");
+  expect(bar!.className).toContain("pointer-coarse:gap-y-5");
 });
