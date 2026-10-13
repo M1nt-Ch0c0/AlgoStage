@@ -906,7 +906,8 @@ test.describe("coarse pointer toggle hit areas 390", () => {
     try {
       await page.goto("/problem/group-anagrams");
       await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
-      await expect(page.getByText("备课中…").first()).toBeVisible();
+      // 「备课中…」只在第一步到达前显示；已收到 2 步时是仍在备课状态，不要退回步数计数。
+      await expect(page.getByRole("status").filter({ hasText: "已收到 2 步，仍在备课…" })).toBeVisible();
       await checkToggles(page);
       await probeToggleHits(page, "844-preparing");
     } finally {
@@ -932,7 +933,8 @@ test.describe("coarse pointer toggle hit areas 390x667", () => {
     try {
       await page.goto("/problem/group-anagrams");
       await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
-      await expect(page.getByText("备课中…").first()).toBeVisible();
+      // 「备课中…」只在第一步到达前显示；已收到 2 步时是仍在备课状态，不要退回步数计数。
+      await expect(page.getByRole("status").filter({ hasText: "已收到 2 步，仍在备课…" })).toBeVisible();
       await checkToggles(page);
       await probeToggleHits(page, "667-preparing");
     } finally {
