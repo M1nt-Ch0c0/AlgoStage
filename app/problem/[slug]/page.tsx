@@ -631,7 +631,7 @@ export default function ProblemPage() {
             type="button"
             onClick={() => startLecture()}
             disabled={lectureBusy || !detail}
-            className="rounded-full border border-beam-rose px-3 py-1 disabled:opacity-40"
+            className="inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-full border border-beam-rose px-3 py-1 disabled:opacity-40"
           >
             {lectureError.code === "UPSTREAM_ERROR" ? "重试" : "重试讲课"}
           </button>
@@ -656,8 +656,8 @@ export default function ProblemPage() {
                 lectureError.code === "NO_BYOK" ||
                 lectureError.code === "BASE_URL_NOT_ALLOWED" ||
                 lectureError.code === "BASE_URL_INVALID"
-                  ? "shrink-0 rounded-full border border-beam-gold/60 bg-transparent px-3 py-1 text-beam-gold transition-colors hover:border-beam-gold"
-                  : "underline hover:text-chalk-100"
+                  ? "inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-full border border-beam-gold/60 bg-transparent px-3 py-1 text-beam-gold transition-colors hover:border-beam-gold"
+                  : "inline-flex min-h-11 shrink-0 items-center whitespace-nowrap underline hover:text-chalk-100"
               }
             >
               去设置

@@ -191,3 +191,66 @@ test("lecture and hint with malformed baseURL hit real server 400 BASE_URL_INVAL
   await expect(page.getByText("AI 服务暂时连不上")).toHaveCount(0);
 });
 
+test("at 390x844 viewport, BASE_URL_INVALID error-action buttons/links in lecture and hint have height >= 44 and do not wrap text", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  const malformedByok = {
+    apiKey: "sk-e2e-dummy-key-0000",
+    baseURL: "htp:/bad",
+  };
+  const expectedError = "接口地址格式不对，要以 http:// 或 https:// 开头，去设置页改一下就能开讲。";
+
+  await page.goto("/problem/3sum");
+  await page.evaluate((byok) => {
+    window.localStorage.setItem("algostage.byok", JSON.stringify(byok));
+  }, malformedByok);
+
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("三数之和");
+  await page.getByRole("button", { name: "开始讲课", exact: true }).click();
+
+  const lectureAlert = page.getByRole("alert").first();
+  await expect(lectureAlert).toContainText(expectedError);
+
+  const retryLectureBtn = lectureAlert.getByRole("button", { name: "重试讲课", exact: true });
+  const lectureGotoSettings = lectureAlert.getByTestId("goto-settings");
+  await expect(retryLectureBtn).toBeVisible();
+  await expect(lectureGotoSettings).toBeVisible();
+
+  const retryLectureBox = await retryLectureBtn.boundingBox();
+  expect(retryLectureBox).not.toBeNull();
+  expect(retryLectureBox!.height).toBeGreaterThanOrEqual(44);
+
+  const retryTextMetrics = await retryLectureBtn.evaluate((el) => {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    return {
+      textHeight: range.getBoundingClientRect().height,
+      lineHeight: parseFloat(window.getComputedStyle(el).lineHeight),
+    };
+  });
+  expect(retryTextMetrics.textHeight).toBeLessThan(2 * retryTextMetrics.lineHeight);
+
+  const lectureGotoBox = await lectureGotoSettings.boundingBox();
+  expect(lectureGotoBox).not.toBeNull();
+  expect(lectureGotoBox!.height).toBeGreaterThanOrEqual(44);
+
+  // Trigger hint error as well to verify hint buttons/links at 390x844
+  await page.getByRole("button", { name: /L1\s*观察/ }).click();
+  const hintAlert = page.getByRole("alert").nth(1);
+  await expect(hintAlert).toContainText(expectedError);
+
+  const hintGotoSettings = hintAlert.getByTestId("goto-settings");
+  const hintRetryBtn = hintAlert.getByRole("button", { name: "重试", exact: true });
+  await expect(hintGotoSettings).toBeVisible();
+  await expect(hintRetryBtn).toBeVisible();
+
+  const hintGotoBox = await hintGotoSettings.boundingBox();
+  expect(hintGotoBox).not.toBeNull();
+  expect(hintGotoBox!.height).toBeGreaterThanOrEqual(44);
+
+  const hintRetryBox = await hintRetryBtn.boundingBox();
+  expect(hintRetryBox).not.toBeNull();
+  expect(hintRetryBox!.height).toBeGreaterThanOrEqual(44);
+});
+
+

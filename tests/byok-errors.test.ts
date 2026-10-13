@@ -283,6 +283,20 @@ describe("Rendered UI error messages in HintLadder and ProblemPage", () => {
       expect(alert!.textContent).toContain(expected);
       expect(alert!.textContent).not.toContain(code);
 
+      const retryBtn = Array.from(alert!.querySelectorAll("button")).find(
+        (b) => b.textContent === "重试",
+      );
+      expect(retryBtn).toBeDefined();
+      for (const cls of [
+        "min-h-11",
+        "inline-flex",
+        "items-center",
+        "whitespace-nowrap",
+        "shrink-0",
+      ]) {
+        expect(retryBtn!.classList.contains(cls)).toBe(true);
+      }
+
       const settingsLink = Array.from(alert!.querySelectorAll("a")).find(
         (a) => a.textContent === "去设置",
       );
@@ -302,6 +316,15 @@ describe("Rendered UI error messages in HintLadder and ProblemPage", () => {
         expect(settingsLink!.classList.contains("border-beam-gold/60")).toBe(true);
         expect(settingsLink!.classList.contains("text-beam-gold")).toBe(true);
         expect(settingsLink!.classList.contains("bg-transparent")).toBe(true);
+        for (const cls of [
+          "min-h-11",
+          "inline-flex",
+          "items-center",
+          "whitespace-nowrap",
+          "shrink-0",
+        ]) {
+          expect(settingsLink!.classList.contains(cls)).toBe(true);
+        }
       } else {
         expect(settingsLink).toBeUndefined();
       }
@@ -397,6 +420,21 @@ describe("Rendered UI error messages in HintLadder and ProblemPage", () => {
       expect(alert!.textContent).toContain(expected);
       expect(alert!.textContent).not.toContain(code);
 
+      const buttons = Array.from(alert!.querySelectorAll("button"));
+      expect(buttons).toHaveLength(1);
+      expect(buttons[0].textContent).toBe(
+        code === "UPSTREAM_ERROR" ? "重试" : "重试讲课",
+      );
+      for (const cls of [
+        "min-h-11",
+        "inline-flex",
+        "items-center",
+        "whitespace-nowrap",
+        "shrink-0",
+      ]) {
+        expect(buttons[0].classList.contains(cls)).toBe(true);
+      }
+
       const settingsLink = Array.from(alert!.querySelectorAll("a")).find(
         (a) => a.textContent === "去设置",
       );
@@ -404,11 +442,17 @@ describe("Rendered UI error messages in HintLadder and ProblemPage", () => {
         expect(settingsLink).toBeUndefined();
         expect(alert!.querySelector('[data-testid="goto-settings"]')).toBeNull();
         expect(alert!.querySelectorAll("a")).toHaveLength(0);
-        const buttons = Array.from(alert!.querySelectorAll("button"));
-        expect(buttons).toHaveLength(1);
-        expect(buttons[0].textContent).toBe("重试");
       } else {
         expect(settingsLink).toBeDefined();
+        for (const cls of [
+          "min-h-11",
+          "inline-flex",
+          "items-center",
+          "whitespace-nowrap",
+          "shrink-0",
+        ]) {
+          expect(settingsLink!.classList.contains(cls)).toBe(true);
+        }
         if (
           code === "NO_BYOK" ||
           code === "BASE_URL_NOT_ALLOWED" ||

@@ -269,7 +269,7 @@ export default function HintLadder({
                   : "/settings?focus=baseUrl"
               }
               data-testid="goto-settings"
-              className="shrink-0 rounded-full border border-beam-gold/60 bg-transparent px-2.5 py-0.5 text-beam-gold transition-colors hover:border-beam-gold"
+              className="inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-full border border-beam-gold/60 bg-transparent px-2.5 py-0.5 text-beam-gold transition-colors hover:border-beam-gold"
             >
               去设置
             </Link>
@@ -279,7 +279,7 @@ export default function HintLadder({
               type="button"
               onClick={() => askHint(retryLevel)}
               disabled={hintBusy !== null}
-              className="shrink-0 rounded-full border border-beam-rose px-2 py-0.5 disabled:opacity-40"
+              className="inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-full border border-beam-rose px-2 py-0.5 disabled:opacity-40"
             >
               重试
             </button>
