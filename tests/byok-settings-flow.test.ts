@@ -1054,6 +1054,101 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
     }
   });
 
+  test("serverKeyDisabled mode: saving only 接口地址 shows need-key message; clicking 测试连接 keeps need-key message; editing 接口地址 keeps it; typing API Key clears it", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+        const url = String(input);
+        if (url.endsWith("/api/settings/test-connection")) {
+          return Response.json({ ok: true });
+        }
+        if (url.endsWith("/api/settings")) {
+          return Response.json({ settings: {}, keySource: "none", serverKeyDisabled: true });
+        }
+        return Response.json({ ok: true });
+      });
+
+      await act(async () => {
+        settingsRoot.render(createElement(SettingsPage));
+      });
+
+      const baseInput = settingsContainer.querySelector<HTMLInputElement>("#baseURL")!;
+      const keyInput = settingsContainer.querySelector<HTMLInputElement>("#apiKey")!;
+      const modelInput = settingsContainer.querySelector<HTMLInputElement>("#model")!;
+      const getSaveBtn = () =>
+        Array.from(settingsContainer.querySelectorAll("button")).find(
+          (b) =>
+            b.textContent?.includes("保存设置") ||
+            b.textContent?.includes("已保存"),
+        )!;
+      const getTestBtn = () =>
+        Array.from(settingsContainer.querySelectorAll("button")).find(
+          (b) => b.textContent?.includes("测试连接"),
+        )!;
+
+      const statusEl = settingsContainer.querySelector<HTMLElement>("#settings-status")!;
+      expect(statusEl).not.toBeNull();
+      expect(statusEl.textContent).toBe("");
+
+      // Save with only 接口地址 -> need-key shown in status element and button shows 已保存
+      await act(async () => {
+        setInputValue(baseInput, "https://api.deepseek.com/v1");
+      });
+      await act(async () => {
+        getSaveBtn().click();
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(50);
+        await new Promise<void>((resolve) => {
+          if (typeof requestAnimationFrame === "function") {
+            requestAnimationFrame(() => resolve());
+          } else {
+            setTimeout(resolve, 0);
+          }
+        });
+      });
+
+      expect(statusEl.textContent).toBe(ENDPOINT_SAVED_NEED_KEY_MESSAGE);
+      expect(settingsContainer.textContent).toContain(ENDPOINT_SAVED_NEED_KEY_MESSAGE);
+      expect(getSaveBtn().textContent).toBe("已保存");
+
+      // Click 测试连接 (mock fetch response) -> need-key message still shown
+      await act(async () => {
+        getTestBtn().click();
+      });
+      expect(statusEl.textContent).toBe(ENDPOINT_SAVED_NEED_KEY_MESSAGE);
+      expect(settingsContainer.textContent).toContain(ENDPOINT_SAVED_NEED_KEY_MESSAGE);
+      expect(getSaveBtn().textContent).toBe("已保存");
+      expect(settingsContainer.textContent).toContain("接通了");
+
+      // Editing model keeps need-key message
+      await act(async () => {
+        setInputValue(modelInput, "deepseek-chat");
+      });
+      expect(statusEl.textContent).toBe(ENDPOINT_SAVED_NEED_KEY_MESSAGE);
+      expect(settingsContainer.textContent).toContain(ENDPOINT_SAVED_NEED_KEY_MESSAGE);
+      expect(getSaveBtn().textContent).toBe("已保存");
+
+      // Editing 接口地址 keeps need-key message
+      await act(async () => {
+        setInputValue(baseInput, "https://api.deepseek.com/v2");
+      });
+      expect(statusEl.textContent).toBe(ENDPOINT_SAVED_NEED_KEY_MESSAGE);
+      expect(settingsContainer.textContent).toContain(ENDPOINT_SAVED_NEED_KEY_MESSAGE);
+      expect(getSaveBtn().textContent).toBe("已保存");
+
+      // Typing API Key clears need-key message
+      await act(async () => {
+        setInputValue(keyInput, "sk-user-key-12345");
+      });
+      expect(statusEl.textContent).toBe("");
+      expect(settingsContainer.textContent).not.toContain(ENDPOINT_SAVED_NEED_KEY_MESSAGE);
+      expect(getSaveBtn().textContent).toBe("保存设置");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test.each([
     { shape: "code", payload: { code: "UPSTREAM_AUTH", retryable: false } },
     { shape: "error", payload: { error: "UPSTREAM_AUTH" } },

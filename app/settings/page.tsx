@@ -134,13 +134,7 @@ export default function SettingsPage() {
   function edit(field: string, value: string, setter: (value: string) => void) {
     edits.current[field] = value;
     setter(value);
-    if (saveState === "saved-need-key") {
-      if (field === "apiKey") {
-        setSaveState("idle");
-      }
-    } else {
-      setSaveState("idle");
-    }
+    setSaveState((s) => (s === "saved-need-key" && field !== "apiKey" ? s : "idle"));
     setSaveError("");
     if (field === "baseURL") {
       setBaseURLError("");
@@ -336,8 +330,7 @@ export default function SettingsPage() {
 
   async function testConnection() {
     setTestState({ kind: "testing" });
-    setSaveState("idle");
-    clearScheduledStatus();
+    setSaveState((s) => (s === "saved-need-key" ? s : "idle"));
     if (saveTimer.current) clearTimeout(saveTimer.current);
     try {
       const body: Record<string, unknown> = {};
