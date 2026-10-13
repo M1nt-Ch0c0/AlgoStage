@@ -11,10 +11,10 @@ export const aiBaseURLSchema = z.string().transform((value, ctx) => {
 });
 
 export const byokRequestSchema = z.object({
-  provider: z.enum(["openai-compatible", "anthropic", "google"]).default("openai-compatible"),
-  model: z.string().trim().default(""),
-  apiKey: z.string().trim().default(""),
-  baseURL: aiBaseURLSchema.transform(value => value || undefined).optional(),
+  provider: z.enum(["openai-compatible", "anthropic", "google"]).optional(),
+  model: z.string().trim().optional(),
+  apiKey: z.string().trim().optional(),
+  baseURL: aiBaseURLSchema.optional(),
 });
 
 const common = {
@@ -36,7 +36,7 @@ export const hintRequestSchema = z.object({
 });
 
 export function badRequest(error?: z.ZodError, message = "请求参数不正确，请检查题目、语言、模型配置或提示级别。") {
-  if (error?.issues.some(issue => issue.path.at(-1) === "baseURL" && issue.code === "custom")) return upstreamError();
+  if (error?.issues.some(issue => issue.path.at(-1) === "baseURL")) return baseURLNotAllowed();
   return Response.json(
     { error: "BAD_REQUEST", message },
     { status: 400 },
@@ -44,7 +44,15 @@ export function badRequest(error?: z.ZodError, message = "请求参数不正确�
 }
 
 export function baseURLNotAllowed() {
-  return Response.json({ error: "BASE_URL_NOT_ALLOWED", message: INVALID_AI_BASE_URL }, { status: 400 });
+  return Response.json({ code: "BASE_URL_NOT_ALLOWED", error: "BASE_URL_NOT_ALLOWED", message: INVALID_AI_BASE_URL }, { status: 400 });
+}
+
+export function byokKeyRequired() {
+  return Response.json({ code: "BYOK_KEY_REQUIRED", error: "BYOK_KEY_REQUIRED", message: "用自定义地址时需要同时填你自己的 Key" }, { status: 400 });
+}
+
+export function settingsLocked() {
+  return Response.json({ code: "SETTINGS_LOCKED", error: "SETTINGS_LOCKED", message: "公共实例不支持修改服务器设置" }, { status: 403 });
 }
 
 export function upstreamError(status?: number) {

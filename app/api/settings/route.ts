@@ -4,10 +4,10 @@
 import { z } from "zod";
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { byokFromEnv, savedKeySource } from "@/lib/agent/provider";
+import { byokFromEnv, savedKeySource, serverKeyDisabled } from "@/lib/agent/provider";
 import { savedEndpoint } from "@/lib/agent/saved-endpoint";
-import { aiBaseURLSchema, badRequest, baseURLNotAllowed, byokRequestSchema } from "@/lib/agent/request";
-import { checkAIConnection, validateSettingsBaseURL } from "@/lib/agent/settings-connection";
+import { aiBaseURLSchema, badRequest, baseURLNotAllowed, settingsLocked } from "@/lib/agent/request";
+import { validateBaseURL } from "@/lib/agent/settings-connection";
 import { hintTimeoutMs } from "@/lib/agent/defaults";
 
 export const runtime = "nodejs";
@@ -29,18 +29,21 @@ export async function GET() {
   const rows = await prisma.setting.findMany({ where: { userId: USER_ID } });
   const settings = Object.fromEntries(rows.map((r) => [r.key, r.value]));
   const envConfigured = Boolean(byokFromEnv());
-  const keySource = savedKeySource(settings);
+  const disabled = serverKeyDisabled();
+  const keySource = disabled ? "none" : savedKeySource(settings);
   // 不回传完整 Key，只回掩码
-  if (settings.apiKey?.trim()) {
+  delete settings.apiKeyMasked;
+  if (!disabled && settings.apiKey?.trim()) {
     const k = settings.apiKey.trim();
     settings.apiKeyMasked = k.length > 8 ? `••••${k.slice(-4)}` : "••••";
   }
   delete settings.apiKey;
   if (settings.baseURL) settings.baseURL = savedEndpoint(settings) ?? "";
-  return Response.json({ settings, keySource, envConfigured });
+  return Response.json({ settings, keySource, envConfigured, serverKeyDisabled: disabled });
 }
 
 export async function PUT(req: NextRequest) {
+  if (serverKeyDisabled()) return settingsLocked();
   let input: unknown;
   try {
     input = await req.json();
@@ -56,15 +59,8 @@ export async function PUT(req: NextRequest) {
   const { baseURL } = parsed.data.settings;
   if (baseURL) {
     const signal = AbortSignal.any([req.signal, AbortSignal.timeout(hintTimeoutMs())]);
-    const invalid = await validateSettingsBaseURL(baseURL, signal);
+    const invalid = await validateBaseURL(baseURL, signal);
     if (invalid) return invalid;
-    // Probe only a complete, explicitly supplied credential group. Never borrow
-    // a stored/environment key for an edited URL; preference-only saves stay local.
-    const config = byokRequestSchema.safeParse(parsed.data.settings);
-    if (config.success && parsed.data.settings.provider && config.data.apiKey && config.data.model) {
-      const failure = await checkAIConnection(config.data, signal);
-      if (failure) return failure;
-    }
   }
   await prisma.$transaction(async tx => {
     const rows = await tx.setting.findMany({ where: { userId: USER_ID } });

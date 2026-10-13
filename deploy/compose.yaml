@@ -12,6 +12,7 @@ services:
     restart: unless-stopped
     init: true
     environment:
+      ALGOSTAGE_DISABLE_SERVER_KEY: "true"
       ALGOSTAGE_ALLOW_PRIVATE_BASE_URL: "false"
       ALGOSTAGE_EGRESS_ALLOW_HOSTS: "${ALGOSTAGE_EGRESS_ALLOW_HOSTS:-}"
     ports:

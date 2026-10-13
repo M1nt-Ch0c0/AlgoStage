@@ -8,12 +8,14 @@ import {
   createModel,
   resolveByok,
   ByokConfigurationError,
+  ByokKeyRequiredError,
 } from "@/lib/agent/provider";
 import {
   hintRequestSchema,
   badRequest,
   upstreamError,
   configurationError,
+  byokKeyRequired,
 } from "@/lib/agent/request";
 import { localSeedSource } from "@/lib/content/local-source";
 import {
@@ -23,6 +25,7 @@ import {
 } from "@/lib/agent/upstream-retry";
 import { hintTimeoutMs } from "@/lib/agent/defaults";
 import { InvalidAIBaseURLError } from "@/lib/ai/egress-guard";
+import { validateBaseURL } from "@/lib/agent/settings-connection";
 
 export const runtime = "nodejs";
 
@@ -58,6 +61,7 @@ export async function POST(req: NextRequest) {
   try {
     resolved = await resolveByok(body.byok);
   } catch (error) {
+    if (error instanceof ByokKeyRequiredError) return byokKeyRequired();
     if (error instanceof InvalidAIBaseURLError) return upstreamError();
     if (error instanceof ByokConfigurationError) return configurationError();
     throw error;
@@ -69,11 +73,15 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     );
   }
+  const timeout = AbortSignal.timeout(hintTimeoutMs());
+  const signal = AbortSignal.any([req.signal, timeout]);
+  if (body.byok?.baseURL) {
+    const invalid = await validateBaseURL(body.byok.baseURL, signal);
+    if (invalid) return invalid;
+  }
   const level = body.level;
   const detail = await localSeedSource.detail(body.slug);
 
-  const timeout = AbortSignal.timeout(hintTimeoutMs());
-  const signal = AbortSignal.any([req.signal, timeout]);
   try {
     for (let attempt = 0; ; attempt++) {
       signal.throwIfAborted();
@@ -89,6 +97,7 @@ ${detail.statement ? `题面：${detail.statement}` : ""}
 ${body.userCode ? `学生当前代码：\n${body.userCode}` : ""}`,
         });
 
+        if (resolved?.source === "request" && text.includes(byok.apiKey)) return upstreamError();
         return Response.json({ level, hint: text });
       } catch (error) {
         if (

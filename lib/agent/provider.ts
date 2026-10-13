@@ -20,17 +20,29 @@ export interface ByokConfig {
   baseURL?: string;
 }
 
+export function serverKeyDisabled(): boolean {
+  return process.env.ALGOSTAGE_DISABLE_SERVER_KEY?.trim().toLowerCase() === "true";
+}
+
+export class ByokKeyRequiredError extends Error {
+  constructor() { super("用自定义地址时需要同时填你自己的 Key"); }
+}
+
 export class ByokConfigurationError extends Error {
   constructor() { super("Key 与接口地址必须来自同一配置来源，请同时配置 Key、接口地址和服务商，或清空设置页 Key 后使用环境变量。"); }
 }
 type Origin = "settings" | "env";
-type CredentialOrigin = { key: Origin; baseURL: Origin; provider: Origin };
+type CredentialOrigin = {
+  key: Origin; baseURL: Origin; provider: Origin;
+  destination: string; providerId: ByokConfig["provider"];
+};
 const origins = new WeakMap<ByokConfig, CredentialOrigin>();
 
 /** 发送前硬校验；即使调用者复制配置或修改 URL，也不能把环境 Key 送往其他接口。 */
 export function assertCredentialDestination(config: ByokConfig) {
   const origin = origins.get(config);
   if (origin && (origin.key !== origin.baseURL || origin.key !== origin.provider)) throw new ByokConfigurationError();
+  if (origin && (effectiveBaseURL(config) !== origin.destination || config.provider !== origin.providerId)) throw new ByokConfigurationError();
   const envKey = process.env.AI_API_KEY?.trim();
   if (origin?.key === "env" || (envKey && config.apiKey === envKey)) {
     const endpoint = normalizeAIBaseURL(process.env.AI_BASE_URL ?? "");
@@ -58,7 +70,18 @@ export const PROVIDER_PRESETS: {
 /** 只使用类型正确且 Key、模型名都完整的配置；所有来源共用这一规则。 */
 function completeByok(value: unknown): ByokConfig | null {
   const parsed = byokRequestSchema.safeParse(value);
-  return parsed.success && parsed.data.apiKey && parsed.data.model ? parsed.data : null;
+  if (!parsed.success || !parsed.data.apiKey || !parsed.data.model) return null;
+  return { ...parsed.data, provider: parsed.data.provider ?? "openai-compatible", apiKey: parsed.data.apiKey, model: parsed.data.model, baseURL: parsed.data.baseURL || undefined };
+}
+
+/** Include SDK defaults when comparing destinations; compare the full normalized path. */
+function effectiveBaseURL(config: Pick<ByokConfig, "provider" | "baseURL">): string {
+  const defaults = {
+    "openai-compatible": "https://api.openai.com/v1",
+    anthropic: "https://api.anthropic.com/v1",
+    google: "https://generativelanguage.googleapis.com/v1beta",
+  };
+  return normalizeAIBaseURL(config.baseURL || defaults[config.provider]);
 }
 
 /** 从环境变量读取（.env.local），作为设置页未配置时的兜底。 */
@@ -77,24 +100,32 @@ export function savedKeySource(settings: Record<string, string>): "settings" | "
   return process.env.AI_API_KEY?.trim() ? "env" : "none";
 }
 
+/** Read non-secret defaults even when use of the server credential is disabled. */
+function savedByokDefaults(settings: Record<string, string>) {
+  const useSaved = savedKeySource(settings) === "settings";
+  const provider = (useSaved ? settings.provider?.trim() : "") || process.env.AI_PROVIDER?.trim() || "openai-compatible";
+  const savedURL = savedEndpoint(settings);
+  // Explicitly saved empty URLs use the SDK default; missing legacy fields must
+  // still pass the existing credential-origin checks before using a server key.
+  const savedDefault = useSaved && !savedURL && (provider !== "openai-compatible" || settings.baseURLProvider === provider);
+  const baseURL = savedDefault ? undefined : (useSaved ? savedURL : undefined) || process.env.AI_BASE_URL?.trim() || undefined;
+  return { useSaved, provider, savedURL, savedDefault, baseURL, model: settings.model?.trim() || process.env.AI_MODEL?.trim() || DEFAULT_MODEL };
+}
+
 /** 环境 Key 与环境接口成组使用，设置页只可覆盖模型；保存 Key 时拒绝混用其他来源。 */
 export function resolveSavedByok(settings: Record<string, string>): {
   config: ByokConfig;
   source: "settings" | "env";
 } | null {
+  if (serverKeyDisabled()) return null;
   const source = savedKeySource(settings);
-  const useSaved = source === "settings";
-  const provider = (useSaved ? settings.provider?.trim() : "") || process.env.AI_PROVIDER?.trim() || "openai-compatible";
-  const savedURL = savedEndpoint(settings);
-  // 明确保存的空地址使用该服务商默认接口；旧的缺失字段不能混用环境地址。
-  const savedDefault = useSaved && !savedURL && (provider !== "openai-compatible" || settings.baseURLProvider === provider);
-  const baseURL = savedDefault ? undefined : (useSaved ? savedURL : undefined) || process.env.AI_BASE_URL?.trim() || undefined;
+  const { useSaved, provider, savedURL, savedDefault, baseURL, model } = savedByokDefaults(settings);
   // 旧设置或环境变量中的坏地址也要明确报错，不能伪装成未配置 AI。
   if (baseURL) normalizeAIBaseURL(baseURL);
   const config = completeByok({
     provider,
     apiKey: settings.apiKey?.trim() || process.env.AI_API_KEY?.trim(),
-    model: settings.model?.trim() || process.env.AI_MODEL?.trim() || DEFAULT_MODEL,
+    model,
     baseURL,
   });
   if (!config || source === "none") return null;
@@ -102,20 +133,50 @@ export function resolveSavedByok(settings: Record<string, string>): {
     key: source,
     baseURL: useSaved && (savedDefault || savedURL || !process.env.AI_BASE_URL?.trim()) ? "settings" : "env",
     provider: useSaved && (settings.provider?.trim() || !process.env.AI_PROVIDER?.trim()) ? "settings" : "env",
+    destination: effectiveBaseURL(config),
+    providerId: config.provider,
   });
   assertCredentialDestination(config);
   return { config, source };
 }
 
-/** 请求中的完整配置优先，其次使用本机保存的配置，最后回退到环境变量。 */
-export async function resolveByok(bodyByok?: ByokConfig | null): Promise<{
+/** Request credentials stay in memory. Never borrow a server key for an edited destination. */
+export async function resolveByok(bodyByok?: Partial<ByokConfig> | null): Promise<{
   config: ByokConfig;
   source: "request" | "settings" | "env";
 } | null> {
-  const config = completeByok(bodyByok);
-  if (config) { assertCredentialDestination(config); return { config, source: "request" }; }
+  const parsed = byokRequestSchema.safeParse(bodyByok ?? {});
+  if (!parsed.success) throw new ByokConfigurationError();
+  const request = parsed.data;
   const rows = await prisma.setting.findMany({ where: { userId: "local-default" } });
-  return resolveSavedByok(Object.fromEntries(rows.map((row) => [row.key, row.value])));
+  const settings = Object.fromEntries(rows.map((row) => [row.key, row.value]));
+  const defaults = savedByokDefaults(settings);
+  const provider = byokRequestSchema.shape.provider.safeParse(defaults.provider);
+  const server: Pick<ByokConfig, "provider" | "baseURL"> = {
+    provider: provider.success && provider.data ? provider.data : "openai-compatible",
+    baseURL: defaults.baseURL,
+  };
+  if (request.apiKey) {
+    const config = completeByok({
+      ...request,
+      provider: request.provider ?? server.provider,
+      model: request.model || defaults.model,
+      // An explicit provider with no URL uses that SDK's default, as before.
+      baseURL: request.baseURL ?? (request.provider ? undefined : server.baseURL),
+    });
+    if (!config) throw new ByokConfigurationError();
+    if (config.apiKey === settings.apiKey?.trim() && (effectiveBaseURL(config) !== effectiveBaseURL(server) || config.provider !== server.provider)) throw new ByokConfigurationError();
+    assertCredentialDestination(config);
+    return { config, source: "request" };
+  }
+  if (
+    (request.baseURL !== undefined && effectiveBaseURL({ provider: request.provider ?? server.provider, baseURL: request.baseURL }) !== effectiveBaseURL(server)) ||
+    (request.provider !== undefined && request.provider !== server.provider)
+  ) throw new ByokKeyRequiredError();
+  if (serverKeyDisabled()) return null;
+  const resolved = resolveSavedByok(settings);
+  if (resolved && request.model) resolved.config.model = request.model;
+  return resolved;
 }
 
 /** 由 BYOK 配置构造 AI SDK LanguageModel */
@@ -124,8 +185,9 @@ export function createModel(config: ByokConfig) {
   const baseURL = normalizeAIBaseURL(config.baseURL ?? "") || undefined;
   const guardedFetch: typeof fetch = (input, init) => {
     assertCredentialDestination(config);
-    if (origins.get(config)?.key === "env" || config.apiKey === process.env.AI_API_KEY?.trim()) {
-      const base = new URL(normalizeAIBaseURL(process.env.AI_BASE_URL!));
+    const origin = origins.get(config);
+    if (origin || config.apiKey === process.env.AI_API_KEY?.trim()) {
+      const base = new URL(origin?.destination ?? normalizeAIBaseURL(process.env.AI_BASE_URL!));
       const target = new URL(input instanceof Request ? input.url : String(input));
       const prefix = base.pathname.replace(/\/$/, "");
       if (target.origin !== base.origin || !(target.pathname === prefix || target.pathname.startsWith(`${prefix}/`))) throw new ByokConfigurationError();

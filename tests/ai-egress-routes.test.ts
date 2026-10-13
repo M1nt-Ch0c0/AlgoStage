@@ -47,6 +47,7 @@ beforeEach(() => {
   for (const name of ["AI_API_KEY", "AI_BASE_URL", "AI_PROVIDER", "AI_MODEL"]) vi.stubEnv(name, "");
   vi.stubEnv("ALGOSTAGE_ALLOW_PRIVATE_BASE_URL", "false");
   vi.stubEnv("ALGOSTAGE_EGRESS_ALLOW_HOSTS", "");
+  vi.stubEnv("ALGOSTAGE_DISABLE_SERVER_KEY", "false");
   vi.spyOn(console, "warn").mockImplementation(() => {});
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
@@ -56,7 +57,7 @@ describe("settings PUT", () => {
   test.each(invalidURLs)("拒绝 %s，400 中文错误且零写入", async baseURL => {
     const response = await PUT(request({ settings: { model: "changed", baseURL } }));
     expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({ error: "BASE_URL_NOT_ALLOWED", message: INVALID_AI_BASE_URL });
+    expect(await response.json()).toEqual({ code: "BASE_URL_NOT_ALLOWED", error: "BASE_URL_NOT_ALLOWED", message: INVALID_AI_BASE_URL });
     expect(db.prisma.$transaction).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
     expect(dns).not.toHaveBeenCalled();
@@ -66,16 +67,16 @@ describe("settings PUT", () => {
   ])("保存规范化地址 %s，空地址使用默认服务商", async (baseURL, normalized) => {
     expect((await PUT(request({ settings: { ...byok, baseURL } }))).status).toBe(200);
     expect(db.settings.get("baseURL")).toBe(normalized);
-    expect(dns).toHaveBeenCalledTimes(baseURL.trim() ? 2 : 0);
-    expect(fetchMock).toHaveBeenCalledTimes(baseURL.trim() ? 1 : 0);
+    expect(dns).toHaveBeenCalledTimes(baseURL.trim() ? 1 : 0);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 
 describe.each(entries)("$name", ({ POST, accept }) => {
-  test.each(invalidURLs)("请求 byok 拒绝 %s，固定 502", async baseURL => {
+  test.each(invalidURLs)("请求 byok 拒绝 %s，400 BASE_URL_NOT_ALLOWED", async baseURL => {
     const response = await POST(request({ slug: "two-sum", level: 1, byok: { ...byok, baseURL } }, accept));
-    expect(response.status).toBe(502);
-    expect(await response.json()).toEqual({ error: "UPSTREAM_ERROR", message: AI_CONNECTION_ERROR });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ code: "BASE_URL_NOT_ALLOWED", error: "BASE_URL_NOT_ALLOWED", message: INVALID_AI_BASE_URL });
     expect(fetchMock).not.toHaveBeenCalled();
     expect(dns).not.toHaveBeenCalled();
   });
@@ -83,20 +84,29 @@ describe.each(entries)("$name", ({ POST, accept }) => {
   test("不完整 byok 的坏地址也不能被已保存配置掩盖", async () => {
     for (const [key, value] of Object.entries(byok)) db.settings.set(key, value);
     const response = await POST(request({ slug: "two-sum", level: 1, byok: { baseURL: "file:///tmp/model" } }, accept));
-    expect(response.status).toBe(502);
+    expect(response.status).toBe(400);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  test.each(["http://127.1/v1", "http://2130706433/v1", "http://[::ffff:7f00:1]/v1", "http://a.localhost/v1"])("私网地址 %s 返回固定 502", async baseURL => {
+  test.each(["http://127.1/v1", "http://2130706433/v1", "http://[::ffff:7f00:1]/v1", "http://a.localhost/v1"])("私网地址 %s 返回 400 BASE_URL_NOT_ALLOWED", async baseURL => {
     const response = await POST(request({ slug: "two-sum", level: 1, byok: { ...byok, baseURL } }, accept));
-    expect(response.status).toBe(502);
-    expect(await response.json()).toEqual({ error: "UPSTREAM_ERROR", message: AI_CONNECTION_ERROR });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ code: "BASE_URL_NOT_ALLOWED", error: "BASE_URL_NOT_ALLOWED", message: INVALID_AI_BASE_URL });
     expect(fetchMock).not.toHaveBeenCalled();
     expect(db.prisma.lectureScriptCache.upsert).not.toHaveBeenCalled();
   });
 
   test("DNS 混合公网和私网时拒绝且不调用 fetch", async () => {
     dns.mockResolvedValue([{ address: "8.8.8.8", family: 4 }, { address: "fd00::1", family: 6 }]);
+    const response = await POST(request({ slug: "two-sum", level: 1, byok }, accept));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ code: "BASE_URL_NOT_ALLOWED", error: "BASE_URL_NOT_ALLOWED", message: INVALID_AI_BASE_URL });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test("请求预校验后 DNS 重绑定被出站防护阻止，运行时仍为 502", async () => {
+    dns.mockResolvedValueOnce([{ address: "8.8.8.8", family: 4 }])
+      .mockResolvedValue([{ address: "10.0.0.1", family: 4 }]);
     const response = await POST(request({ slug: "two-sum", level: 1, byok }, accept));
     expect(response.status).toBe(502);
     expect(await response.json()).toEqual({ error: "UPSTREAM_ERROR", message: AI_CONNECTION_ERROR });
@@ -194,11 +204,11 @@ test.each([
     expect(String(input)).not.toContain("/v1/v1");
     expect(init).toMatchObject({ redirect: "manual", dispatcher: expect.anything() });
   }
-  expect(dns).toHaveBeenCalledTimes(3);
+  expect(dns).toHaveBeenCalledTimes(4);
   fetchMock.mockClear();
   const blocked = await hint(request({ slug: "two-sum", level: 1, byok: { ...byok, provider, baseURL: "http://[::1]/v1" } }));
-  expect(blocked.status).toBe(502);
-  expect((await blocked.json()).message).toBe(AI_CONNECTION_ERROR);
+  expect(blocked.status).toBe(400);
+  expect((await blocked.json()).code).toBe("BASE_URL_NOT_ALLOWED");
   expect(fetchMock).not.toHaveBeenCalled();
 });
 
@@ -238,7 +248,7 @@ const settingsEntries = [
 const leakPattern = /MOCK_UPSTREAM_SECRET_BODY|CANARY_SECRET|ECONNREFUSED|ENOTFOUND|EHOSTUNREACH|ETIMEDOUT|EAI_AGAIN|\bat .+:\d+:\d+\)?|\b(?:\d{1,3}\.){3}\d{1,3}\b|\[?::1\]?|fe80:|fc00:|fd00:|169\.254|metadata/i;
 const upstreamSecret = "MOCK_UPSTREAM_SECRET_BODY CANARY_SECRET ECONNREFUSED 10.0.0.1 169.254.169.254/metadata [::1]\n at connect (/internal/server.js:42:1)";
 
-describe.each(settingsEntries)("$name: 校验与原子性", ({ run }) => {
+describe.each(settingsEntries)("$name: 校验与原子性", ({ name, run }) => {
   test.each([...invalidURLs, "http://127.0.0.1/v1", "http://169.254.169.254", "http://[::1]/v1", "https://private.example/v1"])("拒绝 %s 且已有设置完全不变", async baseURL => {
     db.settings.set("model", "original");
     db.settings.set("baseURL", "https://previous.example/v1");
@@ -247,7 +257,7 @@ describe.each(settingsEntries)("$name: 校验与原子性", ({ run }) => {
     const response = await run({ ...byok, baseURL });
     expect(response.status).toBe(400);
     const text = await response.text();
-    expect(JSON.parse(text)).toEqual({ error: "BASE_URL_NOT_ALLOWED", message: INVALID_AI_BASE_URL });
+    expect(JSON.parse(text)).toEqual({ code: "BASE_URL_NOT_ALLOWED", error: "BASE_URL_NOT_ALLOWED", message: INVALID_AI_BASE_URL });
     expect(text).toContain("只支持公网 http(s) 地址");
     expect(text).not.toMatch(leakPattern);
     expect(await (await GET()).json()).toEqual(previous);
@@ -262,18 +272,18 @@ describe.each(settingsEntries)("$name: 校验与原子性", ({ run }) => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  test("预校验后 DNS 重绑定为私网，连接前再次校验并拒绝", async () => {
+  if (name === "settings test-connection") test("预校验后 DNS 重绑定为私网，连接前再次校验并拒绝", async () => {
     dns.mockResolvedValueOnce([{ address: "8.8.8.8", family: 4 }])
       .mockResolvedValueOnce([{ address: "10.0.0.1", family: 4 }]);
     const response = await run(byok);
     expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({ error: "BASE_URL_NOT_ALLOWED", message: INVALID_AI_BASE_URL });
+    expect(await response.json()).toEqual({ code: "BASE_URL_NOT_ALLOWED", error: "BASE_URL_NOT_ALLOWED", message: INVALID_AI_BASE_URL });
     expect(dns).toHaveBeenCalledTimes(2);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(db.prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  test.each(["DNS", "connection", "500", "redirect"])("%s 失败只返回固定 502 且不保存", async kind => {
+  test.each(name === "settings save" ? ["DNS"] : ["DNS", "connection", "500", "redirect"])("%s 失败只返回固定 502 且不保存", async kind => {
     if (kind === "DNS") dns.mockRejectedValue(new Error(upstreamSecret));
     else if (kind === "connection") fetchMock.mockRejectedValue(new Error(upstreamSecret));
     else fetchMock.mockImplementation(async () => new Response(upstreamSecret, {
@@ -298,7 +308,7 @@ describe.each(settingsEntries)("$name: 校验与原子性", ({ run }) => {
     for (const baseURL of ["https://other.example/v1", "https://sub.cpa-direct.m1ntch0c0.com/v1", "https://cpa-direct.m1ntch0c0.com@10.0.0.1/v1"]) {
       const response = await run({ ...byok, baseURL });
       expect(response.status).toBe(400);
-      expect(await response.json()).toEqual({ error: "BASE_URL_NOT_ALLOWED", message: INVALID_AI_BASE_URL });
+      expect(await response.json()).toEqual({ code: "BASE_URL_NOT_ALLOWED", error: "BASE_URL_NOT_ALLOWED", message: INVALID_AI_BASE_URL });
     }
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -369,7 +379,7 @@ describe.each([undefined, "true"])("Riley 矩阵：switch=%s（全内存 DNS/HTT
     const responses = [
       await hint(request({ slug: "group-anagrams", level: 1, byok: config })),
       await lecture(request({ slug: "group-anagrams", regenerate: true, byok: config })),
-      await PUT(request({ settings: config })),
+      await testConnection(request({ byok: config })),
     ];
     for (const response of responses) {
       expect(response.status).toBe(502);

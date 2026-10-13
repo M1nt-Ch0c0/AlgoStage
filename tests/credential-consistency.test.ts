@@ -43,13 +43,15 @@ test("新 Key 保存前测试、保存后测试和实际讲课使用同组 provi
         const tested = await resolveByok(byok);
         await testConnection(request({ byok }));
         probeProvider = provider;
+        const beforeSave = fetchMock.mock.calls.length;
         expect((await PUT(request({ settings: fields }))).status).toBe(200);
+        expect(fetchMock.mock.calls.length).toBe(beforeSave);
         probeProvider = undefined;
         const saved = await resolveByok();
         expect(saved?.config).toEqual(tested?.config);
         await testConnection(request({}));
         await lecture(request({ slug: "3sum" }));
-        expect(destinations).toHaveLength(baseURL ? 4 : 3);
+        expect(destinations).toHaveLength(3);
         expect(new Set(destinations).size).toBe(1);
         expect(destinations[0]).not.toMatch(/old-proxy|environment/);
         expect(keys.every(key => key.includes("fake-new-key"))).toBe(true);

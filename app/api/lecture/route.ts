@@ -11,14 +11,16 @@ import {
 } from "@/lib/agent/lecture-generation";
 import { createHash } from "crypto";
 import { NextRequest } from "next/server";
-import { resolveByok, ByokConfigurationError, type ByokConfig } from "@/lib/agent/provider";
+import { resolveByok, ByokConfigurationError, ByokKeyRequiredError, type ByokConfig } from "@/lib/agent/provider";
 import { buildLecturePrompt } from "@/lib/agent/modes/lecture";
 import { highlightProblem } from "@/lib/agent/lecture-highlights";
 import { validateScript } from "@/lib/teaching/validated-script";
-import { lectureRequestSchema, badRequest, configurationError, upstreamError } from "@/lib/agent/request";
+import { lectureRequestSchema, badRequest, byokKeyRequired, configurationError, upstreamError } from "@/lib/agent/request";
 import { localSeedSource } from "@/lib/content/local-source";
 import { prisma } from "@/lib/db/prisma";
 import { AI_CONNECTION_ERROR, InvalidAIBaseURLError } from "@/lib/ai/egress-guard";
+import { validateBaseURL } from "@/lib/agent/settings-connection";
+import { hintTimeoutMs } from "@/lib/agent/defaults";
 
 export const runtime = "nodejs";
 
@@ -57,6 +59,7 @@ export async function POST(req: NextRequest) {
   let resolved;
   try { resolved = await resolveByok(body.byok); }
   catch (error) {
+    if (error instanceof ByokKeyRequiredError) return byokKeyRequired();
     if (error instanceof InvalidAIBaseURLError) return upstreamError();
     if (error instanceof ByokConfigurationError) return configurationError();
     throw error;
@@ -67,6 +70,11 @@ export async function POST(req: NextRequest) {
       { error: "NO_BYOK", message: "老师还没接上 AI，先去设置里接一下吧。" },
       { status: 400 },
     );
+  }
+
+  if (body.byok?.baseURL) {
+    const invalid = await validateBaseURL(body.byok.baseURL, AbortSignal.any([req.signal, AbortSignal.timeout(hintTimeoutMs())]));
+    if (invalid) return invalid;
   }
 
   const solutionLanguage = body.solutionLanguage ?? "typescript";
@@ -84,7 +92,13 @@ export async function POST(req: NextRequest) {
     detail.referenceSolutions?.[0]?.code ??
     "";
 
+  // A custom upstream can echo its Authorization credential even in a 200 body.
+  // Reject it before streaming or persisting any generated content.
+  const assertNoRequestKey = (value: unknown) => {
+    if (resolved?.source === "request" && JSON.stringify(value).includes(byok.apiKey)) throw new InvalidLectureScriptError();
+  };
   const matchesRequest = (script: ReturnType<typeof validateScript>) => {
+    assertNoRequestKey(script);
     if (
       script.problemSlug !== body.slug ||
       script.mode !== "lecture" ||
@@ -134,8 +148,12 @@ export async function POST(req: NextRequest) {
       const result = await generateLecture({
         config: byok,
         signal: generationAbort.signal,
-        onEvent,
+        onEvent: event => {
+          assertNoRequestKey(event);
+          onEvent?.(event);
+        },
         referenceCode,
+        validateOutput: assertNoRequestKey,
         metadata: {
           problemSlug: body.slug,
           mode: "lecture",

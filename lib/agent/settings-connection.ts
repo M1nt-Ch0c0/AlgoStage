@@ -1,7 +1,7 @@
 import { APICallError, generateText } from "ai";
 import { AIBaseURLNotAllowedError, InvalidAIBaseURLError, validateAIBaseURL } from "@/lib/ai/egress-guard";
-import { createModel, ByokConfigurationError, type ByokConfig } from "./provider";
-import { baseURLNotAllowed, configurationError, upstreamError } from "./request";
+import { createModel, ByokConfigurationError, ByokKeyRequiredError, type ByokConfig } from "./provider";
+import { baseURLNotAllowed, byokKeyRequired, configurationError, upstreamError } from "./request";
 
 /** SDK wrappers can retain a cause; never expose that cause to the client. */
 export function settingsConnectionError(error: unknown): Response {
@@ -10,13 +10,15 @@ export function settingsConnectionError(error: unknown): Response {
   while (current instanceof Error && !seen.has(current)) {
     seen.add(current);
     if (current instanceof AIBaseURLNotAllowedError || current instanceof InvalidAIBaseURLError) return baseURLNotAllowed();
+    if (current instanceof ByokKeyRequiredError) return byokKeyRequired();
     if (current instanceof ByokConfigurationError) return configurationError();
     current = current.cause;
   }
   return upstreamError(APICallError.isInstance(error) ? error.statusCode : undefined);
 }
 
-export async function validateSettingsBaseURL(baseURL: string, signal: AbortSignal): Promise<Response | null> {
+/** Syntax/literal/DNS checks only; actual connections are checked and pinned again. */
+export async function validateBaseURL(baseURL: string, signal: AbortSignal): Promise<Response | null> {
   try {
     await validateAIBaseURL(baseURL, signal);
     return null;

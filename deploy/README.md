@@ -86,13 +86,17 @@ docker compose -f deploy/compose.yaml stop
 
 `HINT_TIMEOUT_MS` 控制提示接口上游超时（毫秒，默认 60000）。
 
+`ALGOSTAGE_DISABLE_SERVER_KEY` 默认 `false`，此公网 Compose 明确设为 `true`。打开后，`GET /api/settings` 返回 `serverKeyDisabled: true`、`keySource: "none"`，不返回任何 Key 掩码；`PUT /api/settings` 一律返回 403 `SETTINGS_LOCKED`（「公共实例不支持修改服务器设置」），已有设置保持原样。讲课、提示和显式测试连接必须在 POST 请求体的 `byok.apiKey` 中带上自己的 Key，否则返回 400 `NO_BYOK`，绝不回退到环境变量或数据库 Key。请求 Key 只用于当次上游鉴权，不放入 URL，也不写入数据库、讲课缓存、提示消耗记录或日志（含错误日志）。`byok.baseURL`、`byok.model` 可选。
+
+无论此开关是否打开，服务器 Key 只发送到服务器配置的接口地址。请求中的 `byok.baseURL` 规范化后与服务器地址不同时，必须同时提供 `byok.apiKey`，否则返回 400 `BYOK_KEY_REQUIRED`（「用自定义地址时需要同时填你自己的 Key」），不发起模型请求。关闭开关时，地址相同且未传 Key 的请求可以使用服务器 Key。请求中的新地址在查缓存或调用模型前完成语法、IP 和 DNS 校验；非法或被拦截的地址返回 400 `BASE_URL_NOT_ALLOWED`（「只支持公网 http(s) 地址」），连接失败、重定向和上游错误仍统一返回固定文案的 502。上述新错误码同时提供 `code`、`error` 与友好的 `message`，兼容现有调用方。
+
 `ALGOSTAGE_ALLOW_PRIVATE_BASE_URL` 默认 `true`，允许自托管连接本地模型。此公网 Compose 明确设为 `false`：AI 接口的 IP 或任一 DNS 结果为私网、回环或保留地址时拒绝连接；连接固定到验证过的 IP，所有模式均禁止上游重定向。如需连接内网模型，请仅在可信自托管环境中改为 `true`。
 
 `ALGOSTAGE_EGRESS_ALLOW_HOSTS` 可为 `false` 模式配置私有接口例外，例如 `cpa-direct.m1ntch0c0.com,ai.internal.example`。填写逗号分隔的完整主机名，忽略大小写、两端空格和末尾的一个点；含 `*` 的条目被忽略，不匹配子域名或域名后缀，也不要填写协议、端口或路径。仅按 WHATWG URL 解析出的 hostname 精确匹配，userinfo 不参与判断。白名单只豁免私有/保留 IP 限制：仍只允许 http(s)，DNS 结果仍固定到实际连接，任何重定向均拒绝，上游错误只返回固定文案。Compose 通过同名环境变量传入，修改后需重建容器。
 
-设置保存及「测试连接」会先校验地址；非法语法或被禁止的地址返回 400「接口地址只支持公网 http(s) 地址。」，页面在输入框下保留错误提示，整次更新不落库。提交完整的新 Key、模型、服务商和非空地址时，保存前还会发起一次小型模型连接测试（可能计费），失败返回固定 502 并保留原设置；仅保存偏好或清空地址不会发起模型请求。实际提示/讲课会在每次出站时重新校验并固定 DNS，因而保存后 DNS 变化也不能绕过限制。
+设置保存只做语法、IP 和 DNS 校验，不调用模型、不产生模型费用；非法语法或被禁止的地址返回 400 `BASE_URL_NOT_ALLOWED`（「接口地址只支持公网 http(s) 地址。」），整次更新不落库。模型连接测试仅由显式调用 `POST /api/settings/test-connection` 触发（可能计费），测试本身不保存设置。实际提示/讲课会在每次出站时重新校验并固定 DNS，因而保存后 DNS 变化也不能绕过限制。
 
-出站审计：提示、讲课生成/重试/重新生成/缓存未命中、设置连接测试和完整连接配置保存均经共享 provider 与 egress guard；`scripts/verify-live-lectures.ts` 也复用讲课路由。仓库没有模型列表请求、定时模型健康探测或缓存预取请求。Compose 健康检查只访问固定的容器内应用地址，浏览器的数据请求使用站内 API 路径，均不使用用户或环境变量中的模型地址。
+出站审计：提示、讲课生成/重试/重新生成/缓存未命中和显式设置连接测试均经共享 provider 与 egress guard；`scripts/verify-live-lectures.ts` 也复用讲课路由。仓库没有模型列表请求、定时模型健康探测或缓存预取请求。Compose 健康检查只访问固定的容器内应用地址，浏览器的数据请求使用站内 API 路径，均不使用用户或环境变量中的模型地址。
 
 ## 上线验证
 

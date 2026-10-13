@@ -99,6 +99,7 @@ export async function generateLecture(input: {
   referenceCode: string;
   metadata: Omit<TeachingScript, "steps">;
   validate: (value: unknown) => TeachingScript;
+  validateOutput?: (value: unknown) => void;
   signal?: AbortSignal;
   timeoutMs?: number;
   onEvent?: (event: LectureEvent) => void;
@@ -212,6 +213,8 @@ export async function generateLecture(input: {
           if (controller.signal.aborted) return cancelled;
           if (part.type === "error") throw part.error;
           if (part.type !== "tool-call") continue;
+          // Reject credential echoes before retaining tool calls for retries.
+          input.validateOutput?.(part);
           if (finished) {
             console.warn("lecture_validation", JSON.stringify({
               type: "call_after_finish", fields: ["tool"], step: kit.steps.length,
