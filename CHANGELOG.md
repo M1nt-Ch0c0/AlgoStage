@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased (0.2.1)
+
+### 变更
+- Docker 镜像改用 `algostage`（UID/GID `1001:1001`）非 root 运行；启动前检查数据目录可写性，失败时输出当前 UID 和一次性修复命令，不在应用容器内执行 `chown`。
+
+### 升级须知
+- root 拥有的旧数据卷：先停止旧容器并备份数据库，再执行一次 `docker run --rm -v algostage-data:/data alpine chown -R 1001:1001 /data`，最后切换新镜像；详见 [部署说明](deploy/README.md#升级至-021非-root-运行)。
+
 ## [0.2.0-alpha.2] - 2026-10-13
 
 ### 升级须知

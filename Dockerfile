@@ -11,6 +11,7 @@ WORKDIR /app
 ARG BASE_PATH=""
 ENV NEXT_PUBLIC_BASE_PATH=$BASE_PATH \
     NEXT_TELEMETRY_DISABLED=1 \
+    DATA_DIR="/data" \
     DATABASE_URL="file:/data/algostage.db"
 
 COPY package.json package-lock.json ./
@@ -25,6 +26,12 @@ COPY . .
 RUN npm run build
 
 ENV NODE_ENV=production
+RUN groupadd --gid 1001 algostage \
+  && useradd --uid 1001 --gid algostage --home-dir /app --no-create-home --shell /usr/sbin/nologin algostage \
+  && mkdir -p /app/data /data \
+  && chown -R algostage:algostage /app /data
+
 EXPOSE 3000
 VOLUME /data
+USER 1001:1001
 CMD ["sh", "deploy/entrypoint.sh"]

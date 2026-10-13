@@ -28,6 +28,21 @@ ALGOSTAGE_IMAGE_TAG=<版本> docker compose -f deploy/compose.yaml ps
 
 若从旧卷 `algostage-demo-algostage-data` 迁移至 `algostage-data`，可先创建外部命名卷并用一次性容器拷贝 `/data` 数据（如 `docker volume create algostage-data` 后挂载两卷复制 `algostage.db`）。迁移与维护期间**切勿**运行 `docker compose down -v`，以免误删持久化数据卷。
 
+### 升级至 0.2.1：非 root 运行
+
+镜像改用 `algostage` 用户（UID/GID `1001:1001`）运行。镜像内 `DATA_DIR=/data`，继续使用现有数据卷和 `/data/algostage.db`；入口脚本会先检查数据目录是否可写，失败时输出当前 UID 和修复命令并退出，不在应用容器内执行 `chown`。
+
+旧卷若由 root 拥有，请按顺序升级：
+
+1. 停止旧容器，备份数据库（包括仍存在的 SQLite `-wal` / `-shm` 文件）。
+2. 对旧卷执行一次权限修复：
+
+   ```sh
+   docker run --rm -v algostage-data:/data alpine chown -R 1001:1001 /data
+   ```
+
+3. 切换至新镜像，按「构建与启动」中的 Compose 命令启动。
+
 ## 首次配置 nginx 与证书
 
 现有 nginx 容器为 `cpa-nginx`，使用 host 网络并挂载宿主机 `/etc/nginx`、`/etc/letsencrypt` 和 `/var/www/html`。
