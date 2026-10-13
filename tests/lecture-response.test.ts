@@ -15,6 +15,44 @@ test("缓存 JSON 直接返回脚本，无响应体的流明确报错", async ()
   await expect(readLectureResponse(new Response(null, { headers }), () => {})).rejects.toThrow("没有收到教案");
 });
 
+test("28. JSON 缓存与 NDJSON result 都调用 onMeta，三参数仍只返回 script", async () => {
+  const answer = {
+    v: 1,
+    id: "a1",
+    stepId: "s1",
+    question: "为什么？",
+    selection: { mode: "single", bbox: { x: 0, y: 0, width: 8, height: 8 }, targets: [] },
+    segments: [{ id: "seg", narration: "因为查找。" }],
+    createdAt: "2026-10-13T08:00:00.000Z",
+  };
+  const meta = {
+    cacheKey: "cache-key",
+    scriptVersion: "a".repeat(40),
+    answers: { s1: [answer] },
+    askDisabledStepIds: ["s9"],
+  };
+  const script = { steps: [step] };
+  const onMeta = vi.fn();
+  expect(await readLectureResponse(Response.json({ ...meta, script }), () => {}, undefined, onMeta)).toEqual(script);
+  expect(onMeta).toHaveBeenCalledTimes(1);
+  expect(onMeta).toHaveBeenCalledWith(meta);
+
+  onMeta.mockClear();
+  const events = [
+    { type: "step", step },
+    { type: "result", script, ...meta },
+  ];
+  const text = events.map((event) => JSON.stringify(event)).join("\n") + "\n";
+  const onStep = vi.fn();
+  expect(await readLectureResponse(new Response(text, { headers }), () => {}, onStep, onMeta)).toEqual(script);
+  expect(onStep).toHaveBeenCalledWith(step, false);
+  expect(onMeta).toHaveBeenCalledTimes(1);
+  expect(onMeta).toHaveBeenCalledWith(meta);
+
+  const legacy = await readLectureResponse(Response.json({ ...meta, script }), () => {});
+  expect(legacy).toEqual(script);
+});
+
 test.each([
   [{ type: "progress", attempt: 0, message: "错误次数" }, /数据无法读取/],
   [{ type: "unknown" }, /数据无法读取/],
