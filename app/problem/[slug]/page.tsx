@@ -8,6 +8,8 @@
 
 import { LECTURE_TIMEOUT_MS } from "@/lib/agent/defaults";
 import {
+  BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE,
+  BASE_URL_NOT_ALLOWED_MESSAGE,
   fetchServerKeyDisabled,
   mapByokErrorMessage,
   NO_BYOK_MESSAGE,
@@ -261,10 +263,13 @@ export default function ProblemPage() {
     } catch (e) {
       if (lectureAbort.current === abort) {
         const rawMessage = e instanceof Error ? e.message : "";
+        const mappedMessage = mapByokErrorMessage({ message: rawMessage });
         const message = timedOut
           ? "备课超时，请点击重试或换用推荐模型 gpt-6.1-sol。"
           : !abort.signal.aborted
-            ? (mapByokErrorMessage({ message: rawMessage }) ?? "老师这次没备好课，请重试。")
+            ? (mappedMessage === BASE_URL_NOT_ALLOWED_MESSAGE
+                ? BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE
+                : (mappedMessage ?? "老师这次没备好课，请重试。"))
             : null;
         // 失败也清空半份教案，避免残留字幕与代码锚点；错误提示独立保留。
         cancelLectureForPlayback(detail, language, { abort: () => abort.abort(), reset, setCode });
@@ -591,9 +596,22 @@ export default function ProblemPage() {
             重试讲课
           </button>
           <Link
-            href="/settings"
-            className={
+            href={
               lectureError === NO_BYOK_MESSAGE
+                ? "/settings?focus=apiKey"
+                : lectureError === BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE
+                  ? "/settings?focus=baseUrl"
+                  : "/settings"
+            }
+            data-testid={
+              lectureError === NO_BYOK_MESSAGE ||
+              lectureError === BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE
+                ? "goto-settings"
+                : undefined
+            }
+            className={
+              lectureError === NO_BYOK_MESSAGE ||
+              lectureError === BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE
                 ? "shrink-0 rounded-full border border-beam-gold/60 bg-transparent px-3 py-1 text-beam-gold transition-colors hover:border-beam-gold"
                 : "underline hover:text-chalk-100"
             }

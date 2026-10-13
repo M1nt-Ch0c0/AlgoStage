@@ -1,7 +1,9 @@
 "use client";
 
 import {
+  BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE,
   fetchServerKeyDisabled,
+  isBaseUrlNotAllowed,
   mapByokErrorMessage,
   NO_BYOK_MESSAGE,
   withByok,
@@ -118,6 +120,9 @@ export default function HintLadder({
           if (errorCode === "TIMEOUT" || res.status === 504) {
             throw new Error(SLOW_MSG);
           }
+          if (isBaseUrlNotAllowed(j)) {
+            throw new Error(BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE);
+          }
           throw new Error(mapByokErrorMessage(j) ?? SLOW_MSG);
         }
         setHints((h) => [
@@ -205,9 +210,15 @@ export default function HintLadder({
           className="mt-2 flex items-center gap-2 text-xs leading-5 text-beam-rose"
         >
           <p>{hintError}</p>
-          {hintError === NO_BYOK_MESSAGE && (
+          {(hintError === NO_BYOK_MESSAGE ||
+            hintError === BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE) && (
             <Link
-              href="/settings"
+              href={
+                hintError === NO_BYOK_MESSAGE
+                  ? "/settings?focus=apiKey"
+                  : "/settings?focus=baseUrl"
+              }
+              data-testid="goto-settings"
               className="shrink-0 rounded-full border border-beam-gold/60 bg-transparent px-2.5 py-0.5 text-beam-gold transition-colors hover:border-beam-gold"
             >
               去设置

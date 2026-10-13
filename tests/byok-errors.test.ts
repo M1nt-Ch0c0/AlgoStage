@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import HintLadder from "../components/hint/hint-ladder";
 import {
+  BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE,
   mapByokErrorMessage,
   resetServerKeyDisabledCache,
 } from "../lib/byok/client";
@@ -177,15 +178,21 @@ describe("Rendered UI error messages in HintLadder and ProblemPage", () => {
   });
 
   test.each(
-    EXPECTED_MAPPINGS.flatMap(({ code, expected }) => [
-      { shape: "code", payload: { code }, code, expected },
-      {
-        shape: "error+message",
-        payload: { error: code, message: code },
-        code,
-        expected,
-      },
-    ]),
+    EXPECTED_MAPPINGS.flatMap(({ code, expected }) => {
+      const uiExpected =
+        code === "BASE_URL_NOT_ALLOWED"
+          ? BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE
+          : expected;
+      return [
+        { shape: "code", payload: { code }, code, expected: uiExpected },
+        {
+          shape: "error+message",
+          payload: { error: code, message: code },
+          code,
+          expected: uiExpected,
+        },
+      ];
+    }),
   )(
     "HintLadder renders mapped message for $code ($shape) and never contains raw code",
     async ({ payload, code, expected }) => {
@@ -221,9 +228,14 @@ describe("Rendered UI error messages in HintLadder and ProblemPage", () => {
       const settingsLink = Array.from(alert!.querySelectorAll("a")).find(
         (a) => a.textContent === "去设置",
       );
-      if (code === "NO_BYOK") {
+      if (code === "NO_BYOK" || code === "BASE_URL_NOT_ALLOWED") {
         expect(settingsLink).toBeDefined();
-        expect(settingsLink!.getAttribute("href")).toBe("/settings");
+        expect(settingsLink!.getAttribute("data-testid")).toBe("goto-settings");
+        expect(settingsLink!.getAttribute("href")).toBe(
+          code === "NO_BYOK"
+            ? "/settings?focus=apiKey"
+            : "/settings?focus=baseUrl",
+        );
         expect(settingsLink!.classList.contains("border")).toBe(true);
         expect(settingsLink!.classList.contains("border-beam-gold/60")).toBe(true);
         expect(settingsLink!.classList.contains("text-beam-gold")).toBe(true);
@@ -270,15 +282,21 @@ describe("Rendered UI error messages in HintLadder and ProblemPage", () => {
   });
 
   test.each(
-    EXPECTED_MAPPINGS.flatMap(({ code, expected }) => [
-      { shape: "code", payload: { code }, code, expected },
-      {
-        shape: "error+message",
-        payload: { error: code, message: code },
-        code,
-        expected,
-      },
-    ]),
+    EXPECTED_MAPPINGS.flatMap(({ code, expected }) => {
+      const uiExpected =
+        code === "BASE_URL_NOT_ALLOWED"
+          ? BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE
+          : expected;
+      return [
+        { shape: "code", payload: { code }, code, expected: uiExpected },
+        {
+          shape: "error+message",
+          payload: { error: code, message: code },
+          code,
+          expected: uiExpected,
+        },
+      ];
+    }),
   )(
     "ProblemPage lecture renders mapped message for $code ($shape) and never contains raw code",
     async ({ payload, code, expected }) => {
@@ -317,13 +335,19 @@ describe("Rendered UI error messages in HintLadder and ProblemPage", () => {
         (a) => a.textContent === "去设置",
       );
       expect(settingsLink).toBeDefined();
-      expect(settingsLink!.getAttribute("href")).toBe("/settings");
-      if (code === "NO_BYOK") {
+      if (code === "NO_BYOK" || code === "BASE_URL_NOT_ALLOWED") {
+        expect(settingsLink!.getAttribute("data-testid")).toBe("goto-settings");
+        expect(settingsLink!.getAttribute("href")).toBe(
+          code === "NO_BYOK"
+            ? "/settings?focus=apiKey"
+            : "/settings?focus=baseUrl",
+        );
         expect(settingsLink!.classList.contains("border")).toBe(true);
         expect(settingsLink!.classList.contains("border-beam-gold/60")).toBe(true);
         expect(settingsLink!.classList.contains("text-beam-gold")).toBe(true);
         expect(settingsLink!.classList.contains("bg-transparent")).toBe(true);
       } else {
+        expect(settingsLink!.getAttribute("href")).toBe("/settings");
         expect(settingsLink!.classList.contains("border-beam-gold/60")).toBe(false);
       }
     },

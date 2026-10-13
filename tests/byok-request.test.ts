@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import HintLadder from "../components/hint/hint-ladder";
 import {
+  BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE,
   fetchServerKeyDisabled,
   mapByokErrorMessage,
   resetServerKeyDisabledCache,
@@ -299,7 +300,7 @@ describe("Error code mapping in HintLadder and ProblemPage", () => {
     },
     {
       code: "BASE_URL_NOT_ALLOWED",
-      expected: "只支持公网 http(s) 地址",
+      expected: BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE,
     },
     {
       code: "NO_BYOK",
@@ -336,10 +337,15 @@ describe("Error code mapping in HintLadder and ProblemPage", () => {
       expect(alert).not.toBeNull();
       expect(alert!.textContent).toContain(expected);
       expect(alert!.textContent).not.toContain(code);
-      if (code === "NO_BYOK") {
-        const link = alert!.querySelector('a[href="/settings"]');
+      if (code === "NO_BYOK" || code === "BASE_URL_NOT_ALLOWED") {
+        const expectedHref =
+          code === "NO_BYOK"
+            ? "/settings?focus=apiKey"
+            : "/settings?focus=baseUrl";
+        const link = alert!.querySelector(`a[href="${expectedHref}"]`);
         expect(link).not.toBeNull();
         expect(link!.textContent).toBe("去设置");
+        expect(link!.getAttribute("data-testid")).toBe("goto-settings");
         expect(link!.classList.contains("border")).toBe(true);
         expect(link!.classList.contains("border-beam-gold/60")).toBe(true);
         expect(link!.classList.contains("text-beam-gold")).toBe(true);
@@ -355,7 +361,7 @@ describe("Error code mapping in HintLadder and ProblemPage", () => {
     },
     {
       code: "BASE_URL_NOT_ALLOWED",
-      expected: "只支持公网 http(s) 地址",
+      expected: BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE,
     },
     {
       code: "NO_BYOK",
@@ -394,10 +400,15 @@ describe("Error code mapping in HintLadder and ProblemPage", () => {
       expect(alert).not.toBeNull();
       expect(alert!.textContent).toContain(expected);
       expect(alert!.textContent).not.toContain(code);
-      if (code === "NO_BYOK") {
-        const link = alert!.querySelector('a[href="/settings"]');
+      if (code === "NO_BYOK" || code === "BASE_URL_NOT_ALLOWED") {
+        const expectedHref =
+          code === "NO_BYOK"
+            ? "/settings?focus=apiKey"
+            : "/settings?focus=baseUrl";
+        const link = alert!.querySelector(`a[href="${expectedHref}"]`);
         expect(link).not.toBeNull();
         expect(link!.textContent).toBe("去设置");
+        expect(link!.getAttribute("data-testid")).toBe("goto-settings");
         expect(link!.classList.contains("border")).toBe(true);
         expect(link!.classList.contains("border-beam-gold/60")).toBe(true);
         expect(link!.classList.contains("text-beam-gold")).toBe(true);
