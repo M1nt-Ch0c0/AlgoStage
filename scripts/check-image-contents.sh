@@ -8,6 +8,7 @@ if [[ "$root" != "/" ]]; then
   root="${root%/}"
 fi
 
+set +e
 hits="$(
   find "$root" \
     -path "$root/node_modules" -prune -o \
@@ -20,10 +21,17 @@ hits="$(
         -name '*.db-shm' -o \
         -name '*.tgz' -o \
         -name '*.tar.gz' -o \
-        \( -name '.env.*' ! -name '.env.example' \) \
+        \( -name '.env' -o \( -name '.env.*' ! -name '.env.example' \) \) \
       \) \
     \) -print | sort
 )"
+find_rc=$?
+set -e
+
+if [[ "$find_rc" -ne 0 ]]; then
+  printf 'find failed for %s with exit code %s\n' "$root" "$find_rc" >&2
+  exit 2
+fi
 
 if [[ -n "$hits" ]]; then
   printf '%s\n' "$hits"
