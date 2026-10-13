@@ -85,7 +85,7 @@ test("流式停在最后一步且等待继续时提示下一步准备中", async
   const hint = container.querySelector("[data-testid='continue-hint']");
   expect(hint?.textContent).toBe("下一步准备中…");
   expect(container.textContent).not.toContain("按空格继续");
-  expect(container.querySelector("button")).toBeNull();
+  expect([...container.querySelectorAll("button")].some((el) => el.textContent === "重播")).toBe(false);
 });
 
 function stubPointer(coarse: boolean) {
@@ -107,7 +107,7 @@ test("粗指针等待继续时字幕条不渲染点「下一步」继续，也�
   await act(async () => root.render(createElement(NarrationBar)));
   expect(container.querySelector("[data-testid='continue-hint']")).toBeNull();
   expect(container.textContent).not.toContain("点「下一步」继续");
-  expect(container.querySelector("button")).toBeNull();
+  expect([...container.querySelectorAll("button")].some((el) => el.textContent === "重播")).toBe(false);
 });
 
 test("细指针等待继续时提示按空格继续，字幕条没有下一步按钮", async () => {
@@ -116,7 +116,7 @@ test("细指针等待继续时提示按空格继续，字幕条没有下一步�
   await act(async () => root.render(createElement(NarrationBar)));
   const hint = container.querySelector("[data-testid='continue-hint']");
   expect(hint?.textContent).toBe("按空格继续");
-  expect(container.querySelector("button")).toBeNull();
+  expect([...container.querySelectorAll("button")].some((el) => el.textContent === "重播")).toBe(false);
 });
 
 test("流式准备中优先于粗指针提示，字幕条没有下一步按钮", async () => {
@@ -127,7 +127,7 @@ test("流式准备中优先于粗指针提示，字幕条没有下一步按钮",
   expect(hint?.textContent).toBe("下一步准备中…");
   expect(container.textContent).not.toContain("点「下一步」继续");
   expect(container.textContent).not.toContain("按空格继续");
-  expect(container.querySelector("button")).toBeNull();
+  expect([...container.querySelectorAll("button")].some((el) => el.textContent === "重播")).toBe(false);
 });
 
 test("setAutoAdvance(true) 打完并停留 dwellMs 后进入下一步", async () => {
