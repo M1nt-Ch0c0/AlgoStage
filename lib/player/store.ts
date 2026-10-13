@@ -717,7 +717,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     set((s) => {
       const currentIndex = Math.max(0, s.currentIndex - 1);
       if (blockStepChange(s, currentIndex)) return s;
-      if (currentIndex === s.currentIndex) return s;
+      // 已在第 0 步时下标不变：不清草稿和 awaitingContinue，但状态仍要落地。
+      if (currentIndex === s.currentIndex) {
+        if (s.status === "finished") return { status: "paused" };
+        if (s.status === "streaming" && s.steps.length) return { status: "playing" };
+        return s;
+      }
       const playerPatch = {
         currentIndex,
         status: (s.status === "finished"
@@ -734,8 +739,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     set((s) => {
       if (!s.steps.length) return s;
       const currentIndex = Math.max(0, Math.min(index, s.steps.length - 1));
-      // 点当前时间线节点只是再选中本步，不能清掉「等用户继续」，也不动提问。
-      if (currentIndex === s.currentIndex) return s;
+      // 点当前时间线节点只是再选中本步：不清 draft / awaitingContinue / backgroundize。
+      // PlayerStatus 仍要更新，否则结束后无法继续播、流式等待时点当前步无法开播。
+      if (currentIndex === s.currentIndex) {
+        if (s.status === "finished") return { status: "paused" };
+        if (s.status === "streaming" && s.steps.length) return { status: "playing" };
+        return s;
+      }
       if (blockStepChange(s, currentIndex)) return s;
       const playerPatch = {
         currentIndex,
