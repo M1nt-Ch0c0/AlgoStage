@@ -86,7 +86,7 @@ test.each([false, true])("首个真实步骤到达前显示备课中，不显示
   } finally { await act(async () => root.unmount()); }
 });
 
-test.each(["timeout", "disconnect"] as const)("已收到步骤后备课%s：显示「已收到 N 步，备课中断」，不满格，步骤可播放，有重试", async kind => {
+test.each(["timeout", "disconnect", "upstream"] as const)("已收到步骤后备课%s：显示「已收到 N 步，备课中断」，不满格，步骤可播放，有重试", async kind => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const detail = await localSeedSource.detail("3sum");
   const mk = (id: string): TeachingStep => ({ id, narration: id, targets: [{ kind: "code-line", start: 2 }], effects: [] });
@@ -112,6 +112,8 @@ test.each(["timeout", "disconnect"] as const)("已收到步骤后备课%s：显�
     await act(async () => { send({ type: "step", step: mk("s1") }); send({ type: "step", step: mk("s2") }); });
     await act(async () => {
       if (kind === "timeout") send({ type: "error", code: "TIMEOUT", retryable: true });
+      // 上游 EOF/RST/500，服务端重试后放弃
+      if (kind === "upstream") send({ type: "error", code: "UPSTREAM_ERROR", retryable: true });
       stream.close();
     });
     expect(controls.querySelector('[role="status"]')?.textContent).toBe("已收到 2 步，备课中断");
@@ -148,5 +150,38 @@ test("占位段的脉冲只在 motion-safe 下生效，prefers-reduced-motion �
     expect(classes).toContain("motion-reduce:animate-none");
     expect(classes).not.toContain("animate-pulse");
     expect(bar.className).not.toMatch(/(^|\s)(transition|animate-(?!none))/);
+  } finally { await act(async () => root.unmount()); }
+});
+
+test.each([
+  ["UPSTREAM_ERROR", 0],
+  ["UPSTREAM_AUTH", 1],
+  ["INVALID_SCRIPT", 1],
+] as const)("%s（已收到 %d 步）仍清空，不算中断", async (code, n) => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const detail = await localSeedSource.detail("3sum");
+  let stream!: ReadableStreamDefaultController;
+  const response = new Response(new ReadableStream({ start(controller) { stream = controller; } }), {
+    headers: { "Content-Type": "application/x-ndjson" },
+  });
+  vi.spyOn(globalThis, "fetch").mockImplementation(async input => {
+    if (String(input).endsWith("/api/lecture")) return response;
+    if (String(input).endsWith("/api/settings")) return Response.json({ keySource: "env" });
+    if (String(input).endsWith("/api/problems/3sum")) return Response.json({ problem: detail });
+    return Response.json({ ok: true });
+  });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const send = (event: unknown) => stream.enqueue(new TextEncoder().encode(JSON.stringify(event) + "\n"));
+  try {
+    await act(async () => root.render(createElement(ProblemPage)));
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("header button"))
+      .find(button => button.textContent === "开始讲课")!.click());
+    for (let i = 0; i < n; i++) await act(async () => send({ type: "step", step: { id: `s${i}`, narration: "x", targets: [{ kind: "code-line", start: 2 }], effects: [] } }));
+    await act(async () => { send({ type: "error", code, retryable: code === "UPSTREAM_ERROR" }); stream.close(); });
+    expect(usePlayerStore.getState()).toMatchObject({ steps: [], status: "idle" });
+    expect(container.textContent).not.toContain("备课中断");
+    expect(container.querySelector('[data-pending-step]')).toBeNull();
   } finally { await act(async () => root.unmount()); }
 });

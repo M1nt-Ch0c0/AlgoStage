@@ -320,8 +320,10 @@ export default function ProblemPage() {
                     : (resolved?.message ?? "老师这次没备好课，请重试。");
           nextError = { code, message };
         }
-        if (nextError && streaming && (timedOut || isLectureCutOff(e)) && usePlayerStore.getState().steps.length > 0) {
-          // 超时或中途断开、已收到步骤：保留可播放（v0.2.1 Paige 决定），只停止接收；不保存教案。其他错误仍清空。
+        const received = usePlayerStore.getState().steps.length;
+        // A5 已把未知错误码归一为 UPSTREAM_ERROR，这里按归一后的 code 判断。
+        if (nextError && streaming && (timedOut || isLectureCutOff(nextError, received)) && received > 0) {
+          // 超时、中途断开或上游断开（UPSTREAM_ERROR）、已收到步骤：保留可播放（v0.2.1 Paige 决定），只停止接收；不保存教案。其他错误仍清空。
           usePlayerStore.getState().stopStream();
           setLectureInterrupted(true);
         } else {

@@ -114,8 +114,14 @@ export async function readLectureResponse(
   }
 }
 
-/** 备课中途断开类错误（超时/流未完整结束）：已收到的步骤可保留播放。 */
-export function isLectureCutOff(error: unknown): boolean {
+/**
+ * 备课中途断开类错误：已收到的步骤可保留播放。
+ * - TIMEOUT / INTERRUPTED / INCOMPLETE_STREAM（流未完整结束）：总是算断开。
+ * - UPSTREAM_ERROR（上游 EOF/RST/500，服务端重试后放弃）：只有已收到 ≥1 步时才算断开；
+ *   0 步时仍按普通失败清空。UPSTREAM_AUTH、INVALID_SCRIPT 等不算（v0.2.2 范围）。
+ */
+export function isLectureCutOff(error: unknown, receivedSteps = 0): boolean {
   const code = (error as { code?: unknown } | null)?.code;
-  return code === "TIMEOUT" || code === "INTERRUPTED" || code === "INCOMPLETE_STREAM";
+  if (code === "TIMEOUT" || code === "INTERRUPTED" || code === "INCOMPLETE_STREAM") return true;
+  return code === "UPSTREAM_ERROR" && receivedSteps > 0;
 }

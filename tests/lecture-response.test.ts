@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vitest";
-import { readLectureResponse } from "../lib/player/lecture-response";
+import { isLectureCutOff, readLectureResponse } from "../lib/player/lecture-response";
 
 const headers = { "Content-Type": "application/x-ndjson" };
 const step = { id: "s1", narration: "首步", targets: [{ kind: "statement", blockId: "intro" }], effects: [] };
@@ -56,4 +56,12 @@ test("网络读取失败后取消也失败，仍释放流锁并保留原错误",
   const body = new ReadableStream({ start(controller) { controller.error(new Error("network interrupted")); } });
   await expect(readLectureResponse(new Response(body, { headers }), () => {})).rejects.toThrow("network interrupted");
   expect(body.locked).toBe(false);
+});
+test("isLectureCutOff：UPSTREAM_ERROR 只在已收到步骤时算中断", () => {
+  expect(isLectureCutOff({ code: "TIMEOUT" })).toBe(true);
+  expect(isLectureCutOff({ code: "INTERRUPTED" })).toBe(true);
+  expect(isLectureCutOff({ code: "UPSTREAM_ERROR" }, 0)).toBe(false);
+  expect(isLectureCutOff({ code: "UPSTREAM_ERROR" }, 2)).toBe(true);
+  expect(isLectureCutOff({ code: "UPSTREAM_AUTH" }, 2)).toBe(false);
+  expect(isLectureCutOff({ code: "INVALID_SCRIPT" }, 2)).toBe(false);
 });
