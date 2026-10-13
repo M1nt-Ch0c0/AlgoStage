@@ -138,6 +138,10 @@ test("after the finished panel shows, Space and ArrowRight leave it in place", a
   await reachLastStep(page);
   await page.keyboard.press("Space");
   await expectFinishedReplay(page);
+  // 面板刚出现时焦点在「重播」上，那里的 Space 会重播。空键断言先把焦点移开。
+  await page.evaluate(() => {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+  });
 
   await page.keyboard.press("Space");
   await expect(page.getByText("讲完了")).toBeVisible();
@@ -286,7 +290,9 @@ test.describe("coarse pointer", () => {
 });
 
 async function expectTouchHitArea(page: Page, name: string, min = 44) {
-  const button = page.getByRole("button", { name, exact: true });
+  const bar = page.getByTestId("player-controls");
+  const scoped = name === "重播" ? page : bar;
+  const button = scoped.getByRole("button", { name, exact: true });
   await expect(button).toBeVisible();
   const box = await button.boundingBox();
   expect(box, name).toBeTruthy();
@@ -370,6 +376,33 @@ test.describe("coarse pointer focus 1024", () => {
   test.use({ hasTouch: true, isMobile: true, viewport: { width: 1024, height: 768 } });
   test("moves focus to 「重播」 when the finished panel appears", async ({ page }) => {
     await finishAndExpectReplayFocused(page);
+  });
+});
+
+test.describe("coarse pointer 1024 hint", () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 1024, height: 768 } });
+
+  test("「点「下一步」继续」 sits in the bottom control bar once and stays in view", async ({ page }) => {
+    await mockLecture(page, "group-anagrams");
+    await page.goto("/problem/group-anagrams");
+    await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2x", exact: true }).click();
+    await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
+
+    const bar = page.getByTestId("player-controls");
+    const hint = bar.getByTestId("continue-hint");
+    await expect(hint).toHaveText("点「下一步」继续");
+    await expect(page.getByText("点「下一步」继续")).toHaveCount(1);
+    await expect(page.getByText("按空格继续")).toHaveCount(0);
+    await expect(page.locator("[data-testid='continue-hint']")).toHaveCount(1);
+
+    const scrolled = await page.evaluate(() => window.scrollY);
+    expect(scrolled).toBe(0);
+    const box = await hint.boundingBox();
+    expect(box).toBeTruthy();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.y).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(1024);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(768);
   });
 });
 

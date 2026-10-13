@@ -110,7 +110,10 @@ export default function PlayerControls({
     }`;
 
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-board-700/70 bg-board-900/90 px-3 py-2 backdrop-blur-md">
+    <div
+      data-testid="player-controls"
+      className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-board-700/70 bg-board-900/90 px-3 py-2 backdrop-blur-md"
+    >
       {/* 步进控制 */}
       <div className="flex items-center gap-1">
         <button type="button" className={btn} onClick={prev} disabled={!hasScript || currentIndex === 0} aria-label="上一步">
