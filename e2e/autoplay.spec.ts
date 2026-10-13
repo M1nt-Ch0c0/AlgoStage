@@ -8,13 +8,17 @@ const step = (id: string, narration: string) => ({
   dwellMs: 100,
 });
 
-async function mockLecture(page: Page, problemSlug: string) {
+function lectureSteps(count: number) {
+  return Array.from({ length: count }, (_, index) => step(`s${index + 1}`, `第${index + 1}步`));
+}
+
+async function mockLecture(page: Page, problemSlug: string, count = 3) {
   let posts = 0;
   await page.route("**/api/lecture", async (route) => {
     posts++;
     const body = route.request().postDataJSON() as { solutionLanguage?: string };
     const solutionLanguage = body.solutionLanguage ?? "typescript";
-    const steps = [step("s1", "第一步"), step("s2", "第二步"), step("s3", "第三步")];
+    const steps = lectureSteps(count);
     const lines = [
       ...steps.map((item) => JSON.stringify({ type: "step", step: item })),
       JSON.stringify({
@@ -429,9 +433,91 @@ test.describe("coarse pointer 1024 hint", () => {
   });
 });
 
+type LayoutBox = { x: number; y: number; width: number; height: number };
+
+/** 等窄屏换行落定后读布局盒。DOM.getBoxModel 会停在换行前的按钮，色条已经换行。 */
+async function readSettledDot(dot: ReturnType<Page["getByRole"]>) {
+  const visual = dot.locator("[data-dot-visual]");
+  await expect(visual).toHaveCount(1);
+  const read = () =>
+    Promise.all([
+      dot.evaluate((el) => {
+        const rect = el.getBoundingClientRect();
+        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+      }),
+      visual.evaluate((el) => {
+        const rect = el.getBoundingClientRect();
+        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+      }),
+    ]);
+  let box!: LayoutBox;
+  let bar!: LayoutBox;
+  await expect(async () => {
+    [box, bar] = await read();
+    expect(box.height).toBeGreaterThanOrEqual(44);
+    expect(bar.height).toBeLessThanOrEqual(20);
+    const visualCenter = bar.x + bar.width / 2;
+    expect(visualCenter).toBeGreaterThanOrEqual(box.x);
+    expect(visualCenter).toBeLessThanOrEqual(box.x + box.width);
+  }).toPass();
+  return { box, bar };
+}
+
 test.describe("coarse pointer hit areas 390", () => {
   test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
   touchHitTests({ width: 390, height: 844 });
+
+  test("12 步时间线圆点边对边铺满轨道，点按色条中心跳步，上一步下一步至少 44×44", async ({ page }) => {
+    const count = 12;
+    await mockLecture(page, "group-anagrams", count);
+    await page.goto("/problem/group-anagrams");
+    await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2x", exact: true }).click();
+    await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
+    await expect(page.getByText(`第 1 / ${count} 步`)).toBeVisible();
+    // 窄屏上「点「下一步」继续」会把时间线挤到下一行，等这一行落定再量。
+    await expect(page.getByTestId("continue-hint")).toHaveText("点「下一步」继续");
+
+    const dots = page.getByRole("button", { name: /^跳到第 \d+ 步$/ });
+    await expect(dots).toHaveCount(count);
+    const track = page.locator("[data-testid='player-controls'] [data-dot-visual]").first().locator("xpath=..").locator("xpath=..");
+    const boxes: LayoutBox[] = [];
+    for (let i = 0; i < count; i++) {
+      const { box } = await readSettledDot(dots.nth(i));
+      boxes.push(box);
+    }
+    const container = await track.evaluate((el) => {
+      const rect = el.getBoundingClientRect();
+      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+    });
+    const sorted = [...boxes].sort((a, b) => a.x - b.x);
+    const first = sorted[0]!;
+    const last = sorted[sorted.length - 1]!;
+    expect(Math.abs(first.x - container.x)).toBeLessThanOrEqual(1);
+    const pending = page.locator("[data-pending-step]");
+    if ((await pending.count()) === 0) {
+      expect(Math.abs(last.x + last.width - (container.x + container.width))).toBeLessThanOrEqual(1);
+    }
+    for (const box of sorted) expect(box.height).toBeGreaterThanOrEqual(44);
+    for (let i = 1; i < sorted.length; i++) {
+      const prevBox = sorted[i - 1]!;
+      const nextBox = sorted[i]!;
+      expect(nextBox.x).toBeGreaterThanOrEqual(prevBox.x + prevBox.width - 1);
+      expect(nextBox.x - (prevBox.x + prevBox.width)).toBeLessThanOrEqual(1);
+    }
+
+    const indicator = page.getByText(/第 \d+ \/ 12 步/);
+    for (let i = 0; i < count; i++) {
+      // 离开第 1 步后「点「下一步」继续」收起，时间线会回到按钮那一行，每次点前重新读色条中心。
+      const { bar } = await readSettledDot(dots.nth(i));
+      await page.touchscreen.tap(bar.x + bar.width / 2, bar.y + bar.height / 2);
+      await expect(indicator).toHaveText(`第 ${i + 1} / ${count} 步`);
+    }
+
+    const prev = await expectTouchHitArea(page, "上一步");
+    const next = await expectTouchHitArea(page, "下一步");
+    expect(prev.width).toBeGreaterThanOrEqual(44);
+    expect(next.width).toBeGreaterThanOrEqual(44);
+  });
 });
 
 test.describe("coarse pointer hit areas 1024", () => {
