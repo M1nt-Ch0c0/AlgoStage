@@ -74,7 +74,7 @@ docker buildx build --build-arg BASE_PATH=/algostage -t algostage:0.2.0-alpha.2 
 ALGOSTAGE_IMAGE_TAG=0.2.0-alpha.2 docker compose -f deploy/compose.yaml up -d --no-build --wait
 ```
 
-无 Demo；需自备 API Key。数据卷 `/data/algostage.db`。详见 [deploy/README.md](deploy/README.md)。
+需自备 API Key。镜像内 `DATA_DIR=/data`，数据库为 `/data/algostage.db`（挂载数据卷 `algostage-data`）；本地非 Docker 运行时默认用 `.env` 里的 `DATABASE_URL`（`file:./algostage.db`）。详见 [deploy/README.md](deploy/README.md)。
 
 容器以非 root 用户 `algostage`（UID/GID `1001:1001`）运行。从 0.2.1 之前的版本升级时，旧数据卷归 root 所有，需先停旧容器、备份数据库，再执行一次：
 
@@ -83,6 +83,12 @@ docker run --rm -v algostage-data:/data alpine chown -R 1001:1001 /data
 ```
 
 不处理时容器启动会报 `Error: data directory /data is not writable (uid 1001).` 并退出。
+
+## 版本说明
+
+- `v0.2.0-alpha.2` 指向 `7fd9024`。
+- `v0.2.0-alpha.3`（Pre-release）指向 `32ad289`，在 alpha.2 基础上只修了 Docker 入口（Prisma 7 的 `db push` 去掉 `--skip-generate`）；该 tag 中 `package.json` 仍写 `0.2.0-alpha.1`。
+- `m1-fixes` 分支的下一个版本是 v0.2.1；发版时 `package.json`、`deploy/compose.yaml` 镜像标签和 CHANGELOG 统一改为 `0.2.1`，在此之前分支内的版本号暂为 `0.2.0-alpha.2`。
 
 ## 子路径 + nginx
 
