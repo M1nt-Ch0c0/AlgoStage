@@ -1,4 +1,5 @@
 import { APICallError, InvalidResponseDataError } from "ai";
+import { AIEgressError } from "@/lib/ai/egress-guard";
 
 export const UPSTREAM_RETRY_LIMIT = 1;
 const networkCodes = new Set([
@@ -24,6 +25,7 @@ export function isTransientUpstreamError(error: unknown): boolean {
   let networkFailure = false;
   while (current instanceof Error && !visited.has(current)) {
     visited.add(current);
+    if (current instanceof AIEgressError) return current.retryable;
     // HTTP 状态优先：只允许 5xx 和 429，不用未知状态或 2xx 推测传输失败。
     if (APICallError.isInstance(current) && current.statusCode !== undefined)
       return current.statusCode === 429 || (current.statusCode >= 500 && current.statusCode < 600);

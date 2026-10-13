@@ -49,6 +49,7 @@ const labelClass = "mb-1.5 block text-xs text-chalk-500";
 export default function SettingsPage() {
   const [provider, setProvider] = useState<string>("openai-compatible");
   const [baseURL, setBaseURL] = useState("");
+  const [baseURLError, setBaseURLError] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [apiKeyMasked, setApiKeyMasked] = useState("");
   const [keySource, setKeySource] = useState<KeySource>("none");
@@ -58,6 +59,7 @@ export default function SettingsPage() {
   const [effectLevel, setEffectLevel] = useState("full");
   const [narrationSpeed, setNarrationSpeed] = useState("22");
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
+  const [saveError, setSaveError] = useState("");
   const [testState, setTestState] = useState<TestState>({ kind: "idle" });
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 只记录真实编辑；预填文案和从服务端读到的旧值都不能隐式写回。
@@ -67,6 +69,8 @@ export default function SettingsPage() {
     edits.current[field] = value;
     setter(value);
     setSaveState("idle");
+    setSaveError("");
+    if (field === "baseURL") setBaseURLError("");
   }
 
 
@@ -100,6 +104,8 @@ export default function SettingsPage() {
 
   async function save() {
     setSaveState("saving");
+    setSaveError("");
+    if (saveTimer.current) clearTimeout(saveTimer.current);
     const pending = { ...edits.current };
     const settings = { ...pending, ...(apiKey.trim() ? credentialFields() : {}) };
     try {
@@ -108,7 +114,14 @@ export default function SettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ settings }),
       });
-      if (!res.ok) throw new Error("设置保存失败");
+      if (!res.ok) {
+        const data = await res.json();
+        if (data.error === "BASE_URL_NOT_ALLOWED") setBaseURLError(data.message);
+        else setSaveError(data.message ?? "设置保存失败，请重试。");
+        setSaveState("idle");
+        return;
+      }
+      setBaseURLError("");
       const saved = await fetch(apiPath("/api/settings")).then((r) => r.json());
       setKeySource(saved.keySource ?? "none");
       setApiKeyMasked(saved.settings?.apiKeyMasked ?? "");
@@ -122,25 +135,35 @@ export default function SettingsPage() {
       saveTimer.current = setTimeout(() => setSaveState("idle"), 2000);
     } catch {
       setSaveState("idle");
+      setSaveError("设置保存失败，请重试。");
     }
   }
 
   async function testConnection() {
     setTestState({ kind: "testing" });
+    setSaveState("idle");
+    if (saveTimer.current) clearTimeout(saveTimer.current);
     try {
-      const body: Record<string, unknown> = { slug: "two-sum", level: 1 };
+      const body: Record<string, unknown> = {};
       if (apiKey.trim()) {
         const fields = credentialFields();
         body.byok = { ...fields, baseURL: fields.baseURL || undefined };
+      } else {
+        const changed = Object.fromEntries(Object.entries(edits.current).filter(([key]) => ["baseURL", "provider", "model"].includes(key)));
+        if (Object.keys(changed).length) body.byok = changed;
       }
-      const res = await fetch(apiPath("/api/hint"), {
+      const res = await fetch(apiPath("/api/settings/test-connection"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
       const data = await res.json();
-      if (res.ok && data.hint) {
+      if (res.ok && data.ok) {
+        setBaseURLError("");
         setTestState({ kind: "ok", message: "接通了，老师可以上课了。" });
+      } else if (data.error === "BASE_URL_NOT_ALLOWED") {
+        setBaseURLError(data.message);
+        setTestState({ kind: "idle" });
       } else if (data.error === "NO_BYOK") {
         setTestState({
           kind: "fail",
@@ -232,8 +255,11 @@ export default function SettingsPage() {
                   onChange={(e) => edit("baseURL", e.target.value, setBaseURL)}
                   placeholder={provider === "openai-compatible" ? "环境变量 Key 沿用环境地址；新 Key 留空使用默认地址" : "留空使用该服务商官方接口"}
                   className={`${inputClass} font-sans tracking-normal [font-variant-ligatures:none]`}
-                  aria-describedby={provider === "openai-compatible" && !baseURL.trim() ? "baseURL-hint" : undefined}
+                  aria-invalid={Boolean(baseURLError)}
+                  aria-describedby={["baseURL-policy", provider === "openai-compatible" && !baseURL.trim() && "baseURL-hint", baseURLError && "baseURL-error"].filter(Boolean).join(" ")}
                 />
+                {baseURLError && <p id="baseURL-error" role="alert" className="mt-2 text-xs leading-5 text-beam-rose">{baseURLError}</p>}
+                <p id="baseURL-policy" className="mt-2 text-xs leading-5 text-chalk-500">需要公网 http(s) 地址；自托管实例可由管理员允许连接本地模型。</p>
                 {provider === "openai-compatible" && !baseURL.trim() && (
                   <p id="baseURL-hint" className="mt-2 text-xs leading-5 text-chalk-500">
                     {keySource === "env" && !apiKey.trim()
@@ -317,6 +343,7 @@ export default function SettingsPage() {
               </motion.span>
             )}
           </div>
+          {saveError && <p role="alert" className="mt-2 text-sm text-beam-rose">{saveError}</p>}
         </Panel>
 
         {/* 外观 */}

@@ -1,8 +1,10 @@
 import { expect, test, vi } from "vitest";
 import { createFixture, request } from "./api-fixture";
 
+vi.mock("node:dns/promises", () => ({ lookup: vi.fn(async () => [{ address: "8.8.8.8", family: 4 }]) }));
+
 test("切换原生 provider 不继承旧代理，只有专门绑定的地址才传给原生 SDK", async () => {
-  const f = await createFixture();
+  const f = await createFixture({ modelServer: false });
   const destinations: URL[] = [];
   const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async input => {
     destinations.push(new URL(input instanceof Request ? input.url : String(input)));

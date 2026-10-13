@@ -11,13 +11,16 @@ import {
 } from "@/lib/agent/lecture-generation";
 import { createHash } from "crypto";
 import { NextRequest } from "next/server";
-import { resolveByok, ByokConfigurationError, type ByokConfig } from "@/lib/agent/provider";
+import { resolveByok, ByokConfigurationError, ByokKeyRequiredError, type ByokConfig, savedBaseURLOf } from "@/lib/agent/provider";
 import { buildLecturePrompt } from "@/lib/agent/modes/lecture";
 import { highlightProblem } from "@/lib/agent/lecture-highlights";
 import { validateScript } from "@/lib/teaching/validated-script";
-import { lectureRequestSchema, badRequest, configurationError } from "@/lib/agent/request";
+import { lectureRequestSchema, badRequest, baseURLInvalid, byokKeyRequired, configurationError, upstreamError } from "@/lib/agent/request";
 import { localSeedSource } from "@/lib/content/local-source";
 import { prisma } from "@/lib/db/prisma";
+import { AI_CONNECTION_ERROR, InvalidAIBaseURLError, ServerAIBaseURLError } from "@/lib/ai/egress-guard";
+import { validateBaseURL } from "@/lib/agent/settings-connection";
+import { hintTimeoutMs } from "@/lib/agent/defaults";
 
 export const runtime = "nodejs";
 
@@ -44,7 +47,7 @@ export async function POST(req: NextRequest) {
     );
   }
   const parsed = lectureRequestSchema.safeParse(input);
-  if (!parsed.success) return badRequest();
+  if (!parsed.success) return badRequest(parsed.error);
   const body = parsed.data;
   const meta = (await localSeedSource.list()).find((p) => p.slug === body.slug);
   if (!meta) {
@@ -55,13 +58,26 @@ export async function POST(req: NextRequest) {
   }
   let resolved;
   try { resolved = await resolveByok(body.byok); }
-  catch (error) { if (error instanceof ByokConfigurationError) return configurationError(); throw error; }
+  catch (error) {
+    if (error instanceof ByokKeyRequiredError) return byokKeyRequired();
+    if (error instanceof ServerAIBaseURLError) return upstreamError();
+    if (error instanceof InvalidAIBaseURLError) return baseURLInvalid();
+    if (error instanceof ByokConfigurationError) return configurationError();
+    throw error;
+  }
   const byok = resolved?.config;
   if (!byok) {
     return Response.json(
       { error: "NO_BYOK", message: "老师还没接上 AI，先去设置里接一下吧。" },
       { status: 400 },
     );
+  }
+
+  const checkURL = body.byok?.baseURL || savedBaseURLOf(byok);
+  if (checkURL) {
+    const invalid = await validateBaseURL(checkURL, AbortSignal.any([req.signal, AbortSignal.timeout(hintTimeoutMs())]));
+    if (invalid && req.signal.aborted) return Response.json({ error: "CANCELLED", message: "讲课请求已取消。" }, { status: 499 });
+    if (invalid) return invalid;
   }
 
   const solutionLanguage = body.solutionLanguage ?? "typescript";
@@ -79,7 +95,13 @@ export async function POST(req: NextRequest) {
     detail.referenceSolutions?.[0]?.code ??
     "";
 
+  // A custom upstream can echo its Authorization credential even in a 200 body.
+  // Reject it before streaming or persisting any generated content.
+  const assertNoRequestKey = (value: unknown) => {
+    if (resolved?.source === "request" && JSON.stringify(value).includes(byok.apiKey)) throw new InvalidLectureScriptError();
+  };
   const matchesRequest = (script: ReturnType<typeof validateScript>) => {
+    assertNoRequestKey(script);
     if (
       script.problemSlug !== body.slug ||
       script.mode !== "lecture" ||
@@ -129,8 +151,12 @@ export async function POST(req: NextRequest) {
       const result = await generateLecture({
         config: byok,
         signal: generationAbort.signal,
-        onEvent,
+        onEvent: event => {
+          assertNoRequestKey(event);
+          onEvent?.(event);
+        },
         referenceCode,
+        validateOutput: assertNoRequestKey,
         metadata: {
           problemSlug: body.slug,
           mode: "lecture",
@@ -168,7 +194,7 @@ export async function POST(req: NextRequest) {
         ok: false,
         status: 502,
         error: "UPSTREAM_ERROR",
-        message: "这次备课未能完成，请点击重试或换用推荐模型 gpt-6.1-sol。",
+        message: AI_CONNECTION_ERROR,
       };
     } finally {
       req.signal.removeEventListener("abort", abort);
@@ -177,6 +203,10 @@ export async function POST(req: NextRequest) {
   // 成功步骤立即发送；中断时取消模型请求，只有 finish 后的完整教案能写缓存。
   if (req.headers.get("accept")?.includes("application/x-ndjson")) {
     let disconnected = false;
+    // Keep the HTTP status writable until the first usable step. DNS/connect/
+    // redirect failures before then must be actual 502 responses, even for NDJSON.
+    let ready!: (failure?: Extract<GenerationResult, { ok: false }>) => void;
+    const firstStep = new Promise<Extract<GenerationResult, { ok: false }> | undefined>(resolve => { ready = resolve; });
     const stream = new ReadableStream({
       async start(controller) {
         const send = (event: unknown) => {
@@ -186,7 +216,11 @@ export async function POST(req: NextRequest) {
             );
         };
         try {
-          const result = await generate(send);
+          const result = await generate(event => {
+            send(event);
+            if (event.type === "step" || event.type === "step-update") ready();
+          });
+          ready(result.ok ? undefined : result);
           send(
             result.ok
               ? { type: "result", cached: false, script: result.script }
@@ -198,11 +232,18 @@ export async function POST(req: NextRequest) {
                 },
           );
         } catch {
+          const failure = {
+            ok: false as const,
+            error: "UPSTREAM_ERROR" as const,
+            message: AI_CONNECTION_ERROR,
+            status: 502,
+          };
+          ready(failure);
           send({
             type: "error",
-            error: "UPSTREAM_ERROR",
-            message: "这次备课未能完成，请点击重试或换用推荐模型 gpt-6.1-sol。",
-            status: 502,
+            error: failure.error,
+            message: failure.message,
+            status: failure.status,
           });
         } finally {
           if (!disconnected) controller.close();
@@ -213,6 +254,11 @@ export async function POST(req: NextRequest) {
         generationAbort.abort();
       },
     });
+    const failure = await firstStep;
+    if (failure) {
+      await stream.cancel();
+      return Response.json({ error: failure.error, message: failure.message }, { status: failure.status });
+    }
     return new Response(stream, {
       headers: {
         "Content-Type": "application/x-ndjson; charset=utf-8",

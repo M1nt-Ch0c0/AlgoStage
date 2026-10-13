@@ -1,16 +1,21 @@
 import { expect, test, vi } from "vitest";
 import { createFixture, request } from "./api-fixture";
+import { mockAIResponse } from "./support/mock-ai-response";
+
+vi.mock("node:dns/promises", () => ({ lookup: vi.fn(async () => [{ address: "8.8.8.8", family: 4 }]) }));
 
 test("环境 Key 只到环境接口：仅保存模型、旧默认地址、来源不一致均不访问 OpenAI", async () => {
-  const f = await createFixture();
-  const originalFetch = globalThis.fetch;
+  const f = await createFixture({ modelServer: false });
   const destinations: string[] = [];
   const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
     destinations.push(url.hostname);
-    expect(init?.redirect).toBe("error");
+    expect(init?.redirect).toBe("manual");
+    expect(init).toHaveProperty("dispatcher");
     if (url.origin !== new URL(f.baseURL).origin) throw new Error("拦截非 mock 上游请求");
-    return originalFetch(input, init);
+    const body = JSON.parse(String(init?.body));
+    f.calls.push({ model: body.model, key: new Headers(init?.headers).get("authorization") ?? undefined });
+    return Promise.resolve(mockAIResponse(init));
   });
   try {
     const { POST: hint } = await import("../app/api/hint/route");

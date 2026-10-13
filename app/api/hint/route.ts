@@ -8,12 +8,16 @@ import {
   createModel,
   resolveByok,
   ByokConfigurationError,
+  ByokKeyRequiredError,
+  savedBaseURLOf
 } from "@/lib/agent/provider";
 import {
   hintRequestSchema,
   badRequest,
+  baseURLInvalid,
   upstreamError,
   configurationError,
+  byokKeyRequired,
 } from "@/lib/agent/request";
 import { localSeedSource } from "@/lib/content/local-source";
 import {
@@ -22,6 +26,8 @@ import {
   waitForUpstreamRetry,
 } from "@/lib/agent/upstream-retry";
 import { hintTimeoutMs } from "@/lib/agent/defaults";
+import { InvalidAIBaseURLError, ServerAIBaseURLError } from "@/lib/ai/egress-guard";
+import { validateBaseURL } from "@/lib/agent/settings-connection";
 
 export const runtime = "nodejs";
 
@@ -44,7 +50,7 @@ export async function POST(req: NextRequest) {
     );
   }
   const parsed = hintRequestSchema.safeParse(input);
-  if (!parsed.success) return badRequest();
+  if (!parsed.success) return badRequest(parsed.error);
   const body = parsed.data;
   const meta = (await localSeedSource.list()).find((p) => p.slug === body.slug);
   if (!meta) {
@@ -57,6 +63,9 @@ export async function POST(req: NextRequest) {
   try {
     resolved = await resolveByok(body.byok);
   } catch (error) {
+    if (error instanceof ByokKeyRequiredError) return byokKeyRequired();
+    if (error instanceof ServerAIBaseURLError) return upstreamError();
+    if (error instanceof InvalidAIBaseURLError) return baseURLInvalid();
     if (error instanceof ByokConfigurationError) return configurationError();
     throw error;
   }
@@ -67,11 +76,24 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     );
   }
+  const timeout = AbortSignal.timeout(hintTimeoutMs());
+  const signal = AbortSignal.any([req.signal, timeout]);
+  const checkURL = body.byok?.baseURL || savedBaseURLOf(byok);
+  if (checkURL) {
+    const invalid = await validateBaseURL(checkURL, signal);
+    if (invalid && signal.aborted) {
+      return Response.json(
+        timeout.aborted
+          ? { error: "TIMEOUT", message: "提示请求超时，请重试。" }
+          : { error: "CANCELLED", message: "提示请求已取消。" },
+        { status: timeout.aborted ? 504 : 499 },
+      );
+    }
+    if (invalid) return invalid;
+  }
   const level = body.level;
   const detail = await localSeedSource.detail(body.slug);
 
-  const timeout = AbortSignal.timeout(hintTimeoutMs());
-  const signal = AbortSignal.any([req.signal, timeout]);
   try {
     for (let attempt = 0; ; attempt++) {
       signal.throwIfAborted();
@@ -87,6 +109,7 @@ ${detail.statement ? `题面：${detail.statement}` : ""}
 ${body.userCode ? `学生当前代码：\n${body.userCode}` : ""}`,
         });
 
+        if (resolved?.source === "request" && text.includes(byok.apiKey)) return upstreamError();
         return Response.json({ level, hint: text });
       } catch (error) {
         if (

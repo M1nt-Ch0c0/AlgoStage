@@ -10,7 +10,7 @@ vi.mock("motion/react", () => ({ motion: {
   span: ({ children, className }: { children?: ReactNode; className?: string }) => createElement("span", { className }, children),
 } }));
 
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.innerHTML = ""; });
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.innerHTML = ""; });
 
 test.each([{}, { provider: "google", model: "old-model", baseURL: "https://api.openai.com/v1" }])("设置页仅保存用户编辑的模型，不隐式保存默认接口或空 Key：%j", async saved => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -45,7 +45,7 @@ test("切换 provider 清空旧代理，测试连接不会把新 Key 送到旧�
   const hints: { byok: Record<string, string> }[] = [];
   const writes: Record<string, string>[] = [];
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-    if (String(input).endsWith("/api/hint")) { hints.push(JSON.parse(String(init?.body))); return Response.json({ hint: "mock" }); }
+    if (String(input).endsWith("/api/settings/test-connection")) { hints.push(JSON.parse(String(init?.body))); return Response.json({ ok: true }); }
     if (init?.method === "PUT") { writes.push(JSON.parse(String(init.body)).settings); return Response.json({ ok: true }); }
     return Response.json({ settings: { provider: "openai-compatible", model: "old-model", baseURL: "https://old-proxy.invalid/v1" }, keySource: "settings" });
   });
@@ -78,7 +78,7 @@ test.each([
   const writes: Record<string, string>[] = [];
   const hints: { byok?: Record<string, string> }[] = [];
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-    if (String(input).endsWith("/api/hint")) { hints.push(JSON.parse(String(init?.body))); return Response.json({ hint: "mock" }); }
+    if (String(input).endsWith("/api/settings/test-connection")) { hints.push(JSON.parse(String(init?.body))); return Response.json({ ok: true }); }
     if (init?.method === "PUT") { writes.push(JSON.parse(String(init.body)).settings); return Response.json({ ok: true }); }
     return Response.json({ settings: { ...initial, ...(writes.length ? { apiKeyMasked: "••••-key" } : {}) }, keySource: writes.length ? "settings" : "env" });
   });
@@ -118,11 +118,50 @@ async function renderWith(response: Record<string, unknown>) {
   return { container, root, type, hint: () => container.querySelector("#baseURL-hint")?.textContent ?? null };
 }
 
+test.each([
+  ["保存设置", "file:///tmp/model", false],
+  ["保存设置", "http://127.0.0.1:3396/v1", true],
+  ["保存设置", "https://private-dns.example/v1", false],
+  ["测试连接", "ftp://x", false],
+  ["测试连接", "http://169.254.169.254", true],
+  ["测试连接", "https://private-dns.example/v1", false],
+] as const)("%s 拒绝 %s：持久行内提示，有新 Key：%s", async (action, baseURL, newKey) => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const { root, container, type } = await renderWith({ settings: {}, keySource: "settings" });
+  const message = "接口地址只支持公网 http(s) 地址。";
+  try {
+    await type("baseURL", baseURL);
+    if (newKey) await type("apiKey", "test-only-credential");
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(Response.json({ error: "BASE_URL_NOT_ALLOWED", message }, { status: 400 }));
+    await act(async () => Array.from(container.querySelectorAll("button")).find(b => b.textContent?.includes(action))!.click());
+    const [path, init] = vi.mocked(globalThis.fetch).mock.lastCall!;
+    expect(String(path)).toContain(action === "保存设置" ? "/api/settings" : "/api/settings/test-connection");
+    expect(JSON.parse(String(init?.body))[action === "保存设置" ? "settings" : "byok"].baseURL).toBe(baseURL);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2); // No refresh after a rejected PUT.
+    const input = container.querySelector("#baseURL")!;
+    const error = container.querySelector("#baseURL-error")!;
+    expect(error.textContent).toBe(message);
+    expect(error.parentElement).toBe(input.parentElement);
+    expect(error.getAttribute("role")).toBe("alert");
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(input.getAttribute("aria-describedby")).toContain("baseURL-error");
+    expect(container.querySelector("#baseURL-policy")!.textContent).toContain("需要公网 http(s) 地址");
+    expect(container.querySelector("#baseURL-policy")!.textContent).toContain("自托管");
+    expect(container.textContent).not.toContain("已保存");
+    await act(async () => vi.advanceTimersByTime(30_000));
+    await type("model", "another-model");
+    expect(container.querySelector("#baseURL-error")?.textContent).toBe(message);
+    expect(container.textContent).not.toContain("已保存");
+    await type("baseURL", "https://public.example/v1");
+    expect(container.querySelector("#baseURL-error")).toBeNull();
+  } finally { await act(async () => root.unmount()); }
+});
+
 test("openai-compatible 接口地址留空：新 Key 提示使用官方默认地址，填写后提示消失", async () => {
   const { root, type, hint, container } = await renderWith({ settings: {}, keySource: "none" });
   try {
     expect(hint()).toContain("https://api.openai.com/v1");
-    expect(container.querySelector("#baseURL")!.getAttribute("aria-describedby")).toBe("baseURL-hint");
+    expect(container.querySelector("#baseURL")!.getAttribute("aria-describedby")).toBe("baseURL-policy baseURL-hint");
     await type("baseURL", "https://api.deepseek.com/v1");
     expect(hint()).toBeNull();
     await type("baseURL", "   ");
