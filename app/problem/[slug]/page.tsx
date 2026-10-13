@@ -220,7 +220,12 @@ export default function ProblemPage() {
       });
       if (!res.ok && res.status === 502) {
         const errData = (await res.json().catch(() => null)) as Record<string, unknown> | null;
-        throw new Error(mapByokErrorMessage(errData) ?? UPSTREAM_ERROR_MESSAGE);
+        const errCode = typeof errData?.code === "string" ? errData.code : typeof errData?.error === "string" ? errData.error : "";
+        throw new Error(
+          errCode === "UPSTREAM_ERROR"
+            ? UPSTREAM_ERROR_MESSAGE
+            : (mapByokErrorMessage(errData) ?? UPSTREAM_ERROR_MESSAGE),
+        );
       }
       let streaming = false;
       let guard: StreamGuard | undefined;

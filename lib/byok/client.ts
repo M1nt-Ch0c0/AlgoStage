@@ -268,6 +268,17 @@ export function mapByokErrorMessage(
   }
 
   if (code && code in BYOK_ERROR_MAP) {
+    if (
+      code === "UPSTREAM_ERROR" &&
+      data &&
+      typeof data === "object" &&
+      (data as Record<string, unknown>).type === "error" &&
+      msg &&
+      msg !== code &&
+      !isRawErrorCode(msg)
+    ) {
+      return msg;
+    }
     return BYOK_ERROR_MAP[code];
   }
   if (msg && msg in BYOK_ERROR_MAP) {
