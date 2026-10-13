@@ -105,6 +105,35 @@ test("last step ArrowRight shows finished panel and exactly one 「重播」", a
   await expectFinishedReplay(page);
 });
 
+test("Space on the focused speed button changes speed and does not advance", async ({ page }) => {
+  await mockLecture(page, "group-anagrams");
+  await page.goto("/problem/group-anagrams");
+  await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2x", exact: true }).click();
+  await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
+  await expect(page.getByText("第 1 / 3 步")).toBeVisible();
+  await expect(page.getByTestId("continue-hint")).toHaveText("按空格继续");
+
+  const speed = page.getByRole("group", { name: "语速" }).getByRole("button", { name: "1x", exact: true });
+  await speed.focus();
+  await page.keyboard.press("Space");
+  await expect(speed).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("第 1 / 3 步")).toBeVisible();
+  await expect(page.getByTestId("continue-hint")).toHaveText("按空格继续");
+});
+
+test("after the finished panel shows, Space on 「重播」 replays from step 1", async ({ page }) => {
+  await reachLastStep(page);
+  await page.keyboard.press("Space");
+  await expectFinishedReplay(page);
+
+  const replay = page.getByRole("button", { name: "重播", exact: true });
+  await replay.focus();
+  await page.keyboard.press("Space");
+  await expect(page.getByText("讲完了")).toHaveCount(0);
+  await expect(page.getByText("第 1 / 3 步")).toBeVisible();
+  await expect(page.getByRole("button", { name: "跳到第 1 步", exact: true })).toHaveAttribute("aria-current", "step");
+});
+
 test("after the finished panel shows, Space and ArrowRight leave it in place", async ({ page }) => {
   await reachLastStep(page);
   await page.keyboard.press("Space");

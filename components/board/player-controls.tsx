@@ -6,6 +6,7 @@
  * 等待继续时「下一步」改为图标加文字的按钮，热区至少 44px；平时仍是图标按钮。
  * 粗指针且下一步已就绪时，把「点「下一步」继续」放在这条控制条里（窄屏单独成行，吸底仍可见）。
  * 输入框、contenteditable、Monaco 编辑器内以及带 Ctrl/Meta/Alt 的按键不拦截。
+ * 焦点在 button、链接或 role=dialog 内时把 Space / → 留给控件本身（重播、语速、重新生成确认）。
  */
 "use client";
 
@@ -30,6 +31,11 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return (
     target.closest('[contenteditable=""],[contenteditable="true"],.monaco-editor') !== null
   );
+}
+
+/** 按钮、链接和对话框自己处理 Space / →，播放器不能 preventDefault 掉原生激活。 */
+function isNativeActivationTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest("button, a, [role=dialog]") !== null;
 }
 
 export default function PlayerControls({ preparing = false }: { preparing?: boolean }) {
@@ -62,6 +68,7 @@ export default function PlayerControls({ preparing = false }: { preparing?: bool
     const onKey = (e: KeyboardEvent) => {
       if (!hasScript) return;
       if (isTypingTarget(e.target)) return;
+      if (isNativeActivationTarget(e.target)) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       // 结束面板出现后空格与 → 不再回退到最后一步；← 仍可回看。
       if (status === "finished" && (e.key === " " || e.key === "ArrowRight")) {

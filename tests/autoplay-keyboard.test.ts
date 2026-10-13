@@ -2,6 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import NarrationBar from "../components/board/narration-bar";
 import PlayerControls from "../components/board/player-controls";
 import { usePlayerStore } from "../lib/player/store";
 import type { TeachingScript } from "../lib/teaching/types";
@@ -47,6 +48,76 @@ afterEach(async () => {
   usePlayerStore.getState().reset();
   container.remove();
   vi.unstubAllGlobals();
+});
+
+function pressKey(target: EventTarget, key: string) {
+  const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+  target.dispatchEvent(event);
+  return event;
+}
+
+test("焦点在 button、链接或 role=dialog 内时 Space 与 → 不拦截，交给控件自己", async () => {
+  await act(async () => {
+    setStoreState({ awaitingContinue: true, speed: 2 });
+  });
+
+  const speedButton = [...container.querySelectorAll("button")].find((el) => el.textContent === "1x")!;
+  let speedClicks = 0;
+  speedButton.addEventListener("click", () => {
+    speedClicks += 1;
+  });
+  const speedEvent = pressKey(speedButton, " ");
+  expect(speedEvent.defaultPrevented).toBe(false);
+  expect(usePlayerStore.getState().currentIndex).toBe(0);
+  // happy-dom 不实现按钮的键盘激活，浏览器里未 preventDefault 的 Space 会点下按钮。
+  if (!speedClicks) speedButton.click();
+  expect(speedClicks).toBe(1);
+  expect(usePlayerStore.getState().speed).toBe(1);
+  expect(usePlayerStore.getState().currentIndex).toBe(0);
+
+  const link = document.createElement("a");
+  link.href = "/roadmap";
+  link.textContent = "回路线图";
+  container.append(link);
+  const linkEvent = pressKey(link, "ArrowRight");
+  expect(linkEvent.defaultPrevented).toBe(false);
+  expect(usePlayerStore.getState().currentIndex).toBe(0);
+
+  const dialog = document.createElement("div");
+  dialog.setAttribute("role", "dialog");
+  const confirm = document.createElement("button");
+  confirm.type = "button";
+  confirm.textContent = "确定重新生成";
+  let confirmClicks = 0;
+  confirm.addEventListener("click", () => {
+    confirmClicks += 1;
+  });
+  dialog.append(confirm);
+  document.body.append(dialog);
+  const dialogEvent = pressKey(confirm, " ");
+  expect(dialogEvent.defaultPrevented).toBe(false);
+  expect(usePlayerStore.getState().currentIndex).toBe(0);
+  if (!confirmClicks) confirm.click();
+  expect(confirmClicks).toBe(1);
+  expect(usePlayerStore.getState().currentIndex).toBe(0);
+  dialog.remove();
+});
+
+test("完成态焦点在「重播」上按 Space 不拦截，激活按钮后从第 0 步重播", async () => {
+  await act(async () => {
+    setStoreState({ status: "finished", currentIndex: script.steps.length - 1, awaitingContinue: false });
+    root.render(
+      createElement("div", null, createElement(PlayerControls), createElement(NarrationBar)),
+    );
+  });
+
+  const replay = [...container.querySelectorAll("button")].find((el) => el.textContent === "重播")!;
+  const event = pressKey(replay, " ");
+  expect(event.defaultPrevented).toBe(false);
+  expect(usePlayerStore.getState()).toMatchObject({ status: "finished", currentIndex: 2 });
+  // happy-dom 不实现按钮的键盘激活，浏览器里未 preventDefault 的 Space 会点下「重播」。
+  if (usePlayerStore.getState().status === "finished") replay.click();
+  expect(usePlayerStore.getState()).toMatchObject({ status: "playing", currentIndex: 0 });
 });
 
 test("输入框、textarea、contenteditable 与 .monaco-editor 子节点内的 Space 和 ArrowRight 不触发步进", async () => {
