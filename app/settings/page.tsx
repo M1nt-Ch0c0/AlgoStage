@@ -376,11 +376,9 @@ export default function SettingsPage() {
         setTestState({ kind: "idle" });
         focusAndScroll("apiKey", false);
       } else if (isNoByokError(data)) {
-        setTestState({
-          kind: "fail",
-          message: NO_BYOK_SETTINGS_MESSAGE,
-        });
         focusAndScroll("apiKey", true);
+        scheduleStatus(NO_BYOK_SETTINGS_MESSAGE);
+        setTestState({ kind: "idle" });
       } else {
         const mapped = mapByokErrorMessage(data);
         setTestState({
