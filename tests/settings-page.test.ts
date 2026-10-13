@@ -336,11 +336,11 @@ test("serverKeyDisabled 模式下「保存设置」「测试连接」「清除�
   }
 });
 
-test("构建时静态检查：app/settings/page.tsx 中「保存设置」「测试连接」「清除本机 API Key」直接包含 pointer-coarse:min-h-11 类名", () => {
+test("构建时静态检查：app/settings/page.tsx 中「保存设置」「测试连接」「清除本机 API Key」「显示/隐藏 API Key」「字幕语速」「导出学习记录」直接包含 pointer-coarse:min-h-11 类名", () => {
   const source = readFileSync(resolve(__dirname, "../app/settings/page.tsx"), "utf8");
   expect(source).toContain("pointer-coarse:min-h-11");
   const occurrences = (source.match(/pointer-coarse:min-h-11/g) || []).length;
-  expect(occurrences).toBe(3);
+  expect(occurrences).toBe(7);
 });
 
 
