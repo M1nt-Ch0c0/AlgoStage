@@ -7,6 +7,7 @@ import {
   type ToolResultPart,
 } from "ai";
 import { z, ZodError } from "zod";
+import { AI_CONNECTION_ERROR } from "@/lib/ai/egress-guard";
 import { createModel, type ByokConfig } from "./provider";
 import { createLectureTools, ToolStateError } from "./lecture-tools";
 import { isTransientUpstreamError, UPSTREAM_RETRY_LIMIT, waitForUpstreamRetry } from "./upstream-retry";
@@ -384,7 +385,7 @@ export async function generateLecture(input: {
           error: "UPSTREAM_ERROR",
           message: status === 401 || status === 403
             ? "Key 无效或没有权限，请检查设置。"
-            : `暂时连不上模型或模型不支持工具调用。${recommendation}`,
+            : AI_CONNECTION_ERROR,
         };
       }
       if (finished)

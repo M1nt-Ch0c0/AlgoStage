@@ -22,6 +22,7 @@ import {
   waitForUpstreamRetry,
 } from "@/lib/agent/upstream-retry";
 import { hintTimeoutMs } from "@/lib/agent/defaults";
+import { InvalidAIBaseURLError } from "@/lib/ai/egress-guard";
 
 export const runtime = "nodejs";
 
@@ -44,7 +45,7 @@ export async function POST(req: NextRequest) {
     );
   }
   const parsed = hintRequestSchema.safeParse(input);
-  if (!parsed.success) return badRequest();
+  if (!parsed.success) return badRequest(parsed.error);
   const body = parsed.data;
   const meta = (await localSeedSource.list()).find((p) => p.slug === body.slug);
   if (!meta) {
@@ -57,6 +58,7 @@ export async function POST(req: NextRequest) {
   try {
     resolved = await resolveByok(body.byok);
   } catch (error) {
+    if (error instanceof InvalidAIBaseURLError) return upstreamError();
     if (error instanceof ByokConfigurationError) return configurationError();
     throw error;
   }

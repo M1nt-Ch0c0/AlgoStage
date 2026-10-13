@@ -11,6 +11,9 @@ services:
     container_name: algostage
     restart: unless-stopped
     init: true
+    environment:
+      ALGOSTAGE_ALLOW_PRIVATE_BASE_URL: "false"
+      ALGOSTAGE_EGRESS_ALLOW_HOSTS: "${ALGOSTAGE_EGRESS_ALLOW_HOSTS:-}"
     ports:
       - "127.0.0.1:3100:3000"
     volumes:

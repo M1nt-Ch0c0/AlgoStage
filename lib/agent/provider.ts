@@ -6,6 +6,7 @@
 import { DEFAULT_MODEL } from "./defaults";
 import { savedEndpoint } from "./saved-endpoint";
 import { byokRequestSchema } from "./request";
+import { aiEgressFetch, normalizeAIBaseURL } from "@/lib/ai/egress-guard";
 import { prisma } from "@/lib/db/prisma";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createAnthropic } from "@ai-sdk/anthropic";
@@ -32,9 +33,9 @@ export function assertCredentialDestination(config: ByokConfig) {
   if (origin && (origin.key !== origin.baseURL || origin.key !== origin.provider)) throw new ByokConfigurationError();
   const envKey = process.env.AI_API_KEY?.trim();
   if (origin?.key === "env" || (envKey && config.apiKey === envKey)) {
-    const endpoint = process.env.AI_BASE_URL?.trim();
+    const endpoint = normalizeAIBaseURL(process.env.AI_BASE_URL ?? "");
     const provider = process.env.AI_PROVIDER?.trim() || "openai-compatible";
-    if (!endpoint || config.baseURL !== endpoint || config.provider !== provider) throw new ByokConfigurationError();
+    if (!endpoint || normalizeAIBaseURL(config.baseURL ?? "") !== endpoint || config.provider !== provider) throw new ByokConfigurationError();
   }
 }
 
@@ -87,11 +88,14 @@ export function resolveSavedByok(settings: Record<string, string>): {
   const savedURL = savedEndpoint(settings);
   // 明确保存的空地址使用该服务商默认接口；旧的缺失字段不能混用环境地址。
   const savedDefault = useSaved && !savedURL && (provider !== "openai-compatible" || settings.baseURLProvider === provider);
+  const baseURL = savedDefault ? undefined : (useSaved ? savedURL : undefined) || process.env.AI_BASE_URL?.trim() || undefined;
+  // 旧设置或环境变量中的坏地址也要明确报错，不能伪装成未配置 AI。
+  if (baseURL) normalizeAIBaseURL(baseURL);
   const config = completeByok({
     provider,
     apiKey: settings.apiKey?.trim() || process.env.AI_API_KEY?.trim(),
     model: settings.model?.trim() || process.env.AI_MODEL?.trim() || DEFAULT_MODEL,
-    baseURL: savedDefault ? undefined : (useSaved ? savedURL : undefined) || process.env.AI_BASE_URL?.trim() || undefined,
+    baseURL,
   });
   if (!config || source === "none") return null;
   origins.set(config, {
@@ -117,22 +121,22 @@ export async function resolveByok(bodyByok?: ByokConfig | null): Promise<{
 /** 由 BYOK 配置构造 AI SDK LanguageModel */
 export function createModel(config: ByokConfig) {
   assertCredentialDestination(config);
+  const baseURL = normalizeAIBaseURL(config.baseURL ?? "") || undefined;
   const guardedFetch: typeof fetch = (input, init) => {
     assertCredentialDestination(config);
     if (origins.get(config)?.key === "env" || config.apiKey === process.env.AI_API_KEY?.trim()) {
-      const base = new URL(process.env.AI_BASE_URL!.trim());
+      const base = new URL(normalizeAIBaseURL(process.env.AI_BASE_URL!));
       const target = new URL(input instanceof Request ? input.url : String(input));
       const prefix = base.pathname.replace(/\/$/, "");
       if (target.origin !== base.origin || !(target.pathname === prefix || target.pathname.startsWith(`${prefix}/`))) throw new ByokConfigurationError();
     }
-    // 禁止上游重定向携带凭据到另一地址；错误仍走固定错误码，不输出请求信息。
-    return globalThis.fetch(input, { ...init, redirect: "error" });
+    return aiEgressFetch(input, init);
   };
   switch (config.provider) {
     case "anthropic":
-      return createAnthropic({ apiKey: config.apiKey, baseURL: config.baseURL, fetch: guardedFetch })(config.model);
+      return createAnthropic({ apiKey: config.apiKey, baseURL, fetch: guardedFetch })(config.model);
     case "google":
-      return createGoogleGenerativeAI({ apiKey: config.apiKey, baseURL: config.baseURL, fetch: guardedFetch })(config.model);
+      return createGoogleGenerativeAI({ apiKey: config.apiKey, baseURL, fetch: guardedFetch })(config.model);
     case "openai-compatible":
     default: {
       const preset = PROVIDER_PRESETS.find(
@@ -143,7 +147,7 @@ export function createModel(config: ByokConfig) {
         supportsStructuredOutputs: true,
         apiKey: config.apiKey,
         fetch: guardedFetch,
-        baseURL: config.baseURL ?? preset.baseURL!,
+        baseURL: baseURL ?? preset.baseURL!,
       })(config.model);
     }
   }

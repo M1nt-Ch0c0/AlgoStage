@@ -6,6 +6,9 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { byokFromEnv, savedKeySource } from "@/lib/agent/provider";
 import { savedEndpoint } from "@/lib/agent/saved-endpoint";
+import { aiBaseURLSchema, badRequest, baseURLNotAllowed, byokRequestSchema } from "@/lib/agent/request";
+import { checkAIConnection, validateSettingsBaseURL } from "@/lib/agent/settings-connection";
+import { hintTimeoutMs } from "@/lib/agent/defaults";
 
 export const runtime = "nodejs";
 
@@ -15,7 +18,7 @@ const settingsRequestSchema = z.object({
     provider: z.enum(["openai-compatible", "anthropic", "google"]).optional(),
     model: z.string().trim().optional(),
     apiKey: z.string().trim().optional(),
-    baseURL: z.union([z.url(), z.literal("")]).optional(),
+    baseURL: aiBaseURLSchema.optional(),
     theme: z.enum(["dark", "light"]).optional(),
     effectLevel: z.enum(["full", "calm", "minimal"]).optional(),
     narrationSpeed: z.enum(["15", "22", "30"]).optional(),
@@ -47,7 +50,21 @@ export async function PUT(req: NextRequest) {
   const parsed = settingsRequestSchema.safeParse(input);
   if (!parsed.success) {
     // 不回传 zod 原始错误或输入，避免 Key 出现在响应与日志中。
-    return Response.json({ error: "BAD_REQUEST", message: "设置参数不正确，请检查 Key、模型和偏好设置。" }, { status: 400 });
+    if (parsed.error.issues.some(issue => issue.path.at(-1) === "baseURL")) return baseURLNotAllowed();
+    return badRequest(parsed.error, "设置参数不正确，请检查 Key、模型和偏好设置。");
+  }
+  const { baseURL } = parsed.data.settings;
+  if (baseURL) {
+    const signal = AbortSignal.any([req.signal, AbortSignal.timeout(hintTimeoutMs())]);
+    const invalid = await validateSettingsBaseURL(baseURL, signal);
+    if (invalid) return invalid;
+    // Probe only a complete, explicitly supplied credential group. Never borrow
+    // a stored/environment key for an edited URL; preference-only saves stay local.
+    const config = byokRequestSchema.safeParse(parsed.data.settings);
+    if (config.success && parsed.data.settings.provider && config.data.apiKey && config.data.model) {
+      const failure = await checkAIConnection(config.data, signal);
+      if (failure) return failure;
+    }
   }
   await prisma.$transaction(async tx => {
     const rows = await tx.setting.findMany({ where: { userId: USER_ID } });
