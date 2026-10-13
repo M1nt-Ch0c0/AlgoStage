@@ -18,17 +18,30 @@ const networkCodes = new Set([
   "UND_ERR_CONNECT_TIMEOUT",
 ]);
 
+/** 保留 SDK 包装异常中的 HTTP 状态，不读取或透传错误正文。 */
+export function upstreamStatusCode(error: unknown): number | undefined {
+  const visited = new Set<unknown>();
+  let current = error;
+  while (current instanceof Error && !visited.has(current)) {
+    visited.add(current);
+    if (APICallError.isInstance(current) && current.statusCode !== undefined)
+      return current.statusCode;
+    current = current.cause;
+  }
+  return undefined;
+}
+
 /** 只按明确的传输错误分类；错误正文、URL 和 Key 都不进入日志。 */
 export function isTransientUpstreamError(error: unknown): boolean {
+  // HTTP 状态优先：只允许 5xx 和 429，401/403 即使被网络异常包装也不重试。
+  const status = upstreamStatusCode(error);
+  if (status !== undefined) return status === 429 || (status >= 500 && status < 600);
   const visited = new Set<unknown>();
   let current = error;
   let networkFailure = false;
   while (current instanceof Error && !visited.has(current)) {
     visited.add(current);
     if (current instanceof AIEgressError) return current.retryable;
-    // HTTP 状态优先：只允许 5xx 和 429，不用未知状态或 2xx 推测传输失败。
-    if (APICallError.isInstance(current) && current.statusCode !== undefined)
-      return current.statusCode === 429 || (current.statusCode >= 500 && current.statusCode < 600);
     if (InvalidResponseDataError.isInstance(current)) {
       // 兼容 SDK 对 SSE 提前关闭的固定错误；其他协议/内容错误不重试。
       networkFailure ||=

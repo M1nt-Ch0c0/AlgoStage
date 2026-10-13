@@ -59,13 +59,43 @@ export function settingsLocked() {
   return Response.json({ code: "SETTINGS_LOCKED", error: "SETTINGS_LOCKED", message: "公共实例不支持修改服务器设置" }, { status: 403 });
 }
 
+export function upstreamAuthError() {
+  return Response.json({ code: "UPSTREAM_AUTH", error: "UPSTREAM_AUTH", retryable: false, message: "Key 无效或没有权限" }, { status: 400 });
+}
+
 export function upstreamError(status?: number) {
+  if (status === 401 || status === 403) return upstreamAuthError();
   return Response.json(
-    { error: "UPSTREAM_ERROR", message: status === 401 || status === 403 ? "Key 无效或没有权限，请检查设置。" : AI_CONNECTION_ERROR },
+    { error: "UPSTREAM_ERROR", message: AI_CONNECTION_ERROR },
     { status: 502 },
   );
 }
 
 export function configurationError() {
   return Response.json({ error: "CONFIGURATION_ERROR", message: "Key 与接口地址配置不一致，请检查设置。环境变量 Key 必须同时配置 AI_BASE_URL；保存 Key 时请同时保存对应接口地址和服务商。" }, { status: 400 });
+}
+
+const streamErrorRetryable = {
+  TIMEOUT: true,
+  INVALID_SCRIPT: true,
+  UPSTREAM_AUTH: false,
+  UPSTREAM_ERROR: true,
+  CANCELLED: false,
+  BASE_URL_NOT_ALLOWED: false,
+  BASE_URL_INVALID: false,
+  BYOK_KEY_REQUIRED: false,
+  CONFIGURATION_ERROR: false,
+  NO_BYOK: false,
+  BAD_REQUEST: false,
+  BAD_JSON: false,
+  NOT_FOUND: false,
+  SETTINGS_LOCKED: false,
+} as const;
+
+/** NDJSON 错误只允许固定错误码和重试标志，绝不携带原始异常或额外字段。 */
+export function streamErrorEvent(value: unknown) {
+  const code = typeof value === "string" && Object.hasOwn(streamErrorRetryable, value)
+    ? value as keyof typeof streamErrorRetryable
+    : "UPSTREAM_ERROR";
+  return { type: "error" as const, code, retryable: streamErrorRetryable[code] };
 }

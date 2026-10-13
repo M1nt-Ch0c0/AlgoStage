@@ -2,7 +2,7 @@
  * POST /api/hint · 5 级渐进提示（docs/03 §6）
  * 每次请求只升一级；消耗记录由客户端调 /api/progress 写入 HintUsage。
  */
-import { APICallError, generateText } from "ai";
+import { generateText } from "ai";
 import { NextRequest } from "next/server";
 import {
   createModel,
@@ -22,6 +22,7 @@ import {
 import { localSeedSource } from "@/lib/content/local-source";
 import {
   isTransientUpstreamError,
+  upstreamStatusCode,
   UPSTREAM_RETRY_LIMIT,
   waitForUpstreamRetry,
 } from "@/lib/agent/upstream-retry";
@@ -133,6 +134,6 @@ ${body.userCode ? `学生当前代码：\n${body.userCode}` : ""}`,
         },
         { status: timeout.aborted ? 504 : 499 },
       );
-    return upstreamError(APICallError.isInstance(error) ? error.statusCode : undefined);
+    return upstreamError(upstreamStatusCode(error));
   }
 }

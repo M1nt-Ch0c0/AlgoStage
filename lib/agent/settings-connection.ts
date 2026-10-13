@@ -1,7 +1,8 @@
-import { APICallError, generateText } from "ai";
+import { generateText } from "ai";
 import { AIBaseURLNotAllowedError, InvalidAIBaseURLError, ServerAIBaseURLError, validateAIBaseURL } from "@/lib/ai/egress-guard";
 import { createModel, ByokConfigurationError, ByokKeyRequiredError, type ByokConfig } from "./provider";
 import { baseURLInvalid, baseURLNotAllowed, byokKeyRequired, configurationError, upstreamError } from "./request";
+import { upstreamStatusCode } from "./upstream-retry";
 
 /** SDK wrappers can retain a cause; never expose that cause to the client. */
 export function settingsConnectionError(error: unknown): Response {
@@ -16,7 +17,7 @@ export function settingsConnectionError(error: unknown): Response {
     if (current instanceof ByokConfigurationError) return configurationError();
     current = current.cause;
   }
-  return upstreamError(APICallError.isInstance(error) ? error.statusCode : undefined);
+  return upstreamError(upstreamStatusCode(error));
 }
 
 /** Syntax/literal/DNS checks only; actual connections are checked and pinned again. */

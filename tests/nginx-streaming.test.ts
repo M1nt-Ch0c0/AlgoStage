@@ -169,8 +169,7 @@ http {
     const response = await request();
     const events = (await response.text()).trim().split("\n").map(line => JSON.parse(line));
     expect(events.some(event => event.type === "progress")).toBe(true);
-    expect(events.at(-1)).toMatchObject({ type: "error", error: "TIMEOUT", status: 504 });
-    expect(events.at(-1).message).toMatch(/超时.*重试.*gpt-6.1-sol/);
+    expect(events.at(-1)).toEqual({ type: "error", code: "TIMEOUT", retryable: true });
     expect(performance.now() - started).toBeLessThan(4000);
     expect(await fixture.prisma.lectureScriptCache.count()).toBe(0);
   });

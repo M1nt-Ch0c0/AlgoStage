@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { APICallError, InvalidResponseDataError } from "ai";
 import { createFixture, request } from "./api-fixture";
-import { isTransientUpstreamError } from "../lib/agent/upstream-retry";
+import { isTransientUpstreamError, upstreamStatusCode } from "../lib/agent/upstream-retry";
 import { validateScript } from "../lib/teaching/validated-script";
 
 let f: Awaited<ReturnType<typeof createFixture>>;
@@ -65,11 +65,35 @@ test.each([400, 401, 403, 404, 408, 422])(
     f.setError(status, { error: { message: "do not retry" } });
     const { POST } = await import("../app/api/lecture/route");
     const response = await POST(request({ slug: "3sum", byok: input.config }));
-    expect(response.status).toBe(502);
+    expect(response.status).toBe(status === 401 || status === 403 ? 400 : 502);
     expect(f.calls.length - before).toBe(1);
     expect(await f.prisma.lectureScriptCache.count()).toBe(0);
   },
 );
+
+test.each([401, 403])("SDK 包装的 %i 保留鉴权状态且不重试", async statusCode => {
+  const { settingsConnectionError } = await import("../lib/agent/settings-connection");
+  const error = new TypeError("fetch failed", { cause: new APICallError({
+    statusCode, message: "untrusted-private-details", url: "https://fake.invalid",
+    requestBodyValues: {}, isRetryable: true,
+    cause: Object.assign(new Error("network"), { code: "ETIMEDOUT" }),
+  }) });
+  expect(upstreamStatusCode(error)).toBe(statusCode);
+  expect(isTransientUpstreamError(error)).toBe(false);
+  const response = settingsConnectionError(error);
+  expect(response.status).toBe(400);
+  expect(await response.json()).toEqual({
+    code: "UPSTREAM_AUTH", error: "UPSTREAM_AUTH", retryable: false, message: "Key 无效或没有权限",
+  });
+});
+
+test("未知错误和循环 cause 不推测 HTTP 状态", () => {
+  const error = new Error("internal-private-details");
+  error.cause = error;
+  expect(upstreamStatusCode(error)).toBeUndefined();
+  expect(upstreamStatusCode({ statusCode: 401 })).toBeUndefined();
+  expect(isTransientUpstreamError(error)).toBe(false);
+});
 
 test("断连可恢复，连续故障达到上限后明确失败、不缓存", async () => {
   const input = prepare(),

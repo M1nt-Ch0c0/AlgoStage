@@ -1,7 +1,6 @@
 /** 五个教学工具逐步构建教案；错误仅修复当次调用，成功步骤不重新生成。 */
 import {
   streamText,
-  APICallError,
   type ModelMessage,
   type ToolCallPart,
   type ToolResultPart,
@@ -10,7 +9,7 @@ import { z, ZodError } from "zod";
 import { AI_CONNECTION_ERROR } from "@/lib/ai/egress-guard";
 import { createModel, type ByokConfig } from "./provider";
 import { createLectureTools, ToolStateError } from "./lecture-tools";
-import { isTransientUpstreamError, UPSTREAM_RETRY_LIMIT, waitForUpstreamRetry } from "./upstream-retry";
+import { isTransientUpstreamError, upstreamStatusCode, UPSTREAM_RETRY_LIMIT, waitForUpstreamRetry } from "./upstream-retry";
 import type { TeachingScript, TeachingStep } from "@/lib/teaching/types";
 
 import { LECTURE_TIMEOUT_MS } from "./defaults";
@@ -30,7 +29,7 @@ export type GenerationResult =
   | {
       ok: false;
       status: number;
-      error: "INVALID_SCRIPT" | "UPSTREAM_ERROR" | "TIMEOUT" | "CANCELLED";
+      error: "INVALID_SCRIPT" | "UPSTREAM_AUTH" | "UPSTREAM_ERROR" | "TIMEOUT" | "CANCELLED";
       message: string;
     };
 const recommendation =
@@ -350,9 +349,7 @@ export async function generateLecture(input: {
         }
       } catch (error) {
         if (controller.signal.aborted) return cancelled;
-        const status = APICallError.isInstance(error)
-          ? error.statusCode
-          : undefined;
+        const status = upstreamStatusCode(error);
         // 只记录固定分类、状态码与进度。原始错误可能包含 Key，绝不打印。
         console.warn(
           "lecture_upstream",
@@ -382,13 +379,17 @@ export async function generateLecture(input: {
           catch { return cancelled; }
           continue;
         }
+        if (status === 401 || status === 403) return {
+          ok: false,
+          status: 400,
+          error: "UPSTREAM_AUTH",
+          message: "Key 无效或没有权限",
+        };
         return {
           ok: false,
           status: 502,
           error: "UPSTREAM_ERROR",
-          message: status === 401 || status === 403
-            ? "Key 无效或没有权限，请检查设置。"
-            : AI_CONNECTION_ERROR,
+          message: AI_CONNECTION_ERROR,
         };
       }
       if (finished)

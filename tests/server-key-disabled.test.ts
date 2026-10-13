@@ -226,7 +226,7 @@ describe.each(entries)("$name", ({ POST, accept }) => {
     expect(db.prisma.lectureScriptCache.findUnique).not.toHaveBeenCalled();
   });
 
-  test.each(["success", "401", "500", "exception", "malformed body"])("A5：%s 时请求 Key 不进入任何 DB 写入、缓存、日志、URL 或错误响应", async scenario => {
+  test.each(["success", "401", "403", "500", "exception", "malformed body"])("A5：%s 时请求 Key 不进入任何 DB 写入、缓存、日志、URL 或错误响应", async scenario => {
     configureServer("env");
     configureServer("db");
     vi.stubEnv("ALGOSTAGE_DISABLE_SERVER_KEY", "true");
@@ -236,10 +236,13 @@ describe.each(entries)("$name", ({ POST, accept }) => {
     else if (scenario !== "success") fetchMock.mockImplementation(async () => Response.json({ error: { message: `upstream echoed ${sentinel}`, stack: `Error: ${sentinel}\n at internal:1:1` } }, { status: Number(scenario) }));
     const req = request({ slug: "two-sum", level: 1, byok: { apiKey: sentinel, baseURL: customURL, model: "request-model" } }, accept);
     const response = await POST(req);
-    expect(response.status).toBe(scenario === "success" ? 200 : 502);
+    const auth = scenario === "401" || scenario === "403";
+    expect(response.status).toBe(scenario === "success" ? 200 : auth ? 400 : 502);
     const responseBody = await response.text();
     expect(responseBody).not.toContain(sentinel);
-    if (scenario !== "success") expect(JSON.parse(responseBody)).toMatchObject({ error: "UPSTREAM_ERROR", message: scenario === "401" ? "Key 无效或没有权限，请检查设置。" : AI_CONNECTION_ERROR });
+    if (scenario !== "success") expect(JSON.parse(responseBody)).toEqual(auth
+      ? { code: "UPSTREAM_AUTH", error: "UPSTREAM_AUTH", retryable: false, message: "Key 无效或没有权限" }
+      : { error: "UPSTREAM_ERROR", message: AI_CONNECTION_ERROR });
     await new Promise<void>(resolve => setImmediate(resolve));
     expect(fetchMock).toHaveBeenCalled();
     expect(req.url).not.toContain(sentinel);

@@ -15,7 +15,7 @@ import { resolveByok, ByokConfigurationError, ByokKeyRequiredError, type ByokCon
 import { buildLecturePrompt } from "@/lib/agent/modes/lecture";
 import { highlightProblem } from "@/lib/agent/lecture-highlights";
 import { validateScript } from "@/lib/teaching/validated-script";
-import { lectureRequestSchema, badRequest, baseURLInvalid, byokKeyRequired, configurationError, upstreamError } from "@/lib/agent/request";
+import { lectureRequestSchema, badRequest, baseURLInvalid, byokKeyRequired, configurationError, streamErrorEvent, upstreamAuthError, upstreamError } from "@/lib/agent/request";
 import { localSeedSource } from "@/lib/content/local-source";
 import { prisma } from "@/lib/db/prisma";
 import { AI_CONNECTION_ERROR, InvalidAIBaseURLError, ServerAIBaseURLError } from "@/lib/ai/egress-guard";
@@ -23,6 +23,11 @@ import { validateBaseURL } from "@/lib/agent/settings-connection";
 import { hintTimeoutMs } from "@/lib/agent/defaults";
 
 export const runtime = "nodejs";
+
+function generationErrorResponse(failure: Extract<GenerationResult, { ok: false }>) {
+  if (failure.error === "UPSTREAM_AUTH") return upstreamAuthError();
+  return Response.json({ error: failure.error, message: failure.message }, { status: failure.status });
+}
 
 function cacheKeyOf(
   slug: string,
@@ -203,8 +208,8 @@ export async function POST(req: NextRequest) {
   // 成功步骤立即发送；中断时取消模型请求，只有 finish 后的完整教案能写缓存。
   if (req.headers.get("accept")?.includes("application/x-ndjson")) {
     let disconnected = false;
-    // Keep the HTTP status writable until the first usable step. DNS/connect/
-    // redirect failures before then must be actual 502 responses, even for NDJSON.
+    // Keep the HTTP status writable until the first usable step, including
+    // actual 400 responses for upstream auth failures, even for NDJSON.
     let ready!: (failure?: Extract<GenerationResult, { ok: false }>) => void;
     const firstStep = new Promise<Extract<GenerationResult, { ok: false }> | undefined>(resolve => { ready = resolve; });
     const stream = new ReadableStream({
@@ -224,12 +229,7 @@ export async function POST(req: NextRequest) {
           send(
             result.ok
               ? { type: "result", cached: false, script: result.script }
-              : {
-                  type: "error",
-                  error: result.error,
-                  message: result.message,
-                  status: result.status,
-                },
+              : streamErrorEvent(result.error),
           );
         } catch {
           const failure = {
@@ -239,12 +239,7 @@ export async function POST(req: NextRequest) {
             status: 502,
           };
           ready(failure);
-          send({
-            type: "error",
-            error: failure.error,
-            message: failure.message,
-            status: failure.status,
-          });
+          send(streamErrorEvent(failure.error));
         } finally {
           if (!disconnected) controller.close();
         }
@@ -257,7 +252,7 @@ export async function POST(req: NextRequest) {
     const failure = await firstStep;
     if (failure) {
       await stream.cancel();
-      return Response.json({ error: failure.error, message: failure.message }, { status: failure.status });
+      return generationErrorResponse(failure);
     }
     return new Response(stream, {
       headers: {
@@ -270,8 +265,5 @@ export async function POST(req: NextRequest) {
   const result = await generate();
   return result.ok
     ? Response.json({ cached: false, script: result.script })
-    : Response.json(
-        { error: result.error, message: result.message },
-        { status: result.status },
-      );
+    : generationErrorResponse(result);
 }

@@ -475,9 +475,8 @@ test("进度/步骤流跨字节分片读取，超时与中断提示重试", asyn
     "\n" +
     JSON.stringify({
       type: "error",
-      error: "TIMEOUT",
-      message: "备课超时，请重试或换用 gpt-6.1-sol。",
-      status: 504,
+      code: "TIMEOUT",
+      retryable: true,
     }) +
     "\n";
   const bytes = new TextEncoder().encode(text),
@@ -494,7 +493,7 @@ test("进度/步骤流跨字节分片读取，超时与中断提示重试", asyn
   );
   await assert.rejects(
     readLectureResponse(response, (m) => messages.push(m)),
-    /超时.*重试.*gpt-6.1-sol/,
+    /备课失败.*重试/,
   );
   assert.deepEqual(messages, ["正在重试该调用"]);
 });

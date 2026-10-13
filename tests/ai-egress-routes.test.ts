@@ -9,6 +9,7 @@ import { GET, PUT } from "../app/api/settings/route";
 import { POST as testConnection } from "../app/api/settings/test-connection/route";
 import { AI_CONNECTION_ERROR, INVALID_AI_BASE_URL, MALFORMED_AI_BASE_URL } from "../lib/ai/egress-guard";
 const MALFORMED = { code: "BASE_URL_INVALID", error: "BASE_URL_INVALID", message: MALFORMED_AI_BASE_URL };
+const UPSTREAM_AUTH = { code: "UPSTREAM_AUTH", error: "UPSTREAM_AUTH", retryable: false, message: "Key 无效或没有权限" };
 import { mockAIResponse } from "./support/mock-ai-response";
 
 const db = vi.hoisted(() => {
@@ -145,8 +146,10 @@ describe.each(entries)("$name", ({ POST, accept }) => {
   test.each([400, 401, 403, 500])("上游 %i 仅按状态分类，不透出正文", async status => {
     fetchMock.mockImplementation(async () => Response.json({ error: { message: "untrusted-private-details" } }, { status }));
     const response = await POST(request({ slug: "two-sum", level: 1, byok }, accept));
-    expect(response.status).toBe(502);
-    expect(await response.json()).toEqual({ error: "UPSTREAM_ERROR", message: [401, 403].includes(status) ? "Key 无效或没有权限，请检查设置。" : AI_CONNECTION_ERROR });
+    const auth = status === 401 || status === 403;
+    expect(response.status).toBe(auth ? 400 : 502);
+    expect(response.headers.get("content-type")).toContain("application/json");
+    expect(await response.json()).toEqual(auth ? UPSTREAM_AUTH : { error: "UPSTREAM_ERROR", message: AI_CONNECTION_ERROR });
     expect(fetchMock).toHaveBeenCalledTimes(status === 500 ? 2 : 1);
   });
 
@@ -160,6 +163,14 @@ describe.each(entries)("$name", ({ POST, accept }) => {
       expect(init).toMatchObject({ redirect: "manual", dispatcher: expect.anything() });
     }
   });
+});
+
+test.each([401, 403])("测试连接：上游 %i 返回 400 UPSTREAM_AUTH，不重试", async status => {
+  fetchMock.mockImplementation(async () => Response.json({ error: { message: "untrusted-private-details" } }, { status }));
+  const response = await testConnection(request({ byok }));
+  expect(response.status).toBe(400);
+  expect(await response.json()).toEqual(UPSTREAM_AUTH);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
 });
 
 test.each(["settings", "env"])("%s 中的接口同样必须经过 DNS 和地址校验", async source => {
@@ -220,8 +231,8 @@ test.each([
   fetchMock.mockImplementation(async () => new Response(null, { status: 401 }));
   for (const baseURL of ["", "   ", "https://ai.example/v1/v1///"]) {
     const response = await hint(request({ slug: "two-sum", level: 1, byok: { ...byok, provider, baseURL } }));
-    expect(response.status).toBe(502);
-    expect((await response.json()).message).toBe("Key 无效或没有权限，请检查设置。");
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual(UPSTREAM_AUTH);
     const [input, init] = fetchMock.mock.lastCall!;
     expect(new URL(String(input)).hostname).toBe(baseURL.trim() ? "ai.example" : defaultHost);
     expect(String(input)).not.toContain("/v1/v1");
@@ -243,7 +254,7 @@ test("允许私网时本地模型正常工作，仍禁止重定向", async () =>
   expect((await hint(request(input))).status).toBe(502);
 });
 
-test("讲课流已经输出步骤后遇到重定向，通过固定 502 错误事件终止且不缓存", async () => {
+test("讲课流已经输出步骤后遇到重定向，只发送固定错误码和重试标志且不缓存", async () => {
   fetchMock.mockImplementationOnce(async (_input, init) => mockAIResponse(init, [
     { name: "add_step", input: { id: "s1", narration: "讲解", target: { kind: "code-line", start: 1 } } },
   ])).mockImplementation(async () => new Response("untrusted-private-details", { status: 302, headers: { location: "http://127.0.0.1/private" } }));
@@ -251,9 +262,64 @@ test("讲课流已经输出步骤后遇到重定向，通过固定 502 错误事
   expect(response.status).toBe(200); // Headers are committed after the first step.
   const events = (await response.text()).trim().split("\n").map(line => JSON.parse(line));
   expect(events.some(event => event.type === "step")).toBe(true);
-  expect(events.at(-1)).toEqual({ type: "error", error: "UPSTREAM_ERROR", status: 502, message: AI_CONNECTION_ERROR });
+  expect(events.at(-1)).toEqual({ type: "error", code: "UPSTREAM_ERROR", retryable: true });
   expect(fetchMock).toHaveBeenCalledTimes(2);
   expect(db.prisma.lectureScriptCache.upsert).not.toHaveBeenCalled();
+});
+
+test.each([401, 403, 500])("讲课首步后的上游 %i 只发送三个错误字段", async status => {
+  fetchMock.mockImplementationOnce(async (_input, init) => mockAIResponse(init, [
+    { name: "add_step", input: { id: "s1", narration: "讲解", target: { kind: "code-line", start: 1 } } },
+  ])).mockImplementation(async () => Response.json({ error: { message: `upstream-private-details ${byok.apiKey}` } }, { status }));
+  const response = await lecture(request({ slug: "two-sum", byok }, "application/x-ndjson"));
+  expect(response.status).toBe(200);
+  expect(response.headers.get("content-type")).toContain("application/x-ndjson");
+  const raw = await response.text();
+  const events = raw.trim().split("\n").map(line => JSON.parse(line));
+  expect(events.some(event => event.type === "step")).toBe(true);
+  const auth = status === 401 || status === 403;
+  expect(events.filter(event => event.type === "error")).toEqual([
+    { type: "error", code: auth ? "UPSTREAM_AUTH" : "UPSTREAM_ERROR", retryable: !auth },
+  ]);
+  expect(raw).not.toContain("upstream-private-details");
+  expect(raw).not.toContain(byok.apiKey);
+  expect(fetchMock).toHaveBeenCalledTimes(auth ? 2 : 3);
+  expect(db.prisma.lectureScriptCache.upsert).not.toHaveBeenCalled();
+  expect(JSON.stringify(vi.mocked(console.warn).mock.calls)).not.toContain(byok.apiKey);
+});
+
+test("讲课中途 Zod 校验失败不把 schema、输入值或内部文本写入流", async () => {
+  const invalid = { name: "set_viz", input: { stepId: "s1", viz: { type: "array", state: { values: "schema-private-details" } } } };
+  fetchMock.mockImplementationOnce(async (_input, init) => mockAIResponse(init, [
+    { name: "add_step", input: { id: "s1", narration: "讲解", target: { kind: "code-line", start: 1 } } },
+    invalid,
+  ])).mockImplementation(async (_input, init) => mockAIResponse(init, [invalid]));
+  const response = await lecture(request({ slug: "two-sum", byok }, "application/x-ndjson"));
+  expect(response.status).toBe(200);
+  const raw = await response.text();
+  const events = raw.trim().split("\n").map(line => JSON.parse(line));
+  expect(events.some(event => event.type === "step")).toBe(true);
+  expect(events.filter(event => event.type === "error")).toEqual([
+    { type: "error", code: "INVALID_SCRIPT", retryable: true },
+  ]);
+  expect(raw).not.toMatch(/schema-private-details|ZodError|invalid_type|expected|viz\.state\.values/);
+  expect(JSON.stringify(vi.mocked(console.warn).mock.calls)).toContain("viz.state.values");
+  expect(fetchMock).toHaveBeenCalledTimes(3);
+  expect(db.prisma.lectureScriptCache.upsert).not.toHaveBeenCalled();
+});
+
+test("讲课步骤生成后内部异常也只发送安全错误事件", async () => {
+  db.prisma.$transaction.mockRejectedValueOnce(new Error(`internal-private-details ${byok.apiKey}`));
+  const response = await lecture(request({ slug: "two-sum", byok }, "application/x-ndjson"));
+  expect(response.status).toBe(200);
+  const raw = await response.text();
+  const events = raw.trim().split("\n").map(line => JSON.parse(line));
+  expect(events.some(event => event.type === "step")).toBe(true);
+  expect(events.filter(event => event.type === "error")).toEqual([
+    { type: "error", code: "UPSTREAM_ERROR", retryable: true },
+  ]);
+  expect(raw).not.toContain("internal-private-details");
+  expect(raw).not.toContain(byok.apiKey);
 });
 
 test("judge 无 AI 出站，严格拒绝额外的 byok/endpoint 字段", async () => {

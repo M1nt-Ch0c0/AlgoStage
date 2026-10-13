@@ -21,26 +21,30 @@ async function captureLogs<T>(run: () => Promise<T>) {
   }
 }
 
-test("S1 review：上游 401/503 固定返回 502，响应与全部日志不泄露 Key；坏参数为 400", async () => {
+test("上游 401/403 返回 400 UPSTREAM_AUTH，其他故障为 502，响应与全部日志不泄露 Key", async () => {
   const f = await createFixture();
   try {
     const routes = [await import("../app/api/hint/route"), await import("../app/api/lecture/route")];
+    const testConnection = await import("../app/api/settings/test-connection/route");
     const apiKey = "fake-secret-key-M1-review-401";
     const byok = { provider: "openai-compatible", model: "review-model", apiKey, baseURL: f.baseURL };
     for (const status of [401, 403, 503]) {
       // 故意模拟供应商把完整 Key 放进错误体的情况。
       f.setError(status, { error: { message: `Incorrect API key provided: ${apiKey}`, type: "authentication_error" } });
-      for (const route of routes) {
+      for (const route of [...routes, testConnection]) {
         const before = f.calls.length;
         const { result: response, logs } = await captureLogs(() => route.POST(request({ slug: "3sum", level: 1, byok })));
-        assert.equal(response.status, 502);
+        const auth = status === 401 || status === 403;
+        assert.equal(response.status, auth ? 400 : 502);
         const raw = await response.text();
-        assert.equal(JSON.parse(raw).error, "UPSTREAM_ERROR");
-        if (status === 401 || status === 403) assert.match(JSON.parse(raw).message, /Key 无效或没有权限，请检查设置/);
+        if (auth) assert.deepEqual(JSON.parse(raw), {
+          code: "UPSTREAM_AUTH", error: "UPSTREAM_AUTH", retryable: false, message: "Key 无效或没有权限",
+        });
+        else assert.equal(JSON.parse(raw).error, "UPSTREAM_ERROR");
         assert.ok(!raw.includes(apiKey));
         assert.ok(!logs.includes(apiKey));
         assert.ok(!logs.includes("Incorrect API key provided"));
-        assert.equal(f.calls.length - before, status >= 500 ? 2 : 1, "只重试 5xx，401 不重试且错误不泄露 Key");
+        assert.equal(f.calls.length - before, status >= 500 && route !== testConnection ? 2 : 1, "401/403 不重试且错误不泄露 Key");
       }
     }
     assert.equal(await f.prisma.lectureScriptCache.count(), 0);
