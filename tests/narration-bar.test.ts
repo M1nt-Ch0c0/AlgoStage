@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import NarrationBar from "../components/board/narration-bar";
+import { roadmapOrder } from "../lib/content/roadmap-order";
 import { usePlayerStore } from "../lib/player/store";
 import type { TeachingScript } from "../lib/teaching/types";
 
@@ -89,13 +90,33 @@ test("setAutoAdvance(true) 打完并停留 dwellMs 后进入下一步", async ()
   expect(usePlayerStore.getState().currentIndex).toBe(1);
 });
 
-test("finished 显示讲完了，点击重播回到播放并回到第 0 步", async () => {
+test("finished 显示讲完了，two-sum 下一题指向 group-anagrams，并有重播和回路线图", async () => {
   usePlayerStore.setState({ status: "finished", currentIndex: 1 });
   await act(async () => root.render(createElement(NarrationBar)));
   expect(container.textContent).toContain("讲完了");
+  const nextLink = [...container.querySelectorAll("a")].find((el) => el.textContent === "下一题");
+  expect(nextLink?.getAttribute("href")).toMatch(/\/problem\/group-anagrams$/);
+  const roadmap = [...container.querySelectorAll("a")].find((el) => el.textContent === "回路线图");
+  expect(roadmap?.getAttribute("href")).toBe("/roadmap");
   const button = [...container.querySelectorAll("button")].find((el) => el.textContent === "重播");
   expect(button).toBeTruthy();
   await act(async () => button!.click());
   expect(usePlayerStore.getState().status).toBe("playing");
   expect(usePlayerStore.getState().currentIndex).toBe(0);
+});
+
+test("末题 finished 主按钮是回路线图，没有下一题", async () => {
+  const lastSlug = roadmapOrder().at(-1)!.slug;
+  usePlayerStore.setState({
+    status: "finished",
+    currentIndex: 1,
+    script: { ...usePlayerStore.getState().script!, problemSlug: lastSlug },
+  });
+  await act(async () => root.render(createElement(NarrationBar)));
+  expect(container.textContent).toContain("讲完了");
+  const links = [...container.querySelectorAll("a")];
+  expect(links.map((el) => el.textContent)).toEqual(["回路线图"]);
+  expect(links[0]?.getAttribute("href")).toBe("/roadmap");
+  expect(container.textContent).not.toContain("下一题");
+  expect([...container.querySelectorAll("button")].some((el) => el.textContent === "重播")).toBe(true);
 });

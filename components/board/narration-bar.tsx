@@ -4,12 +4,14 @@
  * 光标是发光粉笔小竖线，句毕轻跳（globals.css caret-hop）。
  * 与播放器同步：字幕打完后，awaitNarration 为 false 立刻下一步；
  * 否则仅 autoAdvance 时 dwellMs 停留后自动推进，关闭时停在本步并提示按空格继续。
- * 讲完仍显示最后一句，并提供重播。点击字幕条可跳过打字直接看全文。
+ * 讲完仍显示最后一句，并提供下一题（末题则回路线图）与重播。点击字幕条可跳过打字直接看全文。
  */
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { usePlayerStore } from "@/lib/player/store";
+import { nextProblem } from "@/lib/content/roadmap-order";
 import { parseInline, totalChars, InlinePartial, InlineMarkdown } from "./inline-markdown";
 import { usePrefersReducedMotion } from "@/components/effects/fx-context";
 
@@ -21,6 +23,8 @@ export default function NarrationBar() {
   const speed = usePlayerStore((s) => s.speed);
   const next = usePlayerStore((s) => s.next);
   const replay = usePlayerStore((s) => s.replay);
+  const currentSlug = usePlayerStore((s) => s.script?.problemSlug);
+  const nextItem = nextProblem(currentSlug ?? "");
   const autoAdvance = usePlayerStore((s) => s.autoAdvance);
   const awaitingContinue = usePlayerStore((s) => s.awaitingContinue);
   const setAwaitingContinue = usePlayerStore((s) => s.setAwaitingContinue);
@@ -110,10 +114,28 @@ export default function NarrationBar() {
         <p data-testid="continue-hint" className="mt-1 text-xs text-beam-gold/80">按空格继续</p>
       )}
       {status === "finished" && step && (
-        <>
+        <div>
           <p>讲完了</p>
+          {nextItem ? (
+            <Link
+              href={`/problem/${nextItem.slug}`}
+              className="rounded-full bg-beam-gold px-4 py-1.5 text-sm font-semibold text-on-accent"
+              onClick={(event) => event.stopPropagation()}
+            >
+              下一题
+            </Link>
+          ) : (
+            <Link
+              href="/roadmap"
+              className="rounded-full bg-beam-gold px-4 py-1.5 text-sm font-semibold text-on-accent"
+              onClick={(event) => event.stopPropagation()}
+            >
+              回路线图
+            </Link>
+          )}
           <button
             type="button"
+            className="rounded-full border border-board-600 px-3 py-1 text-sm text-chalk-300 hover:text-chalk-100"
             onClick={(event) => {
               event.stopPropagation();
               replay();
@@ -121,7 +143,16 @@ export default function NarrationBar() {
           >
             重播
           </button>
-        </>
+          {nextItem && (
+            <Link
+              href="/roadmap"
+              className="text-sm text-chalk-300 hover:text-chalk-100"
+              onClick={(event) => event.stopPropagation()}
+            >
+              回路线图
+            </Link>
+          )}
+        </div>
       )}
       {/* 隐藏全量文本供无障碍读取 */}
       {step && <span className="sr-only"><InlineMarkdown text={step.narration} /></span>}
