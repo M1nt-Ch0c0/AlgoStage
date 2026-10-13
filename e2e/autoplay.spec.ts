@@ -123,6 +123,13 @@ test.describe("coarse pointer", () => {
 
     await expect(page.getByText("第 1 / 3 步")).toBeVisible();
     await expect(page.getByTestId("continue-hint")).toHaveText("点「下一步」继续");
+    await expect(page.getByText("点「下一步」继续")).toHaveCount(1);
+    const hintBox = await page.getByTestId("continue-hint").boundingBox();
+    expect(hintBox).toBeTruthy();
+    expect(hintBox!.x).toBeGreaterThanOrEqual(0);
+    expect(hintBox!.y).toBeGreaterThanOrEqual(0);
+    expect(hintBox!.x + hintBox!.width).toBeLessThanOrEqual(390);
+    expect(hintBox!.y + hintBox!.height).toBeLessThanOrEqual(844);
 
     const nextButton = page.getByRole("button", { name: "下一步", exact: true });
     await expect(nextButton).toBeVisible();

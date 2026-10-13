@@ -3,6 +3,7 @@
  * 上一步/播放暂停/下一步 · 步骤指示 · 可点击时间线圆点 · 自动播放 · 语速 · 特效强度档位。
  * 键盘可达：←/→ 步进、Space 播放暂停；等待继续时 Space/→ 均下一步（docs/02 §7）。
  * 等待继续时「下一步」改为图标加文字的按钮，热区至少 44px；平时仍是图标按钮。
+ * 粗指针且下一步已就绪时，把「点「下一步」继续」放在这条控制条里（窄屏单独成行，吸底仍可见）。
  * 输入框、contenteditable、Monaco 编辑器内以及带 Ctrl/Meta/Alt 的按键不拦截。
  */
 "use client";
@@ -10,6 +11,7 @@
 import { useEffect } from "react";
 import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import { usePlayerStore } from "@/lib/player/store";
+import { useCoarsePointer } from "./use-coarse-pointer";
 
 const SPEEDS = [0.5, 1, 1.5, 2] as const;
 const LEVELS = [
@@ -37,11 +39,17 @@ export default function PlayerControls({ preparing = false }: { preparing?: bool
   const effectLevel = usePlayerStore((s) => s.effectLevel);
   const autoAdvance = usePlayerStore((s) => s.autoAdvance);
   const awaitingContinue = usePlayerStore((s) => s.awaitingContinue);
+  const receiving = usePlayerStore((s) => s.receiving);
+  const coarsePointer = useCoarsePointer();
   const { play, pause, next, prev, goto, setSpeed, setEffectLevel, setAutoAdvance } =
     usePlayerStore.getState();
 
   const hasScript = !preparing && steps.length > 0;
   const playing = status === "playing" || status === "streaming";
+  // 流式停在最后一步时「下一步准备中…」仍由字幕条显示，这里不插提示。
+  const preparingNext =
+    awaitingContinue && receiving && steps.length > 0 && currentIndex === steps.length - 1;
+  const showContinueHint = coarsePointer && awaitingContinue && !preparingNext;
 
   // 键盘：←/→ 步进、Space 播放暂停；等待继续时 Space 与 → 都下一步。输入区与修饰键忽略。
   useEffect(() => {
@@ -104,6 +112,18 @@ export default function PlayerControls({ preparing = false }: { preparing?: bool
           {awaitingContinue ? <><SkipForward size={16} />下一步</> : <SkipForward size={16} />}
         </button>
       </div>
+
+      {/* 窄屏 basis-full 独占一行，排在按钮上方；宽屏缩回内容宽度，紧挨「下一步」。 */}
+      {showContinueHint && (
+        <p
+          role="status"
+          aria-live="polite"
+          data-testid="continue-hint"
+          className="order-first shrink-0 basis-full text-xs text-beam-gold/80 sm:order-none sm:shrink sm:basis-auto"
+        >
+          点「下一步」继续
+        </p>
+      )}
 
       {/* 步骤指示 + 时间线：每一步一段，可点击跳转 */}
       <div className="flex min-w-[10rem] flex-1 items-center gap-3">

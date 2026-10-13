@@ -4,7 +4,7 @@
  * 光标是发光粉笔小竖线，句毕轻跳（globals.css caret-hop）。
  * 与播放器同步：字幕打完后，awaitNarration 为 false 立刻下一步；
  * 否则仅 autoAdvance 时 dwellMs 停留后自动推进，关闭时停在本步等用户继续。
- * 等待继续时只显示提示（粗指针「点「下一步」继续」，细指针「按空格继续」）；
+ * 等待继续时细指针在这里提示「按空格继续」；粗指针的「点「下一步」继续」在播放控制条。
  * 流式中下一步还没到时优先显示「下一步准备中…」。可点的「下一步」在播放控制条。
  * 讲完仍显示最后一句，并提供下一题（末题则回路线图）与重播。点击字幕条可跳过打字直接看全文。
  */
@@ -119,9 +119,9 @@ export default function NarrationBar() {
           点「开始讲课」，老师说的每句话都会在这里一个字一个字出现。
         </p>
       )}
-      {awaitingContinue && (
+      {awaitingContinue && (preparingNext || !coarsePointer) && (
         <p data-testid="continue-hint" className="mt-1 text-xs text-beam-gold/80">
-          {preparingNext ? "下一步准备中…" : coarsePointer ? "点「下一步」继续" : "按空格继续"}
+          {preparingNext ? "下一步准备中…" : "按空格继续"}
         </p>
       )}
       {status === "finished" && step && (

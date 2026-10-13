@@ -110,6 +110,62 @@ test("非 awaitingContinue 时下一步保持图标按钮", async () => {
   expect(button.classList.contains("size-8")).toBe(true);
 });
 
+function stubPointer(coarse: boolean) {
+  const original = window.matchMedia.bind(window);
+  vi.stubGlobal("matchMedia", (query: string) => {
+    if (query !== "(pointer: coarse)") return original(query);
+    return {
+      matches: coarse,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    };
+  });
+}
+
+/** useCoarsePointer 只在挂载时读 matchMedia，换指针后要重新挂载。 */
+async function remountControls() {
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await act(async () => root.render(createElement(PlayerControls)));
+}
+
+test("粗指针且等待继续、下一步已就绪时，控制条显示点「下一步」继续", async () => {
+  stubPointer(true);
+  await act(async () => setStoreState({ awaitingContinue: true }));
+  await remountControls();
+  const hint = container.querySelector<HTMLElement>("[data-testid='continue-hint']");
+  expect(hint?.textContent).toBe("点「下一步」继续");
+  expect(hint?.getAttribute("role")).toBe("status");
+  expect(hint?.getAttribute("aria-live")).toBe("polite");
+  expect(container.textContent).toContain("第 1 / 3 步");
+});
+
+test("细指针等待继续时控制条不显示点「下一步」继续", async () => {
+  stubPointer(false);
+  await act(async () => setStoreState({ awaitingContinue: true }));
+  await remountControls();
+  expect(container.querySelector("[data-testid='continue-hint']")).toBeNull();
+  expect(container.textContent).not.toContain("点「下一步」继续");
+  expect(container.textContent).toContain("第 1 / 3 步");
+});
+
+test("粗指针且下一步准备中时控制条不显示点「下一步」继续", async () => {
+  stubPointer(true);
+  await act(async () => {
+    setStoreState({
+      awaitingContinue: true,
+      receiving: true,
+      currentIndex: script.steps.length - 1,
+    });
+  });
+  await remountControls();
+  expect(container.querySelector("[data-testid='continue-hint']")).toBeNull();
+  expect(container.textContent).not.toContain("点「下一步」继续");
+  expect(container.textContent).not.toContain("下一步准备中…");
+  expect(container.textContent).toContain("第 3 / 3 步");
+});
+
 test("非 awaitingContinue 且 paused 时按 Space 切换为 playing 且不改变 currentIndex", async () => {
   await act(async () => {
     setStoreState({ status: "paused", awaitingContinue: false });

@@ -101,12 +101,12 @@ function stubPointer(coarse: boolean) {
   });
 }
 
-test("粗指针等待继续时提示点「下一步」继续，字幕条没有下一步按钮", async () => {
+test("粗指针等待继续时字幕条不渲染点「下一步」继续，也没有下一步按钮", async () => {
   stubPointer(true);
   usePlayerStore.setState({ status: "playing", awaitingContinue: true });
   await act(async () => root.render(createElement(NarrationBar)));
-  const hint = container.querySelector("[data-testid='continue-hint']");
-  expect(hint?.textContent).toBe("点「下一步」继续");
+  expect(container.querySelector("[data-testid='continue-hint']")).toBeNull();
+  expect(container.textContent).not.toContain("点「下一步」继续");
   expect(container.querySelector("button")).toBeNull();
 });
 
