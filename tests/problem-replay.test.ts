@@ -181,6 +181,98 @@ test("重新生成后恢复 lecture-step 进度上报", async () => {
   } finally { await act(async () => root.unmount()); }
 });
 
+test("重新生成请求未返回时主按钮为备课中且旧步骤不再恢复", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const detail = await localSeedSource.detail("3sum");
+  const steps = [
+    { id: "s1", narration: "先排序", targets: [{ kind: "code-line", start: 2 }], effects: [], dwellMs: 5000 },
+    { id: "s2", narration: "再双指针", targets: [{ kind: "code-line", start: 4 }], effects: [], dwellMs: 5000 },
+  ];
+  const lectureBody = () => steps.map(step => JSON.stringify({ type: "step", step })).join("\n") + "\n" +
+    JSON.stringify({ type: "result", script: { problemSlug: "3sum", mode: "lecture", solutionLanguage: "typescript", language: "zh", steps } }) + "\n";
+  let lectureCalls = 0;
+  let releaseHung: ((value: Response) => void) | undefined;
+  vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+    const path = String(input);
+    if (path.endsWith("/api/lecture")) {
+      lectureCalls++;
+      if (lectureCalls === 1) return Promise.resolve(new Response(lectureBody(), { headers: { "Content-Type": "application/x-ndjson" } }));
+      return new Promise<Response>((resolve, reject) => {
+        releaseHung = resolve;
+        const signal = init?.signal;
+        const abort = () => reject(new DOMException("The operation was aborted.", "AbortError"));
+        if (signal?.aborted) abort();
+        else signal?.addEventListener("abort", abort, { once: true });
+      });
+    }
+    if (path.endsWith("/api/settings")) return Promise.resolve(Response.json({ keySource: "env" }));
+    if (path.endsWith("/api/problems/3sum")) return Promise.resolve(Response.json({ problem: detail }));
+    return Promise.resolve(Response.json({ ok: true }));
+  });
+  const container = document.createElement("div"); document.body.append(container);
+  const root = createRoot(container);
+  const button = (label: string) => Array.from(container.querySelectorAll("header button")).find(b => b.textContent === label) as HTMLButtonElement | undefined;
+  try {
+    await act(async () => root.render(createElement(ProblemPage)));
+    await act(async () => button("开始讲课")!.click());
+    expect(usePlayerStore.getState().steps).toHaveLength(2);
+    await act(async () => button("暂停")!.click());
+    expect(usePlayerStore.getState().status).toBe("paused");
+    await confirmRegenerate(container);
+    const preparing = button("备课中…");
+    expect(preparing?.textContent).toBe("备课中…");
+    expect(preparing?.disabled).toBe(true);
+    expect(usePlayerStore.getState().steps).toHaveLength(0);
+    expect(usePlayerStore.getState().status).not.toBe("playing");
+    expect(usePlayerStore.getState().status).not.toBe("paused");
+    await act(async () => {
+      Array.from(container.querySelectorAll("button")).find(b => b.textContent === "取消备课")!.click();
+    });
+    await act(async () => { releaseHung?.(new Response(lectureBody(), { headers: { "Content-Type": "application/x-ndjson" } })); });
+    expect(usePlayerStore.getState().steps).toHaveLength(0);
+    expect(usePlayerStore.getState().steps.map(step => step.id)).not.toEqual(["s1", "s2"]);
+    expect(usePlayerStore.getState().status).not.toBe("playing");
+    expect(usePlayerStore.getState().status).not.toBe("paused");
+  } finally { await act(async () => root.unmount()); }
+});
+
+test("重新生成请求失败后步骤清空，主按钮回到开始讲课", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const detail = await localSeedSource.detail("3sum");
+  const steps = [
+    { id: "s1", narration: "先排序", targets: [{ kind: "code-line", start: 2 }], effects: [], dwellMs: 5000 },
+    { id: "s2", narration: "再双指针", targets: [{ kind: "code-line", start: 4 }], effects: [], dwellMs: 5000 },
+  ];
+  const lectureBody = () => steps.map(step => JSON.stringify({ type: "step", step })).join("\n") + "\n" +
+    JSON.stringify({ type: "result", script: { problemSlug: "3sum", mode: "lecture", solutionLanguage: "typescript", language: "zh", steps } }) + "\n";
+  let lectureCalls = 0;
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+    const path = String(input);
+    if (path.endsWith("/api/lecture")) {
+      lectureCalls++;
+      if (lectureCalls > 1) throw new Error("老师这次没备好课，请重试。");
+      return new Response(lectureBody(), { headers: { "Content-Type": "application/x-ndjson" } });
+    }
+    if (path.endsWith("/api/settings")) return Response.json({ keySource: "env" });
+    if (path.endsWith("/api/problems/3sum")) return Response.json({ problem: detail });
+    return Response.json({ ok: true });
+  });
+  const container = document.createElement("div"); document.body.append(container);
+  const root = createRoot(container);
+  const button = (label: string) => Array.from(container.querySelectorAll("header button")).find(b => b.textContent === label) as HTMLButtonElement | undefined;
+  try {
+    await act(async () => root.render(createElement(ProblemPage)));
+    await act(async () => button("开始讲课")!.click());
+    expect(usePlayerStore.getState().steps).toHaveLength(2);
+    await act(async () => button("暂停")!.click());
+    await confirmRegenerate(container);
+    expect(usePlayerStore.getState().steps).toHaveLength(0);
+    expect(usePlayerStore.getState().status).toBe("idle");
+    expect(button("开始讲课")?.textContent).toBe("开始讲课");
+    expect(button("开始讲课")?.disabled).toBe(false);
+  } finally { await act(async () => root.unmount()); }
+});
+
 test("点击「重新生成」菜单项本身不请求新讲解，「取消」关闭确认框", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const detail = await localSeedSource.detail("3sum");

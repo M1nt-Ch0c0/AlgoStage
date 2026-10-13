@@ -151,6 +151,8 @@ export default function ProblemPage() {
       return;
     }
     lectureAbort.current?.abort();
+    // 重新生成立刻停掉旧播放并清掉步骤；reset 保留 autoAdvance。失败后步骤为空，stopStream 会停在 idle。
+    if (regenerate) usePlayerStore.getState().reset();
     const abort = new AbortController();
     lectureAbort.current = abort;
     let timedOut = false;
