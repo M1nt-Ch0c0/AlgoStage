@@ -7,6 +7,8 @@
 "use client";
 
 import { LECTURE_TIMEOUT_MS } from "@/lib/agent/defaults";
+import { fetchServerKeyDisabled, mapByokErrorMessage, withByok } from "@/lib/byok/client";
+import { readLocalByok } from "@/lib/byok/storage";
 import { apiPath } from "@/lib/runtime";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -185,6 +187,11 @@ export default function ProblemPage() {
         setLectureComplete(true);
         return;
       }
+      const localByok = readLocalByok();
+      const serverKeyDisabled = localByok
+        ? await fetchServerKeyDisabled(abort.signal)
+        : false;
+      if (abort.signal.aborted) return;
       const res = await fetch(apiPath("/api/lecture"), {
         method: "POST",
         headers: {
@@ -192,7 +199,13 @@ export default function ProblemPage() {
           Accept: "application/x-ndjson",
         },
         signal: abort.signal,
-        body: JSON.stringify({ slug, solutionLanguage: language, ...(regenerate ? { regenerate: true } : {}) }),
+        body: JSON.stringify(
+          withByok(
+            { slug, solutionLanguage: language, ...(regenerate ? { regenerate: true } : {}) },
+            serverKeyDisabled,
+            localByok,
+          ),
+        ),
       });
       let streaming = false;
       let guard: StreamGuard | undefined;
@@ -242,9 +255,12 @@ export default function ProblemPage() {
       setLectureComplete(true);
     } catch (e) {
       if (lectureAbort.current === abort) {
+        const rawMessage = e instanceof Error ? e.message : "";
         const message = timedOut
           ? "备课超时，请点击重试或换用推荐模型 gpt-6.1-sol。"
-          : !abort.signal.aborted ? (e instanceof Error ? e.message : "老师这次没备好课，请重试。") : null;
+          : !abort.signal.aborted
+            ? (mapByokErrorMessage({ message: rawMessage }) ?? "老师这次没备好课，请重试。")
+            : null;
         // 失败也清空半份教案，避免残留字幕与代码锚点；错误提示独立保留。
         cancelLectureForPlayback(detail, language, { abort: () => abort.abort(), reset, setCode });
         lastReportedRef.current = -1;

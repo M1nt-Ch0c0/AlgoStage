@@ -1,5 +1,7 @@
 "use client";
 
+import { fetchServerKeyDisabled, mapByokErrorMessage, withByok } from "@/lib/byok/client";
+import { readLocalByok } from "@/lib/byok/storage";
 import { apiPath } from "@/lib/runtime";
 import { Lightbulb, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -77,14 +79,25 @@ export default function HintLadder({
       }, 1000);
 
       try {
+        const localByok = readLocalByok();
+        const serverKeyDisabled = localByok
+          ? await fetchServerKeyDisabled(ac.signal)
+          : false;
+        if (ac.signal.aborted) return;
         const res = await fetch(apiPath("/api/hint"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            slug,
-            level,
-            userCode,
-          }),
+          body: JSON.stringify(
+            withByok(
+              {
+                slug,
+                level,
+                userCode,
+              },
+              serverKeyDisabled,
+              localByok,
+            ),
+          ),
           signal: ac.signal,
         });
         const j = (await res.json()) as {
@@ -92,15 +105,14 @@ export default function HintLadder({
           hint?: string;
           message?: string;
           error?: string;
+          code?: string;
         };
         if (!res.ok) {
-          if (j.error === "NO_BYOK") {
-            throw new Error("提示要老师现场想，先在设置里接上你的 AI 吧。");
-          }
-          if (j.error === "TIMEOUT" || res.status === 504) {
+          const errorCode = j.code ?? j.error;
+          if (errorCode === "TIMEOUT" || res.status === 504) {
             throw new Error(SLOW_MSG);
           }
-          throw new Error(j.message ?? SLOW_MSG);
+          throw new Error(mapByokErrorMessage(j) ?? SLOW_MSG);
         }
         setHints((h) => [
           ...h.filter((x) => x.level !== j.level),

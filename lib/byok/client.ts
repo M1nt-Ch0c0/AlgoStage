@@ -1,0 +1,169 @@
+import { apiPath } from "@/lib/runtime";
+import { type LocalByok, readLocalByok } from "./storage";
+
+export type SettingsResponse = {
+  settings?: Record<string, string>;
+  keySource?: string;
+  envConfigured?: boolean;
+  serverKeyDisabled?: boolean;
+};
+
+let cachedFetchFn: typeof fetch | null = null;
+let cachedValue: boolean | null = null;
+let inFlightPromise: Promise<boolean> | null = null;
+
+export function resetServerKeyDisabledCache(): void {
+  cachedFetchFn = null;
+  cachedValue = null;
+  inFlightPromise = null;
+}
+
+function createAbortError(signal: AbortSignal): unknown {
+  if (signal.reason !== undefined) return signal.reason;
+  if (typeof DOMException !== "undefined") {
+    return new DOMException("The operation was aborted.", "AbortError");
+  }
+  const err = new Error("The operation was aborted.");
+  err.name = "AbortError";
+  return err;
+}
+
+export async function fetchServerKeyDisabled(
+  signal?: AbortSignal,
+): Promise<boolean> {
+  if (signal?.aborted) {
+    throw createAbortError(signal);
+  }
+
+  const currentFetch = globalThis.fetch;
+  if (cachedFetchFn !== currentFetch) {
+    cachedFetchFn = currentFetch;
+    cachedValue = null;
+    inFlightPromise = null;
+  }
+
+  if (cachedValue !== null) {
+    return cachedValue;
+  }
+
+  if (!inFlightPromise) {
+    const p = currentFetch(apiPath("/api/settings"), {
+      cache: "no-store",
+      signal,
+    })
+      .then(async (res) => {
+        if (!res || !res.ok) return false;
+        const data = (await res.json().catch(() => null)) as SettingsResponse | null;
+        const disabled = data?.serverKeyDisabled === true;
+        if (cachedFetchFn === currentFetch) {
+          cachedValue = disabled;
+        }
+        return disabled;
+      })
+      .catch((err) => {
+        if (
+          (typeof DOMException !== "undefined" &&
+            err instanceof DOMException &&
+            err.name === "AbortError") ||
+          (err instanceof Error && err.name === "AbortError")
+        ) {
+          throw err;
+        }
+        return false;
+      })
+      .finally(() => {
+        if (inFlightPromise === p) {
+          inFlightPromise = null;
+        }
+      });
+    inFlightPromise = p;
+  }
+
+  if (!signal) {
+    return inFlightPromise;
+  }
+
+  return new Promise<boolean>((resolve, reject) => {
+    const onAbort = () => {
+      reject(createAbortError(signal));
+    };
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+    inFlightPromise!.then(
+      (val) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(val);
+      },
+      (err) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(err);
+      },
+    );
+  });
+}
+
+export function withByok<T extends Record<string, unknown>>(
+  body: T,
+  serverKeyDisabled?: boolean,
+  byok: LocalByok | null = readLocalByok(),
+): T & { byok?: LocalByok } {
+  if (serverKeyDisabled !== true || !byok || !byok.apiKey) {
+    return { ...body };
+  }
+  const cleanByok: LocalByok = { apiKey: byok.apiKey };
+  if (byok.baseURL) cleanByok.baseURL = byok.baseURL;
+  if (byok.model) cleanByok.model = byok.model;
+  return { ...body, byok: cleanByok };
+}
+
+const BYOK_ERROR_MAP: Record<string, string> = {
+  BYOK_KEY_REQUIRED: "用自定义地址时需要同时填你自己的 Key",
+  BASE_URL_NOT_ALLOWED: "只支持公网 http(s) 地址",
+  SETTINGS_LOCKED: "公共实例不支持修改服务器设置",
+  NO_BYOK: "请先在设置页填写你自己的 Key",
+};
+
+function isRawErrorCode(str: string): boolean {
+  return /^[A-Z0-9_]+$/.test(str);
+}
+
+export function mapByokErrorMessage(
+  data?: unknown,
+  fallbackMessage?: unknown,
+): string | undefined {
+  let code = "";
+  let msg = "";
+
+  if (typeof data === "string") {
+    code = data.trim();
+    if (typeof fallbackMessage === "string") {
+      msg = fallbackMessage.trim();
+    }
+  } else if (data && typeof data === "object") {
+    const rec = data as Record<string, unknown>;
+    const rawCode = rec.code ?? rec.error;
+    if (typeof rawCode === "string") {
+      code = rawCode.trim();
+    }
+    const rawMsg = rec.message ?? fallbackMessage;
+    if (typeof rawMsg === "string") {
+      msg = rawMsg.trim();
+    }
+  } else if (typeof fallbackMessage === "string") {
+    msg = fallbackMessage.trim();
+  }
+
+  if (code && code in BYOK_ERROR_MAP) {
+    return BYOK_ERROR_MAP[code];
+  }
+  if (msg && msg in BYOK_ERROR_MAP) {
+    return BYOK_ERROR_MAP[msg];
+  }
+  if (msg && msg !== code && !isRawErrorCode(msg)) {
+    return msg;
+  }
+  return undefined;
+}

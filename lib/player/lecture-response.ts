@@ -1,4 +1,5 @@
 /** 增量读取已校验步骤；完整 result 到达前不能当作完成的教案。 */
+import { mapByokErrorMessage } from "@/lib/byok/client";
 import { teachingStepSchema } from "@/lib/teaching/schema";
 import type { TeachingStep } from "@/lib/teaching/types";
 export async function readLectureResponse(
@@ -9,7 +10,8 @@ export async function readLectureResponse(
   if (!response.ok) {
     const data = await response.json().catch(() => null);
     throw new Error(
-      data?.message ?? "这次备课未能完成，请重试或换用 gpt-6.1-sol。",
+      mapByokErrorMessage(data) ??
+        "这次备课未能完成，请重试或换用 gpt-6.1-sol。",
     );
   }
   if (
@@ -45,9 +47,8 @@ export async function readLectureResponse(
       complete = true;
     } else if (event.type === "error")
       throw new Error(
-        typeof event.message === "string"
-          ? event.message
-          : "备课失败，请重试或换用 gpt-6.1-sol。",
+        mapByokErrorMessage(event) ??
+          "备课失败，请重试或换用 gpt-6.1-sol。",
       );
     else throw new Error("备课数据无法读取，请重试或换用 gpt-6.1-sol。");
   };
