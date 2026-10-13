@@ -277,6 +277,7 @@ export default function SettingsPage() {
     }
     usePlayerStore.setState({ speed, effectLevel });
     if (serverKeyDisabled) {
+      setSaveError("");
       const nextKey = apiKey.trim() || localByok?.apiKey || "";
       const trimmedBase = baseURL.trim();
       if (nextKey) {

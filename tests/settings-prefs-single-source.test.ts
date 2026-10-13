@@ -150,6 +150,61 @@ describe("settings prefs single-source (v0.2.2 P2)", () => {
       }
     });
 
+    test("first write failure shows red text, second success clears red text and shows 「已保存」", async () => {
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (_input, init) => {
+        if (init?.method === "PUT") {
+          return Response.json({ ok: true });
+        }
+        return Response.json({
+          settings: {},
+          keySource: serverKeyDisabled ? "none" : "env",
+          serverKeyDisabled,
+        });
+      });
+
+      await act(async () => {
+        root.render(createElement(SettingsPage));
+      });
+
+      // 选 1.5× 和 克制
+      await act(async () => {
+        findButton(container, "1.5×")!.click();
+        findButton(container, "克制")!.click();
+      });
+
+      // 第一次写入失败
+      const origSetItem = window.localStorage.setItem;
+      let shouldFail = true;
+      const setItemSpy = vi.spyOn(window.localStorage, "setItem").mockImplementation((k, v) => {
+        if (shouldFail) {
+          throw new Error("QuotaExceededError");
+        }
+        return origSetItem.call(window.localStorage, k, v);
+      });
+
+      try {
+        await clickSave(container);
+
+        // 第一次失败：显示红字，不显示已保存
+        const alertEl = container.querySelector('[role="alert"]');
+        expect(alertEl).not.toBeNull();
+        expect(alertEl?.className).toContain("text-beam-rose");
+        expect(alertEl?.textContent).toBe("没保存成功，请确认浏览器允许本地存储后再试。");
+        expect(container.textContent).not.toContain("已保存");
+
+        // 第二次写入成功
+        shouldFail = false;
+        await clickSave(container);
+
+        // 第二次成功：红字消失并显示已保存
+        expect(container.querySelector('[role="alert"]')).toBeNull();
+        expect(container.textContent).not.toContain("没保存成功，请确认浏览器允许本地存储后再试。");
+        expect(container.textContent).toContain("已保存");
+      } finally {
+        setItemSpy.mockRestore();
+      }
+    });
+
     test("GET returning narrationSpeed '15' and effectLevel 'minimal' is ignored (shows 1× and 华丽)", async () => {
       vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
         return Response.json({
