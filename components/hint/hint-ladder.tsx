@@ -46,6 +46,7 @@ export default function HintLadder({
   } | null>(null);
   const [hintElapsed, setHintElapsed] = useState(0);
   const [retryLevel, setRetryLevel] = useState<number | null>(null);
+  const inFlightRef = useRef<boolean>(false);
   const abortRef = useRef<AbortController | null>(null);
   const elapsedTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -57,6 +58,7 @@ export default function HintLadder({
   }, []);
 
   const cancelHint = useCallback(() => {
+    inFlightRef.current = false;
     abortRef.current?.abort();
     abortRef.current = null;
     clearElapsed();
@@ -67,6 +69,7 @@ export default function HintLadder({
 
   useEffect(() => {
     return () => {
+      inFlightRef.current = false;
       abortRef.current?.abort();
       abortRef.current = null;
       clearElapsed();
@@ -74,6 +77,7 @@ export default function HintLadder({
   }, [slug, clearElapsed]);
 
   useEffect(() => {
+    inFlightRef.current = false;
     setHints([]);
     setHintError(null);
     setRetryLevel(null);
@@ -83,6 +87,8 @@ export default function HintLadder({
 
   const askHint = useCallback(
     async (level: number) => {
+      if (inFlightRef.current) return;
+      inFlightRef.current = true;
       abortRef.current?.abort();
       const ac = new AbortController();
       abortRef.current = ac;
@@ -180,8 +186,14 @@ export default function HintLadder({
         }
       } finally {
         clearElapsed();
-        if (abortRef.current === ac) abortRef.current = null;
-        setHintBusy(null);
+        if (abortRef.current === ac) {
+          inFlightRef.current = false;
+          abortRef.current = null;
+          setHintBusy(null);
+        } else if (!abortRef.current) {
+          inFlightRef.current = false;
+          setHintBusy(null);
+        }
       }
     },
     [slug, userCode, clearElapsed],

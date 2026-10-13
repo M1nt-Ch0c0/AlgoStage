@@ -140,3 +140,74 @@ test("卸载时中止进行中的请求", async () => {
   // remount fresh root for afterEach
   root = createRoot(container);
 });
+
+test("同一 tick 连续三次点击提示重试仅发起一次 /api/hint 请求，完成后再次点击可发起新请求", async () => {
+  let hintCalls = 0;
+  let phase = 0;
+  let resolvePending!: (v: Response) => void;
+  const fetchMock = vi.fn((url: unknown) => {
+    const path = String(url);
+    if (path.endsWith("/api/hint")) {
+      hintCalls++;
+      phase++;
+      if (phase === 1) {
+        return Promise.resolve(
+          Response.json(
+            { error: "TIMEOUT", message: "提示请求超时，请重试。" },
+            { status: 504 },
+          ),
+        );
+      }
+      if (phase === 2) {
+        return new Promise<Response>((r) => {
+          resolvePending = r;
+        });
+      }
+      return Promise.resolve(Response.json({ level: 1, hint: "新提示" }));
+    }
+    return Promise.resolve(Response.json({ ok: true }));
+  });
+  vi.stubGlobal("fetch", fetchMock);
+
+  await act(async () => {
+    root.render(createElement(HintLadder, { slug: "two-sum" }));
+  });
+  await act(async () => {
+    levelButton("观察").click();
+  });
+  await act(async () => {});
+  expect(hintCalls).toBe(1);
+
+  const retryBtn = () =>
+    Array.from(container.querySelectorAll("button")).find(
+      (b) => b.textContent === "重试",
+    )!;
+  expect(retryBtn()).toBeDefined();
+
+  hintCalls = 0;
+  await act(async () => {
+    const btn = retryBtn();
+    btn.click();
+    btn.click();
+    btn.click();
+  });
+  expect(hintCalls).toBe(1);
+
+  await act(async () => {
+    resolvePending(
+      Response.json(
+        { error: "TIMEOUT", message: "提示请求超时，请重试。" },
+        { status: 504 },
+      ),
+    );
+  });
+  await act(async () => {});
+
+  await act(async () => {
+    retryBtn().click();
+  });
+  await act(async () => {});
+  expect(hintCalls).toBe(2);
+  expect(container.textContent).toContain("新提示");
+});
+

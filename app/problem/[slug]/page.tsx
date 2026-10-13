@@ -88,6 +88,7 @@ export default function ProblemPage() {
   const [lectureBusy, setLectureBusy] = useState(false);
   const [lectureProgress, setLectureProgress] = useState("");
   const [lectureComplete, setLectureComplete] = useState(false);
+  const lectureInFlight = useRef<boolean>(false);
   const lectureAbort = useRef<AbortController | null>(null);
   const [lectureError, setLectureError] = useState<{
     code: string;
@@ -106,6 +107,7 @@ export default function ProblemPage() {
   const lastReportedRef = useRef(-1);
 
   useEffect(() => {
+    lectureInFlight.current = false;
     switchProblemForPlayback({
       abort: () => {
         lectureAbort.current?.abort();
@@ -121,6 +123,7 @@ export default function ProblemPage() {
     });
     lastReportedRef.current = -1;
     return () => {
+      lectureInFlight.current = false;
       lectureAbort.current?.abort();
       lectureAbort.current = null;
     };
@@ -168,6 +171,7 @@ export default function ProblemPage() {
 
   // 参考代码先恢复；每个已校验步骤到达即播放，完成时不重置播放位置。
   const startLecture = useCallback(async (regenerate = false) => {
+    if (lectureInFlight.current) return;
     setLectureError(null);
     setLectureComplete(false);
     if (practice) saveDraft(slug, language, code);
@@ -179,6 +183,7 @@ export default function ProblemPage() {
       });
       return;
     }
+    lectureInFlight.current = true;
     lectureAbort.current?.abort();
     // 重新生成立刻停掉旧播放并清掉步骤；reset 保留 autoAdvance。失败后步骤为空，stopStream 会停在 idle。
     if (regenerate) usePlayerStore.getState().reset();
@@ -310,14 +315,18 @@ export default function ProblemPage() {
     } finally {
       clearTimeout(deadline);
       if (lectureAbort.current === abort) {
+        lectureInFlight.current = false;
         setLectureBusy(false);
         setLectureProgress("");
         lectureAbort.current = null;
+      } else if (!lectureAbort.current) {
+        lectureInFlight.current = false;
       }
     }
   }, [slug, detail, language, loadScript, play, reset, practice, code]);
 
   function cancelLecture(next = language) {
+    lectureInFlight.current = false;
     cancelLectureForPlayback(detail, next, {
       abort: () => {
         lectureAbort.current?.abort();

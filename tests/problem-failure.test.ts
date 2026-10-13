@@ -125,3 +125,71 @@ test("生成期间主按钮可暂停并补全字幕，完成提示独立于播�
     expect(container.textContent).toContain("教案已生成完成");
   } finally { await act(async () => root.unmount()); }
 });
+
+test.each([
+  { error: "UPSTREAM_ERROR", label: "重试" },
+  { error: "TIMEOUT", label: "重试讲课" },
+])("同一 tick 连续三次点击 $label 仅发起一次 /api/lecture 请求，完成后再次点击可发起新请求", async ({ error, label }) => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+  const detail = await localSeedSource.detail("3sum");
+  let lectureCalls = 0;
+  let phase = 0;
+  let resolvePending!: (res: Response) => void;
+  vi.spyOn(globalThis, "fetch").mockImplementation(async input => {
+    const path = String(input);
+    if (path.endsWith("/api/lecture")) {
+      lectureCalls++;
+      phase++;
+      if (phase === 1) {
+        return new Response(
+          JSON.stringify({ type: "error", error, message: "失败" }) + "\n",
+          { headers: { "Content-Type": "application/x-ndjson" } },
+        );
+      }
+      if (phase === 2) {
+        return new Promise<Response>(r => { resolvePending = r; });
+      }
+      return new Response(
+        JSON.stringify({ type: "error", error, message: "再次失败" }) + "\n",
+        { headers: { "Content-Type": "application/x-ndjson" } },
+      );
+    }
+    if (path.endsWith("/api/settings")) return Response.json({ keySource: "env" });
+    if (path.endsWith("/api/problems/3sum")) return Response.json({ problem: detail });
+    return Response.json({ ok: true });
+  });
+  const container = document.createElement("div"); document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(createElement(ProblemPage)));
+    await act(async () => Array.from(container.querySelectorAll("button")).find(b => b.textContent === "开始讲课")!.click());
+    expect(lectureCalls).toBe(1);
+    const retryBtn = () => Array.from(container.querySelectorAll('[role="alert"] button')).find(b => b.textContent === label) as HTMLButtonElement;
+    expect(retryBtn()).toBeDefined();
+
+    lectureCalls = 0;
+    await act(async () => {
+      const btn = retryBtn();
+      btn.click();
+      btn.click();
+      btn.click();
+    });
+    expect(lectureCalls).toBe(1);
+
+    await act(async () => {
+      resolvePending(
+        new Response(
+          JSON.stringify({ type: "error", error, message: "重试又失败" }) + "\n",
+          { headers: { "Content-Type": "application/x-ndjson" } },
+        ),
+      );
+    });
+
+    await act(async () => {
+      retryBtn().click();
+    });
+    expect(lectureCalls).toBe(2);
+  } finally { await act(async () => root.unmount()); }
+});
+
