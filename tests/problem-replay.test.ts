@@ -285,7 +285,7 @@ test("重新生成请求未返回时主按钮为备课中且旧步骤不再恢�
   } finally { await act(async () => root.unmount()); }
 });
 
-test("重新生成请求失败后步骤清空，主按钮回到开始讲课", async () => {
+test("重新生成请求失败后恢复旧教案，暂停并等继续", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const detail = await localSeedSource.detail("3sum");
   const steps = [
@@ -315,10 +315,17 @@ test("重新生成请求失败后步骤清空，主按钮回到开始讲课", as
     expect(usePlayerStore.getState().steps).toHaveLength(2);
     await act(async () => button("暂停")!.click());
     await confirmRegenerate(container);
-    expect(usePlayerStore.getState().steps).toHaveLength(0);
-    expect(usePlayerStore.getState().status).toBe("idle");
-    expect(button("开始讲课")?.textContent).toBe("开始讲课");
-    expect(button("开始讲课")?.disabled).toBe(false);
+    const after = usePlayerStore.getState();
+    expect(after.steps.map((step) => step.id)).toEqual(["s1", "s2"]);
+    expect(after).toMatchObject({
+      status: "paused",
+      awaitingContinue: true,
+      currentIndex: 0,
+      receiving: false,
+    });
+    expect(after.expandedAnswerIds.size).toBe(0);
+    expect(button("继续")?.textContent).toBe("继续");
+    expect(button("继续")?.disabled).toBe(false);
   } finally { await act(async () => root.unmount()); }
 });
 

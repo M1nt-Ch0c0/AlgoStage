@@ -1,4 +1,5 @@
 import { afterEach, expect, test, vi } from "vitest";
+import type { StepAnswer } from "../lib/ask/types";
 import { usePlayerStore } from "../lib/player/store";
 import type { TeachingScript } from "../lib/teaching/types";
 
@@ -76,4 +77,28 @@ test("完成→重新生成：beginStream 清空旧步骤，从新流开始", ()
   expect(usePlayerStore.getState().replaying).toBe(true);
   store.beginStream(script);
   expect(usePlayerStore.getState()).toMatchObject({ status: "streaming", steps: [], currentIndex: 0, receiving: true, replaying: false });
+});
+
+test("setAnswers 之后重播保留回答 map，并清空 expandedAnswerIds", () => {
+  finishStreamed();
+  const answer: StepAnswer = {
+    v: 1,
+    id: "ans-1",
+    stepId: "s1",
+    question: "为什么",
+    selection: { mode: "single", bbox: { x: 0, y: 0, width: 1, height: 1 }, targets: [] },
+    segments: [{ id: "seg-1", narration: "因为" }],
+    createdAt: "2026-10-13T00:00:00.000Z",
+  };
+  usePlayerStore.getState().setAnswers({ s1: [answer] });
+  usePlayerStore.setState({ expandedAnswerIds: new Set(["ans-1"]), answersReady: true });
+  expect(usePlayerStore.getState().expandedAnswerIds.has("ans-1")).toBe(true);
+
+  usePlayerStore.getState().replay();
+
+  const after = usePlayerStore.getState();
+  expect(after.answers.s1?.[0]?.id).toBe("ans-1");
+  expect(after.answers.s1).toHaveLength(1);
+  expect(after.expandedAnswerIds.size).toBe(0);
+  expect(after).toMatchObject({ status: "playing", currentIndex: 0, replaying: true, askPhase: "idle" });
 });

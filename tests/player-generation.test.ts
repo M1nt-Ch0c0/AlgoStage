@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, expect, test } from "vitest";
+import type { StepAnswer } from "../lib/ask/types";
 import { usePlayerStore } from "../lib/player/store";
 import type { TeachingScript, TeachingStep } from "../lib/teaching/types";
 
@@ -171,4 +172,31 @@ test("播放中途切题（mid-play switch）：重置播放状态并丢弃旧�
   expect(s().status).toBe("idle");
   expect(s().steps).toEqual([]);
   expect(s().receiving).toBe(false);
+});
+
+test("beginStream 把 answersReady 置为 false 并保留 answers；只有 clearAnswers 清空 map", () => {
+  const answer: StepAnswer = {
+    v: 1,
+    id: "keep",
+    stepId: "s1",
+    question: "为什么",
+    selection: { mode: "single", bbox: { x: 0, y: 0, width: 1, height: 1 }, targets: [] },
+    segments: [{ id: "seg-1", narration: "因为" }],
+    createdAt: "2026-10-13T00:00:00.000Z",
+  };
+  s().loadScript(scriptA);
+  s().setAnswers({ s1: [answer] });
+  usePlayerStore.setState({ answersReady: true });
+  expect(s().answersReady).toBe(true);
+  expect(s().answers.s1?.[0]?.id).toBe("keep");
+
+  s().beginStream(scriptB);
+  expect(s().answersReady).toBe(false);
+  expect(s().answers.s1?.[0]?.id).toBe("keep");
+  expect(s().answers.s1).toHaveLength(1);
+
+  s().clearAnswers();
+  expect(s().answers.s1).toBeUndefined();
+  expect(Object.keys(s().answers)).toHaveLength(0);
+  expect(s().answersReady).toBe(false);
 });

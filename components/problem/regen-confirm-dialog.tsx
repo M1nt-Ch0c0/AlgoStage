@@ -8,6 +8,8 @@ export interface RegenConfirmDialogProps {
   onConfirm: () => void;
   returnFocusRef?: RefObject<HTMLElement | null>;
   fallbackFocusRef?: RefObject<HTMLElement | null>;
+  /** 大于 0 时在确认文案后追加「你问过的 N 个问题会被清掉」。 */
+  answerCount?: number;
 }
 
 function isFocusable(el: HTMLElement | null): boolean {
@@ -34,6 +36,7 @@ export function RegenConfirmDialog({
   onConfirm,
   returnFocusRef,
   fallbackFocusRef,
+  answerCount = 0,
 }: RegenConfirmDialogProps) {
   const titleId = useId();
   const cancelRef = useRef<HTMLButtonElement | null>(null);
@@ -116,7 +119,11 @@ export function RegenConfirmDialog({
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
     >
       <div className="flex max-w-sm flex-col gap-3 rounded-2xl border border-board-600 bg-board-900 p-4 text-sm text-chalk-100">
-        <p id={titleId}>重新生成会清掉当前教案，确定吗？</p>
+        <p id={titleId}>
+          {answerCount > 0
+            ? `重新生成会清掉当前教案，确定吗？你问过的 ${answerCount} 个问题会被清掉`
+            : "重新生成会清掉当前教案，确定吗？"}
+        </p>
         <div className="flex justify-end gap-2">
           <button
             ref={cancelRef}

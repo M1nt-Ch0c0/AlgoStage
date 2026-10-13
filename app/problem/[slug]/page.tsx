@@ -7,6 +7,10 @@
 "use client";
 
 import { LECTURE_TIMEOUT_MS } from "@/lib/agent/defaults";
+import { countAnswers, groupAnswersByStep } from "@/lib/ask/answers";
+import { clearBrowserAnswersAfterRegenerate, readBrowserAnswers } from "@/lib/ask/answers-storage";
+import { disposeAskRequests } from "@/lib/ask/ask-client";
+import type { StepAnswersMap } from "@/lib/ask/types";
 import {
   BASE_URL_INVALID_LECTURE_MESSAGE,
   BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE,
@@ -41,7 +45,7 @@ import JudgeSignature from "@/components/judge/judge-signature";
 import AiSetupPrompt from "@/components/settings/ai-setup-prompt";
 import { teachingScriptSchema } from "@/lib/teaching/schema";
 import { readDraft, saveDraft, draftLanguage } from "@/lib/player/drafts";
-import { isLectureCutOff, normalizeNetworkError, readLectureResponse } from "@/lib/player/lecture-response";
+import { isLectureCutOff, normalizeNetworkError, readLectureMeta, readLectureResponse } from "@/lib/player/lecture-response";
 import { cancelLectureForPlayback, loadLectureForPlayback, switchProblemForPlayback } from "@/lib/player/load-lecture";
 import { TWO_SUM_SCRIPT } from "@/lib/content/scripts/two-sum";
 import { HOT100_CATEGORIES } from "@/lib/content/hot100";
@@ -50,7 +54,8 @@ import {
   DIFFICULTY_LABEL,
   DIFFICULTY_TEXT,
 } from "@/lib/content/pattern-labels";
-import { endPanelShowing, usePlayerStore, type StreamGuard } from "@/lib/player/store";
+import { endPanelShowing, selectAskPresentation, usePlayerStore, type LectureAnswerMeta, type StreamGuard } from "@/lib/player/store";
+import type { TeachingScript, TeachingStep } from "@/lib/teaching/types";
 import EffectStage from "@/components/effects/effect-stage";
 import CodeEditor from "@/components/board/code-editor";
 import NarrationBar from "@/components/board/narration-bar";
@@ -62,6 +67,129 @@ import ArrayVisualizer from "@/components/viz/array-visualizer";
 import RegenConfirmDialog from "@/components/problem/regen-confirm-dialog";
 
 const STATEMENT_IDS = ["intro", "insight", "summary"] as const;
+
+type LectureMeta = ReturnType<typeof readLectureMeta>;
+
+const EMPTY_LECTURE_META: LectureMeta = {
+  cacheKey: "",
+  scriptVersion: "",
+  answers: {},
+  askDisabledStepIds: [],
+};
+
+/** 非空且唯一、且不在禁问名单里的步骤才能挂回答。 */
+function validAskStepIds(steps: readonly { id: string }[], askDisabledStepIds: readonly string[]): Set<string> {
+  const counts = new Map<string, number>();
+  for (const step of steps) counts.set(step.id, (counts.get(step.id) ?? 0) + 1);
+  const disabled = new Set(askDisabledStepIds);
+  const valid = new Set<string>();
+  for (const [id, count] of counts) {
+    if (id.trim() !== "" && count === 1 && !disabled.has(id)) valid.add(id);
+  }
+  return valid;
+}
+
+function flattenAnswers(map: StepAnswersMap) {
+  const list = [];
+  for (const answers of Object.values(map)) {
+    if (Array.isArray(answers)) list.push(...answers);
+  }
+  return list;
+}
+
+/** 重新生成失败或取消：回到确认前的教案、原步和回答，暂停并等继续，全部折叠。 */
+function restoreRegenSnapshot(snapshot: RegenSnapshot): boolean {
+  if (!snapshot.script || snapshot.steps.length === 0) return false;
+  usePlayerStore.setState({
+    script: snapshot.script,
+    steps: snapshot.steps,
+    currentIndex: snapshot.currentIndex,
+    status: "paused",
+    awaitingContinue: true,
+    receiving: false,
+    replaying: false,
+    answers: snapshot.answers,
+    answersReady: snapshot.answersReady,
+    answerMeta: snapshot.answerMeta,
+    askBuiltin: snapshot.askBuiltin,
+    askUnfinished: snapshot.askUnfinished,
+    expandedAnswerIds: new Set<string>(),
+    askPhase: "idle",
+    askContext: null,
+    selection: null,
+    draftQuestion: "",
+    draftStepId: null,
+    previewSegments: [],
+    askErrorCode: null,
+    askErrorRetryable: false,
+    pendingEnterIntent: null,
+  });
+  return true;
+}
+
+/**
+ * 完整教案装载后写入 meta + 答案。generation 必须仍是这次 load/complete 的那一代，
+ * 避免 loadScript 的 generation++ 让迟到的 hydrate 盖住新课。
+ */
+function commitLectureAnswers(
+  meta: LectureMeta,
+  steps: readonly { id: string }[],
+  generation: number,
+  storageMode: "server" | "browser",
+) {
+  const store = usePlayerStore.getState();
+  if (store.generation !== generation) return;
+  const valid = validAskStepIds(steps, meta.askDisabledStepIds);
+  const source =
+    storageMode === "browser"
+      ? readBrowserAnswers(meta.cacheKey, meta.scriptVersion, valid)
+      : groupAnswersByStep(flattenAnswers(meta.answers), valid);
+  store.setLectureAnswerMeta({
+    cacheKey: meta.cacheKey,
+    scriptVersion: meta.scriptVersion,
+    askDisabledStepIds: [...meta.askDisabledStepIds],
+    storageMode,
+  });
+  if (usePlayerStore.getState().generation !== generation) return;
+  store.setAnswers(source);
+  usePlayerStore.setState({ answersReady: true });
+  store.setAskUnfinished(false);
+  store.setAskBuiltin(false);
+}
+
+/**
+ * storageMode 已落定则立刻装载；仍是 pending 时排队，等身份请求成功后再写。
+ * 失败保持 pending，不把答案按 server 猜进去。
+ */
+function hydrateLoadedAnswers(
+  meta: LectureMeta,
+  steps: readonly { id: string }[],
+  generation: number,
+  storageModeRef: { current: "pending" | "server" | "browser" },
+  pendingHydrateRef: {
+    current: { meta: LectureMeta; steps: { id: string }[]; generation: number } | null;
+  },
+) {
+  const mode = storageModeRef.current;
+  if (mode === "pending") {
+    pendingHydrateRef.current = { meta, steps: steps.map((step) => ({ id: step.id })), generation };
+    return;
+  }
+  pendingHydrateRef.current = null;
+  commitLectureAnswers(meta, steps, generation, mode);
+}
+
+interface RegenSnapshot {
+  script: TeachingScript | null;
+  steps: TeachingStep[];
+  currentIndex: number;
+  answerMeta: LectureAnswerMeta;
+  answers: StepAnswersMap;
+  answersReady: boolean;
+  askBuiltin: boolean;
+  askUnfinished: boolean;
+  expandedAnswerIds: Set<string>;
+}
 
 /** 栏目小标题：讲义 / 黑板 / 导师 */
 function ColumnLabel({
@@ -110,13 +238,28 @@ export default function ProblemPage() {
   const status = usePlayerStore((s) => s.status);
   const receiving = usePlayerStore((s) => s.receiving);
   const stepCount = usePlayerStore((s) => s.steps.length);
+  const askPhase = usePlayerStore((s) => s.askPhase);
+  const answers = usePlayerStore((s) => s.answers);
+  const askPresentation = usePlayerStore(selectAskPresentation);
   const { loadScript, play, pause, reset } = usePlayerStore.getState();
+  // 挂载后才知道服务端 Key 是否禁用。失败保持 pending，不能猜成 false（server）。
+  const storageModeRef = useRef<"pending" | "server" | "browser">("pending");
+  const regenSnapshotRef = useRef<RegenSnapshot | null>(null);
+  // 身份请求还在途时先记下待装载的答案，落定后再写入；失败则丢掉，不能按 server 猜。
+  const pendingHydrateRef = useRef<{
+    meta: LectureMeta;
+    steps: { id: string }[];
+    generation: number;
+  } | null>(null);
 
   // 讲解进度埋点（看板数据源）
   const lastReportedRef = useRef(-1);
 
   useEffect(() => {
     lectureInFlight.current = false;
+    regenSnapshotRef.current = null;
+    pendingHydrateRef.current = null;
+    disposeAskRequests();
     switchProblemForPlayback({
       abort: () => {
         lectureAbort.current?.abort();
@@ -136,8 +279,41 @@ export default function ProblemPage() {
       lectureInFlight.current = false;
       lectureAbort.current?.abort();
       lectureAbort.current = null;
+      regenSnapshotRef.current = null;
+      pendingHydrateRef.current = null;
+      disposeAskRequests();
     };
   }, [slug]);
+
+  // 浏览器挂载后判定答案存放位置。失败不缓存成 server，保持 pending。
+  useEffect(() => {
+    const abort = new AbortController();
+    let cancelled = false;
+    fetchServerKeyDisabled(abort.signal)
+      .then((disabled) => {
+        if (cancelled || abort.signal.aborted) return;
+        const storageMode = disabled ? "browser" : "server";
+        storageModeRef.current = storageMode;
+        const store = usePlayerStore.getState();
+        // 教案身份还是空的才补模式。已装载的 cacheKey 不能被这次迟到的判定盖掉。
+        if (!store.answerMeta.cacheKey && !store.answerMeta.scriptVersion) {
+          store.setLectureAnswerMeta({ ...store.answerMeta, storageMode });
+        }
+        const queued = pendingHydrateRef.current;
+        pendingHydrateRef.current = null;
+        if (queued) {
+          commitLectureAnswers(queued.meta, queued.steps, queued.generation, storageMode);
+        }
+      })
+      .catch(() => {
+        // 请求失败（含中止）保持 pending，绝不把 storageMode 猜成 server。
+        if (!cancelled) pendingHydrateRef.current = null;
+      });
+    return () => {
+      cancelled = true;
+      abort.abort();
+    };
+  }, []);
 
   // 题面加载只恢复本题草稿；取消旧请求，避免晚到响应覆盖另一题的编辑内容。
   useEffect(() => {
@@ -164,6 +340,17 @@ export default function ProblemPage() {
 
   useEffect(() => {
     // 本地重播的步骤已上报过，读 store 快照而不订阅，避免重复写入进度。
+    // 提问前台（圈选 / 起草 / 发送 / 回答播放）不发 lecture-step，也不改 lastReportedRef。
+    if (
+      askPhase === "selecting" ||
+      askPhase === "drafting" ||
+      askPhase === "sending" ||
+      askPhase === "streaming" ||
+      askPhase === "playing" ||
+      askPhase === "error"
+    ) {
+      return;
+    }
     if (!step || status === "idle" || usePlayerStore.getState().replaying) return;
     const idx = usePlayerStore.getState().currentIndex;
     if (idx === lastReportedRef.current) return;
@@ -177,7 +364,7 @@ export default function ProblemPage() {
         stepIndex: idx,
       }),
     }).catch(() => {});
-  }, [step, status, slug]);
+  }, [step, status, slug, askPhase]);
 
   // 参考代码先恢复；每个已校验步骤到达即播放，完成时不重置播放位置。
   const startLecture = useCallback(async (regenerate = false) => {
@@ -200,7 +387,37 @@ export default function ProblemPage() {
     lectureInFlight.current = true;
     lectureAbort.current?.abort();
     // 重新生成立刻停掉旧播放并清掉步骤；reset 保留 autoAdvance。失败后步骤为空，stopStream 会停在 idle。
-    if (regenerate || retryAfterCutOff) usePlayerStore.getState().reset();
+    // 确认时再拍一次快照：弹窗期间后台 result 可能已追加，不能用打开弹窗时的旧 map。
+    if (regenerate) {
+      const snap = usePlayerStore.getState();
+      regenSnapshotRef.current = {
+        script: snap.script,
+        steps: snap.steps,
+        currentIndex: snap.currentIndex,
+        answerMeta: { ...snap.answerMeta, askDisabledStepIds: [...snap.answerMeta.askDisabledStepIds] },
+        answers: snap.answers,
+        answersReady: snap.answersReady,
+        askBuiltin: snap.askBuiltin,
+        askUnfinished: snap.askUnfinished,
+        expandedAnswerIds: new Set(snap.expandedAnswerIds),
+      };
+      disposeAskRequests();
+    }
+    if (regenerate || retryAfterCutOff) {
+      usePlayerStore.getState().reset();
+      const kept = regenSnapshotRef.current;
+      if (regenerate && kept) {
+        // 展开区和时间线标记直接读 answers。确认后先藏起旧 map（answersReady=false），
+        // 成功才 clearAnswers；失败再把快照 map 装回去。
+        usePlayerStore.setState({
+          answers: {},
+          answersReady: false,
+          answerMeta: kept.answerMeta,
+          askBuiltin: kept.askBuiltin,
+          askUnfinished: kept.askUnfinished,
+        });
+      }
+    }
     const abort = new AbortController();
     lectureAbort.current = abort;
     let timedOut = false;
@@ -211,6 +428,9 @@ export default function ProblemPage() {
     setLectureBusy(true);
     setLectureProgress("正在生成首个讲解步骤…");
     let streaming = false;
+    // 流里的 meta 先记下，等 load / completeStream 的 generation 落定后再装载，避免 generation++ 误伤。
+    // 用对象持有，避免回调赋值把外层变量收窄成 never。
+    const pendingMetaBox: { current: LectureMeta | null } = { current: null };
     try {
       if (slug === "two-sum") {
         setLanguage("typescript");
@@ -219,6 +439,10 @@ export default function ProblemPage() {
           loadScript,
           play,
         });
+        // 内置课没有 /api/lecture 身份，不能编造 cacheKey / scriptVersion。
+        usePlayerStore.getState().setAskBuiltin(true);
+        usePlayerStore.getState().setAskUnfinished(false);
+        regenSnapshotRef.current = null;
         setLectureComplete(true);
         return;
       }
@@ -226,7 +450,13 @@ export default function ProblemPage() {
       const serverKeyDisabled = localByok
         ? await fetchServerKeyDisabled(abort.signal)
         : false;
-      if (abort.signal.aborted) return;
+      if (abort.signal.aborted) {
+        const snapshot = regenSnapshotRef.current;
+        if (regenerate && snapshot && restoreRegenSnapshot(snapshot)) {
+          regenSnapshotRef.current = null;
+        }
+        return;
+      }
       const res = await fetch(apiPath("/api/lecture"), {
         method: "POST",
         headers: {
@@ -286,14 +516,59 @@ export default function ProblemPage() {
           if (update) usePlayerStore.getState().updateStep(step, guard);
           else usePlayerStore.getState().appendStep(step, guard);
         },
+        (meta) => {
+          pendingMetaBox.current = meta;
+        },
       );
-      if (abort.signal.aborted) return;
-      if (streaming)
-        usePlayerStore
-          .getState()
-          .completeStream(teachingScriptSchema.parse(script), guard);
-      else
+      if (abort.signal.aborted || lectureAbort.current !== abort) {
+        const snapshot = regenSnapshotRef.current;
+        if (
+          regenerate &&
+          lectureAbort.current === abort &&
+          snapshot &&
+          restoreRegenSnapshot(snapshot)
+        ) {
+          regenSnapshotRef.current = null;
+        } else if (
+          lectureAbort.current === abort &&
+          streaming &&
+          usePlayerStore.getState().steps.length > 0 &&
+          (!pendingMetaBox.current?.cacheKey || !pendingMetaBox.current?.scriptVersion)
+        ) {
+          usePlayerStore.getState().setAskUnfinished(true);
+          usePlayerStore.getState().setAskBuiltin(false);
+        }
+        return;
+      }
+      const meta = pendingMetaBox.current ?? EMPTY_LECTURE_META;
+      if (streaming) {
+        const parsed = teachingScriptSchema.parse(script);
+        usePlayerStore.getState().completeStream(parsed, guard);
+        if (
+          guard &&
+          usePlayerStore.getState().generation === guard.generation &&
+          usePlayerStore.getState().script?.problemSlug === slug
+        ) {
+          const previousKey = regenSnapshotRef.current?.answerMeta.cacheKey ?? "";
+          if (regenerate) {
+            usePlayerStore.getState().clearAnswers();
+            clearBrowserAnswersAfterRegenerate(previousKey);
+          }
+          hydrateLoadedAnswers(meta, parsed.steps, guard.generation, storageModeRef, pendingHydrateRef);
+        }
+      } else {
         loadLectureForPlayback(script, detail, { setCode, loadScript, play });
+        const loaded = usePlayerStore.getState();
+        if (loaded.script?.problemSlug === slug) {
+          const previousKey = regenSnapshotRef.current?.answerMeta.cacheKey ?? "";
+          if (regenerate) {
+            usePlayerStore.getState().clearAnswers();
+            clearBrowserAnswersAfterRegenerate(previousKey);
+          }
+          hydrateLoadedAnswers(meta, loaded.steps, loaded.generation, storageModeRef, pendingHydrateRef);
+        }
+      }
+      regenSnapshotRef.current = null;
       setLectureComplete(true);
     } catch (e) {
       if (lectureAbort.current === abort) {
@@ -329,16 +604,27 @@ export default function ProblemPage() {
           nextError = { code, message };
         }
         const received = usePlayerStore.getState().steps.length;
-        // A5 已把未知错误码归一为 UPSTREAM_ERROR，这里按归一后的 code 判断。
-        if (nextError && streaming && (timedOut || isLectureCutOff(nextError, received)) && received > 0) {
+        const snapshot = regenSnapshotRef.current;
+        // 重新生成失败 / 取消：恢复确认前的教案、原步和回答，暂停并等继续，全部折叠。
+        if (regenerate && snapshot && restoreRegenSnapshot(snapshot)) {
+          regenSnapshotRef.current = null;
+          lectureInterruptedRef.current = false;
+          setLectureInterrupted(false);
+        } else if (nextError && streaming && (timedOut || isLectureCutOff(nextError, received)) && received > 0) {
           // 超时、中途断开或上游断开（UPSTREAM_ERROR）、已收到步骤：保留可播放（v0.2.1 Paige 决定），只停止接收；不保存教案。其他错误仍清空。
           usePlayerStore.getState().stopStream();
           lectureInterruptedRef.current = true;
           setLectureInterrupted(true);
+          // 半份教案没有 cacheKey / scriptVersion：整节课不能提问。
+          if (!pendingMetaBox.current?.cacheKey || !pendingMetaBox.current?.scriptVersion) {
+            usePlayerStore.getState().setAskUnfinished(true);
+          }
+          usePlayerStore.getState().setAskBuiltin(false);
         } else {
           // 没收到步骤：清空半份教案，避免残留字幕与代码锚点；错误提示独立保留。
           cancelLectureForPlayback(detail, language, { abort: () => abort.abort(), reset, setCode });
           lastReportedRef.current = -1;
+          regenSnapshotRef.current = null;
         }
         if (nextError) setLectureError(nextError);
       }
@@ -357,6 +643,9 @@ export default function ProblemPage() {
 
   function cancelLecture(next = language) {
     lectureInFlight.current = false;
+    regenSnapshotRef.current = null;
+    pendingHydrateRef.current = null;
+    disposeAskRequests();
     cancelLectureForPlayback(detail, next, {
       abort: () => {
         lectureAbort.current?.abort();
@@ -398,6 +687,7 @@ export default function ProblemPage() {
   );
 
   const vizFrame =
+    askPresentation?.viz ??
     step?.viz ??
     (detail?.vizType === "array"
       ? {
@@ -605,6 +895,7 @@ export default function ProblemPage() {
       </header>
       <RegenConfirmDialog
         open={confirmRegen}
+        answerCount={countAnswers(answers)}
         onCancel={() => setConfirmRegen(false)}
         onConfirm={() => {
           setConfirmRegen(false);

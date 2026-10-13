@@ -7,6 +7,7 @@
 import { useEffect, useRef } from "react";
 import { usePlayerStore } from "@/lib/player/store";
 import type { TeachingStep } from "@/lib/teaching/types";
+import StepAnswers from "./step-answers";
 
 /** 去掉行内 markdown 记号，教案里只显示纯文本 */
 function plain(md: string) {
@@ -79,6 +80,7 @@ export default function LessonPlan({ preview }: { preview?: TeachingStep[] }) {
               </span>
               <span className="line-clamp-2">{plain(s.narration)}</span>
             </button>
+            <StepAnswers stepId={s.id} />
           </li>
         );
       })}

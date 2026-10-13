@@ -78,6 +78,7 @@ export async function readLectureResponse(
   response: Response,
   onProgress: (message: string) => void,
   onStep?: (step: TeachingStep, update: boolean) => void,
+  onMeta?: (meta: ReturnType<typeof readLectureMeta>) => void,
 ): Promise<unknown> {
   if (!response.ok) {
     const data = await response.json().catch(() => null);
@@ -90,8 +91,11 @@ export async function readLectureResponse(
     !(response.headers.get("content-type") ?? "").includes(
       "application/x-ndjson",
     )
-  )
-    return (await response.json()).script;
+  ) {
+    const fullBody = await response.json();
+    onMeta?.(readLectureMeta(fullBody));
+    return fullBody.script;
+  }
   if (!response.body)
     throw new ByokError("EMPTY_BODY", "没有收到教案，请重试或换用 gpt-6.1-sol。");
   const reader = response.body.getReader(),
@@ -115,6 +119,7 @@ export async function readLectureResponse(
         event.type === "step-update",
       );
     else if (event.type === "result") {
+      onMeta?.(readLectureMeta(event));
       script = event.script;
       complete = true;
     } else if (event.type === "error") {
