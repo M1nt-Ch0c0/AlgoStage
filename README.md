@@ -32,8 +32,8 @@ npm run dev                   # http://localhost:3000
 
 其余题目都要先配好 Key 才能讲解和要提示。请先按上面的步骤自托管或本地部署，再在你自己实例的设置页按三步填写：
 
-1. **接口地址（base URL）**：先选服务商，再填对应地址。OpenAI 兼容服务留空时使用 `https://api.openai.com/v1`；Anthropic、Google 留空使用官方接口。
-2. **API Key**：填写与上面接口同一来源的 Key，来源混用会被拒绝。
+1. **接口地址**：先选服务商，再填对应地址。OpenAI 兼容服务留空时使用 `https://api.openai.com/v1`；Anthropic、Google 留空使用官方接口。
+2. **API Key**：填写与上面接口地址同一来源的 Key，来源混用会被拒绝。
 3. **模型名**：推荐 `gpt-6.1-sol`（设置页默认值）。较弱模型可能无法完成教案或正确调用教学工具，失败时请重试或更换模型。
 
 保存前可以先点「测试连接」，确认能连上。
@@ -42,7 +42,18 @@ npm run dev                   # http://localhost:3000
 
 讲解通过五种教学工具逐步生成，收到步骤即可播放；只有完整教案校验成功才保存缓存。较弱模型可能无法完成讲解或正确调用工具，失败时建议重试或切换到 `gpt-6.1-sol`。备课总上限为 240 秒，非法工具参数最多重试该次调用 2 次，已完成步骤会保留。
 
-使用环境变量 Key 时，请同时填写 `AI_BASE_URL`，并按服务商配置 `AI_PROVIDER`；设置页可单独覆盖模型名，接口和 Key 必须保持同一来源。设置页只保存实际修改的字段；保存新 Key 时请同时填写对应接口地址和服务商，来源混用会被拒绝，不会发出模型请求。
+使用环境变量 Key 时，请同时填写 `AI_BASE_URL`，并按服务商配置 `AI_PROVIDER`；设置页可单独覆盖模型名，接口地址和 Key 必须保持同一来源。设置页只保存实际修改的字段；保存新 Key 时请同时填写对应接口地址和服务商，来源混用会被拒绝，不会发出模型请求。
+
+### 服务器 Key 与接口地址（v0.2.1，待合入）
+
+> 以下两个开关随 v0.2.1 合入，当前分支代码中尚未生效。
+
+| 环境变量 | 默认值 | 可选值 | 作用 |
+| --- | --- | --- | --- |
+| `ALGOSTAGE_DISABLE_SERVER_KEY` | `false` | `true`/`false`、`on`/`off`、`1`/`0`、`yes`/`no`（不区分大小写） | 设为开启时，服务器不保存、不使用服务器 Key，设置页不能修改服务器设置；Key 只保存在你自己的浏览器里，讲课和提示请求自动带上，可在设置页「清除本机 Key」。 |
+| `ALGOSTAGE_ALLOW_PRIVATE_BASE_URL` | `true` | 同上 | 关闭时拒绝内网、本机和保留地址的接口地址。默认允许，方便自托管连接本机或内网模型。 |
+
+接口地址只接受 http(s)；公共部署可通过 `ALGOSTAGE_ALLOW_PRIVATE_BASE_URL=false` 禁止内网地址（合入后 `deploy/compose.yaml` 即这样设置）。服务器 Key 只会发往服务器配置的接口地址；改用其他接口地址时需要同时填你自己的 Key。详见 [deploy/README.md](deploy/README.md)。
 
 公网部署可用 `ALGOSTAGE_ALLOW_PRIVATE_BASE_URL=false` 禁止连接私网/回环接口地址，用 `ALGOSTAGE_DISABLE_SERVER_KEY=true` 让服务器不保存、不使用服务器 Key（用户在请求中自带 Key），详见 [deploy/README.md](deploy/README.md#环境变量自托管)。
 
@@ -76,13 +87,15 @@ ALGOSTAGE_IMAGE_TAG=0.2.0-alpha.2 docker compose -f deploy/compose.yaml up -d --
 
 需自备 API Key。镜像内 `DATA_DIR=/data`，数据库为 `/data/algostage.db`（挂载数据卷 `algostage-data`）；本地非 Docker 运行时默认用 `.env` 里的 `DATABASE_URL`（`file:./algostage.db`）。详见 [deploy/README.md](deploy/README.md)。
 
-容器以非 root 用户 `algostage`（UID/GID `1001:1001`）运行。从 0.2.1 之前的版本升级时，旧数据卷归 root 所有，需先停旧容器、备份数据库，再执行一次：
+容器以非 root 用户 `algostage`（UID/GID `1001:1001`）运行。从 0.2.1 之前的版本升级时，旧数据卷归 root 所有，需先停旧容器、按 [deploy/README.md](deploy/README.md#升级至-021非-root-运行) 把数据卷备份到源码目录之外（如 `~/algostage-backups/`），再执行一次：
 
 ```bash
 docker run --rm -v algostage-data:/data alpine chown -R 1001:1001 /data
 ```
 
 不处理时容器启动会报 `Error: data directory /data is not writable (uid 1001).` 并退出。
+
+> 不要把备份放在源码目录里（会被打进镜像或误提交）：`.gitignore`、`.dockerignore` 只忽略 `prisma/*.db`，不覆盖备份包和 `-wal`/`-shm` 文件。
 
 ## 版本说明
 
