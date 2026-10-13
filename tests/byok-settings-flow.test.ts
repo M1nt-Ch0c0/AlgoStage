@@ -3,7 +3,14 @@ import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import AiSetupPrompt from "../components/settings/ai-setup-prompt";
-import { resetServerKeyDisabledCache } from "../lib/byok/client";
+import {
+  BASE_URL_NOT_ALLOWED_SETTINGS_MESSAGE,
+  isBaseUrlNotAllowed,
+  isLocalBaseUrlAllowed,
+  NO_BYOK_SETTINGS_MESSAGE,
+  parseFocusParam,
+  resetServerKeyDisabledCache,
+} from "../lib/byok/client";
 import { BYOK_STORAGE_KEY, maskKey, readLocalByok } from "../lib/byok/storage";
 import { localSeedSource } from "../lib/content/local-source";
 import { usePlayerStore } from "../lib/player/store";
@@ -140,10 +147,10 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
           headers: { "Content-Type": "application/x-ndjson" },
         });
       }
-      if (url.endsWith("/api/hint")) {
+      if (url.endsWith("/api/hint") || url.endsWith("/api/settings/test-connection")) {
         const body = JSON.parse(String(init?.body));
         hintBodies.push(body);
-        return Response.json({ level: 1, hint: "连接正常" });
+        return Response.json({ ok: true, level: 1, hint: "连接正常" });
       }
       return Response.json({ ok: true });
     });
@@ -200,9 +207,7 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
       testBtn.click();
     });
     expect(hintBodies).toHaveLength(1);
-    expect(hintBodies[0]).toEqual({
-      slug: "two-sum",
-      level: 1,
+    expect(hintBodies[0]).toMatchObject({
       byok: {
         apiKey: rawKey,
         baseURL: "https://api.deepseek.com/v1",
@@ -302,7 +307,7 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
           serverKeyDisabled: true,
         });
       }
-      if (url.endsWith("/api/hint")) {
+      if (url.endsWith("/api/settings/test-connection")) {
         return Response.json(
           { code: "SETTINGS_LOCKED", error: "SETTINGS_LOCKED" },
           { status: 403 },
@@ -326,7 +331,7 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
     expect(settingsContainer.textContent).not.toContain("SETTINGS_LOCKED");
   });
 
-  test("settings page testConnection NO_BYOK in serverKeyDisabled mode renders NO_BYOK copy and 去设置 outline link", async () => {
+  test("settings page testConnection NO_BYOK renders NO_BYOK_SETTINGS_MESSAGE, no 去设置 link, and focuses + highlights API Key input", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input);
       if (url.endsWith("/api/settings")) {
@@ -336,7 +341,7 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
           serverKeyDisabled: true,
         });
       }
-      if (url.endsWith("/api/hint")) {
+      if (url.endsWith("/api/settings/test-connection")) {
         return Response.json(
           { code: "NO_BYOK", error: "NO_BYOK" },
           { status: 400 },
@@ -349,6 +354,10 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
       settingsRoot.render(createElement(SettingsPage));
     });
 
+    const apiKeyInput = settingsContainer.querySelector<HTMLInputElement>("#apiKey")!;
+    const scrollSpy = vi.fn();
+    apiKeyInput.scrollIntoView = scrollSpy;
+
     const testBtn = Array.from(settingsContainer.querySelectorAll("button")).find(
       (b) => b.textContent?.includes("测试连接"),
     )!;
@@ -356,17 +365,226 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
       testBtn.click();
     });
 
-    expect(settingsContainer.textContent).toContain(
-      "还没填 API Key。先去设置页填入你自己的 API Key 就能开讲。",
-    );
+    expect(settingsContainer.textContent).toContain(NO_BYOK_SETTINGS_MESSAGE);
+    expect(settingsContainer.textContent).not.toContain("先去设置页");
+    expect(settingsContainer.textContent).not.toContain("去设置");
     expect(settingsContainer.textContent).not.toContain("NO_BYOK");
-    const link = settingsContainer.querySelector('a[href="/settings"]');
-    expect(link).not.toBeNull();
-    expect(link!.textContent).toBe("去设置");
-    expect(link!.classList.contains("border")).toBe(true);
-    expect(link!.classList.contains("border-beam-gold/60")).toBe(true);
-    expect(link!.classList.contains("text-beam-gold")).toBe(true);
-    expect(link!.classList.contains("bg-transparent")).toBe(true);
+    expect(settingsContainer.querySelector('a[href="/settings"]')).toBeNull();
+
+    expect(document.activeElement).toBe(apiKeyInput);
+    expect(scrollSpy).toHaveBeenCalledWith({ block: "center", behavior: "smooth" });
+    expect(apiKeyInput.getAttribute("data-highlight")).toBe("true");
+    expect(apiKeyInput.classList.contains("ring-2")).toBe(true);
+    expect(apiKeyInput.classList.contains("ring-beam-gold")).toBe(true);
+
+    // Highlight clears when editing API key
+    await act(async () => {
+      setInputValue(apiKeyInput, "sk-editing");
+    });
+    expect(apiKeyInput.getAttribute("data-highlight")).toBeNull();
+    expect(apiKeyInput.classList.contains("ring-beam-gold")).toBe(false);
+  });
+
+  test("BASE_URL_NOT_ALLOWED on save and testConnection shows inline copy, focuses Base URL, no toast or testState fail, and clears on edit", async () => {
+    let serverKeyDisabledMode = false;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (init?.method === "PUT") {
+        return Response.json(
+          { error: "BASE_URL_NOT_ALLOWED", message: "Custom server message should be ignored" },
+          { status: 400 },
+        );
+      }
+      if (url.endsWith("/api/settings/test-connection")) {
+        return Response.json(
+          { code: "BASE_URL_NOT_ALLOWED", message: "Custom server message" },
+          { status: 400 },
+        );
+      }
+      if (url.endsWith("/api/settings")) {
+        return Response.json({
+          settings: {},
+          keySource: "settings",
+          serverKeyDisabled: serverKeyDisabledMode,
+        });
+      }
+      return Response.json({ ok: true });
+    });
+
+    await act(async () => {
+      settingsRoot.render(createElement(SettingsPage));
+    });
+
+    const baseInput = settingsContainer.querySelector<HTMLInputElement>("#baseURL")!;
+    await act(async () => {
+      setInputValue(baseInput, "http://127.0.0.1:8080/v1");
+    });
+
+    const saveBtn = Array.from(settingsContainer.querySelectorAll("button")).find(
+      (b) => b.textContent?.includes("保存设置"),
+    )!;
+    await act(async () => {
+      saveBtn.click();
+    });
+
+    const errEl = settingsContainer.querySelector("#baseURL-error");
+    expect(errEl).not.toBeNull();
+    expect(errEl!.textContent).toBe(BASE_URL_NOT_ALLOWED_SETTINGS_MESSAGE);
+    expect(document.activeElement).toBe(baseInput);
+    expect(settingsContainer.textContent).not.toContain("Custom server message");
+    expect(settingsContainer.textContent).not.toContain("设置保存失败");
+    expect(settingsContainer.querySelectorAll('[role="alert"]')).toHaveLength(1);
+
+    // Clear when edited
+    await act(async () => {
+      setInputValue(baseInput, "http://10.0.0.1/v1");
+    });
+    expect(settingsContainer.querySelector("#baseURL-error")).toBeNull();
+
+    // Test connection with BASE_URL_NOT_ALLOWED
+    const testBtn = Array.from(settingsContainer.querySelectorAll("button")).find(
+      (b) => b.textContent?.includes("测试连接"),
+    )!;
+    await act(async () => {
+      testBtn.click();
+    });
+
+    const errElAfterTest = settingsContainer.querySelector("#baseURL-error");
+    expect(errElAfterTest).not.toBeNull();
+    expect(errElAfterTest!.textContent).toBe(BASE_URL_NOT_ALLOWED_SETTINGS_MESSAGE);
+    expect(document.activeElement).toBe(baseInput);
+    expect(settingsContainer.textContent).not.toContain("✗");
+
+    // Local validation in serverKeyDisabled mode
+    serverKeyDisabledMode = true;
+    await act(async () => {
+      settingsRoot.unmount();
+    });
+    settingsRoot = createRoot(settingsContainer);
+    await act(async () => {
+      settingsRoot.render(createElement(SettingsPage));
+    });
+
+    const localBaseInput = settingsContainer.querySelector<HTMLInputElement>("#baseURL")!;
+    const localKeyInput = settingsContainer.querySelector<HTMLInputElement>("#apiKey")!;
+    await act(async () => {
+      setInputValue(localKeyInput, "sk-local-key-12345");
+      setInputValue(localBaseInput, "http://localhost:11434/v1");
+    });
+
+    const localSaveBtn = Array.from(settingsContainer.querySelectorAll("button")).find(
+      (b) => b.textContent?.includes("保存设置"),
+    )!;
+    await act(async () => {
+      localSaveBtn.click();
+    });
+
+    expect(settingsContainer.querySelector("#baseURL-error")?.textContent).toBe(
+      BASE_URL_NOT_ALLOWED_SETTINGS_MESSAGE,
+    );
+    expect(document.activeElement).toBe(localBaseInput);
+    expect(readLocalByok()).toBeNull();
+    expect(settingsContainer.textContent).not.toContain("已保存");
+  });
+
+  test("focus=baseUrl and focus=apiKey query params focus, scrollIntoView, and highlight target input after settings load", async () => {
+    const origLocation = window.location.href;
+    window.history.replaceState({}, "", "/settings?focus=baseUrl");
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json({ settings: {}, keySource: "none", serverKeyDisabled: true }),
+    );
+
+    const scrollSpy = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scrollSpy;
+
+    try {
+      await act(async () => {
+        settingsRoot.render(createElement(SettingsPage));
+      });
+
+      const baseInput = settingsContainer.querySelector<HTMLInputElement>("#baseURL")!;
+      expect(document.activeElement).toBe(baseInput);
+      expect(scrollSpy).toHaveBeenCalledWith({ block: "center", behavior: "smooth" });
+      expect(baseInput.getAttribute("data-highlight")).toBe("true");
+      expect(baseInput.classList.contains("ring-beam-gold")).toBe(true);
+      expect(baseInput.classList.contains("font-sans")).toBe(false);
+
+      // Edit clears highlight
+      await act(async () => {
+        setInputValue(baseInput, "https://api.openai.com/v1");
+      });
+      expect(baseInput.getAttribute("data-highlight")).toBeNull();
+
+      // Now test focus=apiKey
+      await act(async () => {
+        settingsRoot.unmount();
+      });
+      window.history.replaceState({}, "", "/settings?focus=apiKey");
+      settingsRoot = createRoot(settingsContainer);
+      await act(async () => {
+        settingsRoot.render(createElement(SettingsPage));
+      });
+
+      const keyInput = settingsContainer.querySelector<HTMLInputElement>("#apiKey")!;
+      expect(document.activeElement).toBe(keyInput);
+      expect(keyInput.getAttribute("data-highlight")).toBe("true");
+      expect(keyInput.classList.contains("ring-beam-gold")).toBe(true);
+    } finally {
+      window.history.replaceState({}, "", origLocation);
+    }
+  });
+
+  test("save success shows only 已保存 and never 验证通过, and pure helpers work as expected", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json({ settings: {}, keySource: "none", serverKeyDisabled: true }),
+    );
+
+    await act(async () => {
+      settingsRoot.render(createElement(SettingsPage));
+    });
+
+    const keyInput = settingsContainer.querySelector<HTMLInputElement>("#apiKey")!;
+    await act(async () => {
+      setInputValue(keyInput, "sk-save-copy-test-12345");
+    });
+
+    const saveBtn = Array.from(settingsContainer.querySelectorAll("button")).find(
+      (b) => b.textContent?.includes("保存设置"),
+    )!;
+    await act(async () => {
+      saveBtn.click();
+    });
+
+    expect(saveBtn.textContent).toBe("已保存");
+    expect(settingsContainer.textContent).toContain("已保存");
+    expect(settingsContainer.textContent).not.toContain("验证通过");
+
+    // Pure helpers unit assertions
+    expect(parseFocusParam("?focus=baseUrl")).toBe("baseURL");
+    expect(parseFocusParam("?focus=baseURL")).toBe("baseURL");
+    expect(parseFocusParam("?focus=apiKey")).toBe("apiKey");
+    expect(parseFocusParam("?focus=other")).toBeNull();
+    expect(parseFocusParam("")).toBeNull();
+
+    expect(isBaseUrlNotAllowed({ error: "BASE_URL_NOT_ALLOWED" })).toBe(true);
+    expect(isBaseUrlNotAllowed({ code: "BASE_URL_NOT_ALLOWED" })).toBe(true);
+    expect(isBaseUrlNotAllowed({ error: "OTHER" })).toBe(false);
+
+    expect(isLocalBaseUrlAllowed("")).toBe(true);
+    expect(isLocalBaseUrlAllowed("https://api.openai.com/v1")).toBe(true);
+    expect(isLocalBaseUrlAllowed("http://example.com/v1")).toBe(true);
+    expect(isLocalBaseUrlAllowed("ftp://example.com")).toBe(false);
+    expect(isLocalBaseUrlAllowed("http://localhost:8000")).toBe(false);
+    expect(isLocalBaseUrlAllowed("http://127.0.0.1:8000")).toBe(false);
+    expect(isLocalBaseUrlAllowed("http://10.0.0.1/v1")).toBe(false);
+    expect(isLocalBaseUrlAllowed("http://192.168.1.1/v1")).toBe(false);
+    expect(isLocalBaseUrlAllowed("http://172.16.0.1/v1")).toBe(false);
+    expect(isLocalBaseUrlAllowed("http://172.31.255.255/v1")).toBe(false);
+    expect(isLocalBaseUrlAllowed("http://172.32.0.1/v1")).toBe(true);
+    expect(isLocalBaseUrlAllowed("http://[::1]:8000/v1")).toBe(false);
+    expect(isLocalBaseUrlAllowed("http://0.0.0.0:8000/v1")).toBe(false);
+    expect(isLocalBaseUrlAllowed("http://mybox.local/v1")).toBe(false);
   });
 
   test("~200-char base URL saved locally renders fully without truncate or font-mono", async () => {

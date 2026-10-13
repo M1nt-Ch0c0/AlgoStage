@@ -4,15 +4,19 @@ import { KeySourceBadge, type KeySource } from "@/components/settings/key-source
 import { DEFAULT_MODEL } from "@/lib/agent/defaults";
 import { savedEndpoint } from "@/lib/agent/saved-endpoint";
 import {
+  BASE_URL_NOT_ALLOWED_SETTINGS_MESSAGE,
+  isBaseUrlNotAllowed,
+  isLocalBaseUrlAllowed,
+  isNoByokError,
   mapByokErrorMessage,
-  NO_BYOK_MESSAGE,
+  NO_BYOK_SETTINGS_MESSAGE,
+  parseFocusParam,
   type SettingsResponse,
 } from "@/lib/byok/client";
 import { maskKey, readLocalByok } from "@/lib/byok/storage";
 import { useLocalByok } from "@/lib/byok/use-local-byok";
 import { apiPath } from "@/lib/runtime";
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import { motion } from "motion/react";
 import { Eye, EyeOff } from "lucide-react";
 import { PageHeader, Panel } from "@/components/ui/page-header";
@@ -70,6 +74,9 @@ export default function SettingsPage() {
   const [saveError, setSaveError] = useState("");
   const [testState, setTestState] = useState<TestState>({ kind: "idle" });
   const [serverKeyDisabled, setServerKeyDisabled] = useState(false);
+  const [highlightApiKey, setHighlightApiKey] = useState(false);
+  const [highlightBaseURL, setHighlightBaseURL] = useState(false);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const { byok: localByok, save: saveLocalByok, clear: clearLocalByokState } = useLocalByok();
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 只记录真实编辑；预填文案和从服务端读到的旧值都不能隐式写回。
@@ -80,9 +87,26 @@ export default function SettingsPage() {
     setter(value);
     setSaveState("idle");
     setSaveError("");
-    if (field === "baseURL") setBaseURLError("");
+    if (field === "baseURL") {
+      setBaseURLError("");
+      setHighlightBaseURL(false);
+    }
+    if (field === "apiKey") {
+      setHighlightApiKey(false);
+    }
   }
 
+  function focusAndScroll(id: "apiKey" | "baseURL", withHighlight = true) {
+    const el = document.getElementById(id) as HTMLInputElement | null;
+    if (el) {
+      el.focus();
+      el.scrollIntoView?.({ block: "center", behavior: "smooth" });
+    }
+    if (withHighlight) {
+      if (id === "apiKey") setHighlightApiKey(true);
+      if (id === "baseURL") setHighlightBaseURL(true);
+    }
+  }
 
   // 主题以本机 localStorage 为准（导航栏也能切换），这里只读当前值
   useEffect(() => setTheme(readTheme()), []);
@@ -109,8 +133,19 @@ export default function SettingsPage() {
         if (settings.effectLevel) setEffectLevel(settings.effectLevel);
         if (settings.narrationSpeed) setNarrationSpeed(settings.narrationSpeed);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        setSettingsLoaded(true);
+      });
   }, []);
+
+  useEffect(() => {
+    if (!settingsLoaded || typeof window === "undefined") return;
+    const target = parseFocusParam(window.location.search);
+    if (target) {
+      focusAndScroll(target, true);
+    }
+  }, [settingsLoaded]);
 
   function applyTheme(next: string) {
     edit("theme", next, setTheme);
@@ -132,6 +167,13 @@ export default function SettingsPage() {
 
   async function save() {
     if (serverKeyDisabled) {
+      if (!isLocalBaseUrlAllowed(baseURL)) {
+        setBaseURLError(BASE_URL_NOT_ALLOWED_SETTINGS_MESSAGE);
+        setSaveState("idle");
+        focusAndScroll("baseURL", false);
+        return;
+      }
+      setBaseURLError("");
       const nextKey = apiKey.trim() || localByok?.apiKey || "";
       if (nextKey) {
         saveLocalByok({
@@ -161,8 +203,12 @@ export default function SettingsPage() {
       });
       if (!res.ok) {
         const data = await res.json();
-        if (data.error === "BASE_URL_NOT_ALLOWED") setBaseURLError(data.message);
-        else setSaveError(data.message ?? "设置保存失败，请重试。");
+        if (isBaseUrlNotAllowed(data)) {
+          setBaseURLError(BASE_URL_NOT_ALLOWED_SETTINGS_MESSAGE);
+          focusAndScroll("baseURL", false);
+        } else {
+          setSaveError(data.message ?? "设置保存失败，请重试。");
+        }
         setSaveState("idle");
         return;
       }
@@ -218,14 +264,16 @@ export default function SettingsPage() {
       if (res.ok && data.ok) {
         setBaseURLError("");
         setTestState({ kind: "ok", message: "接通了，老师可以上课了。" });
-      } else if (data.error === "BASE_URL_NOT_ALLOWED") {
-        setBaseURLError(data.message);
+      } else if (isBaseUrlNotAllowed(data)) {
+        setBaseURLError(BASE_URL_NOT_ALLOWED_SETTINGS_MESSAGE);
         setTestState({ kind: "idle" });
-      } else if (data.error === "NO_BYOK" && !serverKeyDisabled) {
+        focusAndScroll("baseURL", false);
+      } else if (isNoByokError(data)) {
         setTestState({
           kind: "fail",
-          message: "请填好 API Key 和模型名，或在环境变量中配置后再测试。",
+          message: NO_BYOK_SETTINGS_MESSAGE,
         });
+        focusAndScroll("apiKey", true);
       } else {
         setTestState({
           kind: "fail",
@@ -326,7 +374,8 @@ export default function SettingsPage() {
                   value={baseURL}
                   onChange={(e) => edit("baseURL", e.target.value, setBaseURL)}
                   placeholder={provider === "openai-compatible" ? "环境变量 Key 沿用环境地址；新 Key 留空使用默认地址" : "留空使用该服务商官方接口"}
-                  className={`${inputClass} min-w-0 font-sans tracking-normal [font-variant-ligatures:none]`}
+                  className={`${inputClass} min-w-0 tracking-normal [font-variant-ligatures:none]${highlightBaseURL ? " ring-2 ring-beam-gold" : ""}`}
+                  data-highlight={highlightBaseURL ? "true" : undefined}
                   aria-invalid={Boolean(baseURLError)}
                   aria-describedby={["baseURL-policy", provider === "openai-compatible" && !baseURL.trim() && "baseURL-hint", baseURLError && "baseURL-error"].filter(Boolean).join(" ")}
                 />
@@ -358,7 +407,8 @@ export default function SettingsPage() {
                   value={apiKey}
                   onChange={(e) => edit("apiKey", e.target.value, setApiKey)}
                   placeholder={displayedMaskedKey ? "输入新的 Key 以更换" : "sk-…"}
-                  className={`${inputClass} pr-10 font-mono`}
+                  className={`${inputClass} pr-10 font-mono${highlightApiKey ? " ring-2 ring-beam-gold" : ""}`}
+                  data-highlight={highlightApiKey ? "true" : undefined}
                   autoComplete="off"
                 />
                 <button
@@ -424,19 +474,9 @@ export default function SettingsPage() {
               </motion.span>
             )}
             {testState.kind === "fail" && (
-              <>
-                <motion.span initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-sm text-beam-rose">
-                  ✗ {testState.message}
-                </motion.span>
-                {testState.message === NO_BYOK_MESSAGE && (
-                  <Link
-                    href="/settings"
-                    className="rounded-full border border-beam-gold/60 bg-transparent px-3 py-1 text-sm text-beam-gold transition-colors hover:border-beam-gold"
-                  >
-                    去设置
-                  </Link>
-                )}
-              </>
+              <motion.span initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-sm text-beam-rose">
+                ✗ {testState.message}
+              </motion.span>
             )}
           </div>
           {saveError && <p role="alert" className="mt-2 text-sm text-beam-rose">{saveError}</p>}

@@ -120,13 +120,95 @@ export function withByok<T extends Record<string, unknown>>(
 }
 
 export const NO_BYOK_MESSAGE = "还没填 API Key。先去设置页填入你自己的 API Key 就能开讲。";
+export const NO_BYOK_SETTINGS_MESSAGE = "还没填 API Key。在下面填入你自己的 API Key 就能开讲。";
+export const BASE_URL_NOT_ALLOWED_MESSAGE = "只支持公网 http(s) 地址";
+export const BASE_URL_NOT_ALLOWED_SETTINGS_MESSAGE = "接口地址只支持公网 http(s) 地址";
 
 const BYOK_ERROR_MAP: Record<string, string> = {
   BYOK_KEY_REQUIRED: "用自定义地址时需要同时填你自己的 Key",
-  BASE_URL_NOT_ALLOWED: "只支持公网 http(s) 地址",
+  BASE_URL_NOT_ALLOWED: BASE_URL_NOT_ALLOWED_MESSAGE,
   SETTINGS_LOCKED: "公共实例不支持修改服务器设置",
   NO_BYOK: NO_BYOK_MESSAGE,
 };
+
+export function isBaseUrlNotAllowed(data: unknown): boolean {
+  if (!data || typeof data !== "object") return false;
+  const rec = data as Record<string, unknown>;
+  return (
+    rec.error === "BASE_URL_NOT_ALLOWED" || rec.code === "BASE_URL_NOT_ALLOWED"
+  );
+}
+
+export function isNoByokError(data: unknown): boolean {
+  if (!data || typeof data !== "object") return false;
+  const rec = data as Record<string, unknown>;
+  return rec.error === "NO_BYOK" || rec.code === "NO_BYOK";
+}
+
+export function parseFocusParam(search: string): "baseURL" | "apiKey" | null {
+  try {
+    const params = new URLSearchParams(search);
+    const focus = params.get("focus")?.trim();
+    if (!focus) return null;
+    const lower = focus.toLowerCase();
+    if (lower === "baseurl") return "baseURL";
+    if (lower === "apikey") return "apiKey";
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function isLocalBaseUrlAllowed(baseURL: string): boolean {
+  const trimmed = baseURL.trim();
+  if (!trimmed) return true;
+  if (!/^https?:\/\/[^/\\\s]/i.test(trimmed) || /[\\\s]/.test(trimmed)) {
+    return false;
+  }
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+  const host = url.hostname.replace(/^\[|\]$/g, "").toLowerCase().replace(/\.$/, "");
+  if (!host) return false;
+  if (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host === "local" ||
+    host.endsWith(".local") ||
+    host === "0.0.0.0" ||
+    host === "::1" ||
+    host === "0:0:0:0:0:0:0:1" ||
+    host === "::" ||
+    host === "0:0:0:0:0:0:0:0"
+  ) {
+    return false;
+  }
+  const ipv4Match = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (ipv4Match) {
+    const [a, b] = ipv4Match.slice(1).map(Number);
+    if (
+      a === 0 ||
+      a === 10 ||
+      a === 127 ||
+      (a === 192 && b === 168) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 169 && b === 254)
+    ) {
+      return false;
+    }
+  }
+  if (host.startsWith("::ffff:")) {
+    const v4Hex = host.slice(7);
+    if (v4Hex === "7f00:1" || v4Hex.startsWith("7f") || v4Hex.startsWith("a") || v4Hex.startsWith("c0a8:") || /^ac1[0-f]:/.test(v4Hex) || v4Hex === "0:0") {
+      return false;
+    }
+  }
+  return true;
+}
 
 function isRawErrorCode(str: string): boolean {
   return /^[A-Z0-9_]+$/.test(str);
