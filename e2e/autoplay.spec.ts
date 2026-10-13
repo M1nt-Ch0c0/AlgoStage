@@ -53,6 +53,25 @@ test("narration end pauses and shows 「按空格继续」 and Space advances", 
   await expect(page.getByRole("button", { name: "跳到第 2 步", exact: true })).toHaveAttribute("aria-current", "step");
 });
 
+async function reachLastStep(page: Page) {
+  await mockLecture(page, "group-anagrams");
+  await page.goto("/problem/group-anagrams");
+  await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2x", exact: true }).click();
+  await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
+  for (let i = 1; i <= 2; i++) {
+    await expect(page.getByText(`第 ${i} / 3 步`)).toBeVisible();
+    await page.keyboard.press("Space");
+  }
+  await expect(page.getByText("第 3 / 3 步")).toBeVisible();
+  await expect(page.getByTestId("continue-hint")).toBeVisible();
+  await expect(page.getByText("讲完了")).toHaveCount(0);
+}
+
+async function expectFinishedReplay(page: Page) {
+  await expect(page.getByText("讲完了")).toBeVisible();
+  await expect(page.getByRole("button", { name: "重播", exact: true })).toHaveCount(1);
+}
+
 test("last step shows 「讲完了」 and 「重播」", async ({ page }) => {
   await mockLecture(page, "group-anagrams");
   await page.goto("/problem/group-anagrams");
@@ -68,6 +87,21 @@ test("last step shows 「讲完了」 and 「重播」", async ({ page }) => {
   await expect(page.getByText("讲完了")).toBeVisible();
   await expect(page.locator("header").getByRole("button", { name: "重播", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "重播", exact: true })).toHaveCount(1);
+});
+
+test("last step click on 「下一步」 shows finished panel and exactly one 「重播」", async ({ page }) => {
+  await reachLastStep(page);
+  const nextButton = page.getByRole("button", { name: "下一步", exact: true });
+  await expect(nextButton).toHaveText("下一步");
+  await expect(nextButton).toBeEnabled();
+  await nextButton.click();
+  await expectFinishedReplay(page);
+});
+
+test("last step ArrowRight shows finished panel and exactly one 「重播」", async ({ page }) => {
+  await reachLastStep(page);
+  await page.keyboard.press("ArrowRight");
+  await expectFinishedReplay(page);
 });
 
 test("toggle 「自动播放」 on auto-advances without hint", async ({ page }) => {
@@ -141,6 +175,25 @@ test.describe("coarse pointer", () => {
     await nextButton.tap();
     await expect(page.getByText("第 2 / 3 步")).toBeVisible();
     await expect(page.getByRole("button", { name: "跳到第 2 步", exact: true })).toHaveAttribute("aria-current", "step");
+  });
+
+  test("last step tap on 「下一步」 shows finished panel and exactly one 「重播」", async ({ page }) => {
+    await mockLecture(page, "group-anagrams");
+    await page.goto("/problem/group-anagrams");
+    await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2x", exact: true }).click();
+    await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
+
+    const nextButton = page.getByRole("button", { name: "下一步", exact: true });
+    for (let i = 1; i <= 2; i++) {
+      await expect(page.getByText(`第 ${i} / 3 步`)).toBeVisible();
+      await nextButton.tap();
+    }
+    await expect(page.getByText("第 3 / 3 步")).toBeVisible();
+    await expect(page.getByText("讲完了")).toHaveCount(0);
+    await expect(nextButton).toHaveText("下一步");
+    await nextButton.tap();
+    await expect(page.getByText("讲完了")).toBeVisible();
+    await expect(page.getByRole("button", { name: "重播", exact: true })).toHaveCount(1);
   });
 });
 

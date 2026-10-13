@@ -105,7 +105,7 @@ export default function PlayerControls({ preparing = false }: { preparing?: bool
               : btn
           }
           onClick={next}
-          disabled={!hasScript || currentIndex >= steps.length - 1}
+          disabled={!hasScript || (currentIndex >= steps.length - 1 && (receiving || status === "finished"))}
           aria-label="下一步"
           data-awaiting={awaitingContinue ? "true" : undefined}
         >

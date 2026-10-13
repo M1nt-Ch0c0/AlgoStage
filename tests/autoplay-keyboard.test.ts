@@ -103,6 +103,38 @@ test("awaitingContinue 时下一步按钮可见文字为下一步且热区至少
   expect(usePlayerStore.getState().awaitingContinue).toBe(false);
 });
 
+test("最后一步默认模式下「下一步」可点，点击、Space、→ 都进入完成态", async () => {
+  async function armLastStep() {
+    await act(async () => {
+      setStoreState({
+        status: "playing",
+        currentIndex: script.steps.length - 1,
+        awaitingContinue: true,
+        receiving: false,
+      });
+    });
+  }
+
+  await armLastStep();
+  const button = container.querySelector<HTMLButtonElement>('button[aria-label="下一步"]')!;
+  expect(button.disabled).toBe(false);
+  expect(button.textContent).toBe("下一步");
+  await act(async () => button.click());
+  expect(usePlayerStore.getState()).toMatchObject({ status: "finished", currentIndex: 2 });
+
+  await armLastStep();
+  await act(async () => {
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+  });
+  expect(usePlayerStore.getState()).toMatchObject({ status: "finished", currentIndex: 2 });
+
+  await armLastStep();
+  await act(async () => {
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+  });
+  expect(usePlayerStore.getState()).toMatchObject({ status: "finished", currentIndex: 2 });
+});
+
 test("非 awaitingContinue 时下一步保持图标按钮", async () => {
   const button = container.querySelector<HTMLButtonElement>('button[aria-label="下一步"]')!;
   expect(button.textContent).toBe("");
