@@ -17,4 +17,14 @@ export type AskSelectionSummary = Pick<AskSelection, "mode" | "bbox" | "targets"
 export interface AnswerSegment { id: string; narration: string; targets?: EffectTarget[]; effects?: EffectCall[]; viz?: ArrayVizFrame }
 export interface StepAnswer { v: 1; id: string; stepId: string; question: string; selection: AskSelectionSummary; segments: AnswerSegment[]; createdAt: string }
 export type StepAnswersMap = Record<string, StepAnswer[]>;
+export interface AskStart {
+  answerId: string;
+  stepId: string;
+  imageUsed: boolean;
+}
+export type AskEvent =
+  | ({ type: "start" } & AskStart)
+  | { type: "segment"; segment: AnswerSegment }
+  | { type: "result"; answer: StepAnswer }
+  | { type: "error"; code: string; retryable: boolean };
 export const ASK_LIMITS = { questionMax: 300, targetTextMax: 200, targetsMax: 20, segmentsMax: 8, narrationMax: 120, minTouchPx: 44, dragThresholdPx: 8 } as const;
