@@ -15,6 +15,16 @@ export function cancelLectureForPlayback(detail: ProblemDetail | null, language:
   controls.setCode(detail?.referenceSolutions?.find(s => s.language === language)?.code ?? "");
 }
 
+export function switchProblemForPlayback(controls: {
+  abort: () => void;
+  reset: () => void;
+  clearLectureUi: () => void;
+}) {
+  controls.abort();
+  controls.clearLectureUi();
+  controls.reset();
+}
+
 export function loadLectureForPlayback(value: unknown, detail: ProblemDetail, controls: {
   setCode: (code: string) => void;
   loadScript: (script: TeachingScript) => void;
