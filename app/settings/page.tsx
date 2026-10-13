@@ -3,11 +3,16 @@
 import { KeySourceBadge, type KeySource } from "@/components/settings/key-source-badge";
 import { DEFAULT_MODEL } from "@/lib/agent/defaults";
 import { savedEndpoint } from "@/lib/agent/saved-endpoint";
-import { mapByokErrorMessage, type SettingsResponse } from "@/lib/byok/client";
+import {
+  mapByokErrorMessage,
+  NO_BYOK_MESSAGE,
+  type SettingsResponse,
+} from "@/lib/byok/client";
 import { maskKey, readLocalByok } from "@/lib/byok/storage";
 import { useLocalByok } from "@/lib/byok/use-local-byok";
 import { apiPath } from "@/lib/runtime";
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { motion } from "motion/react";
 import { Eye, EyeOff } from "lucide-react";
 import { PageHeader, Panel } from "@/components/ui/page-header";
@@ -321,12 +326,17 @@ export default function SettingsPage() {
                   value={baseURL}
                   onChange={(e) => edit("baseURL", e.target.value, setBaseURL)}
                   placeholder={provider === "openai-compatible" ? "环境变量 Key 沿用环境地址；新 Key 留空使用默认地址" : "留空使用该服务商官方接口"}
-                  className={`${inputClass} font-sans tracking-normal [font-variant-ligatures:none]`}
+                  className={`${inputClass} min-w-0 font-sans tracking-normal [font-variant-ligatures:none]`}
                   aria-invalid={Boolean(baseURLError)}
                   aria-describedby={["baseURL-policy", provider === "openai-compatible" && !baseURL.trim() && "baseURL-hint", baseURLError && "baseURL-error"].filter(Boolean).join(" ")}
                 />
                 {baseURLError && <p id="baseURL-error" role="alert" className="mt-2 text-xs leading-5 text-beam-rose">{baseURLError}</p>}
                 <p id="baseURL-policy" className="mt-2 text-xs leading-5 text-chalk-500">需要公网 http(s) 地址；自托管实例可由管理员允许连接本地模型。</p>
+                {serverKeyDisabled && localByok?.baseURL && (
+                  <p className="mt-2 break-all text-xs leading-5 text-chalk-500">
+                    已保存接口地址：{localByok.baseURL}
+                  </p>
+                )}
                 {provider === "openai-compatible" && !baseURL.trim() && (
                   <p id="baseURL-hint" className="mt-2 text-xs leading-5 text-chalk-500">
                     {!serverKeyDisabled && keySource === "env" && !apiKey.trim()
@@ -414,9 +424,19 @@ export default function SettingsPage() {
               </motion.span>
             )}
             {testState.kind === "fail" && (
-              <motion.span initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-sm text-beam-rose">
-                ✗ {testState.message}
-              </motion.span>
+              <>
+                <motion.span initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-sm text-beam-rose">
+                  ✗ {testState.message}
+                </motion.span>
+                {testState.message === NO_BYOK_MESSAGE && (
+                  <Link
+                    href="/settings"
+                    className="rounded-full border border-beam-gold/60 bg-transparent px-3 py-1 text-sm text-beam-gold transition-colors hover:border-beam-gold"
+                  >
+                    去设置
+                  </Link>
+                )}
+              </>
             )}
           </div>
           {saveError && <p role="alert" className="mt-2 text-sm text-beam-rose">{saveError}</p>}

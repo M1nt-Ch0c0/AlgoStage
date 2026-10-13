@@ -119,7 +119,7 @@ describe("lib/byok/client pure helpers & fetchServerKeyDisabled", () => {
       "公共实例不支持修改服务器设置",
     );
     expect(mapByokErrorMessage({ code: "NO_BYOK" })).toBe(
-      "请先在设置页填写你自己的 Key",
+      "还没填 API Key。先去设置页填入你自己的 API Key 就能开讲。",
     );
   });
 });
@@ -303,7 +303,7 @@ describe("Error code mapping in HintLadder and ProblemPage", () => {
     },
     {
       code: "NO_BYOK",
-      expected: "设置",
+      expected: "还没填 API Key。先去设置页填入你自己的 API Key 就能开讲。",
     },
   ])(
     "HintLadder maps error code $code to Chinese copy and never shows raw code",
@@ -336,6 +336,15 @@ describe("Error code mapping in HintLadder and ProblemPage", () => {
       expect(alert).not.toBeNull();
       expect(alert!.textContent).toContain(expected);
       expect(alert!.textContent).not.toContain(code);
+      if (code === "NO_BYOK") {
+        const link = alert!.querySelector('a[href="/settings"]');
+        expect(link).not.toBeNull();
+        expect(link!.textContent).toBe("去设置");
+        expect(link!.classList.contains("border")).toBe(true);
+        expect(link!.classList.contains("border-beam-gold/60")).toBe(true);
+        expect(link!.classList.contains("text-beam-gold")).toBe(true);
+        expect(link!.classList.contains("bg-transparent")).toBe(true);
+      }
     },
   );
 
@@ -350,7 +359,7 @@ describe("Error code mapping in HintLadder and ProblemPage", () => {
     },
     {
       code: "NO_BYOK",
-      expected: "设置",
+      expected: "还没填 API Key。先去设置页填入你自己的 API Key 就能开讲。",
     },
   ])(
     "ProblemPage lecture maps HTTP error code $code to Chinese copy and never shows raw code",
@@ -385,6 +394,15 @@ describe("Error code mapping in HintLadder and ProblemPage", () => {
       expect(alert).not.toBeNull();
       expect(alert!.textContent).toContain(expected);
       expect(alert!.textContent).not.toContain(code);
+      if (code === "NO_BYOK") {
+        const link = alert!.querySelector('a[href="/settings"]');
+        expect(link).not.toBeNull();
+        expect(link!.textContent).toBe("去设置");
+        expect(link!.classList.contains("border")).toBe(true);
+        expect(link!.classList.contains("border-beam-gold/60")).toBe(true);
+        expect(link!.classList.contains("text-beam-gold")).toBe(true);
+        expect(link!.classList.contains("bg-transparent")).toBe(true);
+      }
     },
   );
 });

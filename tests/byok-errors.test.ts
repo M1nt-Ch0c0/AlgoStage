@@ -35,7 +35,7 @@ const EXPECTED_MAPPINGS = [
   },
   {
     code: "NO_BYOK",
-    expected: "请先在设置页填写你自己的 Key",
+    expected: "还没填 API Key。先去设置页填入你自己的 API Key 就能开讲。",
   },
 ] as const;
 
@@ -217,6 +217,20 @@ describe("Rendered UI error messages in HintLadder and ProblemPage", () => {
       expect(alert).not.toBeNull();
       expect(alert!.textContent).toContain(expected);
       expect(alert!.textContent).not.toContain(code);
+
+      const settingsLink = Array.from(alert!.querySelectorAll("a")).find(
+        (a) => a.textContent === "去设置",
+      );
+      if (code === "NO_BYOK") {
+        expect(settingsLink).toBeDefined();
+        expect(settingsLink!.getAttribute("href")).toBe("/settings");
+        expect(settingsLink!.classList.contains("border")).toBe(true);
+        expect(settingsLink!.classList.contains("border-beam-gold/60")).toBe(true);
+        expect(settingsLink!.classList.contains("text-beam-gold")).toBe(true);
+        expect(settingsLink!.classList.contains("bg-transparent")).toBe(true);
+      } else {
+        expect(settingsLink).toBeUndefined();
+      }
     },
   );
 
@@ -298,6 +312,20 @@ describe("Rendered UI error messages in HintLadder and ProblemPage", () => {
       expect(alert).not.toBeNull();
       expect(alert!.textContent).toContain(expected);
       expect(alert!.textContent).not.toContain(code);
+
+      const settingsLink = Array.from(alert!.querySelectorAll("a")).find(
+        (a) => a.textContent === "去设置",
+      );
+      expect(settingsLink).toBeDefined();
+      expect(settingsLink!.getAttribute("href")).toBe("/settings");
+      if (code === "NO_BYOK") {
+        expect(settingsLink!.classList.contains("border")).toBe(true);
+        expect(settingsLink!.classList.contains("border-beam-gold/60")).toBe(true);
+        expect(settingsLink!.classList.contains("text-beam-gold")).toBe(true);
+        expect(settingsLink!.classList.contains("bg-transparent")).toBe(true);
+      } else {
+        expect(settingsLink!.classList.contains("border-beam-gold/60")).toBe(false);
+      }
     },
   );
 });

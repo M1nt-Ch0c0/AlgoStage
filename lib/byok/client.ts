@@ -119,11 +119,13 @@ export function withByok<T extends Record<string, unknown>>(
   return { ...body, byok: cleanByok };
 }
 
+export const NO_BYOK_MESSAGE = "还没填 API Key。先去设置页填入你自己的 API Key 就能开讲。";
+
 const BYOK_ERROR_MAP: Record<string, string> = {
   BYOK_KEY_REQUIRED: "用自定义地址时需要同时填你自己的 Key",
   BASE_URL_NOT_ALLOWED: "只支持公网 http(s) 地址",
   SETTINGS_LOCKED: "公共实例不支持修改服务器设置",
-  NO_BYOK: "请先在设置页填写你自己的 Key",
+  NO_BYOK: NO_BYOK_MESSAGE,
 };
 
 function isRawErrorCode(str: string): boolean {

@@ -7,7 +7,12 @@
 "use client";
 
 import { LECTURE_TIMEOUT_MS } from "@/lib/agent/defaults";
-import { fetchServerKeyDisabled, mapByokErrorMessage, withByok } from "@/lib/byok/client";
+import {
+  fetchServerKeyDisabled,
+  mapByokErrorMessage,
+  NO_BYOK_MESSAGE,
+  withByok,
+} from "@/lib/byok/client";
 import { readLocalByok } from "@/lib/byok/storage";
 import { apiPath } from "@/lib/runtime";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -585,7 +590,16 @@ export default function ProblemPage() {
           >
             重试讲课
           </button>
-          <Link href="/settings" className="underline hover:text-chalk-100">去设置</Link>
+          <Link
+            href="/settings"
+            className={
+              lectureError === NO_BYOK_MESSAGE
+                ? "shrink-0 rounded-full border border-beam-gold/60 bg-transparent px-3 py-1 text-beam-gold transition-colors hover:border-beam-gold"
+                : "underline hover:text-chalk-100"
+            }
+          >
+            去设置
+          </Link>
         </div>
       )}
 

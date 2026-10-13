@@ -1,9 +1,15 @@
 "use client";
 
-import { fetchServerKeyDisabled, mapByokErrorMessage, withByok } from "@/lib/byok/client";
+import {
+  fetchServerKeyDisabled,
+  mapByokErrorMessage,
+  NO_BYOK_MESSAGE,
+  withByok,
+} from "@/lib/byok/client";
 import { readLocalByok } from "@/lib/byok/storage";
 import { apiPath } from "@/lib/runtime";
 import { Lightbulb, Loader2 } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const HINT_LEVELS = ["观察", "模式", "方向", "技巧", "骨架"] as const;
@@ -199,6 +205,14 @@ export default function HintLadder({
           className="mt-2 flex items-center gap-2 text-xs leading-5 text-beam-rose"
         >
           <p>{hintError}</p>
+          {hintError === NO_BYOK_MESSAGE && (
+            <Link
+              href="/settings"
+              className="shrink-0 rounded-full border border-beam-gold/60 bg-transparent px-2.5 py-0.5 text-beam-gold transition-colors hover:border-beam-gold"
+            >
+              去设置
+            </Link>
+          )}
           {retryLevel !== null && (
             <button
               type="button"

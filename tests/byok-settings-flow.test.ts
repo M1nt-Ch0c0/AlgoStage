@@ -326,6 +326,105 @@ describe("BYOK local-only settings & prompt end-to-end flow", () => {
     expect(settingsContainer.textContent).not.toContain("SETTINGS_LOCKED");
   });
 
+  test("settings page testConnection NO_BYOK in serverKeyDisabled mode renders NO_BYOK copy and 去设置 outline link", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/api/settings")) {
+        return Response.json({
+          settings: {},
+          keySource: "none",
+          serverKeyDisabled: true,
+        });
+      }
+      if (url.endsWith("/api/hint")) {
+        return Response.json(
+          { code: "NO_BYOK", error: "NO_BYOK" },
+          { status: 400 },
+        );
+      }
+      return Response.json({ ok: true });
+    });
+
+    await act(async () => {
+      settingsRoot.render(createElement(SettingsPage));
+    });
+
+    const testBtn = Array.from(settingsContainer.querySelectorAll("button")).find(
+      (b) => b.textContent?.includes("测试连接"),
+    )!;
+    await act(async () => {
+      testBtn.click();
+    });
+
+    expect(settingsContainer.textContent).toContain(
+      "还没填 API Key。先去设置页填入你自己的 API Key 就能开讲。",
+    );
+    expect(settingsContainer.textContent).not.toContain("NO_BYOK");
+    const link = settingsContainer.querySelector('a[href="/settings"]');
+    expect(link).not.toBeNull();
+    expect(link!.textContent).toBe("去设置");
+    expect(link!.classList.contains("border")).toBe(true);
+    expect(link!.classList.contains("border-beam-gold/60")).toBe(true);
+    expect(link!.classList.contains("text-beam-gold")).toBe(true);
+    expect(link!.classList.contains("bg-transparent")).toBe(true);
+  });
+
+  test("~200-char base URL saved locally renders fully without truncate or font-mono", async () => {
+    const longBaseUrl =
+      "https://gateway.enterprise-ai-proxy.example.com/v1/organizations/org-1234567890abcdef/projects/proj-0987654321fedcba/deployments/custom-openai-compatible-endpoint-with-very-long-path-segment-for-testing/v1";
+    expect(longBaseUrl.length).toBeGreaterThanOrEqual(190);
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/api/settings")) {
+        return Response.json({
+          settings: {},
+          keySource: "none",
+          serverKeyDisabled: true,
+        });
+      }
+      return Response.json({ ok: true });
+    });
+
+    await act(async () => {
+      settingsRoot.render(createElement(SettingsPage));
+    });
+
+    await act(async () => {
+      const keyInput = settingsContainer.querySelector<HTMLInputElement>("#apiKey")!;
+      const baseInput = settingsContainer.querySelector<HTMLInputElement>("#baseURL")!;
+      setInputValue(keyInput, "sk-long-url-test-key-123456");
+      setInputValue(baseInput, longBaseUrl);
+    });
+
+    const saveBtn = Array.from(settingsContainer.querySelectorAll("button")).find(
+      (b) => b.textContent?.includes("保存设置"),
+    )!;
+    await act(async () => {
+      saveBtn.click();
+    });
+
+    const baseInput = settingsContainer.querySelector<HTMLInputElement>("#baseURL")!;
+    expect(baseInput.value).toBe(longBaseUrl);
+    expect(baseInput.classList.contains("w-full")).toBe(true);
+    expect(baseInput.classList.contains("min-w-0")).toBe(true);
+    expect(baseInput.classList.contains("font-mono")).toBe(false);
+    expect(baseInput.classList.contains("truncate")).toBe(false);
+    expect(baseInput.classList.contains("text-ellipsis")).toBe(false);
+    expect(baseInput.classList.contains("whitespace-nowrap")).toBe(false);
+
+    expect(settingsContainer.textContent).toContain(longBaseUrl);
+    const savedUrlEl = Array.from(settingsContainer.querySelectorAll("p")).find(
+      (p) => p.textContent?.includes(longBaseUrl),
+    );
+    expect(savedUrlEl).toBeDefined();
+    expect(savedUrlEl!.classList.contains("break-all")).toBe(true);
+    expect(savedUrlEl!.classList.contains("font-mono")).toBe(false);
+    expect(savedUrlEl!.classList.contains("truncate")).toBe(false);
+    expect(savedUrlEl!.classList.contains("text-ellipsis")).toBe(false);
+    expect(savedUrlEl!.classList.contains("whitespace-nowrap")).toBe(false);
+  });
+
   test("AiSetupPrompt reacts to slug switch while keeping local key state when serverKeyDisabled is true", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
       Response.json({ settings: {}, keySource: "none", serverKeyDisabled: true }),
