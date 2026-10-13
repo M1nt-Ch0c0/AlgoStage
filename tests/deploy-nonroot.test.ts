@@ -102,6 +102,6 @@ it("never tells users to copy-paste a hardcoded volume name", () => {
     expect(text).not.toMatch(/-v algostage-data:/);
     expect(text).toContain("docker volume ls");
   }
-  expect(readme).toContain("config --volumes");
+  expect(readme).not.toContain("config --volumes");
   expect(readme).toMatch(/docker inspect .*Mounts/);
 });
