@@ -2,7 +2,7 @@
 # 启动前确保数据库结构和题库就绪（幂等），然后启动服务
 set -e
 
-DATA_DIR="${DATA_DIR:-/app/data}"
+DATA_DIR="${DATA_DIR:-/data}"
 if ! write_test=$(mktemp "$DATA_DIR/.algostage-write-test.XXXXXX" 2>/dev/null); then
   printf 'Error: data directory %s is not writable (uid %s).\n' "$DATA_DIR" "$(id -u)" >&2
   printf '%s\n' 'For an existing root-owned algostage-data volume, run this one-time fix before switching images:' >&2

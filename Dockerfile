@@ -28,10 +28,12 @@ RUN npm run build
 ENV NODE_ENV=production
 RUN groupadd --gid 1001 algostage \
   && useradd --uid 1001 --gid algostage --home-dir /app --no-create-home --shell /usr/sbin/nologin algostage \
-  && mkdir -p /app/data /data \
-  && chown -R algostage:algostage /app/.next /app/data /data
+  && mkdir -p /data \
+  && chown -R algostage:algostage /app/.next /data
 
 EXPOSE 3000
 VOLUME /data
+# 注意：algostage 用户的 HOME=/app，对 uid 1001 不可写（只有 /app/.next、/data 可写）。
+# 以后新增会写 HOME 的依赖（npm cache、~/.cache 等），需显式指定可写目录（如 /tmp 或 /data 下的子目录）。
 USER 1001:1001
 CMD ["sh", "deploy/entrypoint.sh"]

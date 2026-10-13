@@ -34,7 +34,13 @@ ALGOSTAGE_IMAGE_TAG=<版本> docker compose -f deploy/compose.yaml ps
 
 旧卷若由 root 拥有，请按顺序升级：
 
-1. 停止旧容器，备份数据库（包括仍存在的 SQLite `-wal` / `-shm` 文件）。
+1. 停止旧容器（`ALGOSTAGE_IMAGE_TAG=<旧版本> docker compose -f deploy/compose.yaml stop`），再把整个数据卷打包备份，包含 `/data/algostage.db` 以及仍存在的 SQLite `algostage.db-wal` / `algostage.db-shm` 文件：
+
+   ```sh
+   docker run --rm -v algostage-data:/data -v "$PWD":/backup alpine tar czf /backup/algostage-data-$(date +%F).tgz -C /data .
+   tar tzf algostage-data-$(date +%F).tgz   # 确认备份里有 algostage.db
+   ```
+
 2. 对旧卷执行一次权限修复：
 
    ```sh
