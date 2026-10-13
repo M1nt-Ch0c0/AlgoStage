@@ -13,6 +13,8 @@ export type PlayerStatus =
   | "interrupted" // 用户追问，挂起
   | "finished";
 
+export type StreamGuard = { generation: number; problemSlug?: string };
+
 interface PlayerState {
   status: PlayerStatus;
   receiving: boolean;
@@ -22,6 +24,7 @@ interface PlayerState {
   /** 已收到的步骤（流式期间逐步增长） */
   steps: TeachingStep[];
   currentIndex: number;
+  generation: number;
   speed: 0.5 | 1 | 1.5 | 2;
   /** 特效强度档位：华丽/克制/极简（docs/02 §5.6） */
   effectLevel: "full" | "calm" | "minimal";
@@ -34,9 +37,9 @@ interface PlayerState {
 
   loadScript: (script: TeachingScript) => void;
   beginStream: (metadata: Omit<TeachingScript, "steps">) => void;
-  appendStep: (step: TeachingStep) => void;
-  updateStep: (step: TeachingStep) => void;
-  completeStream: (script: TeachingScript) => void;
+  appendStep: (step: TeachingStep, guard?: StreamGuard) => void;
+  updateStep: (step: TeachingStep, guard?: StreamGuard) => void;
+  completeStream: (script: TeachingScript, guard?: StreamGuard) => void;
   stopStream: () => void;
   play: () => void;
   pause: () => void;
@@ -50,6 +53,18 @@ interface PlayerState {
   setSpeed: (speed: PlayerState["speed"]) => void;
   setEffectLevel: (level: PlayerState["effectLevel"]) => void;
   reset: () => void;
+}
+
+export function isStale(
+  state: Pick<PlayerState, "generation" | "script">,
+  guard?: StreamGuard,
+): boolean {
+  if (!guard || typeof guard !== "object") return false;
+  if (guard.generation !== state.generation) return true;
+  if (guard.problemSlug !== undefined && guard.problemSlug !== state.script?.problemSlug) {
+    return true;
+  }
+  return false;
 }
 
 export const AUTO_ADVANCE_KEY = "algostage.autoAdvance";
@@ -70,6 +85,7 @@ const initial = {
   script: null,
   steps: [] as TeachingStep[],
   currentIndex: 0,
+  generation: 0,
   speed: 1 as const,
   effectLevel: "full" as const,
   awaitingContinue: false,
@@ -101,6 +117,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       replaying: false,
       steps: script.steps,
       currentIndex: 0,
+      generation: get().generation + 1,
       status: "paused",
       awaitingContinue: false,
     }),
@@ -110,13 +127,15 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       script: { ...metadata, steps: [] },
       steps: [],
       currentIndex: 0,
+      generation: get().generation + 1,
       status: "streaming",
       receiving: true,
       replaying: false,
       awaitingContinue: false,
     }),
-  appendStep: (step) =>
+  appendStep: (step, guard) =>
     set((s) => {
+      if (isStale(get(), guard)) return s;
       const steps = [...s.steps, step];
       const waiting = s.status === "streaming";
       return {
@@ -126,19 +145,23 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         status: waiting ? "playing" : s.status,
       };
     }),
-  updateStep: (step) =>
+  updateStep: (step, guard) =>
     set((s) => {
+      if (isStale(get(), guard)) return s;
       const steps = s.steps.map((old) => (old.id === step.id ? step : old));
       return { steps, script: s.script ? { ...s.script, steps } : null };
     }),
-  completeStream: (script) =>
-    set((s) => ({
-      script,
-      steps: script.steps,
-      receiving: false,
-      // 已追上最后一步时停在当前步；生成完成不等于播放器不可再操作。
-      status: s.status === "streaming" || s.status === "finished" ? "paused" : s.status,
-    })),
+  completeStream: (script, guard) =>
+    set((s) => {
+      if (isStale(get(), guard)) return s;
+      return {
+        script,
+        steps: script.steps,
+        receiving: false,
+        // 已追上最后一步时停在当前步；生成完成不等于播放器不可再操作。
+        status: s.status === "streaming" || s.status === "finished" ? "paused" : s.status,
+      };
+    }),
   stopStream: () =>
     set((s) => ({
       receiving: false,
@@ -203,5 +226,5 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   setSpeed: (speed) => set({ speed }),
   setEffectLevel: (effectLevel) => set({ effectLevel }),
 
-  reset: () => set({ ...initial, autoAdvance: get().autoAdvance }),
+  reset: () => set({ ...initial, autoAdvance: get().autoAdvance, generation: get().generation + 1 }),
 }));
