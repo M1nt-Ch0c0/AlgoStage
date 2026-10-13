@@ -64,6 +64,12 @@ describe("validateScript step ids", () => {
     expect(disabledStepIds(unique)).toEqual([]);
   });
 
+  it('steps with ids ["a"," ","a","b","",""] -> disabledStepIds equals ["a"," ",""] and askableStepIds equals new Set(["b"])', () => {
+    const s = validateScript(script(["a", " ", "a", "b", "", ""]), "x", { stepIds: "lenient" });
+    expect(disabledStepIds(s)).toEqual(["a", " ", ""]);
+    expect(askableStepIds(s)).toEqual(new Set(["b"]));
+  });
+
   it("clamp 仍按参考代码行数收口，且重复 id 在最终结果上检查", () => {
     const validated = validateScript(script(["a"]), "only-one-line");
     const target = validated.steps[0]?.targets[0];
