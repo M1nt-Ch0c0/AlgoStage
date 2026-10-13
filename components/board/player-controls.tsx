@@ -139,7 +139,7 @@ export default function PlayerControls({
           type="button"
           className={
             awaitingContinue
-              ? "flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1 rounded-full px-3 text-xs font-semibold text-beam-gold ring-1 ring-beam-gold/60 animate-pulse transition-colors hover:bg-board-700 disabled:pointer-events-none disabled:opacity-30"
+              ? "flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1 rounded-full px-3 text-xs font-semibold transition-colors bg-beam-gold text-on-accent hover:brightness-110 disabled:pointer-events-none disabled:opacity-30"
               : btn
           }
           onClick={next}
