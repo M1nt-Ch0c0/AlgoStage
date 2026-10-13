@@ -299,3 +299,45 @@ test("home page AI setup prompt link has >=44x44 hit area under pointer: coarse"
   expect(result.width).toBeGreaterThanOrEqual(44);
   expect(result.height).toBeGreaterThanOrEqual(44);
 });
+
+test.describe("1280 desktop layout sanity", () => {
+  test.use({
+    viewport: { width: 1280, height: 800 },
+    hasTouch: false,
+    isMobile: false,
+  });
+
+  test("home page 去设置 uses inset shadow with zero border width at 1280", async ({ page }) => {
+    await page.addInitScript(() => {
+      window.localStorage.removeItem("algostage.byok");
+      window.localStorage.clear();
+    });
+    await page.goto("/");
+
+    const link = page.getByRole("link", { name: "去设置" });
+    await expect(link).toBeVisible();
+
+    const styles = await link.evaluate((el) => {
+      const cs = window.getComputedStyle(el);
+      return {
+        top: parseFloat(cs.borderTopWidth),
+        right: parseFloat(cs.borderRightWidth),
+        bottom: parseFloat(cs.borderBottomWidth),
+        left: parseFloat(cs.borderLeftWidth),
+        boxShadow: cs.boxShadow,
+      };
+    });
+
+    expect(styles.top).toBe(0);
+    expect(styles.right).toBe(0);
+    expect(styles.bottom).toBe(0);
+    expect(styles.left).toBe(0);
+    expect(styles.boxShadow).toContain("inset");
+
+    const box = await link.boundingBox();
+    expect(box).toBeTruthy();
+    expect(box!.width).toBeGreaterThan(0);
+    expect(box!.height).toBeGreaterThan(0);
+  });
+});
+
