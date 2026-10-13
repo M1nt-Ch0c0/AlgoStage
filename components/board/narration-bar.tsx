@@ -2,8 +2,9 @@
  * NarrationBar · 板书打字机字幕条（docs/02 §4.6）
  * 逐字出现（约 24 字/秒 × 语速），内联 code 金色 mono 高亮；
  * 光标是发光粉笔小竖线，句毕轻跳（globals.css caret-hop）。
- * 与播放器同步：字幕打完 + dwellMs 停留后才自动推进下一步（awaitNarration 语义）；
- * 点击字幕条可跳过打字直接看全文。
+ * 与播放器同步：字幕打完后，awaitNarration 为 false 立刻下一步；
+ * 否则仅 autoAdvance 时 dwellMs 停留后自动推进，关闭时停在本步并提示按空格继续。
+ * 讲完仍显示最后一句，并提供重播。点击字幕条可跳过打字直接看全文。
  */
 "use client";
 
@@ -19,6 +20,10 @@ export default function NarrationBar() {
   const status = usePlayerStore((s) => s.status);
   const speed = usePlayerStore((s) => s.speed);
   const next = usePlayerStore((s) => s.next);
+  const replay = usePlayerStore((s) => s.replay);
+  const autoAdvance = usePlayerStore((s) => s.autoAdvance);
+  const awaitingContinue = usePlayerStore((s) => s.awaitingContinue);
+  const setAwaitingContinue = usePlayerStore((s) => s.setAwaitingContinue);
   const reduced = usePrefersReducedMotion();
 
   const segments = useMemo(
@@ -57,17 +62,20 @@ export default function NarrationBar() {
     return () => clearInterval(timer);
   }, [done, reduced, status, speed, total, stepKey]);
 
-  // 打完 + 停留 → 自动推进下一步（awaitNarration 默认 true）
+  // 打完后：不等待则立刻下一步；自动播放才停留后推进，否则停在本步等空格。
   useEffect(() => {
     if (!done || !step || status !== "playing") return;
     if (step.awaitNarration === false) {
       next();
       return;
     }
-    const dwell = (step.dwellMs ?? 800) / speed;
-    const timer = setTimeout(next, dwell);
-    return () => clearTimeout(timer);
-  }, [done, step, status, speed, next]);
+    if (autoAdvance) {
+      const dwell = (step.dwellMs ?? 800) / speed;
+      const timer = setTimeout(next, dwell);
+      return () => clearTimeout(timer);
+    }
+    if (!usePlayerStore.getState().awaitingContinue) setAwaitingContinue(true);
+  }, [done, step, status, speed, next, autoAdvance, setAwaitingContinue]);
 
   return (
     <div
@@ -97,6 +105,23 @@ export default function NarrationBar() {
         <p className="text-[15px] leading-6 text-chalk-500">
           点「开始讲课」，老师说的每句话都会在这里一个字一个字出现。
         </p>
+      )}
+      {awaitingContinue && (
+        <p data-testid="continue-hint" className="mt-1 text-xs text-beam-gold/80">按空格继续</p>
+      )}
+      {status === "finished" && step && (
+        <>
+          <p>讲完了</p>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              replay();
+            }}
+          >
+            重播
+          </button>
+        </>
       )}
       {/* 隐藏全量文本供无障碍读取 */}
       {step && <span className="sr-only"><InlineMarkdown text={step.narration} /></span>}
