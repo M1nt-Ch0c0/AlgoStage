@@ -400,4 +400,23 @@ describe("settings prefs single-source (v0.2.2 P2)", () => {
 
     setItemSpy.mockRestore();
   });
+
+  test("settings page renders updated prefs reminder text", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      return Response.json({
+        settings: {},
+        keySource: "env",
+        serverKeyDisabled: false,
+      });
+    });
+
+    await act(async () => {
+      root.render(createElement(SettingsPage));
+    });
+
+    expect(container.textContent).toContain(
+      "在这里改语速和特效，要点「保存设置」才会记住；在讲课页改倍速和特效会马上记住。",
+    );
+    expect(container.textContent).not.toContain("特效和语速要点「保存设置」才会记住。");
+  });
 });

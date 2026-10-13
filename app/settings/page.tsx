@@ -706,7 +706,7 @@ export default function SettingsPage() {
               <p className="mt-2 text-xs leading-5 text-chalk-500">和讲课页的倍速是同一个设置，改哪边都会同步</p>
             </fieldset>
 
-            <p className="text-xs text-chalk-700">特效和语速要点「保存设置」才会记住。</p>
+            <p className="text-xs text-chalk-700">在这里改语速和特效，要点「保存设置」才会记住；在讲课页改倍速和特效会马上记住。</p>
           </div>
         </Panel>
 
