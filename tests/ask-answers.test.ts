@@ -89,7 +89,9 @@ describe("ask answers", () => {
     expect(all.unknown?.map((item) => item.id)).toEqual(["b"]);
     expect(all.s1).toHaveLength(1);
 
-    expect(groupAnswersByStep([], valid)).toEqual({});
+    const emptyGrouped = groupAnswersByStep([], valid);
+    expect(Object.keys(emptyGrouped).length).toBe(0);
+    expect(Object.getPrototypeOf(emptyGrouped)).toBeNull();
   });
 
   it("14. countAnswers 跨步求和", () => {
@@ -178,5 +180,88 @@ describe("ask answers", () => {
     });
     expect(atLimit.targets[0]?.text).toBe(exact);
     expect(atLimit.targets[0]?.vizHit).toEqual({ structure: "array" });
+  });
+
+  it("StepAnswersMap 防御 prototype-key pollution（__proto__、constructor、toString、hasOwnProperty 等）", () => {
+    const protoKeys = ["constructor", "toString", "__proto__", "hasOwnProperty", "s1", "s2"] as const;
+    const mixedAnswers: StepAnswer[] = protoKeys.flatMap((stepId, i) => [
+      answer({ id: `${stepId}-1`, stepId, createdAt: `2026-10-13T08:0${i}:00.000Z` }),
+      answer({ id: `${stepId}-2`, stepId, createdAt: `2026-10-13T09:0${i}:00.000Z` }),
+    ]);
+
+    // 1. groupAnswersByStep 结果为 null-prototype，且包含 own enumerable 数组
+    const grouped = groupAnswersByStep(mixedAnswers);
+    expect(Object.getPrototypeOf(grouped)).toBeNull();
+    expect(Object.keys(grouped).sort()).toEqual([...protoKeys].sort());
+    for (const key of protoKeys) {
+      expect(Object.hasOwn(grouped, key)).toBe(true);
+      expect(Array.isArray(grouped[key])).toBe(true);
+      expect(typeof grouped[key]).not.toBe("function");
+      expect(grouped[key]).toHaveLength(2);
+      expect(grouped[key]?.map((item) => item.id)).toEqual([`${key}-1`, `${key}-2`]);
+    }
+
+    // 2. appendAnswer 逐个追加混合 key（起始为 null-prototype），结果为 null-prototype 且为 own enumerable 数组
+    let appended: StepAnswersMap = Object.create(null);
+    for (const a of mixedAnswers) {
+      appended = appendAnswer(appended, a);
+    }
+    expect(Object.getPrototypeOf(appended)).toBeNull();
+    expect(Object.keys(appended).sort()).toEqual([...protoKeys].sort());
+    for (const key of protoKeys) {
+      expect(Object.hasOwn(appended, key)).toBe(true);
+      expect(Array.isArray(appended[key])).toBe(true);
+      expect(typeof appended[key]).not.toBe("function");
+      expect(appended[key]).toHaveLength(2);
+      expect(appended[key]?.map((item) => item.id)).toEqual([`${key}-1`, `${key}-2`]);
+    }
+  });
+
+  it("从普通 {} map 开始 appendAnswer 原型键不会污染 Object.prototype 且结果为 null 原型", () => {
+    const plain: StepAnswersMap = {};
+    const ansConstructor = answer({ id: "c1", stepId: "constructor", question: "构造函数" });
+    const ansProto = answer({ id: "p1", stepId: "__proto__", question: "原型" });
+
+    // 从普通 {} 开始追加 constructor
+    const afterConstructor = appendAnswer(plain, ansConstructor);
+    expect(Object.getPrototypeOf(afterConstructor)).toBeNull();
+    expect(Object.hasOwn(afterConstructor, "constructor")).toBe(true);
+    expect(Array.isArray(afterConstructor["constructor"])).toBe(true);
+    expect(typeof afterConstructor["constructor"]).not.toBe("function");
+    expect(afterConstructor["constructor"]).toEqual([ansConstructor]);
+
+    // 继续追加 __proto__
+    const afterProto = appendAnswer(afterConstructor, ansProto);
+    expect(Object.getPrototypeOf(afterProto)).toBeNull();
+    expect(Object.hasOwn(afterProto, "__proto__")).toBe(true);
+    expect(Array.isArray(afterProto["__proto__"])).toBe(true);
+    expect(typeof afterProto["__proto__"]).not.toBe("function");
+    expect(afterProto["__proto__"]).toEqual([ansProto]);
+
+    // 追加同 key 的第二个答案，验证读取旧值正常（不会取到 Object.prototype 原型属性）
+    const ansConstructor2 = answer({ id: "c2", stepId: "constructor", createdAt: "2026-10-13T09:00:00.000Z" });
+    const ansProto2 = answer({ id: "p2", stepId: "__proto__", createdAt: "2026-10-13T09:00:00.000Z" });
+    const afterSecond = appendAnswer(appendAnswer(afterProto, ansConstructor2), ansProto2);
+    expect(afterSecond["constructor"]?.map((item) => item.id)).toEqual(["c1", "c2"]);
+    expect(afterSecond["__proto__"]?.map((item) => item.id)).toEqual(["p1", "p2"]);
+
+    // 从普通 {} 直接追加 __proto__ 亦为 null 原型且正常存储
+    const directProto = appendAnswer({}, ansProto);
+    expect(Object.getPrototypeOf(directProto)).toBeNull();
+    expect(Object.hasOwn(directProto, "__proto__")).toBe(true);
+    expect(Array.isArray(directProto["__proto__"])).toBe(true);
+    expect(typeof directProto["__proto__"]).not.toBe("function");
+
+    // 验证 Object.prototype 未被污染
+    const dummy: Record<string, unknown> = {};
+    expect(dummy.constructor).toBe(Object);
+    expect(Object.getPrototypeOf(dummy)).toBe(Object.prototype);
+    expect(Object.hasOwn(Object.prototype, "question")).toBe(false);
+    expect(Object.hasOwn(Object.prototype, "stepId")).toBe(false);
+    expect(Object.hasOwn(Object.prototype, "id")).toBe(false);
+    expect(dummy["c1"]).toBeUndefined();
+    expect(dummy["p1"]).toBeUndefined();
+    expect(Array.isArray(dummy["constructor"])).toBe(false);
+    expect(Array.isArray(dummy["__proto__"])).toBe(false);
   });
 });

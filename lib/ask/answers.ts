@@ -33,13 +33,15 @@ function copyTarget(target: AskTarget): AskTarget {
  * comparing Date.parse values with `<` (equal timestamps keep prior order).
  */
 export function appendAnswer(map: StepAnswersMap, a: StepAnswer): StepAnswersMap {
-  const previous = map[a.stepId] ?? [];
+  const previous = Object.hasOwn(map, a.stepId) ? map[a.stepId]! : [];
   const without = previous.filter((answer) => answer.id !== a.id);
   const next = [...without, a].sort((left, right) => {
     const delta = createdAtKey(left.createdAt) - createdAtKey(right.createdAt);
     return delta < 0 ? -1 : delta > 0 ? 1 : 0;
   });
-  return { ...map, [a.stepId]: next };
+  const result = Object.assign(Object.create(null), map) as StepAnswersMap;
+  result[a.stepId] = next;
+  return result;
 }
 
 /**
@@ -51,7 +53,7 @@ export function groupAnswersByStep(
   list: readonly StepAnswer[],
   validStepIds?: ReadonlySet<string>,
 ): StepAnswersMap {
-  let map: StepAnswersMap = {};
+  let map: StepAnswersMap = Object.create(null);
   for (const answer of list) {
     if (validStepIds && !validStepIds.has(answer.stepId)) continue;
     map = appendAnswer(map, answer);
