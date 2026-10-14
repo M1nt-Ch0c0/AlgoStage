@@ -140,6 +140,8 @@ interface PlayerState {
   reset: () => void;
 
   askPhase: AskPhase;
+  /** 关面板后请求仍在飞。phase 已回 selecting，入口仍按 busy 置灰，直到回答落地或失败。 */
+  askInFlight: boolean;
   askContext: AskContext | null;
   answerMeta: LectureAnswerMeta;
   answers: StepAnswersMap;
@@ -283,6 +285,7 @@ const initial = {
 
 const askInitial = {
   askPhase: "idle" as AskPhase,
+  askInFlight: false,
   askContext: null as AskContext | null,
   answerMeta: { ...EMPTY_ANSWER_META, askDisabledStepIds: [] as string[] },
   answers: emptyAnswers(),
@@ -326,6 +329,7 @@ export function selectAskAvailability(
     | "askUnfinished"
     | "answerMeta"
     | "askPhase"
+    | "askInFlight"
   >,
 ): AskAvailability {
   const step = currentStep(state);
@@ -338,7 +342,9 @@ export function selectAskAvailability(
   if (state.answerMeta.askDisabledStepIds.includes(step.id)) {
     return { visible: true, disabled: true, reason: "stepDisabled" };
   }
-  if (BUSY_PHASES.has(state.askPhase)) return { visible: true, disabled: true, reason: "busy" };
+  if (BUSY_PHASES.has(state.askPhase) || state.askInFlight) {
+    return { visible: true, disabled: true, reason: "busy" };
+  }
   return { visible: true, disabled: false, reason: null };
 }
 
@@ -389,6 +395,7 @@ function freshAskMemory(playbackRun: number): AskMemory {
 function clearForegroundDraft(): Pick<
   PlayerState,
   | "askPhase"
+  | "askInFlight"
   | "askContext"
   | "selection"
   | "draftQuestion"
@@ -402,6 +409,7 @@ function clearForegroundDraft(): Pick<
 > {
   return {
     askPhase: "idle",
+    askInFlight: false,
     askContext: null,
     selection: null,
     draftQuestion: "",
@@ -468,6 +476,7 @@ function applyEnterAsk(state: PlayerState): Partial<PlayerState> | AskDisabledRe
 
   return {
     askPhase: hasSelection ? "drafting" : "selecting",
+    askInFlight: false,
     askContext,
     status: "interrupted",
     awaitingContinue: false,
@@ -935,6 +944,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const token = detach ? (state.askContext?.token ?? null) : null;
     set({
       askPhase: "selecting",
+      // 请求还在飞：入口保持 busy，直到 answerArrived / answerFailed 清掉。
+      askInFlight: detach ? true : state.askInFlight,
       askErrorCode: null,
       askErrorRetryable: false,
       status: "interrupted",
@@ -965,6 +976,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const ctx = state.askContext;
     set({
       askPhase: "idle",
+      askInFlight: phase === "sending" || phase === "streaming",
       status: ctx?.prevStatus ?? "paused",
       awaitingContinue: ctx?.prevAwaitingContinue ?? false,
       askContext: null,
@@ -991,6 +1003,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const base = state.askContext;
     set({
       askPhase: "sending",
+      askInFlight: true,
       status: "interrupted",
       awaitingContinue: false,
       askContext: {
@@ -1046,13 +1059,14 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       currentStep(state)?.id === answer.stepId;
     const answers = appendAnswer(state.answers, answer);
     if (!foreground) {
-      set({ answers });
+      set({ answers, askInFlight: false });
       return;
     }
     const expanded = new Set(state.expandedAnswerIds);
     expanded.add(answer.id);
     set({
       answers,
+      askInFlight: false,
       askPhase: "playing",
       status: "interrupted",
       awaitingContinue: false,
@@ -1077,9 +1091,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const foreground =
       (state.askPhase === "sending" || state.askPhase === "streaming") &&
       isForegroundGuard(state, guard);
-    if (!foreground) return;
+    if (!foreground) {
+      if (state.askInFlight) set({ askInFlight: false });
+      return;
+    }
     set({
       askPhase: "error",
+      askInFlight: false,
       status: "interrupted",
       awaitingContinue: false,
       previewSegments: [],
@@ -1099,6 +1117,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (isStale(state, guard)) return;
     set({
       askPhase: "drafting",
+      askInFlight: false,
       status: "interrupted",
       awaitingContinue: false,
       previewSegments: [],
