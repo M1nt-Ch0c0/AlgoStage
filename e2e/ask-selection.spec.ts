@@ -461,6 +461,53 @@ test.describe("1280 selection flow", () => {
     await page.keyboard.press("Escape");
     await expect(page.locator("[data-ask-layer]")).toHaveCount(0);
   });
+
+  test("S5. repro: box over Monaco code + step card", async ({ page }) => {
+    let capturedTargets: Array<{ kind?: string }> = [];
+    await mockAsk(page, async (route) => {
+      const body = route.request().postDataJSON() as {
+        selection?: { targets?: Array<{ kind?: string }> };
+      };
+      capturedTargets = body?.selection?.targets ?? [];
+      await route.fulfill({
+        status: 200,
+        contentType: "application/x-ndjson",
+        body: askStream("s1"),
+      });
+    });
+    await startGenerated(page);
+    await pauseLecture(page);
+    await enterSelection(page);
+
+    const monaco = page.locator("[data-ask-stage] .monaco-editor");
+    const stepCard = page.locator('[data-ask-target="step"]');
+    await expect(monaco).toBeVisible();
+    await expect(stepCard).toBeVisible();
+
+    const monacoBox = await monaco.boundingBox();
+    const stepBox = await stepCard.boundingBox();
+    if (!monacoBox || !stepBox) throw new Error("monaco or step target has no box");
+
+    const startX = monacoBox.x;
+    const startY = monacoBox.y;
+    const endX = stepBox.x + stepBox.width;
+    const endY = stepBox.y + stepBox.height;
+
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(endX, endY, { steps: 8 });
+    await page.mouse.up();
+
+    const panel = page.locator("[data-ask-panel]");
+    await expect(panel).toBeVisible();
+
+    await askQuestion(page);
+    await expect(page.getByText(ANSWER_NARRATION)).toBeVisible();
+
+    // S5 repro: before S5 the code area has no data-ask-target, so code is never collected. Flipped to expect code after S5.
+    expect(capturedTargets.some((t) => t.kind === "code")).toBe(false);
+    expect(capturedTargets.some((t) => t.kind === "step")).toBe(true);
+  });
 });
 
 test.describe("390 selection flow", () => {
