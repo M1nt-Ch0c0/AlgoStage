@@ -64,6 +64,31 @@ npm run dev                   # http://localhost:3000
 
 讲课流开始后，NDJSON 错误事件只含 `type: "error"`、`code`、`retryable`；第一个步骤之前的失败仍返回真实的 HTTP 错误响应。
 
+### 圈选提问（v0.3）
+
+讲课中途可以对讲台上的内容向老师追问，回答挂在**当前这一步下面**，不会增加总步数，也不会改时间线进度。
+
+1. 点字幕卡上的 **「圈选提问」**（讲课会自动暂停）。
+2. **拖框**圈选字幕、代码或可视化，或用捷径 **「当前字幕」 / 「当前步骤」 / 「可视化整块」**。提示：「拖动画框，或点一下选中；双指可滚动」。
+3. 在面板里输入问题（最多 300 字），或点快捷句「这一步在做什么？」「为什么这样写？」「换个例子讲讲」，再点 **「提问」**。
+4. 等待时会看到「老师在想…已等待 N 秒」，可取消。回答出现在当前步下，带 **「你问的」** 标签；可折叠、可 **「播放回答」**，或 **「回到这一步」** 停在原位置。
+
+**什么时候不能问（按钮置灰，仍可见）：**
+
+| 情况 | 提示 |
+| --- | --- |
+| 正在备课 | 备课完成后可以提问 |
+| 内置「两数之和」讲解 | 生成讲课后就可以提问 |
+| 这节课没完整缓存 | 这节课没讲完，重新生成后就可以提问 |
+| 当前步被标为不可问 | 这一步暂时不能提问，重新生成这节课后就可以了 |
+| 上一条回答还在生成或播放 | 上一个问题还在回答，答完再问 |
+
+Esc 或 **「退出圈选」** 可退出画选并恢复讲课。换步会丢掉未发送的草稿；同一步内点「取消」会保留选区和草稿。
+
+**隐私：** 公开实例上，提问与回答只存在你这台浏览器（`localStorage`），服务器不保存提问内容；清除站点数据后回答会丢失。提问仍走你配置的 API Key（与讲课相同的 BYOK / 服务器 Key 规则）。
+
+**重新生成：** 若本课已有提问，确认框会写「重新生成会清掉当前教案，确定吗？你问过的 N 个问题会被清掉」。
+
 验证命令：`npm run lint`、`npm run typecheck`、`npm test`、`npm run test:e2e`、`npm run build`。
 
 ## 从旧版本升级
@@ -87,9 +112,9 @@ v0.2.0 给 `Submission` 加了 `judgedBy`。保留旧库却不跑 `db:push` 时�
 ## Docker 自托管
 
 ```bash
-docker buildx build --build-arg BASE_PATH=/algostage -t algostage:0.2.1 --load .
+docker buildx build --build-arg BASE_PATH=/algostage -t algostage:0.3.0 --load .
 # 或
-ALGOSTAGE_IMAGE_TAG=0.2.1 docker compose -f deploy/compose.yaml up -d --no-build --wait
+ALGOSTAGE_IMAGE_TAG=0.3.0 docker compose -f deploy/compose.yaml up -d --no-build --wait
 ```
 
 需自备 API Key。镜像内 `DATA_DIR=/data`，数据库为 `/data/algostage.db`（挂载数据卷 `algostage-data`）；本地非 Docker 运行时默认用 `.env` 里的 `DATABASE_URL`（`file:./algostage.db`）。详见 [deploy/README.md](deploy/README.md)。
@@ -108,7 +133,7 @@ docker run --rm -v algostage-data:/data alpine chown -R 1001:1001 /data
 
 - `v0.2.0-alpha.2` 指向 `7fd9024`。
 - `v0.2.0-alpha.3`（Pre-release）指向 `32ad289`，在 alpha.2 基础上只修了 Docker 入口（Prisma 7 的 `db push` 去掉 `--skip-generate`）；该 tag 中 `package.json` 仍写 `0.2.0-alpha.1`。
-- 当前版本为 v0.2.1：`package.json`、`deploy/compose.yaml` 镜像标签和 CHANGELOG 均为 `0.2.1`。
+- 当前版本为 v0.3.0：`package.json`、`deploy/compose.yaml` 镜像标签和 CHANGELOG 均为 `0.3.0`。
 
 ## 子路径 + nginx
 
