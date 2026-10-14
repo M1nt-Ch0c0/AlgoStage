@@ -208,12 +208,17 @@ test.describe("M7 ask main flow 1280", () => {
     try {
       await startGenerated(page);
       await selectAndAsk(page);
-      // 流挂在 start + segment：面板在等待态，入口 busy 灰态，取消可用。
+      // 流挂在 start + segment：面板在等待态，取消可用；回答中入口置灰（busy），不是 pending。
       await expect(panel(page).locator("[data-ask-waiting]")).toBeVisible();
       await expect(panel(page).locator("[data-ask-waiting]")).toContainText("老师在想");
+      // 面板发送按钮，防连点
       await expect(panel(page).locator("[data-ask-submit]")).toHaveAttribute("aria-disabled", "true");
       await expect(panel(page).getByRole("button", { name: "取消", exact: true })).toBeVisible();
       await expect(entry(page)).toHaveAttribute("data-ask-disabled-reason", "busy");
+      await expect(entry(page)).toHaveAttribute("aria-disabled", "true");
+      const describedBy = await entry(page).getAttribute("aria-describedby");
+      expect(describedBy).toBeTruthy();
+      await expect(page.locator(`[id="${describedBy}"]`)).toHaveText("上一个问题还在回答，答完再问");
       await expect(page.locator("[role=alert][data-ask-error]")).toHaveCount(0);
       stream.release();
       await expect(page.getByText(ANSWER_NARRATION)).toBeVisible();
