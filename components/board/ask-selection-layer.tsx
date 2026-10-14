@@ -565,6 +565,15 @@ function AskSelectionLayerActive({
       className={`absolute inset-0 z-30 cursor-crosshair touch-none ${
         reducedMotion ? "" : "transition-opacity"
       }`}
+      // 点在黑板标题或 Monaco 上时让事件落到真实节点，Esc 才能按焦点区分代码区和圈选层。
+      onPointerDownCapture={(event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        const editable = target.closest(".monaco-editor, [data-ask-board-title]");
+        if (!editable || editable === event.currentTarget) return;
+        event.stopPropagation();
+        if (target instanceof HTMLElement) target.focus();
+      }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
