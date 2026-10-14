@@ -9,9 +9,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type RefObject } from "react";
-import { collectAskCandidates, summarizeSelection } from "@/lib/ask/collect-candidates";
-import { hitTest, hitTestPoint, normalizeBBox } from "@/lib/ask/hit-test";
+import { collectAskCandidates, relativeRect, summarizeSelection } from "@/lib/ask/collect-candidates";
+import { hitTest, hitTestPoint, intersects, normalizeBBox } from "@/lib/ask/hit-test";
 import {
+  ASK_CODE_MISS_HINT,
   ASK_EMPTY_HIT,
   ASK_ENTERED_STATUS,
   ASK_LAYER_HINT,
@@ -21,6 +22,7 @@ import {
   ASK_SHORTCUT_VIZ,
 } from "@/lib/ask/ask-ui-text";
 import { ASK_LIMITS, type AskBBox, type AskSelectionSummary, type AskTarget } from "@/lib/ask/types";
+import { setAskCodeMissNotice } from "@/lib/ask/code-editor-registry";
 import { usePlayerStore } from "@/lib/player/store";
 
 /** 规范化后任一边短于这个值，按点选（中心点）处理。 */
@@ -242,11 +244,13 @@ function AskSelectionLayerActive({
       drawingRef.current = false;
       originRef.current = null;
       setHint(ASK_RESIZE_HINT);
+      setAskCodeMissNotice(null);
       clearAskSelection();
     };
     window.addEventListener("resize", onResize);
     return () => {
       window.removeEventListener("resize", onResize);
+      setAskCodeMissNotice(null);
     };
   }, [clearAskSelection]);
 
@@ -303,7 +307,6 @@ function AskSelectionLayerActive({
       const dy = current.y - origin.y;
       const raw = bandFrom(origin, current);
       const box = normalizeBBox(raw);
-      const candidates = collectAskCandidates(host);
       const pointLike =
         Math.max(Math.abs(dx), Math.abs(dy)) < ASK_LIMITS.dragThresholdPx ||
         box.width < MIN_REGION_SIDE ||
@@ -311,12 +314,44 @@ function AskSelectionLayerActive({
       const point = pointLike
         ? { x: box.x + box.width / 2, y: box.y + box.height / 2 }
         : null;
+
+      const candidateBox = pointLike
+        ? { x: point!.x, y: point!.y, width: Math.max(box.width, 1), height: Math.max(box.height, 1) }
+        : box;
+      const candidates = collectAskCandidates(host, candidateBox);
       const hit = point ? hitTestPoint(point.x, point.y, candidates) : hitTest(box, candidates);
+
+      const testBox =
+        box.width === 0 || box.height === 0
+          ? { x: box.x, y: box.y, width: Math.max(box.width, 1), height: Math.max(box.height, 1) }
+          : box;
+      let codeIntersected = false;
+      for (const codeEl of host.querySelectorAll<HTMLElement>('[data-ask-target="code"]')) {
+        if (codeEl.closest("[data-ask-exclude]") !== null) continue;
+        const codeRect = relativeRect(host, codeEl);
+        if (intersects(testBox, normalizeBBox(codeRect))) {
+          codeIntersected = true;
+          break;
+        }
+      }
+      const codeCollected = hit.targets.some((t) => t.kind === "code");
+
       if (hit.targets.length === 0) {
-        setHint(ASK_EMPTY_HIT);
+        if (codeIntersected) {
+          setHint(ASK_CODE_MISS_HINT);
+        } else {
+          setHint(ASK_EMPTY_HIT);
+        }
+        setAskCodeMissNotice(null);
         return;
       }
+
       setHint(null);
+      if (codeIntersected && !codeCollected) {
+        setAskCodeMissNotice(ASK_CODE_MISS_HINT);
+      } else {
+        setAskCodeMissNotice(null);
+      }
       setAskSelection({ mode: hit.mode, bbox: box, targets: hit.targets });
     },
     [getStage, setAskSelection],
@@ -418,6 +453,7 @@ function AskSelectionLayerActive({
   };
 
   const pickShortcut = (key: ShortcutKey) => {
+    setAskCodeMissNotice(null);
     const host = getStage();
     if (!host || !stepId) return;
     const el = findByAskId(host, shortcutId(stepId, key));
@@ -445,6 +481,7 @@ function AskSelectionLayerActive({
     if (key === "Escape" && askPhase === "selecting") {
       event.preventDefault();
       event.stopPropagation();
+      setAskCodeMissNotice(null);
       exitAsk();
       return;
     }
@@ -495,6 +532,7 @@ function AskSelectionLayerActive({
         return;
       }
       setHint(null);
+      setAskCodeMissNotice(null);
       setAskSelection({ mode: "single", bbox: match.rect, targets: [match.target] });
     }
   };

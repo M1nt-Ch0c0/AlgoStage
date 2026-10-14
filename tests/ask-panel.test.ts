@@ -9,6 +9,7 @@ import { ASK_LIMITS, type AskSelectionSummary } from "../lib/ask/types";
 import { CAPTURE_FALLBACK_NOTICE, type CaptureResult } from "../lib/ask/capture";
 import { cancelAsk, sendAsk } from "../lib/ask/ask-client";
 import { captureStage } from "../lib/ask/capture";
+import { resetCodeEditorRegistry, setAskCodeMissNotice } from "../lib/ask/code-editor-registry";
 import { usePlayerStore } from "../lib/player/store";
 import type { TeachingScript } from "../lib/teaching/types";
 
@@ -113,6 +114,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   usePlayerStore.getState().reset();
+  resetCodeEditorRegistry();
   container.remove();
   stage.remove();
   status.remove();
@@ -460,5 +462,27 @@ describe("ask panel", () => {
     expect(document.querySelectorAll("[role=status]")).toHaveLength(1);
     expect(document.querySelectorAll("[role=alert]")).toHaveLength(1);
     expect(container.querySelector("[role=alert]")?.textContent).toBe(ASK_ERROR_SPECS.UPSTREAM_ERROR.message);
+  });
+
+  test("renders code miss notice directly above selection label when notice is non-null", async () => {
+    draft("drafting");
+    await render();
+    expect(container.querySelector('[data-testid="ask-code-miss-hint"]')).toBeNull();
+
+    await act(async () => {
+      setAskCodeMissNotice("代码部分没选上，换个地方再框一次");
+    });
+    const hint = container.querySelector<HTMLParagraphElement>('[data-testid="ask-code-miss-hint"]');
+    expect(hint).not.toBeNull();
+    expect(hint?.textContent).toBe("代码部分没选上，换个地方再框一次");
+    expect(hint?.className).toBe("text-xs text-chalk-500");
+
+    const label = container.querySelector("[data-ask-panel-label]");
+    expect(hint?.nextElementSibling).toBe(label);
+
+    await act(async () => {
+      setAskCodeMissNotice(null);
+    });
+    expect(container.querySelector('[data-testid="ask-code-miss-hint"]')).toBeNull();
   });
 });
