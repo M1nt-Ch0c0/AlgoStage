@@ -196,6 +196,43 @@ describe("cancelAsk", () => {
     expect(s().draftQuestion).toBe(QUESTION);
     expect(window.localStorage.getItem(answersStorageKey("ck-1", "v1"))).toBeNull();
   });
+
+  test("cancelAsk when askContext has no token falls back to scanning foreground runtime", async () => {
+    loadReady("browser");
+    enterDrafting();
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const encoder = new TextEncoder();
+    const body = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        controller.enqueue(encoder.encode(`${startLine()}\n${segmentLine()}\n`));
+        await gate;
+        controller.enqueue(encoder.encode(`${resultLine()}\n`));
+        controller.close();
+      },
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(body, { headers: ndjsonHeaders })));
+
+    const pending = sendAsk(null);
+    await vi.waitFor(() => {
+      expect(s().askPhase).toBe("streaming");
+    });
+    const answersBefore = s().answers.s1?.length ?? 0;
+    const ctx = s().askContext;
+    expect(ctx).not.toBeNull();
+    usePlayerStore.setState({
+      askContext: { ...ctx!, token: null },
+    });
+
+    cancelAsk();
+    release?.();
+    await pending;
+
+    expect(s().answers.s1?.length ?? 0).toBe(answersBefore);
+    expect(s().askErrorCode).toBeNull();
+  });
 });
 
 describe("timeout", () => {
@@ -252,6 +289,24 @@ describe("capture image", () => {
 
     expect(postedBody(fetchMock).image).toBeNull();
     expect(s().answers.s1).toHaveLength(1);
+  });
+
+  test("ok:true under maxBytes posts with image payload", async () => {
+    loadReady("server");
+    enterDrafting();
+    const fetchMock = vi.fn(async () => responseOf(happyBody()));
+    vi.stubGlobal("fetch", fetchMock);
+    const capture: CaptureResult = {
+      ok: true,
+      image: { mime: "image/webp", dataBase64: "AAAA" },
+      bytes: 3,
+    };
+
+    await sendAsk(capture);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(postedBody(fetchMock).image).toEqual({ mime: "image/webp", dataBase64: "AAAA" });
+    expect(s().askPhase).toBe("playing");
   });
 });
 
