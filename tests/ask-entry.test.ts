@@ -586,3 +586,24 @@ test("storageMode pending q calls requestEnterAsk (pendingEnterIntent set, aria-
   expect(entry().getAttribute("aria-busy")).toBe("true");
   expect(usePlayerStore.getState().askPhase).toBe("idle");
 });
+
+test("keydown Q with repeat:true and isComposing:true do not enter ask mode, while plain Q does", async () => {
+  loadReady();
+  await render();
+  expect(usePlayerStore.getState().askPhase).toBe("idle");
+
+  await act(async () => {
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Q", repeat: true, bubbles: true }));
+  });
+  expect(usePlayerStore.getState().askPhase).toBe("idle");
+
+  await act(async () => {
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Q", isComposing: true, bubbles: true }));
+  });
+  expect(usePlayerStore.getState().askPhase).toBe("idle");
+
+  await act(async () => {
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Q", bubbles: true }));
+  });
+  expect(usePlayerStore.getState().askPhase).toBe("selecting");
+});
