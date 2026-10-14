@@ -3,7 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { scrollHeight, clientHeight, scrollWidth, clientWidth } from "happy-dom/lib/PropertySymbol.js";
-import AskSelectionLayer from "../components/board/ask-selection-layer";
+import AskSelectionLayer, { resolveAskEscape } from "../components/board/ask-selection-layer";
 import { ASK_EMPTY_HIT, ASK_ENTERED_STATUS, ASK_RESIZE_HINT } from "../lib/ask/ask-ui-text";
 import * as hitTest from "../lib/ask/hit-test";
 import { usePlayerStore } from "../lib/player/store";
@@ -383,31 +383,160 @@ describe("AskSelectionLayer", () => {
     expect(document.activeElement).toBe(buttons()[1]);
   });
 
-  test("Esc 在 selecting 调用 exitAsk", async () => {
-    const exitSpy = vi.spyOn(usePlayerStore.getState(), "exitAsk");
+  function pressEscape(target: EventTarget) {
+    const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    target.dispatchEvent(event);
+    return event;
+  }
+
+  test("窗口级 Esc：selecting 退出，drafting 先关面板再退出", async () => {
     await render();
-    const host = layer();
-    const esc = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
-    await act(async () => {
-      host.dispatchEvent(esc);
+    const body = document.body;
+    body.tabIndex = -1;
+    body.focus();
+
+    const first = await act(async () => pressEscape(body));
+    expect(first.defaultPrevented).toBe(true);
+    expect(usePlayerStore.getState().askPhase).toBe("idle");
+    expect(container.querySelector("[data-ask-layer]")).toBeNull();
+
+    usePlayerStore.setState({
+      askPhase: "drafting",
+      status: "interrupted",
+      selection: {
+        mode: "single",
+        bbox: { x: 80, y: 10, width: 60, height: 30 },
+        targets: [{ kind: "step", id: "step:s1", stepId: "s1", text: "步骤内容" }],
+      },
+      draftQuestion: "窗口也能关",
     });
-    expect(esc.defaultPrevented).toBe(true);
-    expect(esc.cancelBubble).toBe(true);
-    expect(exitSpy).toHaveBeenCalledTimes(1);
+    await render();
+    const target = stage.querySelector<HTMLElement>('[data-ask-id="step:s1"]')!;
+    target.tabIndex = -1;
+    target.focus();
+    const close = await act(async () => pressEscape(target));
+    expect(close.defaultPrevented).toBe(true);
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
+    expect(usePlayerStore.getState().draftQuestion).toBe("窗口也能关");
+    expect(document.activeElement).toBe(layer());
+
+    const exit = await act(async () => pressEscape(layer()));
+    expect(exit.defaultPrevented).toBe(true);
+    expect(usePlayerStore.getState().askPhase).toBe("idle");
   });
 
-  test("Esc 在 drafting 不从层调用 exitAsk", async () => {
-    const exitSpy = vi.spyOn(usePlayerStore.getState(), "exitAsk");
+  test("窗口级 Esc：面板外的 Monaco 忽略，面板内 textarea 关面板", async () => {
+    await render();
+    const monaco = document.createElement("textarea");
+    monaco.className = "inputarea";
+    const editor = document.createElement("div");
+    editor.className = "monaco-editor";
+    editor.append(monaco);
+    document.body.append(editor);
+    monaco.focus();
+
+    const ignored = await act(async () => pressEscape(monaco));
+    expect(ignored.defaultPrevented).toBe(false);
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
+
+    const panel = document.createElement("div");
+    panel.setAttribute("data-ask-panel", "");
+    const question = document.createElement("textarea");
+    panel.append(question);
+    document.body.append(panel);
     usePlayerStore.setState({ askPhase: "drafting" });
     await render();
-    const host = layer();
-    const esc = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
-    await act(async () => {
-      host.dispatchEvent(esc);
+    question.focus();
+    const close = await act(async () => pressEscape(question));
+    expect(close.defaultPrevented).toBe(true);
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
+    expect(document.activeElement).toBe(layer());
+
+    editor.remove();
+    panel.remove();
+  });
+
+  test("sending/streaming 时窗口级 Esc 不关面板也不退出", async () => {
+    const context = {
+      stepId: "s1",
+      stepIndex: 0,
+      prevStatus: "paused" as const,
+      prevAwaitingContinue: false,
+      answerId: null as string | null,
+      segmentIndex: -1,
+      token: 4,
+    };
+    usePlayerStore.setState({ askPhase: "sending", askContext: context });
+    await render();
+    expect(container.querySelector("[data-ask-layer]")).toBeNull();
+    const sending = await act(async () => pressEscape(document.body));
+    expect(sending.defaultPrevented).toBe(false);
+    expect(usePlayerStore.getState().askPhase).toBe("sending");
+    expect(usePlayerStore.getState().askContext?.token).toBe(4);
+
+    usePlayerStore.setState({
+      askPhase: "streaming",
+      askContext: { ...context, answerId: "ans-live" },
     });
-    expect(esc.defaultPrevented).toBe(false);
-    expect(exitSpy).not.toHaveBeenCalled();
-    expect(usePlayerStore.getState().askPhase).toBe("drafting");
+    await render();
+    const streaming = await act(async () => pressEscape(document.body));
+    expect(streaming.defaultPrevented).toBe(false);
+    expect(usePlayerStore.getState().askPhase).toBe("streaming");
+    expect(usePlayerStore.getState().askContext?.token).toBe(4);
+    expect(container.querySelector("[data-ask-layer]")).toBeNull();
+  });
+
+  test("画选层元素不再单独处理 Esc，窗口监听只退出一次", async () => {
+    const exitSpy = vi.spyOn(usePlayerStore.getState(), "exitAsk");
+    await render();
+    const host = layer();
+    const esc = await act(async () => pressEscape(host));
+    expect(esc.defaultPrevented).toBe(true);
+    expect(exitSpy).toHaveBeenCalledTimes(1);
+    expect(usePlayerStore.getState().askPhase).toBe("idle");
+  });
+});
+
+describe("resolveAskEscape", () => {
+  const plain = {
+    composing: false,
+    defaultPrevented: false,
+    ctrlKey: false,
+    metaKey: false,
+    altKey: false,
+  };
+
+  test("阶段与输入目标", () => {
+    const body = document.createElement("div");
+    const monaco = document.createElement("div");
+    monaco.className = "monaco-editor";
+    const cell = document.createElement("textarea");
+    monaco.append(cell);
+    const panel = document.createElement("div");
+    panel.setAttribute("data-ask-panel", "");
+    const question = document.createElement("textarea");
+    panel.append(question);
+
+    expect(resolveAskEscape("selecting", body, plain)).toBe("exit");
+    expect(resolveAskEscape("drafting", body, plain)).toBe("close-panel");
+    expect(resolveAskEscape("error", body, plain)).toBe("close-panel");
+    expect(resolveAskEscape("sending", question, plain)).toBe("ignore");
+    expect(resolveAskEscape("streaming", body, plain)).toBe("ignore");
+    expect(resolveAskEscape("playing", body, plain)).toBe("ignore");
+    expect(resolveAskEscape("idle", body, plain)).toBe("ignore");
+    expect(resolveAskEscape("selecting", cell, plain)).toBe("ignore");
+    expect(resolveAskEscape("drafting", cell, plain)).toBe("ignore");
+    expect(resolveAskEscape("drafting", question, plain)).toBe("close-panel");
+    expect(resolveAskEscape("sending", question, plain)).toBe("ignore");
+  });
+
+  test("组合键、输入法、已处理的事件忽略", () => {
+    const body = document.createElement("div");
+    expect(resolveAskEscape("selecting", body, { ...plain, ctrlKey: true })).toBe("ignore");
+    expect(resolveAskEscape("drafting", body, { ...plain, metaKey: true })).toBe("ignore");
+    expect(resolveAskEscape("selecting", body, { ...plain, altKey: true })).toBe("ignore");
+    expect(resolveAskEscape("selecting", body, { ...plain, composing: true })).toBe("ignore");
+    expect(resolveAskEscape("drafting", body, { ...plain, defaultPrevented: true })).toBe("ignore");
   });
 
   test("guard: pointerdown inside [data-ask-entry] does not start selection", async () => {

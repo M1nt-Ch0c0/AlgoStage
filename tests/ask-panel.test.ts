@@ -169,20 +169,18 @@ function keydown(el: EventTarget, init: KeyboardEventInit) {
 }
 
 describe("ask panel", () => {
-  test("22. drafting Esc 调用 closeAskPanel，焦点回到原选中目标", async () => {
+  test("22. 面板不再吞 Esc，也不把焦点送回舞台目标", async () => {
     draft("drafting", { draftQuestion: "还在的草稿" });
     await render();
     const target = stage.querySelector<HTMLElement>('[data-ask-id="step:s1"]');
-    expect(target).not.toBeNull();
+    const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
     await act(async () => {
-      keydown(question(), { key: "Escape" });
+      question().dispatchEvent(event);
     });
-    const state = usePlayerStore.getState();
-    expect(state.askPhase).toBe("selecting");
-    expect(state.draftQuestion).toBe("还在的草稿");
-    expect(state.selection?.targets[0]?.id).toBe("step:s1");
-    expect(container.querySelector("[data-ask-panel]")).toBeNull();
-    expect(document.activeElement).toBe(target);
+    expect(event.defaultPrevented).toBe(false);
+    expect(usePlayerStore.getState().askPhase).toBe("drafting");
+    expect(document.activeElement).not.toBe(target);
+    expect(container.querySelector("[data-ask-panel]")).not.toBeNull();
   });
 
   test("23. 空提问 aria-disabled；chip 只填不发；计数与 279/280 变色；超 300 截断", async () => {
