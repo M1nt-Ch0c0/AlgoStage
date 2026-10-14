@@ -106,7 +106,7 @@ test.beforeEach(async ({ context, baseURL }) => {
 test("narration end pauses and shows 「按空格继续」 and Space advances", async ({ page }) => {
   await mockLecture(page, "group-anagrams");
   await page.goto("/problem/group-anagrams");
-  await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2x", exact: true }).click();
+  await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2×", exact: true }).click();
   await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
 
   await expect(page.getByText("第 1 / 3 步")).toBeVisible();
@@ -120,7 +120,7 @@ test("narration end pauses and shows 「按空格继续」 and Space advances", 
 async function reachLastStep(page: Page) {
   await mockLecture(page, "group-anagrams");
   await page.goto("/problem/group-anagrams");
-  await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2x", exact: true }).click();
+  await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2×", exact: true }).click();
   await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
   for (let i = 1; i <= 2; i++) {
     await expect(page.getByText(`第 ${i} / 3 步`)).toBeVisible();
@@ -140,7 +140,7 @@ async function expectFinishedReplay(page: Page) {
 test("last step shows 「讲完了」 and 「重播」", async ({ page }) => {
   await mockLecture(page, "group-anagrams");
   await page.goto("/problem/group-anagrams");
-  await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2x", exact: true }).click();
+  await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2×", exact: true }).click();
   await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
 
   for (let i = 1; i <= 3; i++) {
@@ -172,12 +172,12 @@ test("last step ArrowRight shows finished panel and exactly one 「重播」", a
 test("Space on the focused speed button changes speed and does not advance", async ({ page }) => {
   await mockLecture(page, "group-anagrams");
   await page.goto("/problem/group-anagrams");
-  await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2x", exact: true }).click();
+  await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2×", exact: true }).click();
   await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
   await expect(page.getByText("第 1 / 3 步")).toBeVisible();
   await expect(page.getByTestId("continue-hint")).toHaveText("按空格继续");
 
-  const speed = page.getByRole("group", { name: "语速" }).getByRole("button", { name: "1x", exact: true });
+  const speed = page.getByRole("group", { name: "语速" }).getByRole("button", { name: "1×", exact: true });
   await speed.focus();
   await page.keyboard.press("Space");
   await expect(speed).toHaveAttribute("aria-pressed", "true");
@@ -221,7 +221,7 @@ test("after the finished panel shows, Space and ArrowRight leave it in place", a
 test("toggle 「自动播放」 on auto-advances without hint", async ({ page }) => {
   await mockLecture(page, "group-anagrams");
   await page.goto("/problem/group-anagrams");
-  await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2x", exact: true }).click();
+  await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2×", exact: true }).click();
 
   const autoPlayBtn = page.getByRole("button", { name: "自动播放", exact: true });
   await autoPlayBtn.click();
@@ -236,7 +236,7 @@ test("toggle 「自动播放」 on auto-advances without hint", async ({ page })
 test("autoplay stays on after reload and problem switch, and off after toggling", async ({ page }) => {
   await mockLecture(page, "group-anagrams");
   await page.goto("/problem/group-anagrams");
-  await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2x", exact: true }).click();
+  await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2×", exact: true }).click();
 
   const autoPlayBtn = page.getByRole("button", { name: "自动播放", exact: true });
   await expect(autoPlayBtn).toHaveAttribute("aria-pressed", "false");
@@ -278,7 +278,7 @@ test("autoplay stays on after reload and problem switch, and off after toggling"
 test("after finish shows 「下一题」 link to next problem", async ({ page }) => {
   await mockLecture(page, "group-anagrams");
   await page.goto("/problem/group-anagrams");
-  await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2x", exact: true }).click();
+  await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2×", exact: true }).click();
   await page.getByRole("button", { name: "自动播放", exact: true }).click();
   await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
 
@@ -291,7 +291,7 @@ test("after finish shows 「下一题」 link to next problem", async ({ page })
 test("on last roadmap problem after finish shows 「回路线图」 link and no 「下一题」", async ({ page }) => {
   await mockLecture(page, "find-the-duplicate-number");
   await page.goto("/problem/find-the-duplicate-number");
-  await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2x", exact: true }).click();
+  await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2×", exact: true }).click();
   await page.getByRole("button", { name: "自动播放", exact: true }).click();
   await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
 
@@ -308,7 +308,7 @@ test.describe("coarse pointer", () => {
   test("waiting shows 「点「下一步」继续」 and tapping 「下一步」 advances", async ({ page }) => {
     await mockLecture(page, "group-anagrams");
     await page.goto("/problem/group-anagrams");
-    await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2x", exact: true }).click();
+    await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2×", exact: true }).click();
     await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
 
     await expect(page.getByText("第 1 / 3 步")).toBeVisible();
@@ -336,7 +336,7 @@ test.describe("coarse pointer", () => {
   test("last step tap on 「下一步」 shows finished panel and exactly one 「重播」", async ({ page }) => {
     await mockLecture(page, "group-anagrams");
     await page.goto("/problem/group-anagrams");
-    await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2x", exact: true }).click();
+    await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2×", exact: true }).click();
     await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
 
     const nextButton = page.getByRole("button", { name: "下一步", exact: true });
@@ -369,7 +369,7 @@ function touchHitTests(viewport: { width: number; height: number }) {
   test(`coarse pointer ${viewport.width}x${viewport.height} hit areas are at least 44px and timeline dots do not overlap`, async ({ page }) => {
     await mockLecture(page, "group-anagrams");
     await page.goto("/problem/group-anagrams");
-    await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2x", exact: true }).click();
+    await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2×", exact: true }).click();
     await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
     await expect(page.getByText("第 1 / 3 步")).toBeVisible();
 
@@ -440,7 +440,7 @@ function touchHitTests(viewport: { width: number; height: number }) {
 async function finishAndExpectReplayFocused(page: Page) {
   await mockLecture(page, "group-anagrams");
   await page.goto("/problem/group-anagrams");
-  await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2x", exact: true }).click();
+  await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2×", exact: true }).click();
   await page.getByRole("button", { name: "自动播放", exact: true }).click();
   await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
   await expect(page.getByText("讲完了")).toBeVisible();
@@ -472,7 +472,7 @@ test.describe("coarse pointer 1024 hint", () => {
   test("「点「下一步」继续」 sits in the bottom control bar once and stays in view", async ({ page }) => {
     await mockLecture(page, "group-anagrams");
     await page.goto("/problem/group-anagrams");
-    await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2x", exact: true }).click();
+    await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2×", exact: true }).click();
     await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
 
     const bar = page.getByTestId("player-controls");
@@ -536,7 +536,7 @@ test.describe("coarse pointer hit areas 390", () => {
     const count = 12;
     await mockLecture(page, "group-anagrams", count);
     await page.goto("/problem/group-anagrams");
-    await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2x", exact: true }).click();
+    await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2×", exact: true }).click();
     await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
     await expect(page.getByText(`第 1 / ${count} 步`)).toBeVisible();
     // 窄屏上「点「下一步」继续」会把时间线挤到下一行，等这一行落定再量。
@@ -591,7 +591,7 @@ test.describe("coarse pointer hit areas 390", () => {
     const close = await mockPartialLecture(page, "group-anagrams", count);
     try {
       await page.goto("/problem/group-anagrams");
-      await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2x", exact: true }).click();
+      await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2×", exact: true }).click();
       await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
       // 备课中控制栏不显示「第 x / N 步」（v0.2.1），改等 role=status 的「已收到 N 步…」。
       await expect(page.getByRole("status").filter({ hasText: `已收到 ${count} 步，仍在备课…` })).toBeVisible();
@@ -646,12 +646,12 @@ test.describe("coarse pointer hit areas 390", () => {
     }
   });
 
-  test("tap timeline dot at 2x does not advance an extra step with autoplay off", async ({ page }) => {
-    // Paige decision, 2x persists across lecture start; tapping must not advance an extra step.
+  test("tap timeline dot at 2× does not advance an extra step with autoplay off", async ({ page }) => {
+    // Paige decision, 2× persists across lecture start; tapping must not advance an extra step.
     const count = 12;
     await mockLecture(page, "group-anagrams", count);
     await page.goto("/problem/group-anagrams");
-    await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2x", exact: true }).click();
+    await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2×", exact: true }).click();
     await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
     await expect(page.getByText("第 1 / 12 步")).toBeVisible();
 
@@ -682,7 +682,7 @@ test.describe("coarse pointer hit areas 1024", () => {
 test("after finish 「重新生成」 in more menu shows confirm button without firing a second lecture POST", async ({ page }) => {
   const getPosts = await mockLecture(page, "group-anagrams");
   await page.goto("/problem/group-anagrams");
-  await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2x", exact: true }).click();
+  await page.getByRole("group", { name: "语速" }).getByRole("button", { name: "2×", exact: true }).click();
   await page.getByRole("button", { name: "自动播放", exact: true }).click();
   await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
 
@@ -700,7 +700,7 @@ test("after finish 「重新生成」 in more menu shows confirm button without 
 /** 只量热区，不点按，避免自动播放 / 语速 / 特效强度把播放状态改掉。 */
 async function checkToggles(page: Page) {
   // components/board/player-controls.tsx: SPEEDS 0.5, 1, 1.5, 2；LEVELS 华丽 / 克制 / 极简。
-  const speedLabels = ["0.5x", "1x", "1.5x", "2x"];
+  const speedLabels = ["0.5×", "1×", "1.5×", "2×"];
   const effectLabels = ["华丽", "克制", "极简"];
   const speedGroup = page.getByRole("group", { name: "语速" });
   const effectGroup = page.getByRole("group", { name: "特效强度" });

@@ -18,7 +18,7 @@
 import { useEffect } from "react";
 import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import type { StepAnswer } from "@/lib/ask/types";
-import { endPanelShowing, usePlayerStore } from "@/lib/player/store";
+import { endPanelShowing, syncPrefsFromStorage, usePlayerStore } from "@/lib/player/store";
 import { useCoarsePointer } from "./use-coarse-pointer";
 
 const EMPTY_ANSWERS: Record<string, StepAnswer[]> = {};
@@ -101,6 +101,11 @@ export default function PlayerControls({
     hydrateAutoAdvance();
     hydratePrefs();
   }, [hydrateAutoAdvance, hydratePrefs]);
+
+  useEffect(() => {
+    window.addEventListener("storage", syncPrefsFromStorage);
+    return () => window.removeEventListener("storage", syncPrefsFromStorage);
+  }, []);
 
   const hasScript = !preparing && steps.length > 0;
   const answerPlayback = askPhase === "playing";
@@ -311,7 +316,7 @@ export default function PlayerControls({
       <div role="group" aria-label="语速" className="flex items-center gap-0.5 rounded-full border border-board-700/70 p-0.5">
         {SPEEDS.map((v) => (
           <button type="button" key={v} onClick={() => setSpeed(v)} aria-pressed={speed === v} className={`${pill(speed === v)} font-mono`}>
-            {v}x
+            {v}×
           </button>
         ))}
       </div>

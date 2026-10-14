@@ -46,7 +46,7 @@ test("粗指针下自动播放、语速和特效强度热区至少 44px，视觉
   ];
 
   expect(autoplay).toBeTruthy();
-  expect(speed.map((button) => button.textContent)).toEqual(["0.5x", "1x", "1.5x", "2x"]);
+  expect(speed.map((button) => button.textContent)).toEqual(["0.5×", "1×", "1.5×", "2×"]);
   expect(levels.map((button) => button.textContent)).toEqual(["华丽", "克制", "极简"]);
 
   for (const button of [autoplay!, ...speed, ...levels]) {
@@ -140,4 +140,22 @@ test("answers 存在但 answersReady:false 时时间线 aria-label 为无提问�
   expect(dot1).toBeTruthy();
   expect(container.querySelector('button[aria-label*="提问"]')).toBeNull();
   expect(dot1!.querySelector("[data-answer-mark]")).toBeNull();
+});
+
+
+test("播放器显示 1.5×", async () => {
+  usePlayerStore.getState().loadScript(script);
+
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () => {
+    root.render(createElement(PlayerControls));
+  });
+
+  const speed15 = [...container.querySelectorAll<HTMLButtonElement>('[role="group"][aria-label="语速"] button')].find(
+    (button) => button.textContent === "1.5×",
+  );
+  expect(speed15).toBeDefined();
+  expect(speed15?.textContent).toBe("1.5×");
 });

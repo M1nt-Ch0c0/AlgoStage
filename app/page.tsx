@@ -69,6 +69,8 @@ export default function LandingPage() {
               <MapIcon size={15} />
               看路线图
             </Link>
+          </div>
+          <div className="mt-5 max-w-[34rem]">
             <AiSetupPrompt />
           </div>
           <dl className="mt-10 grid max-w-sm grid-cols-3 gap-4 border-t border-board-700/60 pt-5">

@@ -91,7 +91,7 @@ test("焦点在 button 或链接上时只放行 Space，方向键仍步进；对
     setStoreState({ awaitingContinue: true, speed: 2 });
   });
 
-  const speedButton = [...container.querySelectorAll("button")].find((el) => el.textContent === "1x")!;
+  const speedButton = [...container.querySelectorAll("button")].find((el) => el.textContent === "1×")!;
   let speedClicks = 0;
   speedButton.addEventListener("click", () => {
     speedClicks += 1;

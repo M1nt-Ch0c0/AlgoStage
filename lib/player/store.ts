@@ -135,8 +135,8 @@ interface PlayerState {
   goto: (index: number) => void;
   interrupt: () => void;
   resume: () => void;
-  setSpeed: (speed: PlayerState["speed"]) => void;
-  setEffectLevel: (level: PlayerState["effectLevel"]) => void;
+  setSpeed: (speed: PlayerState["speed"]) => boolean;
+  setEffectLevel: (level: PlayerState["effectLevel"]) => boolean;
   reset: () => void;
 
   askPhase: AskPhase;
@@ -239,6 +239,26 @@ export function readEffectLevel(): "full" | "calm" | "minimal" {
     return "full";
   } catch {
     return "full";
+  }
+}
+
+export function writeSpeed(v: PlayerState["speed"]): boolean {
+  try {
+    if (typeof window === "undefined") return false;
+    window.localStorage.setItem(SPEED_KEY, String(v));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function writeEffectLevel(v: PlayerState["effectLevel"]): boolean {
+  try {
+    if (typeof window === "undefined") return false;
+    window.localStorage.setItem(EFFECT_LEVEL_KEY, v);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -779,24 +799,14 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   setSpeed: (speed) => {
-    try {
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(SPEED_KEY, String(speed));
-      }
-    } catch {
-      // localStorage 不可用时只更新内存，不把异常抛给调用方
-    }
+    const ok = writeSpeed(speed);
     set({ speed, speedUserSet: true });
+    return ok;
   },
   setEffectLevel: (effectLevel) => {
-    try {
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(EFFECT_LEVEL_KEY, effectLevel);
-      }
-    } catch {
-      // localStorage 不可用时只更新内存，不把异常抛给调用方
-    }
+    const ok = writeEffectLevel(effectLevel);
     set({ effectLevel, effectLevelUserSet: true });
+    return ok;
   },
 
   reset: () =>
@@ -1247,4 +1257,17 @@ function appendAll(map: StepAnswersMap): StepAnswersMap {
     for (const answer of list) next = appendAnswer(next, answer);
   }
   return next;
+}
+
+export function syncPrefsFromStorage(event: StorageEvent): void {
+  if (event.key === SPEED_KEY) {
+    usePlayerStore.setState({ speed: readSpeed() });
+  } else if (event.key === EFFECT_LEVEL_KEY) {
+    usePlayerStore.setState({ effectLevel: readEffectLevel() });
+  } else if (event.key === null) {
+    usePlayerStore.setState({
+      speed: readSpeed(),
+      effectLevel: readEffectLevel(),
+    });
+  }
 }
