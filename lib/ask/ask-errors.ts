@@ -2,6 +2,8 @@
  * Ask-path error whitelist. Messages come from §5.2 plus Paige overrides
  * (NO_BYOK / ASK_BUSY / RATE_LIMITED). Raw server or browser text is never shown.
  */
+import { ASK_NO_BYOK_MESSAGE } from "@/lib/ask/ask-copy";
+import { ASK_BUSY_MESSAGE } from "@/lib/ask/ask-response";
 import {
   BASE_URL_INVALID_LECTURE_MESSAGE,
   BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE,
@@ -11,7 +13,8 @@ import {
   UPSTREAM_AUTH_LECTURE_MESSAGE,
   UPSTREAM_ERROR_MESSAGE,
 } from "@/lib/byok/client";
-import { ASK_BUSY_MESSAGE } from "@/lib/ask/ask-response";
+
+export { ASK_NO_BYOK_MESSAGE };
 
 export type AskErrorAction = "settings" | "retry" | "refresh" | "edit" | "home" | "none";
 
@@ -22,7 +25,6 @@ export interface AskErrorView {
   action: AskErrorAction;
 }
 
-export const ASK_NO_BYOK_MESSAGE = "老师还没接上 AI，先去设置里填自己的 Key。";
 export const ASK_RATE_LIMITED_MESSAGE = "问得有点快，请稍后再问。";
 export const ASK_TIMEOUT_MESSAGE = "老师回答超时，请重新问一次。";
 export const ASK_INVALID_ANSWER_MESSAGE = "这次回答没能完整生成，请重新问一次。";

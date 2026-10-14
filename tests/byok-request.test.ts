@@ -88,7 +88,6 @@ describe("lib/byok/client pure helpers & fetchServerKeyDisabled", () => {
       byok: key,
     });
     expect(withByok(base, false, key)).toEqual(base);
-    expect(withByok(base, undefined, key)).toEqual(base);
     expect(withByok(base, true, null)).toEqual(base);
   });
 
@@ -225,9 +224,7 @@ describe("lib/byok/client pure helpers & fetchServerKeyDisabled", () => {
     expect(mapByokErrorMessage({ code: "SETTINGS_LOCKED" })).toBe(
       "公共实例不支持修改服务器设置",
     );
-    expect(mapByokErrorMessage({ code: "NO_BYOK" })).toBe(
-      "还没填 API Key。先去设置页填入你自己的 API Key 就能开讲。",
-    );
+    expect(mapByokErrorMessage({ code: "NO_BYOK" })).toBe(NO_BYOK_MESSAGE);
   });
 });
 
@@ -410,7 +407,7 @@ describe("Error code mapping in HintLadder and ProblemPage", () => {
     },
     {
       code: "NO_BYOK",
-      expected: "还没填 API Key。先去设置页填入你自己的 API Key 就能开讲。",
+      expected: NO_BYOK_MESSAGE,
     },
   ])(
     "HintLadder maps error code $code to Chinese copy and never shows raw code",
@@ -471,7 +468,7 @@ describe("Error code mapping in HintLadder and ProblemPage", () => {
     },
     {
       code: "NO_BYOK",
-      expected: "还没填 API Key。先去设置页填入你自己的 API Key 就能开讲。",
+      expected: NO_BYOK_MESSAGE,
     },
   ])(
     "ProblemPage lecture maps HTTP error code $code to Chinese copy and never shows raw code",

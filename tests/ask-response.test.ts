@@ -3,7 +3,7 @@
  * 顺序、固定文案、断流、缓冲与清理。不打印响应原文。
  */
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { ByokError, UPSTREAM_AUTH_LECTURE_MESSAGE, UPSTREAM_ERROR_MESSAGE } from "@/lib/byok/client";
+import { ByokError, NO_BYOK_MESSAGE, UPSTREAM_AUTH_LECTURE_MESSAGE, UPSTREAM_ERROR_MESSAGE } from "@/lib/byok/client";
 import {
   ASK_BAD_JSON_MESSAGE,
   ASK_BAD_REQUEST_MESSAGE,
@@ -135,7 +135,7 @@ describe("readAskResponse §9 #45", () => {
       [400, { error: "CONFIGURATION_ERROR", message: secret }, "CONFIGURATION_ERROR", ASK_CONFIGURATION_ERROR_MESSAGE],
       [400, { code: "BYOK_KEY_REQUIRED", message: secret }, "BYOK_KEY_REQUIRED", "用自定义接口地址时，需要同时填你自己的 API Key"],
       [400, { error: "BASE_URL_INVALID", message: secret }, "BASE_URL_INVALID", "接口地址格式不对，要以 http:// 或 https:// 开头"],
-      [400, { code: "NO_BYOK", message: secret }, "NO_BYOK", "还没填 API Key。先去设置页填入你自己的 API Key 就能开讲。"],
+      [400, { code: "NO_BYOK", message: secret }, "NO_BYOK", NO_BYOK_MESSAGE],
       [400, { error: "UPSTREAM_AUTH", message: secret }, "UPSTREAM_AUTH", UPSTREAM_AUTH_LECTURE_MESSAGE],
       [502, { code: "UPSTREAM_ERROR", message: secret }, "UPSTREAM_ERROR", UPSTREAM_ERROR_MESSAGE],
     ];

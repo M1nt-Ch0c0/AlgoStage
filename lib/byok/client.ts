@@ -1,3 +1,4 @@
+import { ASK_NO_BYOK_MESSAGE } from "@/lib/ask/ask-copy";
 import { apiPath } from "@/lib/runtime";
 import { type LocalByok, readLocalByok } from "./storage";
 
@@ -160,7 +161,7 @@ export async function fetchServerKeyDisabled(
 
 export function withByok<T extends Record<string, unknown>>(
   body: T,
-  serverKeyDisabled?: boolean,
+  serverKeyDisabled: boolean,
   byok: LocalByok | null = readLocalByok(),
 ): T & { byok?: LocalByok } {
   if (serverKeyDisabled !== true || !byok || !byok.apiKey) {
@@ -172,7 +173,7 @@ export function withByok<T extends Record<string, unknown>>(
   return { ...body, byok: cleanByok };
 }
 
-export const NO_BYOK_MESSAGE = "还没填 API Key。先去设置页填入你自己的 API Key 就能开讲。";
+export const NO_BYOK_MESSAGE = ASK_NO_BYOK_MESSAGE;
 export const NO_BYOK_SETTINGS_MESSAGE = "还没填 API Key。填入你自己的 API Key 就能开讲。";
 export const ENDPOINT_SAVED_NEED_KEY_MESSAGE = "接口地址已保存，还要填 API Key 才能开讲。";
 export const BASE_URL_INVALID_MESSAGE = "接口地址格式不对，要以 http:// 或 https:// 开头";
