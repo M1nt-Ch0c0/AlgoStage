@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   checks:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
       NEXT_TELEMETRY_DISABLED: "1"
@@ -25,12 +25,12 @@ jobs:
       AI_BASE_URL: "http://127.0.0.1:1/no-model"
       NGINX_BINARY: /usr/sbin/nginx
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: npm
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: npm ci
@@ -44,7 +44,7 @@ jobs:
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: test-reports
@@ -56,10 +56,10 @@ jobs:
           if-no-files-found: ignore
 
   docker:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: mkdir -p backups && touch prisma/ci-decoy.db backups/ci-decoy.tgz .env.ci-decoy .env
       - name: self-test image check catches decoys
         run: set +e; bash scripts/check-image-contents.sh "$PWD"; rc=$?; set -e; test "$rc" -eq 1
