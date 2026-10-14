@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
   const byok = resolved?.config;
   if (!byok) {
     return Response.json(
-      { error: "NO_BYOK", message: "老师还没接上 AI，先去设置里接一下吧。" },
+      { error: "NO_BYOK", message: "老师还没接上 AI，先去设置里填自己的 Key。" },
       { status: 400 },
     );
   }

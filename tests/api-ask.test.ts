@@ -314,7 +314,7 @@ const CANCELLED = {
   retryable: false,
   message: "已取消。",
 };
-const NO_BYOK = { error: "NO_BYOK", message: "老师还没接上 AI，先去设置里接一下吧。" };
+const NO_BYOK = { error: "NO_BYOK", message: "老师还没接上 AI，先去设置里填自己的 Key。" };
 const NOT_FOUND = { error: "NOT_FOUND", message: "没找到这道题，请回路线图重新选择。" };
 
 type GenerateInput = Parameters<typeof import("@/lib/agent/ask-generation").generateAsk>[0];
