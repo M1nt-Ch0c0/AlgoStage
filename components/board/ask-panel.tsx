@@ -422,7 +422,9 @@ function AskPanelActive({ stage }: AskPanelProps) {
             type="button"
             data-ask-submit
             aria-disabled={trimmedEmpty || waiting ? true : undefined}
-            className="pointer-coarse:min-h-11 pointer-coarse:min-w-11 rounded-md bg-beam-gold px-3 py-1 text-on-accent"
+            className={`pointer-coarse:min-h-11 pointer-coarse:min-w-11 rounded-md bg-beam-gold px-3 py-1 text-on-accent${
+              trimmedEmpty || waiting ? " opacity-50 cursor-not-allowed" : ""
+            }`}
             onClick={() => {
               if (trimmedEmpty || waiting) return;
               void submit();
