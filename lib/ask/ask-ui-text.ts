@@ -15,6 +15,7 @@ export const ASK_REASON_BUSY = "上一个问题还在回答，答完再问";
 export const ASK_PENDING_PREPARING_SR = "正在准备";
 export const ASK_PENDING_TIMEOUT = "暂时没法提问，刷新页面后再试";
 export const ASK_EMPTY_HIT = "没选中内容，换个地方试试";
+export const ASK_CODE_MISS_HINT = "代码部分没选上，换个地方再框一次";
 export const ASK_RESIZE_HINT = "窗口大小变了，请重新圈选";
 export const ASK_LAYER_HINT = "拖动画框，或点一下选中；双指可滚动";
 export const ASK_ENTERED_STATUS = "已进入圈选，选中内容后提问";
