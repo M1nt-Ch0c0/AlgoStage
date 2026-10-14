@@ -75,7 +75,7 @@ function isAbortError(error: unknown): boolean {
  * Send the current draft. Returns without throwing when the phase, availability,
  * draft, or selection cannot be sent. In-flight work is tracked until settle.
  */
-export async function sendAsk(capture: CaptureResult | null): Promise<void> {
+export async function sendAsk(capture: CaptureResult | null, opts?: { replaceAnswerId?: string }): Promise<void> {
   const state = usePlayerStore.getState();
   if (
     state.askPhase === "sending" ||
@@ -117,6 +117,7 @@ export async function sendAsk(capture: CaptureResult | null): Promise<void> {
     stepId: step.id,
     token,
   };
+  if (opts?.replaceAnswerId !== undefined) guard.replaceAnswerId = opts.replaceAnswerId;
   const controller = new AbortController();
   const runtime: AskRuntime = {
     controller,
@@ -142,6 +143,7 @@ export async function sendAsk(capture: CaptureResult | null): Promise<void> {
     question,
     selection,
     image,
+    ...(opts?.replaceAnswerId !== undefined ? { replaceAnswerId: opts.replaceAnswerId } : {}),
   });
 
   try {

@@ -442,3 +442,33 @@ describe("HTTP errors", () => {
     expect(s().answers.s1).toBeUndefined();
   });
 });
+
+describe("replaceAnswerId", () => {
+  test("fetch body JSON contains replaceAnswerId 'a-1' when passed", async () => {
+    loadReady("server");
+    enterDrafting();
+    const fetchMock = vi.fn(async () => responseOf(happyBody()));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendAsk(null, { replaceAnswerId: "a-1" });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const body = postedBody(fetchMock);
+    expect(body.replaceAnswerId).toBe("a-1");
+    expect(body).toHaveProperty("replaceAnswerId", "a-1");
+  });
+
+  test("fetch body JSON contains no replaceAnswerId key when omitted", async () => {
+    loadReady("server");
+    enterDrafting();
+    const fetchMock = vi.fn(async () => responseOf(happyBody()));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendAsk(null);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const body = postedBody(fetchMock);
+    expect("replaceAnswerId" in body).toBe(false);
+    expect(body).not.toHaveProperty("replaceAnswerId");
+  });
+});

@@ -66,6 +66,7 @@ export interface AskRequestGuard extends StreamGuard {
   scriptVersion: string;
   stepId: string;
   token: number;
+  replaceAnswerId?: string;
 }
 
 export interface PendingEnterIntent {
