@@ -140,6 +140,11 @@ interface PlayerState {
   reset: () => void;
 
   askPhase: AskPhase;
+  /**
+   * 这次提问截图失败。挂在 store 上，避免回答落地把 phase 拉到 playing、
+   * 面板按阶段卸载后本地 state 把「没截到图」提示丢掉。
+   */
+  askCaptureFallback: boolean;
   askContext: AskContext | null;
   answerMeta: LectureAnswerMeta;
   answers: StepAnswersMap;
@@ -277,6 +282,7 @@ const initial = {
 
 const askInitial = {
   askPhase: "idle" as AskPhase,
+  askCaptureFallback: false,
   askContext: null as AskContext | null,
   answerMeta: { ...EMPTY_ANSWER_META, askDisabledStepIds: [] as string[] },
   answers: emptyAnswers(),
@@ -383,6 +389,7 @@ function freshAskMemory(playbackRun: number): AskMemory {
 function clearForegroundDraft(): Pick<
   PlayerState,
   | "askPhase"
+  | "askCaptureFallback"
   | "askContext"
   | "selection"
   | "draftQuestion"
@@ -396,6 +403,7 @@ function clearForegroundDraft(): Pick<
 > {
   return {
     askPhase: "idle",
+    askCaptureFallback: false,
     askContext: null,
     selection: null,
     draftQuestion: "",
@@ -462,6 +470,7 @@ function applyEnterAsk(state: PlayerState): Partial<PlayerState> | AskDisabledRe
 
   return {
     askPhase: hasSelection ? "drafting" : "selecting",
+    askCaptureFallback: false,
     askContext,
     status: "interrupted",
     awaitingContinue: false,
@@ -934,6 +943,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const ctx = state.askContext;
     set({
       askPhase: "idle",
+      askCaptureFallback: false,
       status: ctx?.prevStatus ?? "paused",
       awaitingContinue: ctx?.prevAwaitingContinue ?? false,
       askContext: null,
@@ -1143,6 +1153,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       draftStepId: null,
       askPlaybackPaused: false,
       previewSegments: [],
+      askCaptureFallback: false,
     });
   },
 

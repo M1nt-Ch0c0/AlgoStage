@@ -532,6 +532,19 @@ describe("回答到达 / 播放 / 展开", () => {
     expect(selectAskPresentation(s())).toBeNull();
   });
 
+  test("截图失败记在 askCaptureFallback，前台回答落地仍保留，播完清掉", () => {
+    loadReady();
+    enterDrafting("没截到");
+    usePlayerStore.setState({ askCaptureFallback: true });
+    s().askSent(guard({ token: 1 }));
+    expect(s().askCaptureFallback).toBe(true);
+    s().askStarted("ans-cap", guard({ token: 1 }));
+    s().answerArrived(answerOf({ id: "ans-cap", stepId: "s1", segments: [segment("only")] }), guard({ token: 1 }));
+    expect(s()).toMatchObject({ askPhase: "playing", askCaptureFallback: true });
+    s().nextAnswerSegment(s().askPlaybackRun);
+    expect(s()).toMatchObject({ askPhase: "done", askCaptureFallback: false });
+  });
+
   test("selecting 时 replay 不生效", () => {
     loadReady();
     s().enterAsk();
