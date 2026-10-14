@@ -144,7 +144,7 @@ export default function AskEntry() {
         aria-describedby={describedBy}
         aria-keyshortcuts={inAsk ? "Escape" : "Q"}
         data-ask-disabled-reason={reason ?? (showTimeout ? "pendingTimeout" : undefined)}
-        className={`inline-flex items-center justify-center gap-1 rounded-full border border-board-600 px-2 py-0.5 font-mono text-[10px] tracking-wide text-chalk-300 pointer-coarse:min-h-11 pointer-coarse:min-w-11 whitespace-nowrap ${
+        className={`relative z-40 inline-flex items-center justify-center gap-1 rounded-full border border-board-600 px-2 py-0.5 font-mono text-[10px] tracking-wide text-chalk-300 pointer-coarse:min-h-11 pointer-coarse:min-w-11 whitespace-nowrap ${
           grey ? GREY_CLASS : ""
         }${inAsk ? " min-h-11 min-w-11 pointer-fine:-my-3" : ""}`}
         onClick={onClick}
