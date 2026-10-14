@@ -461,6 +461,107 @@ test.describe("1280 selection flow", () => {
     await page.keyboard.press("Escape");
     await expect(page.locator("[data-ask-layer]")).toHaveCount(0);
   });
+
+  test("exit button above selection layer: click exits and subtitle drag still selects", async ({ page }) => {
+    await startGenerated(page);
+    await pauseLecture(page);
+    await enterSelection(page);
+
+    const button = entry(page);
+    await button.scrollIntoViewIfNeeded();
+    const box = await button.boundingBox();
+    expect(box).not.toBeNull();
+    const centerX = box!.x + box!.width / 2;
+    const centerY = box!.y + box!.height / 2;
+
+    const isButtonOrDescendant = await page.evaluate(
+      ({ x, y }) => {
+        const el = document.elementFromPoint(x, y);
+        const btn = document.querySelector("[data-ask-entry]");
+        return el !== null && (el === btn || btn?.contains(el) === true);
+      },
+      { x: centerX, y: centerY },
+    );
+    expect(isButtonOrDescendant).toBe(true);
+
+    await page.mouse.click(centerX, centerY);
+    await expect(page.locator("[data-ask-layer]")).toHaveCount(0);
+    await expect(page.locator("[data-ask-panel]")).toHaveCount(0);
+    await expect(button).not.toHaveAttribute("aria-pressed", "true");
+
+    await enterSelection(page);
+
+    const subtitleBody = page.locator('[data-ask-target="subtitle"] p').filter({ hasNotText: "字幕" }).first();
+    await subtitleBody.scrollIntoViewIfNeeded();
+    const subBox = await subtitleBody.boundingBox();
+    expect(subBox).not.toBeNull();
+    const btnBox = (await button.boundingBox())!;
+    const startX = subBox!.x + 12;
+    const startY = subBox!.y + 12;
+    const outside44 =
+      startX < btnBox.x - 44 ||
+      startX > btnBox.x + btnBox.width + 44 ||
+      startY < btnBox.y - 44 ||
+      startY > btnBox.y + btnBox.height + 44;
+    expect(outside44).toBe(true);
+
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(startX + 50, startY + 25, { steps: 5 });
+    await page.mouse.up();
+
+    const panel = page.locator("[data-ask-panel]");
+    await expect(panel).toBeVisible();
+    await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：当前字幕");
+  });
+
+  test("drag starting 10px below exit button bottom edge on subtitle body text selects 当前字幕", async ({ page }) => {
+    await startGenerated(page);
+    await pauseLecture(page);
+    await enterSelection(page);
+
+    const button = entry(page);
+    await button.scrollIntoViewIfNeeded();
+    const subtitleBody = page.locator('[data-ask-target="subtitle"] p').filter({ hasNotText: "字幕" }).first();
+    await subtitleBody.scrollIntoViewIfNeeded();
+    const btnBox = (await button.boundingBox())!;
+    expect(btnBox).not.toBeNull();
+
+    const startX = btnBox.x + btnBox.width / 2;
+    const startY = btnBox.y + btnBox.height + 10;
+
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(startX - 40, startY + 25, { steps: 5 });
+    await page.mouse.up();
+
+    const panel = page.locator("[data-ask-panel]");
+    await expect(panel).toBeVisible();
+    await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：当前字幕");
+  });
+
+  test("drag starting in code area starts selection", async ({ page }) => {
+    await startGenerated(page);
+    await pauseLecture(page);
+    await enterSelection(page);
+
+    const codeArea = page.locator(".monaco-editor").first();
+    await codeArea.scrollIntoViewIfNeeded();
+    await expect(codeArea).toBeVisible();
+    const box = await codeArea.boundingBox();
+    expect(box).not.toBeNull();
+
+    const startX = box!.x + 40;
+    const startY = box!.y + 40;
+
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(startX + 60, startY + 60, { steps: 5 });
+    const rubber = page.locator("[data-ask-rubber]");
+    const selectionBox = page.locator("[data-ask-selection]");
+    await expect(rubber.or(selectionBox)).toBeVisible();
+    await page.mouse.up();
+  });
 });
 
 test.describe("390 selection flow", () => {
@@ -554,6 +655,107 @@ test.describe("390 selection flow", () => {
     const finished = await controlRows(bar);
     expect(finished.rows).toBe(3);
     expect(finished.buttons).toBeGreaterThan(0);
+  });
+
+  test("390: exit button above selection layer: tap exits in hasTouch and subtitle drag still selects", async ({ page }) => {
+    await startGenerated(page);
+    await pauseLecture(page);
+    await enterSelection(page);
+
+    const button = entry(page);
+    await button.scrollIntoViewIfNeeded();
+    const box = await button.boundingBox();
+    expect(box).not.toBeNull();
+    const centerX = box!.x + box!.width / 2;
+    const centerY = box!.y + box!.height / 2;
+
+    const isButtonOrDescendant = await page.evaluate(
+      ({ x, y }) => {
+        const el = document.elementFromPoint(x, y);
+        const btn = document.querySelector("[data-ask-entry]");
+        return el !== null && (el === btn || btn?.contains(el) === true);
+      },
+      { x: centerX, y: centerY },
+    );
+    expect(isButtonOrDescendant).toBe(true);
+
+    await page.touchscreen.tap(centerX, centerY);
+    await expect(page.locator("[data-ask-layer]")).toHaveCount(0);
+    await expect(page.locator("[data-ask-panel]")).toHaveCount(0);
+    await expect(button).not.toHaveAttribute("aria-pressed", "true");
+
+    await enterSelection(page);
+
+    const subtitleBody = page.locator('[data-ask-target="subtitle"] p').filter({ hasNotText: "字幕" }).first();
+    await subtitleBody.scrollIntoViewIfNeeded();
+    const subBox = await subtitleBody.boundingBox();
+    expect(subBox).not.toBeNull();
+    const btnBox = (await button.boundingBox())!;
+    const startX = subBox!.x + 12;
+    const startY = subBox!.y + 12;
+    const outside44 =
+      startX < btnBox.x - 44 ||
+      startX > btnBox.x + btnBox.width + 44 ||
+      startY < btnBox.y - 44 ||
+      startY > btnBox.y + btnBox.height + 44;
+    expect(outside44).toBe(true);
+
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(startX + 50, startY + 25, { steps: 5 });
+    await page.mouse.up();
+
+    const panel = page.locator("[data-ask-panel]");
+    await expect(panel).toBeVisible();
+    await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：当前字幕");
+  });
+
+  test("390: drag starting 10px below exit button bottom edge on subtitle body text selects 当前字幕", async ({ page }) => {
+    await startGenerated(page);
+    await pauseLecture(page);
+    await enterSelection(page);
+
+    const button = entry(page);
+    await button.scrollIntoViewIfNeeded();
+    const subtitleBody = page.locator('[data-ask-target="subtitle"] p').filter({ hasNotText: "字幕" }).first();
+    await subtitleBody.scrollIntoViewIfNeeded();
+    const btnBox = (await button.boundingBox())!;
+    expect(btnBox).not.toBeNull();
+
+    const startX = btnBox.x + btnBox.width / 2;
+    const startY = btnBox.y + btnBox.height + 10;
+
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(startX - 40, startY + 25, { steps: 5 });
+    await page.mouse.up();
+
+    const panel = page.locator("[data-ask-panel]");
+    await expect(panel).toBeVisible();
+    await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：当前字幕");
+  });
+
+  test("390: drag starting in code area starts selection", async ({ page }) => {
+    await startGenerated(page);
+    await pauseLecture(page);
+    await enterSelection(page);
+
+    const codeArea = page.locator(".monaco-editor").first();
+    await codeArea.scrollIntoViewIfNeeded();
+    await expect(codeArea).toBeVisible();
+    const box = await codeArea.boundingBox();
+    expect(box).not.toBeNull();
+
+    const startX = box!.x + 40;
+    const startY = box!.y + 40;
+
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(startX + 50, startY + 50, { steps: 5 });
+    const rubber = page.locator("[data-ask-rubber]");
+    const selectionBox = page.locator("[data-ask-selection]");
+    await expect(rubber.or(selectionBox)).toBeVisible();
+    await page.mouse.up();
   });
 });
 
