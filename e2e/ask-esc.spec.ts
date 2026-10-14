@@ -98,6 +98,17 @@ async function startGenerated(page: Page) {
 const entry = (page: Page) => page.locator("[data-ask-entry]");
 const layer = (page: Page) => page.locator("[data-ask-layer]");
 const panel = (page: Page) => page.locator("[data-ask-panel]");
+const BUSY_REASON = "上一个问题还在回答，答完再问";
+
+/** 回答在飞时入口置灰：aria-disabled，aria-describedby 指向 busy 文案。 */
+async function expectBusyEntry(page: Page) {
+  const button = entry(page);
+  await expect(button).toHaveAttribute("aria-disabled", "true");
+  await expect(button).toHaveAttribute("data-ask-disabled-reason", "busy");
+  const describedBy = await button.getAttribute("aria-describedby");
+  expect(describedBy).toBeTruthy();
+  await expect(page.locator(`#${describedBy}`)).toHaveText(BUSY_REASON);
+}
 
 async function enterSelection(page: Page) {
   const button = entry(page);
@@ -168,15 +179,19 @@ test.describe("ask Esc stepwise exit", () => {
     await startGenerated(page);
     await enterSelection(page);
 
-    // 焦点在 body：selecting 下一次 Esc 退出圈选。
-    await page.locator("body").click({ position: { x: 8, y: 8 } });
+    // 焦点在 body：selecting 下一次 Esc 退出圈选。圈选层会挡住点击，只移动焦点。
+    await page.locator("body").focus();
     await page.keyboard.press("Escape");
     await expect(layer(page)).toHaveCount(0);
     await expect(entry(page)).not.toHaveAttribute("aria-pressed", "true");
 
     // 焦点在非 Monaco 的代码区标题（黑板文案，不是 .monaco-editor）：同样退出。
     await enterSelection(page);
-    await page.getByText("黑板", { exact: true }).click();
+    await page.locator("[data-ask-board-title]").evaluate((el) => {
+      if (!(el instanceof HTMLElement)) return;
+      if (!el.hasAttribute("tabindex")) el.tabIndex = -1;
+      el.focus();
+    });
     await page.keyboard.press("Escape");
     await expect(layer(page)).toHaveCount(0);
 
@@ -207,14 +222,14 @@ test.describe("ask Esc stepwise exit", () => {
     await expect(page.locator(".monaco-editor")).toBeVisible();
     await enterSelection(page);
     const monaco = page.locator(".monaco-editor textarea").first();
-    await monaco.click();
-    await monaco.press("Escape");
+    await monaco.focus();
+    await page.keyboard.press("Escape");
     await expect(layer(page)).toBeVisible();
     await expect(entry(page)).toHaveAttribute("aria-pressed", "true");
 
     await openPanel(page);
-    await monaco.click();
-    await monaco.press("Escape");
+    await monaco.focus();
+    await page.keyboard.press("Escape");
     await expect(panel(page)).toBeVisible();
     await expect(layer(page)).toBeVisible();
   });
@@ -229,8 +244,7 @@ test.describe("ask Esc stepwise exit", () => {
       await panel(page).locator("[data-ask-submit]").click();
 
       await expect(panel(page).locator("[data-ask-waiting]")).toBeVisible();
-      await expect(entry(page)).toHaveAttribute("data-ask-disabled-reason", "busy");
-      await expect(entry(page)).toHaveAttribute("aria-disabled", "true");
+      await expectBusyEntry(page);
       await expect.poll(() => stream.requests()).toBe(1);
 
       // sending 与 0.3.1 一样：Esc 不关面板、不退出圈选、不取消请求。
@@ -238,7 +252,7 @@ test.describe("ask Esc stepwise exit", () => {
       await expect(panel(page)).toBeVisible();
       await expect(panel(page).locator("[data-ask-waiting]")).toBeVisible();
       await expect(layer(page)).toHaveCount(0);
-      await expect(entry(page)).toHaveAttribute("data-ask-disabled-reason", "busy");
+      await expectBusyEntry(page);
       await expect(page.getByRole("button", { name: `你问的 ${QUESTION}` })).toHaveCount(0);
 
       stream.release();
