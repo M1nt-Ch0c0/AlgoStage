@@ -15,6 +15,7 @@ import type { AnswerSegment } from "@/lib/ask/types";
 import { selectAskPresentation, usePlayerStore } from "@/lib/player/store";
 import { ANCHOR_REFRESH_EVENT } from "@/components/effects/use-anchor-rect";
 import type { EffectCall, EffectTarget, TeachingStep } from "@/lib/teaching/types";
+import { registerCodeEditor, type CodeEditorHandle } from "@/lib/ask/code-editor-registry";
 
 const EMPTY_TARGETS: EffectTarget[] = [];
 const EMPTY_EFFECTS: EffectCall[] = [];
@@ -36,6 +37,7 @@ export interface CodeEditorProps {
   readOnly?: boolean;
   onChange?: (value: string) => void;
   height?: number | string;
+  askRef?: string;
 }
 
 export default function CodeEditor({
@@ -44,6 +46,7 @@ export default function CodeEditor({
   readOnly = true,
   onChange,
   height = "100%",
+  askRef = "main",
 }: CodeEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const monacoRef = useRef<MonacoApi | null>(null);
@@ -159,7 +162,58 @@ export default function CodeEditor({
         return new DOMRect(r.left, y, r.width, h);
       });
 
+      const handle: CodeEditorHandle = {
+        getLineRangeForClientBox(top: number, bottom: number): { startLine: number; endLine: number } | null {
+          const model = editor.getModel();
+          if (!model) return null;
+          const visibleRanges = editor.getVisibleRanges?.();
+          if (!visibleRanges || visibleRanges.length === 0) return null;
+
+          const firstVisible = visibleRanges[0].startLineNumber;
+          const lastVisible = visibleRanges[visibleRanges.length - 1].endLineNumber;
+
+          const dom = editor.getDomNode() ?? containerRef.current;
+          const domRect = dom?.getBoundingClientRect?.() ?? { left: 0 };
+          const layoutInfo = editor.getLayoutInfo?.();
+          const contentLeft = layoutInfo?.contentLeft ?? 0;
+          const x = domRect.left + contentLeft + 4;
+
+          const targetTop = editor.getTargetAtClientPoint?.(x, top);
+          const targetBottom = editor.getTargetAtClientPoint?.(x, bottom);
+
+          const rawTop = targetTop?.position?.lineNumber ?? firstVisible;
+          const rawBottom = targetBottom?.position?.lineNumber ?? lastVisible;
+
+          const clampedTop = Math.max(firstVisible, Math.min(lastVisible, rawTop));
+          const clampedBottom = Math.max(firstVisible, Math.min(lastVisible, rawBottom));
+
+          const startLine = Math.min(clampedTop, clampedBottom);
+          const endLine = Math.max(clampedTop, clampedBottom);
+
+          return { startLine, endLine };
+        },
+        getLinesText(startLine: number, endLine: number): string {
+          const model = editor.getModel();
+          if (!model) return "";
+          const lineCount = model.getLineCount?.() ?? 0;
+          const s = Math.max(1, Math.min(startLine, lineCount));
+          const e = Math.max(s, Math.min(endLine, lineCount));
+          const lines: string[] = [];
+          for (let i = s; i <= e; i++) {
+            lines.push(model.getLineContent(i));
+          }
+          return lines.join("\n");
+        },
+        getFullText(): string {
+          const model = editor.getModel();
+          return model ? model.getValue() : editor.getValue?.() ?? "";
+        },
+      };
+
+      const unregister = registerCodeEditor(containerRef.current, handle);
+
       cleanup = () => {
+        unregister();
         registerCodeLineResolver(null);
         cancelAnimationFrame(raf);
         decorationsRef.current?.clear();
@@ -266,6 +320,8 @@ export default function CodeEditor({
   return (
     <div
       ref={containerRef}
+      data-ask-target="code"
+      data-ask-id={`code:${askRef}`}
       className="h-full w-full overflow-hidden bg-board-900"
       style={{ height }}
     />
