@@ -102,6 +102,20 @@ export function findScrollable(start: HTMLElement | null): HTMLElement {
   return document.documentElement;
 }
 
+export function isNearAskEntry(
+  clientX: number,
+  clientY: number,
+  rect: { left: number; top: number; right: number; bottom: number },
+  buffer = 44,
+): boolean {
+  return (
+    clientX >= rect.left - buffer &&
+    clientX <= rect.right + buffer &&
+    clientY >= rect.top - buffer &&
+    clientY <= rect.bottom + buffer
+  );
+}
+
 function shortcutId(stepId: string, key: ShortcutKey): string {
   return `${key}:${stepId}`;
 }
@@ -324,6 +338,14 @@ function AskSelectionLayerActive({
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 && event.pointerType === "mouse") return;
+    const target = event.target as Element | null;
+    if (target?.closest?.("[data-ask-entry]")) return;
+    const entries = document.querySelectorAll("[data-ask-entry]");
+    for (const el of entries) {
+      if (isNearAskEntry(event.clientX, event.clientY, el.getBoundingClientRect(), 44)) {
+        return;
+      }
+    }
     const host = getStage();
     if (!host) return;
     const sample = sampleAt(host, event.clientX, event.clientY);
