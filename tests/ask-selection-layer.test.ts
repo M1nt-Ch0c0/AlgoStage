@@ -409,4 +409,46 @@ describe("AskSelectionLayer", () => {
     expect(exitSpy).not.toHaveBeenCalled();
     expect(usePlayerStore.getState().askPhase).toBe("drafting");
   });
+
+  test("guard: pointerdown inside [data-ask-entry] does not start selection", async () => {
+    const entryBtn = document.createElement("button");
+    entryBtn.setAttribute("data-ask-entry", "");
+    const child = document.createElement("span");
+    entryBtn.append(child);
+    document.body.append(entryBtn);
+
+    try {
+      await render();
+      const host = layer();
+      const setCaptureSpy = vi.spyOn(host, "setPointerCapture");
+
+      // 1. target is inside [data-ask-entry] (nested child)
+      const insideEvt = pointer("pointerdown", { clientX: 310, clientY: 20 });
+      Object.defineProperty(insideEvt, "target", { value: child });
+      await act(async () => {
+        host.dispatchEvent(insideEvt);
+      });
+      expect(setCaptureSpy).not.toHaveBeenCalled();
+      expect(host.querySelector("[data-ask-rubber]")).toBeNull();
+
+      // 2. target is entryBtn itself
+      const directEvt = pointer("pointerdown", { clientX: 310, clientY: 20 });
+      Object.defineProperty(directEvt, "target", { value: entryBtn });
+      await act(async () => {
+        host.dispatchEvent(directEvt);
+      });
+      expect(setCaptureSpy).not.toHaveBeenCalled();
+      expect(host.querySelector("[data-ask-rubber]")).toBeNull();
+
+      // 3. target is layer, outside [data-ask-entry] starts selection
+      await act(async () => {
+        host.dispatchEvent(pointer("pointerdown", { clientX: 200, clientY: 20 }));
+        host.dispatchEvent(pointer("pointermove", { clientX: 230, clientY: 30 }));
+      });
+      expect(setCaptureSpy).toHaveBeenCalled();
+      expect(host.querySelector("[data-ask-rubber]")).not.toBeNull();
+    } finally {
+      entryBtn.remove();
+    }
+  });
 });

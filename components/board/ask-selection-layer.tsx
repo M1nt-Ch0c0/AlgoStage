@@ -324,6 +324,7 @@ function AskSelectionLayerActive({
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 && event.pointerType === "mouse") return;
+    if ((event.target as Element | null)?.closest?.("[data-ask-entry]")) return;
     const host = getStage();
     if (!host) return;
     const sample = sampleAt(host, event.clientX, event.clientY);
