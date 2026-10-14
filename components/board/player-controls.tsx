@@ -31,7 +31,7 @@ const LEVELS = [
 ] as const;
 
 /** 焦点在输入控件、可编辑区或 Monaco 内时不抢快捷键（happy-dom 未必实现 isContentEditable）。 */
-function isTypingTarget(target: EventTarget | null): boolean {
+export function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
   const tag = target.tagName;
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;

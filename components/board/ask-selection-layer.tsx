@@ -4,11 +4,13 @@
  * 第二指按下放弃当前框，按两指中点位移 scrollBy 最近可滚祖先。
  * 窗口 resize 只清选区（clearAskSelection），不关面板。
  * visualViewport resize 是软键盘，不清选区，留给提问抽屉去抬高。
- * Esc 在 selecting 调用 exitAsk；面板打开时（drafting 等）Esc 留给面板。
+ * Esc 由窗口级单一监听处理：drafting/error/sending/streaming 先关面板，selecting 再退出。
+ * 面板外的输入框 / contenteditable / Monaco 不抢 Esc。
  */
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type RefObject } from "react";
+import { isTypingTarget } from "@/components/board/player-controls";
 import { collectAskCandidates, summarizeSelection } from "@/lib/ask/collect-candidates";
 import { hitTest, hitTestPoint, normalizeBBox } from "@/lib/ask/hit-test";
 import {
@@ -27,6 +29,40 @@ import { usePlayerStore } from "@/lib/player/store";
 const MIN_REGION_SIDE = 24;
 
 const ACTIVE_PHASES = new Set(["selecting", "drafting", "error"]);
+/** 窗口级 Esc 覆盖的阶段。playing 仍走原来的播放快捷键，不在这里处理。 */
+const ESCAPE_PHASES = new Set(["selecting", "drafting", "sending", "streaming", "error"]);
+
+export type AskEscapeAction = "close-panel" | "exit" | "ignore";
+
+export interface AskEscapeModifiers {
+  composing: boolean;
+  defaultPrevented: boolean;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  altKey: boolean;
+}
+
+/**
+ * 圈选期间 Esc 的唯一决策。
+ * 面板外的输入控件留给控件自己；提问框（面板内 textarea）仍按阶段关面板或退出。
+ * sending/streaming 只关面板，不退出、不取消请求。
+ */
+export function resolveAskEscape(
+  phase: string,
+  target: EventTarget | null,
+  modifiers: AskEscapeModifiers,
+): AskEscapeAction {
+  if (modifiers.composing || modifiers.defaultPrevented) return "ignore";
+  if (modifiers.ctrlKey || modifiers.metaKey || modifiers.altKey) return "ignore";
+  if (phase === "idle" || phase === "playing" || phase === "done") return "ignore";
+  const insidePanel = target instanceof Element && target.closest("[data-ask-panel]") !== null;
+  if (isTypingTarget(target) && !insidePanel) return "ignore";
+  if (phase === "drafting" || phase === "error" || phase === "sending" || phase === "streaming") {
+    return "close-panel";
+  }
+  if (phase === "selecting") return "exit";
+  return "ignore";
+}
 
 const SHORTCUTS = [
   { key: "subtitle", label: ASK_SHORTCUT_SUBTITLE },
@@ -151,7 +187,30 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
   const steps = usePlayerStore((s) => s.steps);
   const setAskSelection = usePlayerStore((s) => s.setAskSelection);
   const clearAskSelection = usePlayerStore((s) => s.clearAskSelection);
+  const closeAskPanel = usePlayerStore((s) => s.closeAskPanel);
   const exitAsk = usePlayerStore((s) => s.exitAsk);
+
+  // 圈选期间唯一的 Esc。挂在始终挂载的这层，sending/streaming 时画选层本身不渲染。
+  // 不 stopPropagation；只有真正关面板或退出时才 preventDefault。
+  useEffect(() => {
+    if (!ESCAPE_PHASES.has(askPhase)) return;
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      const action = resolveAskEscape(usePlayerStore.getState().askPhase, event.target, {
+        composing: event.isComposing,
+        defaultPrevented: event.defaultPrevented,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        altKey: event.altKey,
+      });
+      if (action === "ignore") return;
+      event.preventDefault();
+      if (action === "close-panel") closeAskPanel();
+      else exitAsk();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [askPhase, closeAskPanel, exitAsk]);
 
   if (!ACTIVE_PHASES.has(askPhase)) return null;
 
@@ -164,7 +223,6 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
       stepId={steps[currentIndex]?.id ?? ""}
       setAskSelection={setAskSelection}
       clearAskSelection={clearAskSelection}
-      exitAsk={exitAsk}
     />
   );
 }
@@ -177,14 +235,12 @@ function AskSelectionLayerActive({
   stepId,
   setAskSelection,
   clearAskSelection,
-  exitAsk,
 }: AskSelectionLayerProps & {
   askPhase: string;
   selection: AskSelectionSummary | null;
   stepId: string;
   setAskSelection: (selection: AskSelectionSummary) => void;
   clearAskSelection: () => void;
-  exitAsk: () => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const pointersRef = useRef<Map<number, PointerSample>>(new Map());
@@ -250,11 +306,10 @@ function AskSelectionLayerActive({
     };
   }, [clearAskSelection]);
 
-  // 进入 selecting 时焦点落到第一个捷径。
+  // 进入 selecting（含关面板之后）时焦点回到画选层，不回到舞台上的选中目标。
   useEffect(() => {
     if (askPhase !== "selecting") return;
-    const first = rootRef.current?.querySelector<HTMLButtonElement>("[data-ask-shortcut]");
-    first?.focus();
+    rootRef.current?.focus();
   }, [askPhase]);
 
   useEffect(() => {
@@ -440,13 +495,8 @@ function AskSelectionLayerActive({
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const key = event.key;
-    // 只在圈选中吞掉 Esc。drafting|sending|streaming|error 留给面板 closeAskPanel。
-    if (key === "Escape" && askPhase === "selecting") {
-      event.preventDefault();
-      event.stopPropagation();
-      exitAsk();
-      return;
-    }
+    // Esc 只由窗口级监听处理，避免和这里重复退出。
+    if (key === "Escape") return;
     const blocked = key === " " || key === "ArrowLeft" || key === "ArrowRight" || key === "ArrowUp" || key === "ArrowDown";
     if (blocked || key === "Enter" || key === "Tab") {
       event.stopPropagation();
