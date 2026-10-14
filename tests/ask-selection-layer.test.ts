@@ -3,7 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { scrollHeight, clientHeight, scrollWidth, clientWidth } from "happy-dom/lib/PropertySymbol.js";
-import AskSelectionLayer, { isNearAskEntry } from "../components/board/ask-selection-layer";
+import AskSelectionLayer from "../components/board/ask-selection-layer";
 import { ASK_EMPTY_HIT, ASK_ENTERED_STATUS, ASK_RESIZE_HINT } from "../lib/ask/ask-ui-text";
 import * as hitTest from "../lib/ask/hit-test";
 import { usePlayerStore } from "../lib/player/store";
@@ -410,10 +410,11 @@ describe("AskSelectionLayer", () => {
     expect(usePlayerStore.getState().askPhase).toBe("drafting");
   });
 
-  test("guard: pointerdown inside [data-ask-entry] or within 44px does not start selection", async () => {
+  test("guard: pointerdown inside [data-ask-entry] does not start selection", async () => {
     const entryBtn = document.createElement("button");
     entryBtn.setAttribute("data-ask-entry", "");
-    entryBtn.getBoundingClientRect = () => domRect(300, 10, 50, 30);
+    const child = document.createElement("span");
+    entryBtn.append(child);
     document.body.append(entryBtn);
 
     try {
@@ -421,26 +422,25 @@ describe("AskSelectionLayer", () => {
       const host = layer();
       const setCaptureSpy = vi.spyOn(host, "setPointerCapture");
 
-      // 1. target is inside [data-ask-entry]
+      // 1. target is inside [data-ask-entry] (nested child)
       const insideEvt = pointer("pointerdown", { clientX: 310, clientY: 20 });
-      Object.defineProperty(insideEvt, "target", { value: entryBtn });
+      Object.defineProperty(insideEvt, "target", { value: child });
       await act(async () => {
         host.dispatchEvent(insideEvt);
       });
       expect(setCaptureSpy).not.toHaveBeenCalled();
       expect(host.querySelector("[data-ask-rubber]")).toBeNull();
 
-      // 2. target is layer, but coordinates are within 44px of [data-ask-entry]
-      // entryBtn rect: left 300, right 350, top 10, bottom 40
-      // clientX 270 is 30px left of left edge (<= 44px)
+      // 2. target is entryBtn itself
+      const directEvt = pointer("pointerdown", { clientX: 310, clientY: 20 });
+      Object.defineProperty(directEvt, "target", { value: entryBtn });
       await act(async () => {
-        host.dispatchEvent(pointer("pointerdown", { clientX: 270, clientY: 20 }));
-        host.dispatchEvent(pointer("pointermove", { clientX: 260, clientY: 20 }));
+        host.dispatchEvent(directEvt);
       });
       expect(setCaptureSpy).not.toHaveBeenCalled();
       expect(host.querySelector("[data-ask-rubber]")).toBeNull();
 
-      // 3. target is layer, coordinates outside 44px (e.g. clientX 200 is 100px away)
+      // 3. target is layer, outside [data-ask-entry] starts selection
       await act(async () => {
         host.dispatchEvent(pointer("pointerdown", { clientX: 200, clientY: 20 }));
         host.dispatchEvent(pointer("pointermove", { clientX: 230, clientY: 30 }));
@@ -450,40 +450,5 @@ describe("AskSelectionLayer", () => {
     } finally {
       entryBtn.remove();
     }
-  });
-});
-
-describe("isNearAskEntry", () => {
-  const rect = { left: 100, top: 100, right: 200, bottom: 200 };
-
-  test("inside rect returns true", () => {
-    expect(isNearAskEntry(150, 150, rect)).toBe(true);
-    expect(isNearAskEntry(100, 100, rect)).toBe(true);
-    expect(isNearAskEntry(200, 200, rect)).toBe(true);
-  });
-
-  test("within buffer (default 44px) returns true", () => {
-    // left - 44
-    expect(isNearAskEntry(56, 150, rect)).toBe(true);
-    // right + 44
-    expect(isNearAskEntry(244, 150, rect)).toBe(true);
-    // top - 44
-    expect(isNearAskEntry(150, 56, rect)).toBe(true);
-    // bottom + 44
-    expect(isNearAskEntry(150, 244, rect)).toBe(true);
-    // corner
-    expect(isNearAskEntry(56, 56, rect)).toBe(true);
-  });
-
-  test("outside buffer returns false", () => {
-    expect(isNearAskEntry(55, 150, rect)).toBe(false);
-    expect(isNearAskEntry(245, 150, rect)).toBe(false);
-    expect(isNearAskEntry(150, 55, rect)).toBe(false);
-    expect(isNearAskEntry(150, 245, rect)).toBe(false);
-  });
-
-  test("custom buffer works", () => {
-    expect(isNearAskEntry(90, 150, rect, 10)).toBe(true);
-    expect(isNearAskEntry(89, 150, rect, 10)).toBe(false);
   });
 });
