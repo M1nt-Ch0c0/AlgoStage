@@ -1070,7 +1070,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       currentStep(state)?.id === answer.stepId;
     const answers = appendAnswer(state.answers, answer);
     if (!foreground) {
-      set({ answers, askInFlight: false, askCaptureFallback: false });
+      // 截图失败标记留到 exitAsk / 下一次 enterAsk，回答落地只收起 in-flight。
+      set({ answers, askInFlight: false });
       return;
     }
     const expanded = new Set(state.expandedAnswerIds);

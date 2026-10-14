@@ -572,6 +572,23 @@ describe("回答到达 / 播放 / 展开", () => {
     expect(s()).toMatchObject({ askPhase: "done", askCaptureFallback: false });
   });
 
+  test("截图失败后回答落地仍保留 askCaptureFallback，exitAsk 才清掉", () => {
+    loadReady();
+    enterDrafting("没截到就落地");
+    usePlayerStore.setState({ askCaptureFallback: true });
+    s().askSent(guard({ token: 1 }));
+    expect(s()).toMatchObject({ askPhase: "sending", askInFlight: true, askCaptureFallback: true });
+    s().answerArrived(answerOf({ id: "ans-settle", stepId: "s1", segments: [segment("only")] }), guard({ token: 1 }));
+    expect(s().answers.s1?.map((item) => item.id)).toEqual(["ans-settle"]);
+    expect(s()).toMatchObject({
+      askPhase: "sending",
+      askInFlight: false,
+      askCaptureFallback: true,
+    });
+    s().exitAsk();
+    expect(s().askCaptureFallback).toBe(false);
+  });
+
   test("returnToStep 收起当前回答并停在原步；等待中只后台化", () => {
     loadReady();
     const full = answerOf({ id: "ans-1", stepId: "s1" });
