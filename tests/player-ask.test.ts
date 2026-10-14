@@ -215,6 +215,10 @@ describe("进入 / 退出 / 草稿", () => {
     expect(s().askContext).toMatchObject({ token: null, answerId: null, stepId: "s1", prevStatus: "paused" });
     expect(s().selection).not.toBeNull();
     expect(countAnswers(s().answers)).toBe(1);
+    // 请求还在飞：关面板后入口仍是 busy。
+    expect(selectAskAvailability(s())).toEqual({ visible: true, disabled: true, reason: "busy" });
+    s().answerArrived(answerOf({ id: "bg-9", stepId: "s1" }), guard({ token: 9, stepId: "s1" }));
+    expect(s().askInFlight).toBe(false);
 
     s().setAskQuestion("还在流式");
     usePlayerStore.setState({ askPhase: "drafting" });
@@ -226,7 +230,7 @@ describe("进入 / 退出 / 草稿", () => {
     expect(s().askPhase).toBe("selecting");
     expect(s().askContext).toMatchObject({ token: null, answerId: null });
     expect(s().previewSegments).toEqual([]);
-    expect(selectAskAvailability(s()).reason).toBeNull();
+    expect(selectAskAvailability(s())).toEqual({ visible: true, disabled: true, reason: "busy" });
   });
 
   test("exitAsk 从 selecting/drafting/error/sending/streaming 回 idle 且不 abort 语义", () => {
@@ -553,6 +557,19 @@ describe("回答到达 / 播放 / 展开", () => {
     s().answerArrived(full, guard({ token: 1 }));
     s().nextAnswerSegment(s().askPlaybackRun);
     expect(s()).toMatchObject({ askPhase: "done", currentIndex: 0, status: "paused", awaitingContinue: true });
+  });
+
+  test("截图失败记在 askCaptureFallback，前台回答落地仍保留，播完清掉", () => {
+    loadReady();
+    enterDrafting("没截到");
+    usePlayerStore.setState({ askCaptureFallback: true });
+    s().askSent(guard({ token: 1 }));
+    expect(s().askCaptureFallback).toBe(true);
+    s().askStarted("ans-cap", guard({ token: 1 }));
+    s().answerArrived(answerOf({ id: "ans-cap", stepId: "s1", segments: [segment("only")] }), guard({ token: 1 }));
+    expect(s()).toMatchObject({ askPhase: "playing", askCaptureFallback: true });
+    s().nextAnswerSegment(s().askPlaybackRun);
+    expect(s()).toMatchObject({ askPhase: "done", askCaptureFallback: false });
   });
 
   test("returnToStep 收起当前回答并停在原步；等待中只后台化", () => {

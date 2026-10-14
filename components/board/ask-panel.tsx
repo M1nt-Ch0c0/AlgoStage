@@ -1,7 +1,8 @@
 /**
  * AskPanel · 提问面板。桌面（≥lg）绝对定位浮在选区右侧，放不下则放下方；
  * 窄屏固定底部抽屉，最高 50vh，bottom 跟 visualViewport 避开键盘。
- * 提问先 captureStage；stepId 或 selection 引用变了就丢弃。截图失败仍 sendAsk(null)。
+ * 提问先 captureStage；stepId 或 selection 引用变了就丢弃。截图失败仍 sendAsk(null)，
+ * 并把「没截到图」记在 store：回答落到 playing 时面板不卸载，提示还在。
  * Esc 由画选层的窗口监听处理。关面板（关闭按钮）后焦点回到画选层。
  */
 "use client";
@@ -23,7 +24,7 @@ import {
 import { ASK_LIMITS, type AskSelectionSummary, type AskTarget } from "@/lib/ask/types";
 import { usePlayerStore } from "@/lib/player/store";
 
-const PANEL_PHASES = new Set(["drafting", "sending", "streaming", "error"]);
+const PANEL_PHASES = new Set(["drafting", "sending", "streaming", "error", "playing"]);
 const DESKTOP_QUERY = "(min-width: 1024px)";
 const PANEL_WIDTH = 320;
 const GAP = 8;
@@ -118,6 +119,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
   const draftQuestion = usePlayerStore((s) => s.draftQuestion);
   const askErrorCode = usePlayerStore((s) => s.askErrorCode);
   const askStartedAt = usePlayerStore((s) => s.askStartedAt);
+  const captureFailed = usePlayerStore((s) => s.askCaptureFallback);
   const currentIndex = usePlayerStore((s) => s.currentIndex);
   const steps = usePlayerStore((s) => s.steps);
   const setAskQuestion = usePlayerStore((s) => s.setAskQuestion);
@@ -126,7 +128,6 @@ function AskPanelActive({ stage }: AskPanelProps) {
 
   const labelId = useId();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [captureFailed, setCaptureFailed] = useState(false);
   const [desktop, setDesktop] = useState(false);
   const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
   const [drawerBottom, setDrawerBottom] = useState(0);
@@ -237,13 +238,10 @@ function AskPanelActive({ stage }: AskPanelProps) {
       sendingRef.current = false;
       return;
     }
-    if (!capture || capture.ok === false) {
-      setCaptureFailed(true);
-      await sendAsk(null);
-    } else {
-      setCaptureFailed(false);
-      await sendAsk(capture);
-    }
+    const failed = !capture || capture.ok === false;
+    // 记在 store 上：sendAsk 把 phase 推进后本组件不再靠本地 state 记住这次失败。
+    usePlayerStore.setState({ askCaptureFallback: failed });
+    await sendAsk(failed ? null : capture);
     sendingRef.current = false;
   }, [stage]);
 
