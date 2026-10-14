@@ -4,7 +4,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { scrollHeight, clientHeight, scrollWidth, clientWidth } from "happy-dom/lib/PropertySymbol.js";
 import AskSelectionLayer, { resolveAskEscape } from "../components/board/ask-selection-layer";
-import { ASK_EMPTY_HIT, ASK_ENTERED_STATUS, ASK_RESIZE_HINT } from "../lib/ask/ask-ui-text";
+import { ASK_CODE_MISS_HINT, ASK_EMPTY_HIT, ASK_ENTERED_STATUS, ASK_RESIZE_HINT } from "../lib/ask/ask-ui-text";
+import { type CodeEditorHandle, getAskCodeMissNotice, registerCodeEditor, resetCodeEditorRegistry } from "../lib/ask/code-editor-registry";
 import * as hitTest from "../lib/ask/hit-test";
 import { usePlayerStore } from "../lib/player/store";
 import type { TeachingScript } from "../lib/teaching/types";
@@ -91,6 +92,7 @@ beforeEach(() => {
 afterEach(async () => {
   if (root) await act(async () => root.unmount());
   usePlayerStore.getState().reset();
+  resetCodeEditorRegistry();
   container.remove();
   scroller.remove();
   vi.restoreAllMocks();
@@ -790,5 +792,99 @@ describe("resolveAskEscape", () => {
     } finally {
       entryBtn.remove();
     }
+  });
+
+  test("(a) only code boxed with zero code units -> hint ASK_CODE_MISS_HINT, no panel selection", async () => {
+    const codeEl = document.createElement("div");
+    codeEl.setAttribute("data-ask-target", "code");
+    codeEl.setAttribute("data-ask-id", "code:main");
+    codeEl.setAttribute("data-ask-step-id", "s1");
+    codeEl.getBoundingClientRect = () => domRect(250, 10, 80, 50);
+    stage.append(codeEl);
+
+    const mockHandle: CodeEditorHandle = {
+      getLineRangeForClientBox: vi.fn(() => null),
+      getLinesText: vi.fn(() => ""),
+      getFullText: vi.fn(() => ""),
+    };
+    registerCodeEditor(codeEl, mockHandle);
+
+    const setSpy = vi.spyOn(usePlayerStore.getState(), "setAskSelection");
+    await render();
+
+    // Box only covering code area (x: 250..330, y: 10..60)
+    await gesture(260, 20, 310, 50);
+
+    expect(setSpy).not.toHaveBeenCalled();
+    expect(usePlayerStore.getState().selection).toBeNull();
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
+    expect(layer().textContent).toContain(ASK_CODE_MISS_HINT);
+    expect(getAskCodeMissNotice()).toBeNull();
+  });
+
+  test("(b) other units collected + code intersected but not collected -> selection set and notice set", async () => {
+    const codeEl = document.createElement("div");
+    codeEl.setAttribute("data-ask-target", "code");
+    codeEl.setAttribute("data-ask-id", "code:main");
+    codeEl.setAttribute("data-ask-step-id", "s1");
+    codeEl.getBoundingClientRect = () => domRect(250, 10, 80, 50);
+    stage.append(codeEl);
+
+    const mockHandle: CodeEditorHandle = {
+      getLineRangeForClientBox: vi.fn(() => null),
+      getLinesText: vi.fn(() => ""),
+      getFullText: vi.fn(() => ""),
+    };
+    registerCodeEditor(codeEl, mockHandle);
+
+    const setSpy = vi.spyOn(usePlayerStore.getState(), "setAskSelection");
+    await render();
+
+    // Box covering viz (150..210, 10..40) and code (250..330, 10..60)
+    await gesture(160, 20, 280, 45);
+
+    expect(setSpy).toHaveBeenCalledTimes(1);
+    const sel = usePlayerStore.getState().selection;
+    expect(sel).not.toBeNull();
+    expect(sel?.targets.some((t) => t.kind === "viz")).toBe(true);
+    expect(sel?.targets.some((t) => t.kind === "code")).toBe(false);
+    expect(usePlayerStore.getState().askPhase).toBe("drafting");
+    expect(getAskCodeMissNotice()).toBe(ASK_CODE_MISS_HINT);
+  });
+
+  test("(c) nothing intersected -> ASK_EMPTY_HIT", async () => {
+    const setSpy = vi.spyOn(usePlayerStore.getState(), "setAskSelection");
+    await render();
+
+    // Tap in empty space where no targets exist
+    await gesture(142, 20, 144, 20);
+
+    expect(setSpy).not.toHaveBeenCalled();
+    expect(usePlayerStore.getState().selection).toBeNull();
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
+    expect(layer().textContent).toContain(ASK_EMPTY_HIT);
+    expect(getAskCodeMissNotice()).toBeNull();
+  });
+
+  test("fallback-code -> no hint/notice", async () => {
+    const codeEl = document.createElement("div");
+    codeEl.setAttribute("data-ask-target", "code");
+    codeEl.setAttribute("data-ask-id", "code:main");
+    codeEl.setAttribute("data-ask-step-id", "s1");
+    codeEl.textContent = "const x = 1;";
+    codeEl.getBoundingClientRect = () => domRect(250, 10, 80, 50);
+    stage.append(codeEl);
+
+    const setSpy = vi.spyOn(usePlayerStore.getState(), "setAskSelection");
+    await render();
+
+    // Box code area (no handle registered, falls back to textContent)
+    await gesture(260, 20, 310, 50);
+
+    expect(setSpy).toHaveBeenCalledTimes(1);
+    const sel = usePlayerStore.getState().selection;
+    expect(sel?.targets.some((t) => t.kind === "code")).toBe(true);
+    expect(layer().textContent).not.toContain(ASK_CODE_MISS_HINT);
+    expect(getAskCodeMissNotice()).toBeNull();
   });
 });

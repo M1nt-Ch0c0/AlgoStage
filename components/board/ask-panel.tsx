@@ -8,12 +8,13 @@
  */
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import Link from "next/link";
 import { cancelAsk, sendAsk } from "@/lib/ask/ask-client";
 import { ASK_ERROR_SPECS, resolveAskError, type AskErrorAction } from "@/lib/ask/ask-errors";
 import { captureStage, type CaptureResult } from "@/lib/ask/capture";
 import { collectAskCandidates, summarizeSelection } from "@/lib/ask/collect-candidates";
+import { getAskCodeMissNotice, subscribeAskCodeMissNotice } from "@/lib/ask/code-editor-registry";
 import {
   ASK_CAPTURE_FALLBACK,
   ASK_CHIPS,
@@ -154,6 +155,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
   const [drawerBottom, setDrawerBottom] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   const sendingRef = useRef(false);
+  const notice = useSyncExternalStore(subscribeAskCodeMissNotice, getAskCodeMissNotice, () => null);
 
   const stepId = steps[currentIndex]?.id ?? "";
   const waiting = askPhase === "sending" || askPhase === "streaming";
@@ -327,6 +329,12 @@ function AskPanelActive({ stage }: AskPanelProps) {
           </button>
         ))}
       </div>
+
+      {notice ? (
+        <p data-testid="ask-code-miss-hint" className="text-xs text-chalk-500">
+          {notice}
+        </p>
+      ) : null}
 
       <p id={labelId} data-ask-panel-label className="text-xs text-beam-gold">
         {label}
