@@ -427,6 +427,32 @@ describe("回答到达 / 播放 / 展开", () => {
     expect(s()).toMatchObject({ askPhase: "done", currentIndex: 0, status: "paused", awaitingContinue: true });
   });
 
+  test("截图失败后非前台回答落地仍保留 askCaptureFallback，exitAsk 才清掉", () => {
+    loadReady();
+    enterDrafting("没截到就落地");
+    usePlayerStore.setState({ askCaptureFallback: true });
+    s().askSent(guard({ token: 1 }));
+    expect(s()).toMatchObject({ askPhase: "sending", askCaptureFallback: true });
+    // 前台 token 已换成别的请求：这条结果走非前台落地，只追加 answers。
+    s().askStarted("ans-live", guard({ token: 1 }));
+    usePlayerStore.setState({
+      askContext: s().askContext ? { ...s().askContext!, token: 99 } : s().askContext,
+    });
+    s().answerArrived(answerOf({ id: "ans-settle", stepId: "s1", segments: [segment("only")] }), guard({ token: 1 }));
+    expect(s().answers.s1?.map((item) => item.id)).toEqual(["ans-settle"]);
+    expect(s()).toMatchObject({
+      askPhase: "streaming",
+      askCaptureFallback: true,
+    });
+    // sending/streaming 的 exitAsk 仍是空操作，标记留着。
+    s().exitAsk();
+    expect(s()).toMatchObject({ askPhase: "streaming", askCaptureFallback: true });
+    // 回到圈选后再退出才清掉。
+    usePlayerStore.setState({ askPhase: "selecting" });
+    s().exitAsk();
+    expect(s()).toMatchObject({ askPhase: "idle", askCaptureFallback: false });
+  });
+
   test("returnToStep 收起当前回答并停在原步；等待中只后台化", () => {
     loadReady();
     const full = answerOf({ id: "ans-1", stepId: "s1" });

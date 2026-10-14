@@ -1025,6 +1025,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       currentStep(state)?.id === answer.stepId;
     const answers = appendAnswer(state.answers, answer);
     if (!foreground) {
+      // 截图失败标记留到 exitAsk / 下一次 enterAsk。非前台落地只追加 answers。
       set({ answers });
       return;
     }
