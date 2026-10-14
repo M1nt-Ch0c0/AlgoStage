@@ -17,8 +17,11 @@
 
 import { useEffect } from "react";
 import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
+import type { StepAnswer } from "@/lib/ask/types";
 import { endPanelShowing, usePlayerStore } from "@/lib/player/store";
 import { useCoarsePointer } from "./use-coarse-pointer";
+
+const EMPTY_ANSWERS: Record<string, StepAnswer[]> = {};
 
 const SPEEDS = [0.5, 1, 1.5, 2] as const;
 const LEVELS = [
@@ -74,7 +77,7 @@ export default function PlayerControls({
   const autoAdvanceHydrated = usePlayerStore((s) => s.autoAdvanceHydrated);
   const awaitingContinue = usePlayerStore((s) => s.awaitingContinue);
   const receiving = usePlayerStore((s) => s.receiving);
-  const answers = usePlayerStore((s) => s.answers);
+  const answers = usePlayerStore((s) => (s.answersReady ? s.answers : EMPTY_ANSWERS));
   const askPhase = usePlayerStore((s) => s.askPhase);
   const askPlaybackPaused = usePlayerStore((s) => s.askPlaybackPaused);
   const askPlaybackRun = usePlayerStore((s) => s.askPlaybackRun);
