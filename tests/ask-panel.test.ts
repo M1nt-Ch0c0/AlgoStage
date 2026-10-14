@@ -190,6 +190,9 @@ describe("ask panel", () => {
     await render();
     const submit = submitButton();
     expect(submit.getAttribute("aria-disabled")).toBe("true");
+    expect(submit.className).toContain("opacity-50");
+    expect(submit.className).toContain("cursor-not-allowed");
+    expect(submit.className).toContain("bg-beam-gold");
     expect(submit.textContent).toBe("提问");
     expect(container.querySelector("[data-ask-count]")?.textContent).toBe("0/300");
     expect(container.querySelector("[data-ask-count]")?.className).not.toContain("text-warning");
@@ -206,7 +209,10 @@ describe("ask panel", () => {
     expect(question().value).toBe(ASK_CHIPS[0]);
     expect(sendAsk).not.toHaveBeenCalled();
     expect(captureStage).not.toHaveBeenCalled();
-    expect(submitButton().hasAttribute("aria-disabled")).toBe(false);
+    const filled = submitButton();
+    expect(filled.hasAttribute("aria-disabled")).toBe(false);
+    expect(filled.className).not.toContain("opacity-50");
+    expect(filled.className).not.toContain("cursor-not-allowed");
     expect(container.querySelector("[data-ask-count]")?.textContent).toBe(`${ASK_CHIPS[0].length}/300`);
 
     await act(async () => {
@@ -343,6 +349,10 @@ describe("ask panel", () => {
 
     expect(container.querySelector("[data-ask-waiting]")?.textContent).toBe(ASK_WAITING_STATUS(3));
     expect(status.textContent).toBe(ASK_WAITING_STATUS(3));
+    const waitingSubmit = submitButton();
+    expect(waitingSubmit.getAttribute("aria-disabled")).toBe("true");
+    expect(waitingSubmit.className).toContain("opacity-50");
+    expect(waitingSubmit.className).toContain("cursor-not-allowed");
 
     await act(async () => {
       vi.advanceTimersByTime(1000);

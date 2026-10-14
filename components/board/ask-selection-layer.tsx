@@ -4,6 +4,7 @@
  * 第二指按下放弃当前框，按两指中点位移 scrollBy 最近可滚祖先。
  * 窗口 resize 只清选区（clearAskSelection），不关面板。
  * visualViewport resize 是软键盘，不清选区，留给提问抽屉去抬高。
+ * Esc 在 selecting 调用 exitAsk；面板打开时（drafting 等）Esc 留给面板。
  */
 "use client";
 
@@ -150,6 +151,7 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
   const steps = usePlayerStore((s) => s.steps);
   const setAskSelection = usePlayerStore((s) => s.setAskSelection);
   const clearAskSelection = usePlayerStore((s) => s.clearAskSelection);
+  const exitAsk = usePlayerStore((s) => s.exitAsk);
 
   if (!ACTIVE_PHASES.has(askPhase)) return null;
 
@@ -162,6 +164,7 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
       stepId={steps[currentIndex]?.id ?? ""}
       setAskSelection={setAskSelection}
       clearAskSelection={clearAskSelection}
+      exitAsk={exitAsk}
     />
   );
 }
@@ -174,12 +177,14 @@ function AskSelectionLayerActive({
   stepId,
   setAskSelection,
   clearAskSelection,
+  exitAsk,
 }: AskSelectionLayerProps & {
   askPhase: string;
   selection: AskSelectionSummary | null;
   stepId: string;
   setAskSelection: (selection: AskSelectionSummary) => void;
   clearAskSelection: () => void;
+  exitAsk: () => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const pointersRef = useRef<Map<number, PointerSample>>(new Map());
@@ -435,6 +440,13 @@ function AskSelectionLayerActive({
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const key = event.key;
+    // 只在圈选中吞掉 Esc。drafting|sending|streaming|error 留给面板 closeAskPanel。
+    if (key === "Escape" && askPhase === "selecting") {
+      event.preventDefault();
+      event.stopPropagation();
+      exitAsk();
+      return;
+    }
     const blocked = key === " " || key === "ArrowLeft" || key === "ArrowRight" || key === "ArrowUp" || key === "ArrowDown";
     if (blocked || key === "Enter" || key === "Tab") {
       event.stopPropagation();
