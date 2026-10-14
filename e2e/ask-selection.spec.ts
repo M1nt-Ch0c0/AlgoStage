@@ -605,9 +605,138 @@ test.describe("1280 selection flow", () => {
     await askQuestion(page);
     await expect(page.getByText(ANSWER_NARRATION)).toBeVisible();
 
-    // S5 repro: before S5 the code area has no data-ask-target, so code is never collected. Flipped to expect code after S5.
-    expect(capturedTargets.some((t) => t.kind === "code")).toBe(false);
+    // Missing before S5 because the code area had no data-ask-target. Code is now collected.
+    expect(capturedTargets.some((t) => t.kind === "code")).toBe(true);
     expect(capturedTargets.some((t) => t.kind === "step")).toBe(true);
+  });
+
+  test("S5. code box sends codeRange", async ({ page }) => {
+    let capturedTargets: Array<{
+      kind?: string;
+      codeRange?: { startLine: number; endLine: number };
+      text?: string;
+    }> = [];
+    await mockAsk(page, async (route) => {
+      const body = route.request().postDataJSON() as {
+        selection?: {
+          targets?: Array<{
+            kind?: string;
+            codeRange?: { startLine: number; endLine: number };
+            text?: string;
+          }>;
+        };
+      };
+      capturedTargets = body?.selection?.targets ?? [];
+      await route.fulfill({
+        status: 200,
+        contentType: "application/x-ndjson",
+        body: askStream("s1"),
+      });
+    });
+    await startGenerated(page);
+    await pauseLecture(page);
+    await enterSelection(page);
+
+    const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+    await expect(code).toBeVisible();
+
+    const box = await code.boundingBox();
+    if (!box) throw new Error("code target has no box");
+
+    const startX = box.x + box.width * 0.2;
+    const startY = box.y + box.height * 0.3;
+    const endX = box.x + box.width * 0.8;
+    const endY = box.y + box.height * 0.6;
+
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(endX, endY, { steps: 8 });
+    await page.mouse.up();
+
+    const panel = page.locator("[data-ask-panel]");
+    await expect(panel).toBeVisible();
+    await expect(panel.locator("[data-ask-panel-label]")).toHaveText(/代码第 \d+–\d+ 行/);
+
+    await askQuestion(page);
+    await expect(page.getByText(ANSWER_NARRATION)).toBeVisible();
+
+    const codeTarget = capturedTargets.find((t) => t.kind === "code");
+    expect(codeTarget).toBeDefined();
+    expect(codeTarget!.codeRange).toBeDefined();
+    expect(codeTarget!.codeRange!.startLine).toBeGreaterThanOrEqual(1);
+    expect(codeTarget!.codeRange!.endLine).toBeGreaterThanOrEqual(codeTarget!.codeRange!.startLine);
+    expect(codeTarget!.text).toBeTruthy();
+  });
+
+  test("S5. code + viz collects both", async ({ page }) => {
+    let capturedTargets: Array<{ kind?: string }> = [];
+    await mockAsk(page, async (route) => {
+      const body = route.request().postDataJSON() as {
+        selection?: { targets?: Array<{ kind?: string }> };
+      };
+      capturedTargets = body?.selection?.targets ?? [];
+      await route.fulfill({
+        status: 200,
+        contentType: "application/x-ndjson",
+        body: askStream("s1"),
+      });
+    });
+    await startGenerated(page);
+    await pauseLecture(page);
+    await enterSelection(page);
+
+    const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+    const viz = page.locator('[data-ask-target="viz"]').first();
+    await expect(code).toBeVisible();
+    await expect(viz).toBeVisible();
+
+    const codeBox = await code.boundingBox();
+    const vizBox = await viz.boundingBox();
+    if (!codeBox || !vizBox) throw new Error("code or viz target has no box");
+
+    const startX = codeBox.x + codeBox.width * 0.5;
+    const startY = codeBox.y + codeBox.height * 0.5;
+    const endX = vizBox.x + vizBox.width * 0.5;
+    const endY = vizBox.y + vizBox.height * 0.5;
+
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(endX, endY, { steps: 8 });
+    await page.mouse.up();
+
+    const panel = page.locator("[data-ask-panel]");
+    await expect(panel).toBeVisible();
+
+    await askQuestion(page);
+    await expect(page.getByText(ANSWER_NARRATION)).toBeVisible();
+
+    expect(capturedTargets.some((t) => t.kind === "code")).toBe(true);
+    expect(capturedTargets.some((t) => t.kind === "viz")).toBe(true);
+  });
+
+  test("S5. empty area shows 没选中 only when nothing hit", async ({ page }) => {
+    await startGenerated(page);
+    await pauseLecture(page);
+    await enterSelection(page);
+
+    const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+    await expect(code).toBeVisible();
+    const box = await code.boundingBox();
+    if (!box) throw new Error("code target has no box");
+
+    const startX = box.x + box.width * 0.2;
+    const startY = box.y + box.height * 0.3;
+    const endX = box.x + box.width * 0.8;
+    const endY = box.y + box.height * 0.6;
+
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(endX, endY, { steps: 8 });
+    await page.mouse.up();
+
+    const panel = page.locator("[data-ask-panel]");
+    await expect(panel).toBeVisible();
+    await expect(page.getByText("没选中内容")).toBeHidden();
   });
 });
 
@@ -652,6 +781,64 @@ test.describe("390 selection flow", () => {
         };
       });
       expect(height).toBeLessThanOrEqual(lineHeight * 1.5);
+    });
+
+    test("S5. 390: code box sends codeRange", async ({ page }) => {
+      let capturedTargets: Array<{
+        kind?: string;
+        codeRange?: { startLine: number; endLine: number };
+        text?: string;
+      }> = [];
+      await mockAsk(page, async (route) => {
+        const body = route.request().postDataJSON() as {
+          selection?: {
+            targets?: Array<{
+              kind?: string;
+              codeRange?: { startLine: number; endLine: number };
+              text?: string;
+            }>;
+          };
+        };
+        capturedTargets = body?.selection?.targets ?? [];
+        await route.fulfill({
+          status: 200,
+          contentType: "application/x-ndjson",
+          body: askStream("s1"),
+        });
+      });
+      await startGenerated(page);
+      await pauseLecture(page);
+      await enterSelection(page);
+
+      const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+      await expect(code).toBeVisible();
+
+      const box = await code.boundingBox();
+      if (!box) throw new Error("code target has no box");
+
+      const startX = box.x + box.width * 0.2;
+      const startY = box.y + box.height * 0.3;
+      const endX = box.x + box.width * 0.8;
+      const endY = box.y + box.height * 0.6;
+
+      await page.mouse.move(startX, startY);
+      await page.mouse.down();
+      await page.mouse.move(endX, endY, { steps: 8 });
+      await page.mouse.up();
+
+      const panel = page.locator("[data-ask-panel]");
+      await expect(panel).toBeVisible();
+      await expect(panel.locator("[data-ask-panel-label]")).toHaveText(/代码第 \d+–\d+ 行/);
+
+      await askQuestion(page);
+      await expect(page.getByText(ANSWER_NARRATION)).toBeVisible();
+
+      const codeTarget = capturedTargets.find((t) => t.kind === "code");
+      expect(codeTarget).toBeDefined();
+      expect(codeTarget!.codeRange).toBeDefined();
+      expect(codeTarget!.codeRange!.startLine).toBeGreaterThanOrEqual(1);
+      expect(codeTarget!.codeRange!.endLine).toBeGreaterThanOrEqual(codeTarget!.codeRange!.startLine);
+      expect(codeTarget!.text).toBeTruthy();
     });
   });
 
