@@ -6,6 +6,7 @@ import { CAPTURE_FALLBACK_NOTICE } from "@/lib/ask/capture";
 import {
   ASK_CAPTURE_FALLBACK,
   ASK_CHIPS,
+  ASK_CODE_MISS_HINT,
   ASK_EMPTY_HIT,
   ASK_ENTERED_STATUS,
   ASK_ENTRY_LABEL,
@@ -52,6 +53,7 @@ describe("ask-ui-text", () => {
     expect(ASK_PENDING_PREPARING_SR).toBe("正在准备");
     expect(ASK_PENDING_TIMEOUT).toBe("暂时没法提问，刷新页面后再试");
     expect(ASK_EMPTY_HIT).toBe("没选中内容，换个地方试试");
+    expect(ASK_CODE_MISS_HINT).toBe("代码部分没选上，换个地方再框一次");
     expect(ASK_RESIZE_HINT).toBe("窗口大小变了，请重新圈选");
     expect(ASK_LAYER_HINT).toBe("拖动画框，或点一下选中；双指可滚动");
     expect(ASK_ENTERED_STATUS).toBe("已进入圈选，选中内容后提问");
@@ -83,6 +85,7 @@ describe("ask-ui-text", () => {
       ASK_PENDING_PREPARING_SR,
       ASK_PENDING_TIMEOUT,
       ASK_EMPTY_HIT,
+      ASK_CODE_MISS_HINT,
       ASK_RESIZE_HINT,
       ASK_LAYER_HINT,
       ASK_ENTERED_STATUS,
