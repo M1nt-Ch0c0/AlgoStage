@@ -10,6 +10,8 @@ import type {
   AskTarget,
   AskTargetKind,
 } from "@/lib/ask/types";
+import { getCodeEditorHandle } from "@/lib/ask/code-editor-registry";
+import { intersects, normalizeBBox } from "@/lib/ask/hit-test";
 
 const KINDS: ReadonlySet<string> = new Set<AskTargetKind>([
   "subtitle",
@@ -47,7 +49,7 @@ function synthesizeId(kind: AskTargetKind, stepId: string | undefined, vizIndex:
   return `${kind}:${step}`;
 }
 
-function relativeRect(stage: HTMLElement, el: Element): AskBBox {
+export function relativeRect(stage: HTMLElement, el: Element): AskBBox {
   const sr = stage.getBoundingClientRect();
   const er = el.getBoundingClientRect();
   return {
@@ -68,7 +70,7 @@ function finiteRect(rect: AskBBox): boolean {
 }
 
 /** Collect ask targets inside `stage`, in DOM order. Skips data-ask-exclude subtrees. */
-export function collectAskCandidates(stage: HTMLElement): AskCandidate[] {
+export function collectAskCandidates(stage: HTMLElement, box?: AskBBox): AskCandidate[] {
   const nodes = stage.querySelectorAll("[data-ask-target]");
   const out: AskCandidate[] = [];
   for (const el of nodes) {
@@ -84,6 +86,56 @@ export function collectAskCandidates(stage: HTMLElement): AskCandidate[] {
     const idAttr = el.getAttribute("data-ask-id");
     const id = idAttr && idAttr.length > 0 ? idAttr : synthesizeId(kindRaw, stepId, vizIndex);
 
+    if (kindRaw === "code") {
+      const handle = getCodeEditorHandle(el);
+      let codeRange: { startLine: number; endLine: number } | undefined;
+      let text: string;
+
+      const normBox = box ? normalizeBBox(box) : undefined;
+      const normRect = normalizeBBox(rect);
+      const effectiveBox = normBox
+        ? (normBox.width === 0 || normBox.height === 0
+            ? { x: normBox.x, y: normBox.y, width: Math.max(normBox.width, 1), height: Math.max(normBox.height, 1) }
+            : normBox)
+        : undefined;
+
+      const isIntersecting = effectiveBox ? intersects(effectiveBox, normRect) : false;
+
+      if (effectiveBox && isIntersecting && handle) {
+        const sr = stage.getBoundingClientRect();
+        const intersectTop = Math.max(effectiveBox.y, normRect.y);
+        const intersectBottom = Math.min(effectiveBox.y + effectiveBox.height, normRect.y + normRect.height);
+        const clientTop = intersectTop + sr.top - stage.scrollTop;
+        const clientBottom = intersectBottom + sr.top - stage.scrollTop;
+
+        const range = handle.getLineRangeForClientBox(clientTop, clientBottom);
+        if (range) {
+          codeRange = { startLine: range.startLine, endLine: range.endLine };
+          text = handle.getLinesText(range.startLine, range.endLine).slice(0, ASK_LIMITS.targetTextMax);
+        } else {
+          const full = handle.getFullText();
+          text = (full || (el.textContent ?? "")).slice(0, ASK_LIMITS.targetTextMax);
+        }
+      } else {
+        const full = handle ? handle.getFullText() : (el.textContent ?? "");
+        text = full.slice(0, ASK_LIMITS.targetTextMax);
+      }
+
+      if (!text || text.length === 0) {
+        continue;
+      }
+
+      const target: AskTarget = {
+        kind: "code",
+        id,
+        ...(stepId !== undefined ? { stepId } : {}),
+        ...(codeRange !== undefined ? { codeRange } : {}),
+        text,
+      };
+      out.push({ target, rect });
+      continue;
+    }
+
     const target: AskTarget = {
       kind: kindRaw,
       id,
@@ -96,6 +148,10 @@ export function collectAskCandidates(stage: HTMLElement): AskCandidate[] {
     out.push({ target, rect });
   }
   return out;
+}
+
+export function collectAskCandidatesInBox(stage: HTMLElement, box: AskBBox): AskCandidate[] {
+  return collectAskCandidates(stage, box);
 }
 
 function cap(text: string): string {
@@ -122,6 +178,13 @@ export function summarizeSelection(sel: AskSelectionSummary): string {
   if (kinds.size === 1 && kinds.has("step") && targets.length === 1) {
     return "已选：当前步骤";
   }
+  if (kinds.size === 1 && kinds.has("code") && targets.length === 1) {
+    const code = targets[0];
+    if (code.codeRange) {
+      return cap(`已选：代码第 ${code.codeRange.startLine}–${code.codeRange.endLine} 行`);
+    }
+    return "已选：当前代码";
+  }
   if (kinds.size === 1 && kinds.has("viz") && vizCount >= 1) {
     return cap(`已选：可视化 ${vizCount} 处`);
   }
@@ -129,10 +192,18 @@ export function summarizeSelection(sel: AskSelectionSummary): string {
   const parts: string[] = [];
   const subtitleCount = targets.filter((t) => t.kind === "subtitle").length;
   const stepCount = targets.filter((t) => t.kind === "step").length;
+  const codeTargets = targets.filter((t) => t.kind === "code");
   if (subtitleCount > 0) parts.push(subtitleCount === 1 ? "当前字幕" : `字幕 ${subtitleCount}`);
   if (stepCount > 0) parts.push(stepCount === 1 ? "当前步骤" : `步骤 ${stepCount}`);
+  if (codeTargets.length > 0) {
+    const firstCode = codeTargets[0];
+    const codeLabel = firstCode.codeRange
+      ? `代码第 ${firstCode.codeRange.startLine}–${firstCode.codeRange.endLine} 行`
+      : "当前代码";
+    parts.push(codeLabel);
+  }
   if (vizCount > 0) parts.push(`可视化 ${vizCount} 处`);
-  const other = targets.length - subtitleCount - stepCount - vizCount;
+  const other = targets.length - subtitleCount - stepCount - codeTargets.length - vizCount;
   if (other > 0) parts.push(`其他 ${other}`);
   if (parts.length === 0) return "已选：无";
   return cap(`已选：${parts.join(" · ")}`);
