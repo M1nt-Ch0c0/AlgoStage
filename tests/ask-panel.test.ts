@@ -335,6 +335,26 @@ describe("ask panel", () => {
     expect(container.querySelector("[data-ask-capture-fallback]")?.textContent).toBe(ASK_CAPTURE_FALLBACK);
     expect(sendAsk).toHaveBeenCalledTimes(1);
     expect(sendAsk).toHaveBeenCalledWith(null);
+    expect(usePlayerStore.getState().askCaptureFallback).toBe(true);
+  });
+
+  test("25b. 回答落到 playing 后面板仍显示截图失败提示", async () => {
+    draft("drafting", { draftQuestion: "换个例子讲讲" });
+    await render();
+    vi.mocked(captureStage).mockResolvedValue({
+      ok: false,
+      reason: "RENDER_FAILED",
+      fallbackText: "步骤内容",
+    });
+    vi.mocked(sendAsk).mockImplementation(async () => {
+      usePlayerStore.setState({ askPhase: "playing" });
+    });
+    await act(async () => {
+      submitButton().click();
+    });
+    expect(usePlayerStore.getState().askPhase).toBe("playing");
+    expect(usePlayerStore.getState().askCaptureFallback).toBe(true);
+    expect(container.querySelector("[data-ask-capture-fallback]")?.textContent).toBe(ASK_CAPTURE_FALLBACK);
   });
 
   test("26. sending 显示等待秒数，每 10 秒更新 status；取消调用 cancelAsk，回到 drafting 后草稿与选区还在", async () => {

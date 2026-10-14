@@ -142,6 +142,11 @@ interface PlayerState {
   askPhase: AskPhase;
   /** 关面板后请求仍在飞。phase 已回 selecting，入口仍按 busy 置灰，直到回答落地或失败。 */
   askInFlight: boolean;
+  /**
+   * 这次提问截图失败。挂在 store 上，避免回答落地把 phase 拉到 playing、
+   * 面板按阶段卸载后本地 state 把「没截到图」提示丢掉。
+   */
+  askCaptureFallback: boolean;
   askContext: AskContext | null;
   answerMeta: LectureAnswerMeta;
   answers: StepAnswersMap;
@@ -286,6 +291,7 @@ const initial = {
 const askInitial = {
   askPhase: "idle" as AskPhase,
   askInFlight: false,
+  askCaptureFallback: false,
   askContext: null as AskContext | null,
   answerMeta: { ...EMPTY_ANSWER_META, askDisabledStepIds: [] as string[] },
   answers: emptyAnswers(),
@@ -396,6 +402,7 @@ function clearForegroundDraft(): Pick<
   PlayerState,
   | "askPhase"
   | "askInFlight"
+  | "askCaptureFallback"
   | "askContext"
   | "selection"
   | "draftQuestion"
@@ -410,6 +417,7 @@ function clearForegroundDraft(): Pick<
   return {
     askPhase: "idle",
     askInFlight: false,
+    askCaptureFallback: false,
     askContext: null,
     selection: null,
     draftQuestion: "",
@@ -477,6 +485,7 @@ function applyEnterAsk(state: PlayerState): Partial<PlayerState> | AskDisabledRe
   return {
     askPhase: hasSelection ? "drafting" : "selecting",
     askInFlight: false,
+    askCaptureFallback: false,
     askContext,
     status: "interrupted",
     awaitingContinue: false,
@@ -946,6 +955,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       askPhase: "selecting",
       // 请求还在飞：入口保持 busy，直到 answerArrived / answerFailed 清掉。
       askInFlight: detach ? true : state.askInFlight,
+      askCaptureFallback: false,
       askErrorCode: null,
       askErrorRetryable: false,
       status: "interrupted",
@@ -977,6 +987,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     set({
       askPhase: "idle",
       askInFlight: phase === "sending" || phase === "streaming",
+      askCaptureFallback: false,
       status: ctx?.prevStatus ?? "paused",
       awaitingContinue: ctx?.prevAwaitingContinue ?? false,
       askContext: null,
@@ -1059,7 +1070,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       currentStep(state)?.id === answer.stepId;
     const answers = appendAnswer(state.answers, answer);
     if (!foreground) {
-      set({ answers, askInFlight: false });
+      set({ answers, askInFlight: false, askCaptureFallback: false });
       return;
     }
     const expanded = new Set(state.expandedAnswerIds);
@@ -1092,7 +1103,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       (state.askPhase === "sending" || state.askPhase === "streaming") &&
       isForegroundGuard(state, guard);
     if (!foreground) {
-      if (state.askInFlight) set({ askInFlight: false });
+      if (state.askInFlight || state.askCaptureFallback) {
+        set({ askInFlight: false, askCaptureFallback: false });
+      }
       return;
     }
     set({
@@ -1193,6 +1206,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       draftStepId: null,
       askPlaybackPaused: false,
       previewSegments: [],
+      askCaptureFallback: false,
     });
   },
 
