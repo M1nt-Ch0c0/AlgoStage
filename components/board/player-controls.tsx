@@ -18,6 +18,7 @@
 import { useEffect } from "react";
 import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import type { StepAnswer } from "@/lib/ask/types";
+import { isTypingTarget } from "@/lib/player/keyboard";
 import { endPanelShowing, syncPrefsFromStorage, usePlayerStore } from "@/lib/player/store";
 import { useCoarsePointer } from "./use-coarse-pointer";
 
@@ -29,17 +30,6 @@ const LEVELS = [
   { value: "calm", label: "克制" },
   { value: "minimal", label: "极简" },
 ] as const;
-
-/** 焦点在输入控件、可编辑区或 Monaco 内时不抢快捷键（happy-dom 未必实现 isContentEditable）。 */
-function isTypingTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof Element)) return false;
-  const tag = target.tagName;
-  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
-  if (target instanceof HTMLElement && target.isContentEditable) return true;
-  return (
-    target.closest('[contenteditable=""],[contenteditable="true"],.monaco-editor') !== null
-  );
-}
 
 /** 按钮和链接自己处理 Space，播放器不能 preventDefault 掉原生激活。方向键仍由播放器步进。 */
 function isSpaceActivationTarget(target: EventTarget | null): boolean {

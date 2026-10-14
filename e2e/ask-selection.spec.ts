@@ -436,11 +436,76 @@ test.describe("1280 selection flow", () => {
     await expect(page.getByText(ANSWER_NARRATION)).toBeVisible();
     expect(image).toBeNull();
   });
+
+  test("S2. Q enters, exit button >=44x44, Esc exits", async ({ page }) => {
+    await startGenerated(page);
+    await pauseLecture(page);
+    const titleRow = entry(page).locator("xpath=ancestor::div[1]");
+    const rowBoxBefore = await titleRow.boundingBox();
+    expect(rowBoxBefore).not.toBeNull();
+
+    await page.keyboard.press("q");
+    await expect(page.locator("[data-ask-layer]")).toBeVisible();
+    await expect(entry(page)).toHaveAttribute("aria-pressed", "true");
+
+    const exitBox = await entry(page).boundingBox();
+    expect(exitBox).not.toBeNull();
+    expect(exitBox!.width).toBeGreaterThanOrEqual(44);
+    expect(exitBox!.height).toBeGreaterThanOrEqual(44);
+    await expect(entry(page)).toHaveAttribute("aria-keyshortcuts", "Escape");
+
+    const rowBoxAfter = await titleRow.boundingBox();
+    expect(rowBoxAfter).not.toBeNull();
+    expect(Math.abs(rowBoxAfter!.height - rowBoxBefore!.height)).toBeLessThanOrEqual(1);
+
+    await page.keyboard.press("Escape");
+    await expect(page.locator("[data-ask-layer]")).toHaveCount(0);
+  });
 });
 
 test.describe("390 selection flow", () => {
   // 与 autoplay e2e 同一套粗指针：播放中「点「下一步」继续」独占一行，基线 4 行。
   test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+
+  test.describe("390 mobile tap", () => {
+    test("S2. 390: kbd hidden, exit >=44, title row single line", async ({ page }) => {
+      await startGenerated(page);
+      await pauseLecture(page);
+      const titleRow = entry(page).locator("xpath=ancestor::div[1]");
+      const rowBoxBefore = await titleRow.boundingBox();
+      expect(rowBoxBefore).not.toBeNull();
+
+      await enterSelection(page);
+      await expect(entry(page).locator("[data-ask-kbd]")).toBeHidden();
+
+      const exitBox = await entry(page).boundingBox();
+      expect(exitBox).not.toBeNull();
+      expect(exitBox!.width).toBeGreaterThanOrEqual(44);
+      expect(exitBox!.height).toBeGreaterThanOrEqual(44);
+      expect(exitBox!.height).toBeLessThan(60);
+
+      const rowBoxAfter = await titleRow.boundingBox();
+      expect(rowBoxAfter).not.toBeNull();
+      expect(Math.abs(rowBoxAfter!.height - rowBoxBefore!.height)).toBeLessThanOrEqual(1);
+
+      const labelP = titleRow.locator("p", { hasText: "字幕" });
+      const { height, lineHeight } = await labelP.evaluate((el) => {
+        const style = window.getComputedStyle(el);
+        const parsedLh = parseFloat(style.lineHeight);
+        const parsedFs = parseFloat(style.fontSize);
+        const lh = Number.isFinite(parsedLh)
+          ? parsedLh
+          : Number.isFinite(parsedFs)
+            ? parsedFs * 1.5
+            : 15;
+        return {
+          height: el.getBoundingClientRect().height,
+          lineHeight: lh,
+        };
+      });
+      expect(height).toBeLessThanOrEqual(lineHeight * 1.5);
+    });
+  });
 
   test("32. same ask flow; player-controls stays 4 rows while playing and 3 when finished", async ({ page }) => {
     test.setTimeout(45_000);

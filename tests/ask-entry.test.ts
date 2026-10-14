@@ -398,3 +398,191 @@ test("askDisabledStepIds 当前步为 stepDisabled，点击不进圈选", async 
   expect(usePlayerStore.getState().askPhase).toBe("idle");
   expect(usePlayerStore.getState().pendingEnterIntent).toBeNull();
 });
+
+test("exit state has aria-keyshortcuts=Escape, kbd text Esc, min-h-11 and min-w-11 classes; entry state has aria-keyshortcuts=Q and kbd Q", async () => {
+  loadReady();
+  await render();
+  const entryBtn = entry();
+  expect(entryBtn.getAttribute("aria-keyshortcuts")).toBe("Q");
+  expect(entryBtn.querySelector<HTMLElement>("[data-ask-kbd]")?.textContent).toBe("Q");
+  expect(entryBtn.classList.contains("min-h-11")).toBe(false);
+  expect(entryBtn.classList.contains("min-w-11")).toBe(false);
+  expect(entryBtn.classList.contains("pointer-fine:-my-3")).toBe(false);
+  expect(entryBtn.classList.contains("whitespace-nowrap")).toBe(true);
+
+  await act(async () => {
+    usePlayerStore.setState({ askPhase: "selecting" });
+  });
+  const exitBtn = entry();
+  expect(exitBtn.getAttribute("aria-keyshortcuts")).toBe("Escape");
+  const kbd = exitBtn.querySelector<HTMLElement>("[data-ask-kbd]");
+  expect(kbd).not.toBeNull();
+  expect(kbd?.textContent).toBe("Esc");
+  expect(exitBtn.classList.contains("min-h-11")).toBe(true);
+  expect(exitBtn.classList.contains("min-w-11")).toBe(true);
+  expect(exitBtn.classList.contains("pointer-fine:-my-3")).toBe(true);
+  expect(exitBtn.classList.contains("whitespace-nowrap")).toBe(true);
+});
+
+test.each(["drafting", "error"] as const)(
+  "exit state (%s) has aria-keyshortcuts=Escape, kbd text Esc, min-h-11 and min-w-11 classes",
+  async (phase) => {
+    loadReady();
+    usePlayerStore.setState({ askPhase: phase });
+    await render();
+    const button = entry();
+    expect(button.getAttribute("aria-keyshortcuts")).toBe("Escape");
+    const kbd = button.querySelector<HTMLElement>("[data-ask-kbd]");
+    expect(kbd).not.toBeNull();
+    expect(kbd?.textContent).toBe("Esc");
+    expect(button.classList.contains("min-h-11")).toBe(true);
+    expect(button.classList.contains("min-w-11")).toBe(true);
+    expect(button.classList.contains("pointer-fine:-my-3")).toBe(true);
+  }
+);
+
+test("entry aria-keyshortcuts=Q and kbd Q; exit Escape", async () => {
+  loadReady();
+  await render();
+  const entryBtn = entry();
+  expect(entryBtn.getAttribute("aria-keyshortcuts")).toBe("Q");
+  const entryKbd = entryBtn.querySelector<HTMLElement>("[data-ask-kbd]");
+  expect(entryKbd).not.toBeNull();
+  expect(entryKbd?.textContent).toBe("Q");
+
+  await act(async () => {
+    usePlayerStore.setState({ askPhase: "selecting" });
+  });
+  const exitBtn = entry();
+  expect(exitBtn.getAttribute("aria-keyshortcuts")).toBe("Escape");
+  const exitKbd = exitBtn.querySelector<HTMLElement>("[data-ask-kbd]");
+  expect(exitKbd).not.toBeNull();
+  expect(exitKbd?.textContent).toBe("Esc");
+});
+
+test("pressing q on window enters (askPhase selecting)", async () => {
+  loadReady();
+  await render();
+  expect(usePlayerStore.getState().askPhase).toBe("idle");
+  await act(async () => {
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "q", bubbles: true }));
+  });
+  expect(usePlayerStore.getState().askPhase).toBe("selecting");
+});
+
+test("Ctrl+q, Meta+q, Alt+q ignored", async () => {
+  loadReady();
+  await render();
+  for (const modifier of [{ ctrlKey: true }, { metaKey: true }, { altKey: true }]) {
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "q", ...modifier, bubbles: true }));
+    });
+    expect(usePlayerStore.getState().askPhase).toBe("idle");
+  }
+});
+
+test("q dispatched from an <input>, a <textarea>, and an element inside .monaco-editor ignored", async () => {
+  loadReady();
+  await render();
+
+  const input = document.createElement("input");
+  const textarea = document.createElement("textarea");
+  const monacoContainer = document.createElement("div");
+  monacoContainer.className = "monaco-editor";
+  const monacoChild = document.createElement("span");
+  monacoContainer.appendChild(monacoChild);
+  document.body.append(input, textarea, monacoContainer);
+
+  try {
+    for (const el of [input, textarea, monacoChild]) {
+      await act(async () => {
+        el.dispatchEvent(new KeyboardEvent("keydown", { key: "q", bubbles: true }));
+      });
+      expect(usePlayerStore.getState().askPhase).toBe("idle");
+    }
+  } finally {
+    input.remove();
+    textarea.remove();
+    monacoContainer.remove();
+  }
+});
+
+test("q while inside role=dialog ignored", async () => {
+  loadReady();
+  await render();
+
+  const dialog = document.createElement("div");
+  dialog.setAttribute("role", "dialog");
+  const dialogChild = document.createElement("button");
+  dialog.appendChild(dialogChild);
+  document.body.appendChild(dialog);
+
+  try {
+    await act(async () => {
+      dialogChild.dispatchEvent(new KeyboardEvent("keydown", { key: "q", bubbles: true }));
+    });
+    expect(usePlayerStore.getState().askPhase).toBe("idle");
+  } finally {
+    dialog.remove();
+  }
+});
+
+test("q when aria-modal=true exists ignored", async () => {
+  loadReady();
+  await render();
+
+  const modal = document.createElement("div");
+  modal.setAttribute("aria-modal", "true");
+  document.body.appendChild(modal);
+
+  try {
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "q", bubbles: true }));
+    });
+    expect(usePlayerStore.getState().askPhase).toBe("idle");
+  } finally {
+    modal.remove();
+  }
+});
+
+test("q while already in ask mode is a no-op (stays in ask mode)", async () => {
+  loadReady();
+  usePlayerStore.setState({ askPhase: "selecting" });
+  await render();
+  expect(usePlayerStore.getState().askPhase).toBe("selecting");
+
+  await act(async () => {
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "q", bubbles: true }));
+  });
+  expect(usePlayerStore.getState().askPhase).toBe("selecting");
+});
+
+test("disabled (e.g. builtin) q shows the reason note and does not enter", async () => {
+  loadReady();
+  usePlayerStore.getState().setAskBuiltin(true);
+  await render();
+  expect(reasonText()).toBe(ASK_REASON_TEXT.builtin);
+
+  await act(async () => {
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "q", bubbles: true }));
+  });
+  expect(usePlayerStore.getState().askPhase).toBe("idle");
+  expect(reasonText()).toBe(ASK_REASON_TEXT.builtin);
+});
+
+test("storageMode pending q calls requestEnterAsk (pendingEnterIntent set, aria-busy)", async () => {
+  loadReady({ ...serverMeta, storageMode: "pending", cacheKey: "", scriptVersion: "" });
+  await render();
+  expect(entry().getAttribute("aria-busy")).toBeNull();
+  expect(usePlayerStore.getState().pendingEnterIntent).toBeNull();
+
+  await act(async () => {
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "q", bubbles: true }));
+  });
+  expect(usePlayerStore.getState().pendingEnterIntent).toEqual({
+    stepId: "s1",
+    generation: usePlayerStore.getState().generation,
+  });
+  expect(entry().getAttribute("aria-busy")).toBe("true");
+  expect(usePlayerStore.getState().askPhase).toBe("idle");
+});
