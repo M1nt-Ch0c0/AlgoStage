@@ -104,6 +104,7 @@ export default function AskEntry() {
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      if (e.repeat || e.isComposing) return;
       if (e.key !== "q" && e.key !== "Q") return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (isTypingTarget(e.target)) return;
