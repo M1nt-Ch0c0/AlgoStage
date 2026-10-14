@@ -2,7 +2,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ASK_LIMITS } from "@/lib/ask/types";
 import type { AskSelectionSummary, AskTarget } from "@/lib/ask/types";
-import { collectAskCandidates, summarizeSelection } from "@/lib/ask/collect-candidates";
+import { collectAskCandidates, collectAskCandidatesInBox, summarizeSelection } from "@/lib/ask/collect-candidates";
+import { type CodeEditorHandle, registerCodeEditor, resetCodeEditorRegistry } from "@/lib/ask/code-editor-registry";
 
 function rect(x: number, y: number, width: number, height: number): DOMRect {
   return {
@@ -30,6 +31,7 @@ function summary(targets: AskTarget[], mode: AskSelectionSummary["mode"] = "sing
 
 describe("collectAskCandidates", () => {
   afterEach(() => {
+    resetCodeEditorRegistry();
     document.body.innerHTML = "";
     vi.restoreAllMocks();
   });
@@ -174,9 +176,123 @@ describe("collectAskCandidates", () => {
     expect(candidates.map((c) => c.target.id)).toEqual(["step:z"]);
     expect(candidates[0]?.rect).toEqual({ x: 1, y: 2, width: 0, height: 0 });
   });
+
+  it("mock-editor handle returns {3,7} -> codeRange {startLine:3,endLine:7}, text = lines 3..7 truncated to 200", () => {
+    document.body.innerHTML = `
+      <div id="stage">
+        <div id="code" data-ask-target="code" data-ask-id="code:main" data-ask-step-id="s1"></div>
+      </div>
+    `;
+    const stage = document.getElementById("stage") as HTMLElement;
+    const codeEl = document.getElementById("code") as HTMLElement;
+    mockRect(stage, rect(0, 0, 500, 500));
+    mockRect(codeEl, rect(50, 50, 400, 300));
+
+    const longCodeLines = "const x = 1;\n".repeat(25); // > 200 chars
+    const mockHandle: CodeEditorHandle = {
+      getLineRangeForClientBox: vi.fn((_top, _bottom) => ({ startLine: 3, endLine: 7 })),
+      getLinesText: vi.fn((_start, _end) => longCodeLines),
+      getFullText: vi.fn(() => "full code"),
+    };
+    registerCodeEditor(codeEl, mockHandle);
+
+    const box = { x: 60, y: 60, width: 200, height: 100 };
+    const candidates = collectAskCandidatesInBox(stage, box);
+    expect(candidates).toHaveLength(1);
+    const candidate = candidates[0];
+    expect(candidate.target.kind).toBe("code");
+    expect(candidate.target.id).toBe("code:main");
+    expect(candidate.target.codeRange).toEqual({ startLine: 3, endLine: 7 });
+    expect(candidate.target.text).toBe(longCodeLines.slice(0, 200));
+    expect(candidate.target.text?.length).toBe(200);
+    expect(candidate.target.text?.includes("\n")).toBe(true);
+    expect(mockHandle.getLineRangeForClientBox).toHaveBeenCalledWith(60, 160);
+  });
+
+  it("fallback (handle returns null or no handle) -> no codeRange, summary 「已选：当前代码」, counts as a code unit", () => {
+    document.body.innerHTML = `
+      <div id="stage">
+        <div id="code-null-range" data-ask-target="code" data-ask-id="code:c1" data-ask-step-id="s1"></div>
+        <div id="code-no-handle" data-ask-target="code" data-ask-id="code:c2" data-ask-step-id="s1">fallback text</div>
+      </div>
+    `;
+    const stage = document.getElementById("stage") as HTMLElement;
+    const code1 = document.getElementById("code-null-range") as HTMLElement;
+    const code2 = document.getElementById("code-no-handle") as HTMLElement;
+    mockRect(stage, rect(0, 0, 500, 500));
+    mockRect(code1, rect(10, 10, 100, 100));
+    mockRect(code2, rect(10, 150, 100, 100));
+
+    const mockHandle: CodeEditorHandle = {
+      getLineRangeForClientBox: vi.fn(() => null),
+      getLinesText: vi.fn(() => ""),
+      getFullText: vi.fn(() => "handle full text"),
+    };
+    registerCodeEditor(code1, mockHandle);
+
+    const box = { x: 5, y: 5, width: 200, height: 300 };
+    const candidates = collectAskCandidates(stage, box);
+    expect(candidates).toHaveLength(2);
+
+    // code1: handle returns null range -> fallback whole block
+    expect(candidates[0].target.codeRange).toBeUndefined();
+    expect(candidates[0].target.text).toBe("handle full text");
+    expect(summarizeSelection(summary([candidates[0].target]))).toBe("已选：当前代码");
+
+    // code2: no handle -> fallback textContent
+    expect(candidates[1].target.codeRange).toBeUndefined();
+    expect(candidates[1].target.text).toBe("fallback text");
+    expect(summarizeSelection(summary([candidates[1].target]))).toBe("已选：当前代码");
+  });
+
+  it("mixed code+viz collects both", () => {
+    document.body.innerHTML = `
+      <div id="stage">
+        <div id="code" data-ask-target="code" data-ask-id="code:main" data-ask-step-id="s1"></div>
+        <div id="viz" data-ask-target="viz" data-ask-id="viz:s1" data-ask-step-id="s1">整块</div>
+      </div>
+    `;
+    const stage = document.getElementById("stage") as HTMLElement;
+    const codeEl = document.getElementById("code") as HTMLElement;
+    const vizEl = document.getElementById("viz") as HTMLElement;
+    mockRect(stage, rect(0, 0, 500, 500));
+    mockRect(codeEl, rect(10, 10, 100, 50));
+    mockRect(vizEl, rect(10, 80, 100, 50));
+
+    const mockHandle: CodeEditorHandle = {
+      getLineRangeForClientBox: vi.fn(() => ({ startLine: 3, endLine: 7 })),
+      getLinesText: vi.fn(() => "line 3 to 7"),
+      getFullText: vi.fn(() => "full code"),
+    };
+    registerCodeEditor(codeEl, mockHandle);
+
+    const box = { x: 0, y: 0, width: 200, height: 200 };
+    const candidates = collectAskCandidatesInBox(stage, box);
+    expect(candidates).toHaveLength(2);
+    expect(candidates.map((c) => c.target.kind)).toEqual(["code", "viz"]);
+    expect(candidates[0].target.codeRange).toEqual({ startLine: 3, endLine: 7 });
+
+    const mixedSummary = summarizeSelection(summary(candidates.map((c) => c.target), "region"));
+    expect(mixedSummary).toBe("已选：代码第 3–7 行 · 可视化 1 处");
+  });
 });
 
 describe("summarizeSelection", () => {
+  it("summary verbatim 已选：代码第 3–7 行 with U+2013 (assert charCode 0x2013)", () => {
+    const targetWithRange: AskTarget = {
+      kind: "code",
+      id: "code:main",
+      codeRange: { startLine: 3, endLine: 7 },
+      text: "line 3..7",
+    };
+    const singleSummary = summarizeSelection(summary([targetWithRange]));
+    expect(singleSummary).toBe("已选：代码第 3–7 行");
+
+    // Assert EN DASH U+2013 verbatim between 3 and 7
+    const dash = singleSummary.slice(singleSummary.indexOf("3") + 1, singleSummary.indexOf("7"));
+    expect(dash).toBe("–");
+    expect(dash.charCodeAt(0)).toBe(0x2013);
+  });
   it("4. stays within 24 code points for single subtitle, single step, and viz N", () => {
     expect(summarizeSelection(summary([{ kind: "subtitle", id: "subtitle:s3", stepId: "s3" }]))).toBe("已选：当前字幕");
     expect(summarizeSelection(summary([{ kind: "step", id: "step:s3", stepId: "s3" }]))).toBe("已选：当前步骤");
