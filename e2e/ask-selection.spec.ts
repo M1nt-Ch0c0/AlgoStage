@@ -514,6 +514,54 @@ test.describe("1280 selection flow", () => {
     await expect(panel).toBeVisible();
     await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：当前字幕");
   });
+
+  test("drag starting 10px below exit button bottom edge on subtitle body text selects 当前字幕", async ({ page }) => {
+    await startGenerated(page);
+    await pauseLecture(page);
+    await enterSelection(page);
+
+    const button = entry(page);
+    await button.scrollIntoViewIfNeeded();
+    const subtitleBody = page.locator('[data-ask-target="subtitle"] p').filter({ hasNotText: "字幕" }).first();
+    await subtitleBody.scrollIntoViewIfNeeded();
+    const btnBox = (await button.boundingBox())!;
+    expect(btnBox).not.toBeNull();
+
+    const startX = btnBox.x + btnBox.width / 2;
+    const startY = btnBox.y + btnBox.height + 10;
+
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(startX - 40, startY + 25, { steps: 5 });
+    await page.mouse.up();
+
+    const panel = page.locator("[data-ask-panel]");
+    await expect(panel).toBeVisible();
+    await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：当前字幕");
+  });
+
+  test("drag starting in code area starts selection", async ({ page }) => {
+    await startGenerated(page);
+    await pauseLecture(page);
+    await enterSelection(page);
+
+    const codeArea = page.locator(".monaco-editor").first();
+    await codeArea.scrollIntoViewIfNeeded();
+    await expect(codeArea).toBeVisible();
+    const box = await codeArea.boundingBox();
+    expect(box).not.toBeNull();
+
+    const startX = box!.x + 40;
+    const startY = box!.y + 40;
+
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(startX + 60, startY + 60, { steps: 5 });
+    const rubber = page.locator("[data-ask-rubber]");
+    const selectionBox = page.locator("[data-ask-selection]");
+    await expect(rubber.or(selectionBox)).toBeVisible();
+    await page.mouse.up();
+  });
 });
 
 test.describe("390 selection flow", () => {
@@ -660,6 +708,54 @@ test.describe("390 selection flow", () => {
     const panel = page.locator("[data-ask-panel]");
     await expect(panel).toBeVisible();
     await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：当前字幕");
+  });
+
+  test("390: drag starting 10px below exit button bottom edge on subtitle body text selects 当前字幕", async ({ page }) => {
+    await startGenerated(page);
+    await pauseLecture(page);
+    await enterSelection(page);
+
+    const button = entry(page);
+    await button.scrollIntoViewIfNeeded();
+    const subtitleBody = page.locator('[data-ask-target="subtitle"] p').filter({ hasNotText: "字幕" }).first();
+    await subtitleBody.scrollIntoViewIfNeeded();
+    const btnBox = (await button.boundingBox())!;
+    expect(btnBox).not.toBeNull();
+
+    const startX = btnBox.x + btnBox.width / 2;
+    const startY = btnBox.y + btnBox.height + 10;
+
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(startX - 40, startY + 25, { steps: 5 });
+    await page.mouse.up();
+
+    const panel = page.locator("[data-ask-panel]");
+    await expect(panel).toBeVisible();
+    await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：当前字幕");
+  });
+
+  test("390: drag starting in code area starts selection", async ({ page }) => {
+    await startGenerated(page);
+    await pauseLecture(page);
+    await enterSelection(page);
+
+    const codeArea = page.locator(".monaco-editor").first();
+    await codeArea.scrollIntoViewIfNeeded();
+    await expect(codeArea).toBeVisible();
+    const box = await codeArea.boundingBox();
+    expect(box).not.toBeNull();
+
+    const startX = box!.x + 40;
+    const startY = box!.y + 40;
+
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(startX + 50, startY + 50, { steps: 5 });
+    const rubber = page.locator("[data-ask-rubber]");
+    const selectionBox = page.locator("[data-ask-selection]");
+    await expect(rubber.or(selectionBox)).toBeVisible();
+    await page.mouse.up();
   });
 });
 
