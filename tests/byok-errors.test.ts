@@ -17,6 +17,7 @@ import {
   isUpstreamAuth,
   LECTURE_TIMEOUT_MESSAGE,
   mapByokErrorMessage,
+  NO_BYOK_MESSAGE,
   resetServerKeyDisabledCache,
   toByokError,
   UPSTREAM_AUTH_LECTURE_MESSAGE,
@@ -63,7 +64,7 @@ const EXPECTED_MAPPINGS = [
   },
   {
     code: "NO_BYOK",
-    expected: "还没填 API Key。先去设置页填入你自己的 API Key 就能开讲。",
+    expected: NO_BYOK_MESSAGE,
   },
   {
     code: "UPSTREAM_ERROR",

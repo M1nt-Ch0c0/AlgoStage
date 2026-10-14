@@ -19,6 +19,7 @@ import {
   BASE_URL_NOT_ALLOWED_LECTURE_MESSAGE,
   BYOK_KEY_REQUIRED_MESSAGE,
   ByokError,
+  NO_BYOK_MESSAGE,
   SETTINGS_LOCKED_MESSAGE,
   UPSTREAM_AUTH_LECTURE_MESSAGE,
   UPSTREAM_ERROR_MESSAGE,
@@ -125,14 +126,17 @@ describe("resolveAskError", () => {
     });
   });
 
-  test("NO_BYOK uses the ask-path Paige message, not the lecture NO_BYOK_MESSAGE", () => {
-    expect(resolveAskError(new ByokError("NO_BYOK", "还没填 API Key。先去设置页填入你自己的 API Key 就能开讲。"))).toEqual({
+  test("NO_BYOK replaces raw text with the shared locked copy", () => {
+    const raw = "还没填 API Key。先去设置页填入你自己的 API Key 就能开讲。";
+    expect(resolveAskError(new ByokError("NO_BYOK", raw))).toEqual({
       code: "NO_BYOK",
       message: ASK_NO_BYOK_MESSAGE,
       retryable: false,
       action: "settings",
     });
+    expect(ASK_NO_BYOK_MESSAGE).toBe(NO_BYOK_MESSAGE);
     expect(ASK_NO_BYOK_MESSAGE).toBe("老师还没接上 AI，先去设置里填自己的 Key。");
+    expect(ASK_NO_BYOK_MESSAGE).not.toBe(raw);
   });
 
   test("local AbortError is CANCELLED with no error UI", () => {
