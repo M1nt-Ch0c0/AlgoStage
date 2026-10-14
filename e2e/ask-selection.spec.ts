@@ -1,3 +1,5 @@
+import { createServer, type Server } from "node:http";
+import type { AddressInfo, Socket } from "node:net";
 import { expect, test, type Locator, type Page, type Route } from "@playwright/test";
 
 /**
@@ -165,9 +167,13 @@ async function pauseLecture(page: Page) {
 }
 
 async function enterSelection(page: Page) {
-  await entry(page).click();
+  const button = entry(page);
+  await expect(button).toBeVisible();
+  await expect(button).toBeEnabled();
+  await expect(button).not.toHaveAttribute("aria-disabled", "true");
+  await button.click();
   await expect(page.locator("[data-ask-layer]")).toBeVisible();
-  await expect(entry(page)).toHaveAttribute("aria-pressed", "true");
+  await expect(button).toHaveAttribute("aria-pressed", "true");
 }
 
 async function dragOnStage(page: Page) {
@@ -222,28 +228,78 @@ async function expectReason(page: Page, reason: keyof typeof REASONS) {
   await expect(button).toHaveAttribute("aria-describedby", "ask-entry-reason");
   const described = await button.getAttribute("aria-describedby");
   await expect(page.locator(`#${described}`)).toHaveText(REASONS[reason]);
-  await button.click();
+  // aria-disabled 不是 disabled：默认 click 会等 actionability 直到超时。强制点一下，确认不进圈选。
+  await button.click({ force: true });
   await expect(page.locator("[data-ask-layer]")).toHaveCount(0);
 }
 
 /**
  * capture.ts 动态 import("modern-screenshot")，截图失败仍 sendAsk(null)。
  * Turbopack 会 seal 住 ESM 导出，页面里改不了 domToCanvas。
- * 这里把 2d 上下文换成 0×0 画布的上下文：domToCanvas 画不出有效像素，
- * captureStage 得到 ok:false，面板显示 data-ask-capture-fallback，请求 image 为 null。
+ * 画布的 toDataURL 抛错：captureStage 的 try 得到 ok:false，
+ * 面板显示 data-ask-capture-fallback，请求 image 为 null。
+ * 必须在点「提问」之前装上。
  */
 async function stubCapture(page: Page) {
   await page.evaluate(() => {
-    const proto = HTMLCanvasElement.prototype;
-    const original = proto.getContext;
-    proto.getContext = function getContext(this: HTMLCanvasElement, type: string, options?: unknown) {
-      if (type === "2d") {
-        this.width = 0;
-        this.height = 0;
-      }
-      return original.call(this, type as "2d", options as CanvasRenderingContext2DSettings);
-    } as typeof proto.getContext;
+    HTMLCanvasElement.prototype.toDataURL = function toDataURL() {
+      throw new Error("capture stub");
+    };
   });
+}
+
+/**
+ * 写出一步后保持连接，播放器停在 receiving。
+ * route.fulfill 会等整个 body，所以把请求续到本机分块响应（同 autoplay.spec.ts）。
+ */
+async function mockHeldLecture(page: Page) {
+  const payload = `${JSON.stringify({ type: "step", step: step() })}\n`;
+  const timers = new Set<ReturnType<typeof setInterval>>();
+  const sockets = new Set<Socket>();
+  const server: Server = createServer((req, res) => {
+    req.resume();
+    res.writeHead(200, {
+      "Content-Type": "application/x-ndjson",
+      "Cache-Control": "no-cache, no-transform",
+    });
+    res.write(payload);
+    const timer = setInterval(() => {
+      if (!res.writableEnded) res.write(" \n");
+    }, 400);
+    timers.add(timer);
+    res.on("close", () => {
+      clearInterval(timer);
+      timers.delete(timer);
+    });
+  });
+  server.on("connection", (socket) => {
+    sockets.add(socket);
+    socket.on("close", () => sockets.delete(socket));
+  });
+  await new Promise<void>((resolve) => {
+    server.listen(0, "127.0.0.1", () => resolve());
+  });
+  const { port } = server.address() as AddressInfo;
+  await page.route("**/api/lecture", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.includes("/ask")) {
+      await route.fallback();
+      return;
+    }
+    if (url.port === String(port)) {
+      await route.continue();
+      return;
+    }
+    await route.continue({ url: `http://127.0.0.1:${port}/api/lecture` });
+  });
+  return async () => {
+    for (const timer of timers) clearInterval(timer);
+    timers.clear();
+    for (const socket of sockets) socket.destroy();
+    sockets.clear();
+    if (!server.listening) return;
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  };
 }
 
 test.describe("1280 selection flow", () => {
@@ -274,11 +330,14 @@ test.describe("1280 selection flow", () => {
     await pauseLecture(page);
     await enterSelection(page);
     for (const item of SHORTCUTS) {
-      await page.locator(`[data-ask-shortcut="${item.key}"]`).click();
+      const shortcut = page.locator(`[data-ask-shortcut="${item.key}"]`);
+      await expect(shortcut).toBeVisible();
+      await shortcut.click();
       const panel = page.locator("[data-ask-panel]");
       await expect(panel).toBeVisible();
       await expect(panel.locator("[data-ask-panel-label]")).toHaveText(item.summary);
-      await panel.locator("[data-ask-cancel]").click();
+      // 取消走 exitAsk，圈选层会一起关掉。Esc 是 closeAskPanel，回到 selecting。
+      await page.keyboard.press("Escape");
       await expect(panel).toHaveCount(0);
       await expect(page.locator("[data-ask-layer]")).toBeVisible();
     }
@@ -302,11 +361,17 @@ test.describe("1280 selection flow", () => {
     await entry(page).focus();
     await expect(entry(page)).toBeFocused();
 
-    await page.getByRole("button", { name: "下一步", exact: true }).click();
+    const next = page.getByRole("button", { name: "下一步", exact: true });
+    await expect(next).toBeEnabled();
+    await next.click();
     await expect(page.getByText("第 2 / 3 步")).toBeVisible();
+    await expect(entry(page)).toBeEnabled();
     await expect(entry(page)).not.toHaveAttribute("aria-disabled", "true");
     await enterSelection(page);
-    await page.locator('[data-ask-shortcut="step"]').click();
+    const shortcut = page.locator('[data-ask-shortcut="step"]');
+    await expect(shortcut).toBeVisible();
+    await shortcut.click();
+    await expect(page.locator("[data-ask-panel]")).toBeVisible();
     await askQuestion(page);
     await expect(entry(page)).toHaveAttribute("data-ask-disabled-reason", "busy");
     await expect(page.locator("#ask-entry-reason")).toHaveText(REASONS.busy);
@@ -374,9 +439,11 @@ test.describe("1280 selection flow", () => {
 });
 
 test.describe("390 selection flow", () => {
-  test.use({ viewport: { width: 390, height: 844 } });
+  // 与 autoplay e2e 同一套粗指针：播放中「点「下一步」继续」独占一行，基线 4 行。
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
 
   test("32. same ask flow; player-controls stays 4 rows while playing and 3 when finished", async ({ page }) => {
+    test.setTimeout(45_000);
     await mockAsk(page, async (route) => {
       await route.fulfill({
         status: 200,
@@ -387,6 +454,7 @@ test.describe("390 selection flow", () => {
     await startGenerated(page);
     const bar = page.getByTestId("player-controls");
     await expect(page.locator("header").getByRole("button", { name: "暂停", exact: true })).toBeVisible();
+    await expect(page.getByTestId("continue-hint")).toBeVisible();
     const playing = await controlRows(bar);
     expect(playing.rows).toBe(4);
 
@@ -397,8 +465,11 @@ test.describe("390 selection flow", () => {
     const panel = page.locator("[data-ask-panel]");
     await expect(panel).toBeVisible();
     await expect(panel).toHaveCSS("position", "fixed");
+    // 窄屏截图较慢，回答打字机在粗指针下也可能被节流。减少动效后回答直接出全文。
+    await page.emulateMedia({ reducedMotion: "reduce" });
     await askQuestion(page);
-    await expect(page.getByText(ANSWER_NARRATION)).toBeVisible();
+    await expect(page.getByText(ANSWER_NARRATION)).toBeVisible({ timeout: 20_000 });
+    await page.emulateMedia({ reducedMotion: "no-preference" });
     await expect(page.getByText("第 1 / 3 步")).toBeVisible();
 
     const overflow = await page.evaluate(
@@ -409,10 +480,10 @@ test.describe("390 selection flow", () => {
     // 回答播完会停在 paused。打开自动播放再走到讲完，对照讲完 3 行。
     await page.getByRole("button", { name: "自动播放", exact: true }).click();
     const next = page.getByRole("button", { name: "下一步", exact: true });
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 8; i++) {
       if (await page.getByText("讲完了").isVisible()) break;
-      if (await next.isEnabled()) await next.click();
-      else break;
+      if (await next.isEnabled()) await next.tap();
+      else await page.waitForTimeout(200);
     }
     await expect(page.getByText("讲完了")).toBeVisible();
     const finished = await controlRows(bar);
@@ -422,16 +493,21 @@ test.describe("390 selection flow", () => {
 });
 
 test.describe("390×667 keyboard drawer", () => {
-  test.use({ viewport: { width: 390, height: 667 } });
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 667 } });
 
   test("34. visualViewport shrink keeps the question field in view", async ({ page }) => {
     await startGenerated(page);
     await pauseLecture(page);
     await enterSelection(page);
-    await page.locator('[data-ask-shortcut="subtitle"]').click();
+    const shortcut = page.locator('[data-ask-shortcut="subtitle"]');
+    await expect(shortcut).toBeVisible();
+    await shortcut.click();
     const panel = page.locator("[data-ask-panel]");
     const field = panel.locator("[data-ask-question]");
+    await expect(panel).toBeVisible();
+    await expect(field).toBeVisible();
     await field.focus();
+    // 软键盘只改 visualViewport。画选层不把它当成窗口 resize，提问抽屉跟着抬高。
     await page.evaluate(() => {
       const viewport = window.visualViewport;
       if (!viewport) return;
@@ -443,7 +519,7 @@ test.describe("390×667 keyboard drawer", () => {
     const box = await field.boundingBox();
     expect(box).not.toBeNull();
     expect(box!.y).toBeGreaterThanOrEqual(0);
-    expect(box!.y + box!.height).toBeLessThanOrEqual(667);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(280);
   });
 });
 
@@ -455,6 +531,7 @@ test.describe("grey states", () => {
     await page.goto("/problem/two-sum");
     await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
     await expect(page.getByText(/第 1 \/ \d+ 步/)).toBeVisible();
+    await expect(entry(page)).toBeVisible();
     await pauseLecture(page);
     await expectReason(page, "builtin");
   });
@@ -464,38 +541,22 @@ test.describe("grey states", () => {
     await mockLecture(page, lectureNdjson({ steps: [step()], withResult: false }));
     await page.goto("/problem/group-anagrams");
     await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
-    await expect(page.getByText(/备课中断|已收到 1 步/)).toBeVisible();
+    await expect(page.getByText("已收到 1 步，备课中断")).toBeVisible();
     await expectReason(page, "unfinished");
   });
 
   test("37. receiving stays grey while the lecture body is held", async ({ page }) => {
-    const release: { current: (() => void) | null } = { current: null };
+    const release = await mockHeldLecture(page);
     await mockSettings(page, false);
-    await page.route("**/api/lecture", async (route) => {
-      if (route.request().url().includes("/api/lecture/ask")) {
-        await route.fallback();
-        return;
-      }
-      const head = JSON.stringify({ type: "step", step: step() });
-      const body = new ReadableStream({
-        start(controller) {
-          controller.enqueue(new TextEncoder().encode(`${head}\n`));
-          release.current = () => {
-            controller.close();
-          };
-        },
-      });
-      await route.fulfill({
-        status: 200,
-        contentType: "application/x-ndjson",
-        body: body as unknown as string,
-      });
-    });
-    await page.goto("/problem/group-anagrams");
-    await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
-    await expect(page.getByText(/已收到 1 步/)).toBeVisible();
-    await expectReason(page, "receiving");
-    release.current?.();
+    try {
+      await page.goto("/problem/group-anagrams");
+      await page.locator("header").getByRole("button", { name: "开始讲课", exact: true }).click();
+      await expect(page.getByRole("status").filter({ hasText: "已收到 1 步，仍在备课…" })).toBeVisible();
+      await expect(entry(page)).toBeVisible();
+      await expectReason(page, "receiving");
+    } finally {
+      await release();
+    }
   });
 });
 

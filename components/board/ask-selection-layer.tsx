@@ -2,7 +2,8 @@
  * AskSelectionLayer · 盖在 data-ask-stage 上的画选层。
  * 单指/鼠标：位移 <8px，或规范化后任一边 <24px，走点选；否则走框选。
  * 第二指按下放弃当前框，按两指中点位移 scrollBy 最近可滚祖先。
- * resize / visualViewport resize 只清选区（clearAskSelection），不关面板。
+ * 窗口 resize 只清选区（clearAskSelection），不关面板。
+ * visualViewport resize 是软键盘，不清选区，留给提问抽屉去抬高。
  */
 "use client";
 
@@ -228,7 +229,8 @@ function AskSelectionLayerActive({
     if (status) status.textContent = summarizeSelection(selection);
   }, [selection]);
 
-  // resize / 旋转：清选区，留在 selecting，保留草稿。不走 closeAskPanel。
+  // 窗口 resize / 旋转：清选区，留在 selecting，保留草稿。不走 closeAskPanel。
+  // visualViewport resize 是软键盘高度变化，不清选区，提问抽屉自己跟着抬。
   useEffect(() => {
     const onResize = () => {
       setRubberBand(null);
@@ -238,10 +240,8 @@ function AskSelectionLayerActive({
       clearAskSelection();
     };
     window.addEventListener("resize", onResize);
-    window.visualViewport?.addEventListener("resize", onResize);
     return () => {
       window.removeEventListener("resize", onResize);
-      window.visualViewport?.removeEventListener("resize", onResize);
     };
   }, [clearAskSelection]);
 
