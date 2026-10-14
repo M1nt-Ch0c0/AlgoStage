@@ -382,4 +382,31 @@ describe("AskSelectionLayer", () => {
     expect(buttons()[0].tabIndex).toBe(-1);
     expect(document.activeElement).toBe(buttons()[1]);
   });
+
+  test("Esc 在 selecting 调用 exitAsk", async () => {
+    const exitSpy = vi.spyOn(usePlayerStore.getState(), "exitAsk");
+    await render();
+    const host = layer();
+    const esc = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    await act(async () => {
+      host.dispatchEvent(esc);
+    });
+    expect(esc.defaultPrevented).toBe(true);
+    expect(esc.cancelBubble).toBe(true);
+    expect(exitSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("Esc 在 drafting 不从层调用 exitAsk", async () => {
+    const exitSpy = vi.spyOn(usePlayerStore.getState(), "exitAsk");
+    usePlayerStore.setState({ askPhase: "drafting" });
+    await render();
+    const host = layer();
+    const esc = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    await act(async () => {
+      host.dispatchEvent(esc);
+    });
+    expect(esc.defaultPrevented).toBe(false);
+    expect(exitSpy).not.toHaveBeenCalled();
+    expect(usePlayerStore.getState().askPhase).toBe("drafting");
+  });
 });
