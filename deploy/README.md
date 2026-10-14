@@ -3,7 +3,7 @@
 - 地址（自托管实例 URL，沿用现网 DNS）：<https://demo.m1ntch0c0.com/algostage>
 - 服务器：`root@cpa-direct.m1ntch0c0.com`
 - 源码目录：`/opt/algostage`（现网旧路径待 D5 迁移）
-- 镜像：`algostage:0.2.2`
+- 镜像：`algostage:0.3.0`
 - 容器：`algostage`，仅绑定 `127.0.0.1:3100`
 - 数据卷：`algostage-data`，SQLite 位于 `/data/algostage.db`
 - DNS：`demo.m1ntch0c0.com` 的 A 记录指向 `43.255.156.149`，DNS only
@@ -12,7 +12,7 @@
 
 ## 构建与启动
 
-在服务器源码目录执行（`<版本>` 取 `package.json` 的 `version`，例如 `0.2.2`；`compose.yaml` 中 `ALGOSTAGE_IMAGE_TAG` 默认也是该版本）：
+在服务器源码目录执行（`<版本>` 取 `package.json` 的 `version`，例如 `0.3.0`；`compose.yaml` 中 `ALGOSTAGE_IMAGE_TAG` 默认也是该版本）：
 
 ```sh
 docker buildx build --allow network.host --network host --build-arg BASE_PATH=/algostage -t algostage:<版本> --load .
