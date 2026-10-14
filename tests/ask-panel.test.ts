@@ -169,6 +169,12 @@ function keydown(el: EventTarget, init: KeyboardEventInit) {
 }
 
 describe("ask panel", () => {
+  test("askPhase 为 idle 时面板渲染 null", async () => {
+    expect(usePlayerStore.getState().askPhase).toBe("idle");
+    await render();
+    expect(container.querySelector("[data-ask-panel]")).toBeNull();
+  });
+
   test("22. 面板不再吞 Esc，也不把焦点送回舞台目标", async () => {
     draft("drafting", { draftQuestion: "还在的草稿" });
     await render();
