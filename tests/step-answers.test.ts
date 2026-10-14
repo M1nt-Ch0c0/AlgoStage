@@ -70,6 +70,15 @@ test("渲染「你问的」与问题摘要，默认折叠", async () => {
   expect(toggle?.getAttribute("aria-expanded")).toBe("false");
 });
 
+test("answersReady 为 false 时不显示提问展开区与「你问的」", async () => {
+  const stored = answer("a1", "s1", "为什么用哈希表", "因为查找是常数时间。", "2026-10-13T00:00:00.000Z");
+  usePlayerStore.getState().setAnswers({ s1: [stored] });
+  usePlayerStore.setState({ answersReady: false, askPhase: "idle", status: "paused" });
+  await render();
+  expect(container.querySelector("[data-testid='step-answers']")).toBeNull();
+  expect(container.textContent).not.toContain("你问的");
+});
+
 test("展开显示全文，再点「回到这一步」收起", async () => {
   const stored = answer("a1", "s1", "为什么用哈希表", "因为查找是常数时间。", "2026-10-13T00:00:00.000Z");
   usePlayerStore.getState().setAnswers({ s1: [stored] });

@@ -77,7 +77,7 @@ test("时间线上的提问标记不另占热区，圆点仍是原来的点按�
     createdAt: "2026-01-01T00:00:00.000Z",
   };
   usePlayerStore.getState().loadScript(script);
-  usePlayerStore.setState({ answers: { s1: [asked, { ...asked, id: "a2" }] } });
+  usePlayerStore.setState({ answers: { s1: [asked, { ...asked, id: "a2" }] }, answersReady: true });
 
   container = document.createElement("div");
   document.body.append(container);
@@ -114,4 +114,30 @@ test("时间线上的提问标记不另占热区，圆点仍是原来的点按�
 
   const statuses = [...container.querySelectorAll('[role="status"]')];
   expect(statuses).toHaveLength(0);
+});
+
+test("answers 存在但 answersReady:false 时时间线 aria-label 为无提问标记版本", async () => {
+  const asked: StepAnswer = {
+    v: 1,
+    id: "a1",
+    stepId: "s1",
+    question: "这一步在做什么",
+    selection: { mode: "single", bbox: { x: 0, y: 0, width: 8, height: 8 }, targets: [] },
+    segments: [{ id: "seg-1", narration: "先看循环" }],
+    createdAt: "2026-01-01T00:00:00.000Z",
+  };
+  usePlayerStore.getState().loadScript(script);
+  usePlayerStore.setState({ answers: { s1: [asked, { ...asked, id: "a2" }] }, answersReady: false });
+
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () => {
+    root.render(createElement(PlayerControls));
+  });
+
+  const dot1 = container.querySelector<HTMLButtonElement>('button[aria-label="跳到第 1 步"]');
+  expect(dot1).toBeTruthy();
+  expect(container.querySelector('button[aria-label*="提问"]')).toBeNull();
+  expect(dot1!.querySelector("[data-answer-mark]")).toBeNull();
 });

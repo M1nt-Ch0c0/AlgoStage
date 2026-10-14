@@ -128,7 +128,7 @@ function PreviewBody({ segments }: { segments: AnswerSegment[] }) {
 }
 
 export default function StepAnswers({ stepId }: { stepId: string }) {
-  const answers = usePlayerStore((s) => s.answers[stepId]);
+  const answers = usePlayerStore((s) => (s.answersReady ? s.answers[stepId] : undefined));
   const askPhase = usePlayerStore((s) => s.askPhase);
   const askContext = usePlayerStore((s) => s.askContext);
   const previewSegments = usePlayerStore((s) => s.previewSegments);
