@@ -41,3 +41,7 @@ export const ASK_REASON_TEXT: Record<AskDisabledReason, string> = {
 
 /** Screenshot failure notice. Same string as capture.ts; do not fork the wording. */
 export const ASK_CAPTURE_FALLBACK = CAPTURE_FALLBACK_NOTICE;
+
+export const ASK_REANSWER_LABEL = "再答一次";
+export const ASK_REANSWER_PENDING = "正在再答一次…";
+export const ASK_REANSWER_DONE = "已重新回答";

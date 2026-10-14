@@ -13,6 +13,9 @@ import {
   ASK_LAYER_HINT,
   ASK_PENDING_PREPARING_SR,
   ASK_PENDING_TIMEOUT,
+  ASK_REANSWER_DONE,
+  ASK_REANSWER_LABEL,
+  ASK_REANSWER_PENDING,
   ASK_REASON_BUSY,
   ASK_REASON_BUILTIN,
   ASK_REASON_RECEIVING,
@@ -100,5 +103,16 @@ describe("ask-ui-text", () => {
       expect(value.includes(CANCELLED_PENDING)).toBe(false);
     }
     expect(values.join("\n").includes("回到这一步")).toBe(false);
+  });
+});
+
+describe("reanswer", () => {
+  it("asserts exact strings, ellipsis, and length", () => {
+    expect(ASK_REANSWER_LABEL).toBe("再答一次");
+    expect(ASK_REANSWER_PENDING).toBe("正在再答一次…");
+    expect(ASK_REANSWER_DONE).toBe("已重新回答");
+    expect(ASK_REANSWER_PENDING.endsWith("…")).toBe(true);
+    expect(ASK_REANSWER_PENDING.includes("...")).toBe(false);
+    expect(ASK_REANSWER_PENDING.length).toBe(7);
   });
 });
