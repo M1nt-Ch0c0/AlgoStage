@@ -13,7 +13,8 @@ import { readAskResponse } from "@/lib/ask/ask-response";
 import { writeBrowserAnswers } from "@/lib/ask/answers-storage";
 import { askSelectionSchema } from "@/lib/ask/schema";
 import { ASK_LIMITS } from "@/lib/ask/types";
-import { withByok } from "@/lib/byok/client";
+import { fetchServerKeyDisabled, withByok } from "@/lib/byok/client";
+import { readLocalByok } from "@/lib/byok/storage";
 import {
   isStale,
   selectAskAvailability,
@@ -134,17 +135,25 @@ export async function sendAsk(capture: CaptureResult | null): Promise<void> {
   usePlayerStore.getState().askSent(guard);
 
   const image = selectionImage(capture);
-  const body = withByok({
-    problemSlug,
-    cacheKey,
-    scriptVersion,
-    stepId: step.id,
-    question,
-    selection,
-    image,
-  });
 
   try {
+    const localByok = readLocalByok();
+    const serverKeyDisabled = localByok
+      ? await fetchServerKeyDisabled(controller.signal)
+      : false;
+    const body = withByok(
+      {
+        problemSlug,
+        cacheKey,
+        scriptVersion,
+        stepId: step.id,
+        question,
+        selection,
+        image,
+      },
+      serverKeyDisabled,
+      localByok,
+    );
     const res = await fetch(apiPath("/api/lecture/ask"), {
       method: "POST",
       headers: {

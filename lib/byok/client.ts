@@ -160,7 +160,7 @@ export async function fetchServerKeyDisabled(
 
 export function withByok<T extends Record<string, unknown>>(
   body: T,
-  serverKeyDisabled?: boolean,
+  serverKeyDisabled: boolean,
   byok: LocalByok | null = readLocalByok(),
 ): T & { byok?: LocalByok } {
   if (serverKeyDisabled !== true || !byok || !byok.apiKey) {

@@ -88,7 +88,6 @@ describe("lib/byok/client pure helpers & fetchServerKeyDisabled", () => {
       byok: key,
     });
     expect(withByok(base, false, key)).toEqual(base);
-    expect(withByok(base, undefined, key)).toEqual(base);
     expect(withByok(base, true, null)).toEqual(base);
   });
 

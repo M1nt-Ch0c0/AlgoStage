@@ -3,13 +3,15 @@
  * ask-client runtime: NDJSON happy path, cancel, deadline, capture, background, dispose.
  * Feeds real Response bodies so readAskResponse runs.
  */
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { ASK_TIMEOUT_MS } from "@/lib/agent/defaults";
 import { answersStorageKey } from "@/lib/ask/answers-storage";
 import { cancelAsk, disposeAskRequests, sendAsk } from "@/lib/ask/ask-client";
 import { CAPTURE_DEFAULTS, type CaptureResult } from "@/lib/ask/capture";
 import { ASK_ERROR_SPECS } from "@/lib/ask/ask-errors";
 import type { AnswerSegment, AskSelectionSummary, StepAnswer } from "@/lib/ask/types";
+import { resetServerKeyDisabledCache } from "@/lib/byok/client";
+import { BYOK_STORAGE_KEY } from "@/lib/byok/storage";
 import { usePlayerStore, type LectureAnswerMeta } from "@/lib/player/store";
 import type { TeachingScript, TeachingStep } from "@/lib/teaching/types";
 
@@ -113,9 +115,50 @@ function hangingResponse() {
 }
 
 function postedBody(fetchMock: ReturnType<typeof vi.fn>, call = 0): Record<string, unknown> {
-  const init = fetchMock.mock.calls[call]?.[1] as RequestInit | undefined;
+  const askCalls = fetchMock.mock.calls.filter((item) => String(item[0]).includes("/api/lecture/ask"));
+  const init = askCalls[call]?.[1] as RequestInit | undefined;
   return JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
 }
+
+function askCallCount(fetchMock: ReturnType<typeof vi.fn>): number {
+  return fetchMock.mock.calls.filter((item) => String(item[0]).includes("/api/lecture/ask")).length;
+}
+
+/** Ask body is the POST whose URL is /api/lecture/ask, not the settings probe. */
+function askPost(fetchMock: ReturnType<typeof vi.fn>): Record<string, unknown> {
+  const call = fetchMock.mock.calls.find((item) => String(item[0]).includes("/api/lecture/ask"));
+  const init = call?.[1] as RequestInit | undefined;
+  return JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+}
+
+const settingsResponse = (serverKeyDisabled: boolean) =>
+  new Response(JSON.stringify({ settings: {}, keySource: serverKeyDisabled ? "none" : "env", envConfigured: !serverKeyDisabled, serverKeyDisabled }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+
+/**
+ * sendAsk probes /api/settings only when a local key is stored.
+ * Pass serverKeyDisabled when the case writes one; otherwise the probe is not called.
+ */
+function installFetch(
+  impl: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> | Response,
+  serverKeyDisabled?: boolean,
+) {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes("/api/settings")) {
+      return settingsResponse(serverKeyDisabled === true);
+    }
+    return impl(input, init);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
+
+beforeEach(() => {
+  resetServerKeyDisabledCache();
+  window.localStorage.clear();
+});
 
 afterEach(() => {
   disposeAskRequests();
@@ -124,6 +167,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   window.localStorage.clear();
+  resetServerKeyDisabledCache();
 });
 
 describe("sendAsk happy path", () => {
@@ -131,13 +175,13 @@ describe("sendAsk happy path", () => {
     loadReady("browser");
     enterDrafting();
     const value = answer();
-    const fetchMock = vi.fn(async () => responseOf(happyBody(value)));
-    vi.stubGlobal("fetch", fetchMock);
+    const fetchMock = installFetch(async () => responseOf(happyBody(value)));
 
     await sendAsk(null);
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(askCallCount(fetchMock)).toBe(1);
+    const askCall = fetchMock.mock.calls.find((item) => String(item[0]).includes("/api/lecture/ask"));
+    const [url, init] = askCall as unknown as [string, RequestInit];
     expect(url).toBe("/api/lecture/ask");
     expect(init.method).toBe("POST");
     expect(s().askPhase).toBe("playing");
@@ -151,7 +195,7 @@ describe("sendAsk happy path", () => {
     loadReady("server");
     enterDrafting();
     const value = answer();
-    vi.stubGlobal("fetch", vi.fn(async () => responseOf(happyBody(value))));
+    installFetch(async () => responseOf(happyBody(value)));
 
     await sendAsk(null);
 
@@ -178,7 +222,7 @@ describe("cancelAsk", () => {
         controller.close();
       },
     });
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(body, { headers: ndjsonHeaders })));
+    installFetch(async () => new Response(body, { headers: ndjsonHeaders }));
 
     const pending = sendAsk(null);
     await vi.waitFor(() => {
@@ -213,7 +257,7 @@ describe("cancelAsk", () => {
         controller.close();
       },
     });
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(body, { headers: ndjsonHeaders })));
+    installFetch(async () => new Response(body, { headers: ndjsonHeaders }));
 
     const pending = sendAsk(null);
     await vi.waitFor(() => {
@@ -240,7 +284,7 @@ describe("timeout", () => {
     vi.useFakeTimers();
     loadReady("server");
     enterDrafting();
-    vi.stubGlobal("fetch", vi.fn(async () => hangingResponse()));
+    installFetch(async () => hangingResponse());
 
     const pending = sendAsk(null);
     await vi.waitFor(() => {
@@ -261,13 +305,12 @@ describe("capture image", () => {
   test("ok:false still posts with image null", async () => {
     loadReady("server");
     enterDrafting();
-    const fetchMock = vi.fn(async () => responseOf(happyBody()));
-    vi.stubGlobal("fetch", fetchMock);
+    const fetchMock = installFetch(async () => responseOf(happyBody()));
     const capture: CaptureResult = { ok: false, reason: "RENDER_FAILED", fallbackText: "没截到图" };
 
     await sendAsk(capture);
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(askCallCount(fetchMock)).toBe(1);
     expect(postedBody(fetchMock).image).toBeNull();
     expect(s().askPhase).toBe("playing");
   });
@@ -275,8 +318,7 @@ describe("capture image", () => {
   test("oversize decoded bytes still posts with image null", async () => {
     loadReady("server");
     enterDrafting();
-    const fetchMock = vi.fn(async () => responseOf(happyBody()));
-    vi.stubGlobal("fetch", fetchMock);
+    const fetchMock = installFetch(async () => responseOf(happyBody()));
     // decodedBase64Bytes is floor(len * 3 / 4), so the string must be longer than the byte cap.
     const oversize = "A".repeat(Math.ceil(((CAPTURE_DEFAULTS.maxBytes + 1) * 4) / 3));
     const capture: CaptureResult = {
@@ -294,8 +336,7 @@ describe("capture image", () => {
   test("ok:true under maxBytes posts with image payload", async () => {
     loadReady("server");
     enterDrafting();
-    const fetchMock = vi.fn(async () => responseOf(happyBody()));
-    vi.stubGlobal("fetch", fetchMock);
+    const fetchMock = installFetch(async () => responseOf(happyBody()));
     const capture: CaptureResult = {
       ok: true,
       image: { mime: "image/webp", dataBase64: "AAAA" },
@@ -304,7 +345,7 @@ describe("capture image", () => {
 
     await sendAsk(capture);
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(askCallCount(fetchMock)).toBe(1);
     expect(postedBody(fetchMock).image).toEqual({ mime: "image/webp", dataBase64: "AAAA" });
     expect(s().askPhase).toBe("playing");
   });
@@ -328,7 +369,7 @@ describe("background persist", () => {
         controller.close();
       },
     });
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(body, { headers: ndjsonHeaders })));
+    installFetch(async () => new Response(body, { headers: ndjsonHeaders }));
 
     const pending = sendAsk(null);
     await vi.waitFor(() => {
@@ -365,7 +406,7 @@ describe("disposeAskRequests", () => {
         controller.close();
       },
     });
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(body, { headers: ndjsonHeaders })));
+    installFetch(async () => new Response(body, { headers: ndjsonHeaders }));
 
     const pending = sendAsk(null);
     await vi.waitFor(() => {
@@ -391,7 +432,7 @@ describe("in-flight guard", () => {
       release = resolve;
     });
     const encoder = new TextEncoder();
-    const fetchMock = vi.fn(async () => {
+    const fetchMock = installFetch(async () => {
       const body = new ReadableStream<Uint8Array>({
         async start(controller) {
           controller.enqueue(encoder.encode(`${startLine()}\n${segmentLine()}\n`));
@@ -402,7 +443,6 @@ describe("in-flight guard", () => {
       });
       return new Response(body, { headers: ndjsonHeaders });
     });
-    vi.stubGlobal("fetch", fetchMock);
 
     const first = sendAsk(null);
     await vi.waitFor(() => {
@@ -410,11 +450,11 @@ describe("in-flight guard", () => {
     });
     const second = sendAsk(null);
     await second;
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(askCallCount(fetchMock)).toBe(1);
 
     release?.();
     await first;
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(askCallCount(fetchMock)).toBe(1);
     expect(s().answers.s1).toHaveLength(1);
   });
 });
@@ -424,10 +464,7 @@ describe("HTTP errors", () => {
     loadReady("server");
     enterDrafting();
     const secret = "<html>provider token sk-live-secret</html>";
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response(secret, { status: 401, headers: { "Content-Type": "text/html" } })),
-    );
+    installFetch(async () => new Response(secret, { status: 401, headers: { "Content-Type": "text/html" } }));
 
     await sendAsk(null);
 
@@ -440,5 +477,52 @@ describe("HTTP errors", () => {
     expect(snapshot).not.toContain("sk-live-secret");
     expect(snapshot).not.toContain("<html>");
     expect(s().answers.s1).toBeUndefined();
+  });
+});
+
+describe("public instance BYOK", () => {
+  const fakeKey = "sk-fake-e2e-0000";
+
+  test("serverKeyDisabled=true and a local key puts byok on the ask body", async () => {
+    loadReady("server");
+    enterDrafting();
+    window.localStorage.setItem(
+      BYOK_STORAGE_KEY,
+      JSON.stringify({ apiKey: fakeKey, baseURL: "https://api.example.com/v1", model: "fake-model" }),
+    );
+    const fetchMock = installFetch(async () => responseOf(happyBody()), true);
+
+    await sendAsk(null);
+
+    expect(askPost(fetchMock).byok).toEqual({
+      apiKey: fakeKey,
+      baseURL: "https://api.example.com/v1",
+      model: "fake-model",
+    });
+    expect(s().askPhase).toBe("playing");
+  });
+
+  test("serverKeyDisabled=false omits byok even when a local key is stored", async () => {
+    loadReady("server");
+    enterDrafting();
+    window.localStorage.setItem(BYOK_STORAGE_KEY, JSON.stringify({ apiKey: fakeKey }));
+    const fetchMock = installFetch(async () => responseOf(happyBody()), false);
+
+    await sendAsk(null);
+
+    expect(askPost(fetchMock)).not.toHaveProperty("byok");
+    expect(s().askPhase).toBe("playing");
+  });
+
+  test("no local key skips the settings probe and posts without byok", async () => {
+    loadReady("server");
+    enterDrafting();
+    const fetchMock = installFetch(async () => responseOf(happyBody()));
+
+    await sendAsk(null);
+
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes("/api/settings"))).toBe(false);
+    expect(askPost(fetchMock)).not.toHaveProperty("byok");
+    expect(s().askPhase).toBe("playing");
   });
 });
