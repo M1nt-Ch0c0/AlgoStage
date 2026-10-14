@@ -2,7 +2,7 @@
  * AskPanel · 提问面板。桌面（≥lg）绝对定位浮在选区右侧，放不下则放下方；
  * 窄屏固定底部抽屉，最高 50vh，bottom 跟 visualViewport 避开键盘。
  * 提问先 captureStage；stepId 或 selection 引用变了就丢弃。截图失败仍 sendAsk(null)。
- * Esc：closeAskPanel（回 selecting），并把焦点还给原选中目标或画选层。
+ * Esc 由画选层的窗口监听处理。关面板（关闭按钮）后焦点回到画选层。
  */
 "use client";
 
@@ -76,11 +76,6 @@ function findByAskId(host: HTMLElement, id: string): HTMLElement | null {
   return null;
 }
 
-function cssEscape(value: string): string {
-  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") return CSS.escape(value);
-  return value.replace(/[^a-zA-Z0-9_-]/g, (ch) => `\\${ch}`);
-}
-
 function selectionFromShortcut(host: HTMLElement, stepId: string, key: ShortcutKey): AskSelectionSummary | null {
   const el = findByAskId(host, `${key}:${stepId}`);
   if (!el) return null;
@@ -111,18 +106,6 @@ function elapsedSeconds(startedAt: number | null, now: number): number {
   return Math.max(0, Math.floor((now - startedAt) / 1000));
 }
 
-/** 关面板后焦点回到原选中目标；没有目标则落到画选层。 */
-function focusAfterClose(selection: AskSelectionSummary | null) {
-  const id = selection?.targets[0]?.id;
-  const target = id ? document.querySelector<HTMLElement>(`[data-ask-id="${cssEscape(id)}"]`) : null;
-  if (target) {
-    if (!target.hasAttribute("tabindex")) target.tabIndex = -1;
-    target.focus();
-    return;
-  }
-  document.querySelector<HTMLElement>("[data-ask-layer]")?.focus();
-}
-
 export default function AskPanel({ stage }: AskPanelProps) {
   const askPhase = usePlayerStore((s) => s.askPhase);
   if (!PANEL_PHASES.has(askPhase)) return null;
@@ -139,7 +122,6 @@ function AskPanelActive({ stage }: AskPanelProps) {
   const steps = usePlayerStore((s) => s.steps);
   const setAskQuestion = usePlayerStore((s) => s.setAskQuestion);
   const setAskSelection = usePlayerStore((s) => s.setAskSelection);
-  const closeAskPanel = usePlayerStore((s) => s.closeAskPanel);
   const exitAsk = usePlayerStore((s) => s.exitAsk);
 
   const labelId = useId();
@@ -269,22 +251,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
     setAskQuestion(clampQuestion(value));
   };
 
-  const onEscape = (event: KeyboardEvent) => {
-    if (event.key !== "Escape") return;
-    event.preventDefault();
-    event.stopPropagation();
-    const state = usePlayerStore.getState();
-    if (state.askPhase !== "drafting" && state.askPhase !== "error") return;
-    const current = state.selection;
-    closeAskPanel();
-    focusAfterClose(current);
-  };
-
   const onTextKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === "Escape") {
-      onEscape(event);
-      return;
-    }
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
       event.stopPropagation();
@@ -325,7 +292,6 @@ function AskPanelActive({ stage }: AskPanelProps) {
       aria-labelledby={labelId}
       className={`${positionClass} flex flex-col gap-2 rounded-xl border border-board-600 bg-board-900/95 p-3 text-sm text-chalk-100 shadow-lg`}
       style={desktop ? { top: anchor?.top ?? GAP, left: anchor?.left ?? GAP, width: PANEL_WIDTH } : { bottom: drawerBottom }}
-      onKeyDown={onEscape}
     >
       <div role="group" aria-label="点选捷径" className="flex flex-wrap gap-1">
         {shortcuts.map((item) => (
