@@ -1058,7 +1058,7 @@ export default function ProblemPage() {
         <section className="flex min-h-0 flex-col gap-3">
           <div className="board-surface board-frame flex h-[24rem] flex-col overflow-hidden rounded-xl p-[6px] lg:h-auto lg:min-h-0 lg:flex-1">
             <div className="flex items-center justify-between gap-3 px-3 pt-1.5 pb-2">
-              <span data-ask-board-title className="chalk text-xl leading-none text-chalk-300">
+              <span className="chalk text-xl leading-none text-chalk-300">
                 黑板
               </span>
               <span className="flex items-center gap-2 font-mono text-[11px] text-chalk-500">
