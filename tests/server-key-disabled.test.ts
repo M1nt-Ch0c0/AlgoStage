@@ -190,7 +190,9 @@ describe.each(entries)("$name", ({ POST, accept }) => {
       for (const byok of [undefined, null, {}, { model: "override" }, { apiKey: "  " }, { baseURL: serverURL }]) {
         const response = await POST(request({ slug: "two-sum", level: 1, byok }, accept));
         expect(response.status).toBe(400);
-        expect((await response.json()).error).toBe("NO_BYOK");
+        const body = await response.json();
+        expect(body.error).toBe("NO_BYOK");
+        expect(body.message).toBe("老师还没接上 AI，先去设置里填自己的 Key。");
       }
       expect(resolveSavedByok(Object.fromEntries(db.settings))).toBeNull();
       expect(fetchMock).not.toHaveBeenCalled();

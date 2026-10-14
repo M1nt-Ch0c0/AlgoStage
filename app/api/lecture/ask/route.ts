@@ -51,7 +51,7 @@ const STEP_NOT_FOUND_MESSAGE = "这节课已更新或这一步不可用，请刷
 const INVALID_ANSWER_MESSAGE = "回答内容暂时没生成好，请重新问。";
 const TIMEOUT_MESSAGE = "回答超时，请重新问。";
 const CANCELLED_MESSAGE = "已取消。";
-const NO_BYOK_MESSAGE = "老师还没接上 AI，先去设置里接一下吧。";
+const NO_BYOK_MESSAGE = "老师还没接上 AI，先去设置里填自己的 Key。";
 const NOT_FOUND_MESSAGE = "没找到这道题，请回路线图重新选择。";
 
 type StopReason = "timeout" | "cancelled";
