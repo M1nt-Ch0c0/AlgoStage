@@ -169,7 +169,13 @@ interface PlayerState {
   setAskQuestion: (question: string) => void;
   /** resize：selecting/drafting/error → selecting，清选区，保留问题与 draftStepId。 */
   clearAskSelection: () => void;
-  closeAskPanel: () => void;
+  /**
+   * 关面板回 selecting。drafting/error 只改 phase，返回 null。
+   * sending/streaming 摘掉 askContext.token（isForegroundGuard 随之失败），请求不 abort，
+   * 完成后 answerArrived 只追加 answers。返回被摘下的 token。
+   */
+  closeAskPanel: () => number | null;
+  /** 退出圈选。sending/streaming 也允许，同样不 abort，在途回答落后台。 */
   exitAsk: () => void;
   askSent: (guard: AskRequestGuard) => void;
   askStarted: (answerId: string, guard: AskRequestGuard) => void;
@@ -915,20 +921,45 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   closeAskPanel: () => {
-    const { askPhase } = get();
-    if (askPhase !== "drafting" && askPhase !== "error") return;
+    const state = get();
+    const { askPhase } = state;
+    if (
+      askPhase !== "drafting" &&
+      askPhase !== "error" &&
+      askPhase !== "sending" &&
+      askPhase !== "streaming"
+    ) {
+      return null;
+    }
+    const detach = askPhase === "sending" || askPhase === "streaming";
+    const token = detach ? (state.askContext?.token ?? null) : null;
     set({
       askPhase: "selecting",
       askErrorCode: null,
       askErrorRetryable: false,
       status: "interrupted",
       awaitingContinue: false,
+      ...(detach
+        ? {
+            previewSegments: [],
+            askStartedAt: null,
+            askContext: state.askContext ? { ...state.askContext, token: null, answerId: null } : state.askContext,
+          }
+        : {}),
     });
+    return token;
   },
 
   exitAsk: () => {
     const state = get();
-    if (state.askPhase !== "selecting" && state.askPhase !== "drafting" && state.askPhase !== "error") {
+    const phase = state.askPhase;
+    if (
+      phase !== "selecting" &&
+      phase !== "drafting" &&
+      phase !== "error" &&
+      phase !== "sending" &&
+      phase !== "streaming"
+    ) {
       return;
     }
     const ctx = state.askContext;
