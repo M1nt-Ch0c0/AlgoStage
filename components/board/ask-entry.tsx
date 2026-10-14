@@ -109,10 +109,11 @@ export default function AskEntry() {
         aria-pressed={inAsk ? true : undefined}
         aria-busy={awaitingPending ? true : undefined}
         aria-describedby={describedBy}
+        aria-keyshortcuts={inAsk ? "Escape" : undefined}
         data-ask-disabled-reason={reason ?? (showTimeout ? "pendingTimeout" : undefined)}
-        className={`inline-flex items-center justify-center gap-1 rounded-full border border-board-600 px-2 py-0.5 font-mono text-[10px] tracking-wide text-chalk-300 pointer-coarse:min-h-11 pointer-coarse:min-w-11 ${
+        className={`inline-flex items-center justify-center gap-1 rounded-full border border-board-600 px-2 py-0.5 font-mono text-[10px] tracking-wide text-chalk-300 pointer-coarse:min-h-11 pointer-coarse:min-w-11 whitespace-nowrap ${
           grey ? GREY_CLASS : ""
-        }`}
+        }${inAsk ? " min-h-11 min-w-11 pointer-fine:-my-3" : ""}`}
         onClick={onClick}
       >
         <span className="inline-flex h-3 w-3 shrink-0 items-center justify-center" aria-hidden>
@@ -125,6 +126,15 @@ export default function AskEntry() {
           ) : null}
         </span>
         <span>{inAsk ? ASK_EXIT_LABEL : ASK_ENTRY_LABEL}</span>
+        {inAsk ? (
+          <kbd
+            data-ask-kbd
+            className="max-[390px]:hidden rounded border border-board-600 px-1 font-mono text-[9px] leading-none text-chalk-500"
+            aria-hidden
+          >
+            Esc
+          </kbd>
+        ) : null}
         {awaitingPending ? <span className="sr-only">{ASK_PENDING_PREPARING_SR}</span> : null}
       </button>
       {reason ? (

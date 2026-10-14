@@ -398,3 +398,47 @@ test("askDisabledStepIds 当前步为 stepDisabled，点击不进圈选", async 
   expect(usePlayerStore.getState().askPhase).toBe("idle");
   expect(usePlayerStore.getState().pendingEnterIntent).toBeNull();
 });
+
+test("exit state has aria-keyshortcuts=Escape, kbd text Esc, min-h-11 and min-w-11 classes; entry state has no aria-keyshortcuts and no kbd", async () => {
+  loadReady();
+  await render();
+  const entryBtn = entry();
+  expect(entryBtn.hasAttribute("aria-keyshortcuts")).toBe(false);
+  expect(entryBtn.getAttribute("aria-keyshortcuts")).toBeNull();
+  expect(entryBtn.querySelector("kbd")).toBeNull();
+  expect(entryBtn.querySelector("[data-ask-kbd]")).toBeNull();
+  expect(entryBtn.classList.contains("min-h-11")).toBe(false);
+  expect(entryBtn.classList.contains("min-w-11")).toBe(false);
+  expect(entryBtn.classList.contains("pointer-fine:-my-3")).toBe(false);
+  expect(entryBtn.classList.contains("whitespace-nowrap")).toBe(true);
+
+  await act(async () => {
+    usePlayerStore.setState({ askPhase: "selecting" });
+  });
+  const exitBtn = entry();
+  expect(exitBtn.getAttribute("aria-keyshortcuts")).toBe("Escape");
+  const kbd = exitBtn.querySelector<HTMLElement>("[data-ask-kbd]");
+  expect(kbd).not.toBeNull();
+  expect(kbd?.textContent).toBe("Esc");
+  expect(exitBtn.classList.contains("min-h-11")).toBe(true);
+  expect(exitBtn.classList.contains("min-w-11")).toBe(true);
+  expect(exitBtn.classList.contains("pointer-fine:-my-3")).toBe(true);
+  expect(exitBtn.classList.contains("whitespace-nowrap")).toBe(true);
+});
+
+test.each(["drafting", "error"] as const)(
+  "exit state (%s) has aria-keyshortcuts=Escape, kbd text Esc, min-h-11 and min-w-11 classes",
+  async (phase) => {
+    loadReady();
+    usePlayerStore.setState({ askPhase: phase });
+    await render();
+    const button = entry();
+    expect(button.getAttribute("aria-keyshortcuts")).toBe("Escape");
+    const kbd = button.querySelector<HTMLElement>("[data-ask-kbd]");
+    expect(kbd).not.toBeNull();
+    expect(kbd?.textContent).toBe("Esc");
+    expect(button.classList.contains("min-h-11")).toBe(true);
+    expect(button.classList.contains("min-w-11")).toBe(true);
+    expect(button.classList.contains("pointer-fine:-my-3")).toBe(true);
+  }
+);
