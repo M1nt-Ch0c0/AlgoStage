@@ -164,7 +164,7 @@ describe("进入 / 退出 / 草稿", () => {
     loadReady();
     s().pause();
     enterDrafting("还在");
-    s().closeAskPanel();
+    expect(s().closeAskPanel()).toBeNull();
     expect(s()).toMatchObject({
       askPhase: "selecting",
       draftQuestion: "还在",
@@ -174,6 +174,134 @@ describe("进入 / 退出 / 草稿", () => {
     expect(s().selection).not.toBeNull();
     s().exitAsk();
     expect(s()).toMatchObject({ askPhase: "idle", status: "paused", draftQuestion: "还在" });
+  });
+
+  test("closeAskPanel 从 error 回到 selecting，清错误码，保留草稿和选区", () => {
+    loadReady();
+    s().pause();
+    enterDrafting("失败也留着");
+    s().askSent(guard({ token: 4 }));
+    s().answerFailed("TIMEOUT", true, guard({ token: 4 }));
+    expect(s().askPhase).toBe("error");
+    expect(s().closeAskPanel()).toBeNull();
+    expect(s()).toMatchObject({
+      askPhase: "selecting",
+      draftQuestion: "失败也留着",
+      askErrorCode: null,
+      askErrorRetryable: false,
+      status: "interrupted",
+    });
+    expect(s().selection).not.toBeNull();
+  });
+
+  test("closeAskPanel 从 sending/streaming 摘掉 token 回 selecting，不改 answers", () => {
+    loadReady();
+    s().pause();
+    const prior = answerOf({ id: "kept", stepId: "s1" });
+    s().setAnswers({ s1: [prior] });
+    usePlayerStore.setState({ answersReady: true });
+
+    enterDrafting("还在发送");
+    s().askSent(guard({ token: 9 }));
+    expect(s().askPhase).toBe("sending");
+    expect(s().closeAskPanel()).toBe(9);
+    expect(s()).toMatchObject({
+      askPhase: "selecting",
+      draftQuestion: "还在发送",
+      status: "interrupted",
+      previewSegments: [],
+      askStartedAt: null,
+    });
+    expect(s().askContext).toMatchObject({ token: null, answerId: null, stepId: "s1", prevStatus: "paused" });
+    expect(s().selection).not.toBeNull();
+    expect(countAnswers(s().answers)).toBe(1);
+
+    s().setAskQuestion("还在流式");
+    usePlayerStore.setState({ askPhase: "drafting" });
+    s().askSent(guard({ token: 10 }));
+    s().askStarted("ans-live", guard({ token: 10 }));
+    s().answerSegmentArrived(segment("live"), guard({ token: 10 }));
+    expect(s().previewSegments).toHaveLength(1);
+    expect(s().closeAskPanel()).toBe(10);
+    expect(s().askPhase).toBe("selecting");
+    expect(s().askContext).toMatchObject({ token: null, answerId: null });
+    expect(s().previewSegments).toEqual([]);
+    expect(selectAskAvailability(s()).reason).toBeNull();
+  });
+
+  test("exitAsk 从 selecting/drafting/error/sending/streaming 回 idle 且不 abort 语义", () => {
+    loadReady();
+    s().pause();
+
+    s().enterAsk();
+    s().exitAsk();
+    expect(s()).toMatchObject({ askPhase: "idle", status: "paused", askContext: null });
+
+    enterDrafting("草稿退出");
+    s().exitAsk();
+    expect(s()).toMatchObject({ askPhase: "idle", status: "paused", draftQuestion: "草稿退出" });
+
+    enterDrafting("错误退出");
+    s().askSent(guard({ token: 3 }));
+    s().answerFailed("TIMEOUT", true, guard({ token: 3 }));
+    s().exitAsk();
+    expect(s()).toMatchObject({ askPhase: "idle", askErrorCode: null, draftQuestion: "错误退出" });
+
+    enterDrafting("发送中退出");
+    s().askSent(guard({ token: 5 }));
+    const startedAt = s().askStartedAt;
+    expect(startedAt).not.toBeNull();
+    s().exitAsk();
+    expect(s()).toMatchObject({
+      askPhase: "idle",
+      status: "paused",
+      askContext: null,
+      askStartedAt: null,
+      previewSegments: [],
+      draftQuestion: "发送中退出",
+    });
+    expect(s().selection).not.toBeNull();
+
+    enterDrafting("流式中退出");
+    s().askSent(guard({ token: 6 }));
+    s().askStarted("ans-bg", guard({ token: 6 }));
+    s().answerSegmentArrived(segment("p"), guard({ token: 6 }));
+    s().exitAsk();
+    expect(s()).toMatchObject({ askPhase: "idle", askContext: null, previewSegments: [] });
+  });
+
+  test("关面板或退出后到达的回答落入 answers，不改 phase", () => {
+    loadReady();
+    s().pause();
+    enterDrafting("后台完成");
+    s().askSent(guard({ token: 8 }));
+    s().askStarted("bg-close", guard({ token: 8 }));
+    s().closeAskPanel();
+    expect(s().askPhase).toBe("selecting");
+    const closed = answerOf({ id: "bg-close", stepId: "s1" });
+    s().answerArrived(closed, guard({ token: 8, stepId: "s1" }));
+    expect(s().askPhase).toBe("selecting");
+    expect(s().askContext?.token).toBeNull();
+    expect(s().answers.s1?.map((item) => item.id)).toEqual(["bg-close"]);
+    expect(s().expandedAnswerIds.has("bg-close")).toBe(false);
+    expect(selectAskPresentation(s())).toBeNull();
+    s().answerFailed("TIMEOUT", true, guard({ token: 8, stepId: "s1" }));
+    expect(s()).toMatchObject({ askPhase: "selecting", askErrorCode: null });
+
+    s().exitAsk();
+    enterDrafting("退出后完成");
+    s().askSent(guard({ token: 12 }));
+    s().askStarted("bg-exit", guard({ token: 12 }));
+    s().exitAsk();
+    expect(s().askPhase).toBe("idle");
+    s().answerArrived(answerOf({ id: "bg-exit", stepId: "s1" }), guard({ token: 12, stepId: "s1" }));
+    expect(s()).toMatchObject({ askPhase: "idle", status: "paused", askContext: null });
+    expect(s().answers.s1?.map((item) => item.id)).toEqual(["bg-close", "bg-exit"]);
+    expect(s().expandedAnswerIds.has("bg-exit")).toBe(false);
+
+    s().answerSegmentArrived(segment("late"), guard({ token: 12, stepId: "s1" }));
+    expect(s().askPhase).toBe("idle");
+    expect(s().previewSegments).toEqual([]);
   });
 
   test("error 态退出保留选区和草稿", () => {
