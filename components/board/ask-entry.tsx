@@ -5,7 +5,7 @@
  */
 "use client";
 
-import { useEffect, useState, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { Loader2 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import {
@@ -15,6 +15,7 @@ import {
   ASK_PENDING_TIMEOUT,
   ASK_REASON_TEXT,
 } from "@/lib/ask/ask-ui-text";
+import { isTypingTarget } from "@/lib/player/keyboard";
 import {
   selectAskAvailability,
   usePlayerStore,
@@ -68,19 +69,9 @@ export default function AskEntry() {
     return () => clearTimeout(timer);
   }, [awaitingPending, pendingEnterIntent]);
 
-  if (!availability.visible) return null;
-
   const reason: AskDisabledReason | null = pendingIdle ? null : availability.reason;
-  const showTimeout = pendingTimedOut && !awaitingPending && !inAsk && reason == null;
-  const describedBy = showTimeout ? TIMEOUT_ID : reason ? REASON_ID : undefined;
-  const grey = reason != null;
 
-  function onClick(event: MouseEvent<HTMLButtonElement>) {
-    event.stopPropagation();
-    if (inAsk) {
-      exitAsk();
-      return;
-    }
+  function activate() {
     if (reason) {
       setPendingTimedOut(false);
       return;
@@ -100,6 +91,48 @@ export default function AskEntry() {
     enterAsk();
   }
 
+  const stateRef = useRef({
+    visible: availability.visible,
+    inAsk,
+    activate,
+  });
+  stateRef.current = {
+    visible: availability.visible,
+    inAsk,
+    activate,
+  };
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== "q" && e.key !== "Q") return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (isTypingTarget(e.target)) return;
+      if (e.target instanceof Element && e.target.closest("[role=dialog]")) return;
+      if (document.querySelector('[aria-modal="true"]')) return;
+      if (!stateRef.current.visible) return;
+      if (stateRef.current.inAsk) return;
+      e.preventDefault();
+      stateRef.current.activate();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  if (!availability.visible) return null;
+
+  const showTimeout = pendingTimedOut && !awaitingPending && !inAsk && reason == null;
+  const describedBy = showTimeout ? TIMEOUT_ID : reason ? REASON_ID : undefined;
+  const grey = reason != null;
+
+  function onClick(event: MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+    if (inAsk) {
+      exitAsk();
+      return;
+    }
+    activate();
+  }
+
   return (
     <span className="inline-flex flex-col items-end gap-0.5">
       <button
@@ -109,7 +142,7 @@ export default function AskEntry() {
         aria-pressed={inAsk ? true : undefined}
         aria-busy={awaitingPending ? true : undefined}
         aria-describedby={describedBy}
-        aria-keyshortcuts={inAsk ? "Escape" : undefined}
+        aria-keyshortcuts={inAsk ? "Escape" : "Q"}
         data-ask-disabled-reason={reason ?? (showTimeout ? "pendingTimeout" : undefined)}
         className={`inline-flex items-center justify-center gap-1 rounded-full border border-board-600 px-2 py-0.5 font-mono text-[10px] tracking-wide text-chalk-300 pointer-coarse:min-h-11 pointer-coarse:min-w-11 whitespace-nowrap ${
           grey ? GREY_CLASS : ""
@@ -126,15 +159,13 @@ export default function AskEntry() {
           ) : null}
         </span>
         <span>{inAsk ? ASK_EXIT_LABEL : ASK_ENTRY_LABEL}</span>
-        {inAsk ? (
-          <kbd
-            data-ask-kbd
-            className="max-[390px]:hidden rounded border border-board-600 px-1 font-mono text-[9px] leading-none text-chalk-500"
-            aria-hidden
-          >
-            Esc
-          </kbd>
-        ) : null}
+        <kbd
+          data-ask-kbd
+          className="max-[391px]:hidden rounded border border-board-600 px-1 font-mono text-[9px] leading-none text-chalk-500"
+          aria-hidden
+        >
+          {inAsk ? "Esc" : "Q"}
+        </kbd>
         {awaitingPending ? <span className="sr-only">{ASK_PENDING_PREPARING_SR}</span> : null}
       </button>
       {reason ? (
