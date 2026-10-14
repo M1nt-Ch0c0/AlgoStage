@@ -19,6 +19,7 @@ import { endPanelShowing, selectScriptSlug, usePlayerStore } from "@/lib/player/
 import { nextProblem } from "@/lib/content/roadmap-order";
 import { parseInline, totalChars, InlinePartial, InlineMarkdown } from "./inline-markdown";
 import { usePrefersReducedMotion } from "@/components/effects/fx-context";
+import AskEntry from "./ask-entry";
 import { useCoarsePointer } from "./use-coarse-pointer";
 
 const BASE_CHARS_PER_SEC = 24;
@@ -118,10 +119,16 @@ export default function NarrationBar({ lectureBusy = false }: { lectureBusy?: bo
       className={`rounded-xl border px-4 py-3 transition-colors ${
         step ? "cursor-pointer border-beam-gold/25 bg-board-800/80" : "border-board-700 bg-board-800/50"
       }`}
+      data-ask-target={step ? "subtitle" : undefined}
+      data-ask-id={step ? `subtitle:${step.id}` : undefined}
+      data-ask-step-id={step ? step.id : undefined}
       onClick={() => setTyping({ key: stepKey, count: total })}
       title={step && !done ? "点击显示全文" : undefined}
     >
-      <p className="mb-1 font-mono text-[10px] tracking-widest text-chalk-700">字幕</p>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <p className="font-mono text-[10px] tracking-widest text-chalk-700">字幕</p>
+        <AskEntry />
+      </div>
       {step ? (
         <p className="min-h-12 text-[15px] leading-6 text-chalk-100">
           <InlinePartial segments={segments} count={typed} />

@@ -57,6 +57,8 @@ import {
 import { endPanelShowing, selectAskPresentation, usePlayerStore, type LectureAnswerMeta, type StreamGuard } from "@/lib/player/store";
 import type { TeachingScript, TeachingStep } from "@/lib/teaching/types";
 import EffectStage from "@/components/effects/effect-stage";
+import AskPanel from "@/components/board/ask-panel";
+import AskSelectionLayer from "@/components/board/ask-selection-layer";
 import CodeEditor from "@/components/board/code-editor";
 import NarrationBar from "@/components/board/narration-bar";
 import PlayerControls from "@/components/board/player-controls";
@@ -705,6 +707,7 @@ export default function ProblemPage() {
   const [confirmRegen, setConfirmRegen] = useState(false);
   const moreButtonRef = useRef<HTMLButtonElement | null>(null);
   const playerAreaRef = useRef<HTMLDivElement | null>(null);
+  const askStageRef = useRef<HTMLDivElement | null>(null);
   // 各题共用同一套主按钮：未开始 / 备课中 / 暂停 / 继续。结束面板显示时主按钮不渲染。
   const playing = status === "playing" || (status === "streaming" && stepCount > 0);
   const canResume = (status === "paused" || status === "interrupted") && stepCount > 0;
@@ -723,6 +726,30 @@ export default function ProblemPage() {
       : lectureBusy
         ? "备课中…"
         : "开始讲课";
+
+  // 当前步骤卡与回答区不改 lesson-plan / step-answers：在舞台上补 data-ask-*。
+  // 换步时清掉上一张步骤卡。
+  const currentStepId = step?.id;
+  useEffect(() => {
+    const stage = askStageRef.current;
+    if (!stage) return;
+    for (const el of stage.querySelectorAll<HTMLElement>('[data-ask-target="step"]')) {
+      el.removeAttribute("data-ask-target");
+      el.removeAttribute("data-ask-id");
+      el.removeAttribute("data-ask-step-id");
+    }
+    if (currentStepId) {
+      const current = stage.querySelector<HTMLElement>(`[data-step="${currentIndex}"]`);
+      if (current) {
+        current.setAttribute("data-ask-target", "step");
+        current.setAttribute("data-ask-id", `step:${currentStepId}`);
+        current.setAttribute("data-ask-step-id", currentStepId);
+      }
+    }
+    for (const el of stage.querySelectorAll<HTMLElement>('[data-testid="step-answers"]')) {
+      el.setAttribute("data-ask-exclude", "");
+    }
+  }, [currentIndex, currentStepId, steps, answers, askPhase]);
 
   if (loadError) {
     return (
@@ -971,8 +998,8 @@ export default function ProblemPage() {
         );
       })()}
 
-      {/* ── 三栏 ── */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,3fr)_minmax(0,5fr)_minmax(0,3.6fr)]">
+      {/* ── 三栏 ── 讲义在画选舞台外；舞台只包黑板+可视化+AI 导师（字幕卡） */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,3fr)_minmax(0,8.6fr)]">
         {/* 讲义 */}
         <section className="flex min-h-0 flex-col gap-3 rounded-2xl border border-board-700/70 bg-board-900/80 p-4 lg:overflow-y-auto">
           <ColumnLabel>讲义</ColumnLabel>
@@ -1022,6 +1049,11 @@ export default function ProblemPage() {
           )}
         </section>
 
+        <div
+          ref={askStageRef}
+          data-ask-stage
+          className="relative grid min-h-0 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,5fr)_minmax(0,3.6fr)]"
+        >
         {/* 黑板 + 可视化区 + 控制台 */}
         <section className="flex min-h-0 flex-col gap-3">
           <div className="board-surface board-frame flex h-[24rem] flex-col overflow-hidden rounded-xl p-[6px] lg:h-auto lg:min-h-0 lg:flex-1">
@@ -1135,6 +1167,9 @@ export default function ProblemPage() {
 
           <HintLadder slug={slug} userCode={practice ? code : undefined} />
         </aside>
+        <AskSelectionLayer stageRef={askStageRef} />
+        <AskPanel />
+        </div>
       </div>
 
       {/* ── 底部播放器控制条 ── */}

@@ -7,6 +7,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
+import { usePlayerStore } from "@/lib/player/store";
 import { arrayVizFrameSchema } from "@/lib/teaching/schema";
 import type { VizFrame } from "@/lib/teaching/types";
 
@@ -25,7 +26,16 @@ function flagIndex(nodeId: string): number | null {
   return m ? Number(m[1]) : null;
 }
 
-export default function ArrayVisualizer({ frame }: { frame?: VizFrame }) {
+export default function ArrayVisualizer({
+  frame,
+  stepId: stepIdProp,
+}: {
+  frame?: VizFrame;
+  /** 覆盖当前步 id。缺省时读播放器当前步，只用于 data-ask-*。 */
+  stepId?: string;
+}) {
+  const storeStepId = usePlayerStore((s) => s.steps[s.currentIndex]?.id ?? "");
+  const stepId = stepIdProp ?? storeStepId;
   const parsed = arrayVizFrameSchema.safeParse(frame);
   if (!parsed.success) return null;
   const state = parsed.data.state;
@@ -41,7 +51,12 @@ export default function ArrayVisualizer({ frame }: { frame?: VizFrame }) {
   const svgH = CELL + PAD * 2 + FLAG_H + 8; // +8：格子下方的下标文字
 
   return (
-    <div className="flex flex-wrap items-start gap-4">
+    <div
+      className="flex flex-wrap items-start gap-4"
+      data-ask-target="viz"
+      data-ask-id={`viz:${stepId}`}
+      data-ask-step-id={stepId}
+    >
       <svg
         width={svgW}
         height={svgH}
@@ -57,6 +72,10 @@ export default function ArrayVisualizer({ frame }: { frame?: VizFrame }) {
             <motion.g
               key={i}
               data-viz-node={`a${i}`}
+              data-ask-target="viz"
+              data-ask-viz-index={i}
+              data-ask-id={`viz:${stepId}:${i}`}
+              data-ask-step-id={stepId}
               initial={false}
               animate={{ x: PAD + i * STRIDE, y: PAD + FLAG_H }}
               transition={SPRING}
