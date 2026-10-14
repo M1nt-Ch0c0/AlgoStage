@@ -1,6 +1,6 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo, Socket } from "node:net";
-import { expect, test, type Page, type Route } from "@playwright/test";
+import { expect, test, type Locator, type Page, type Route } from "@playwright/test";
 
 /**
  * S1 全局 Esc 逐步退出圈选。
@@ -97,6 +97,14 @@ async function startGenerated(page: Page) {
 const entry = (page: Page) => page.locator("[data-ask-entry]");
 const layer = (page: Page) => page.locator("[data-ask-layer]");
 const panel = (page: Page) => page.locator("[data-ask-panel]");
+
+/** 点在元素中心，让圈选层下的真实点击落到标题或 Monaco，而不是只挪焦点。 */
+async function clickCenter(page: Page, target: Locator) {
+  const box = await target.boundingBox();
+  if (!box) throw new Error("element has no box");
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+}
+
 const BUSY_REASON = "上一个问题还在回答，答完再问";
 
 /** 回答在飞时入口置灰：aria-disabled，aria-describedby 指向 busy 文案。 */
@@ -184,13 +192,11 @@ test.describe("ask Esc stepwise exit", () => {
     await expect(layer(page)).toHaveCount(0);
     await expect(entry(page)).not.toHaveAttribute("aria-pressed", "true");
 
-    // 焦点在非 Monaco 的代码区标题（黑板文案，不是 .monaco-editor）：同样退出。
+    // 点在非 Monaco 的代码区标题（黑板文案，不是 .monaco-editor）：同样退出。
     await enterSelection(page);
-    await page.locator("[data-ask-board-title]").evaluate((el) => {
-      if (!(el instanceof HTMLElement)) return;
-      if (!el.hasAttribute("tabindex")) el.tabIndex = -1;
-      el.focus();
-    });
+    const title = page.getByText("黑板", { exact: true });
+    await expect(title).toBeVisible();
+    await clickCenter(page, title);
     await page.keyboard.press("Escape");
     await expect(layer(page)).toHaveCount(0);
 
@@ -218,16 +224,16 @@ test.describe("ask Esc stepwise exit", () => {
 
   test("Esc inside Monaco does not leave selection mode", async ({ page }) => {
     await startGenerated(page);
-    await expect(page.locator(".monaco-editor")).toBeVisible();
+    const monaco = page.locator(".monaco-editor");
+    await expect(monaco).toBeVisible();
     await enterSelection(page);
-    const monaco = page.locator(".monaco-editor textarea").first();
-    await monaco.focus();
+    await clickCenter(page, monaco);
     await page.keyboard.press("Escape");
     await expect(layer(page)).toBeVisible();
     await expect(entry(page)).toHaveAttribute("aria-pressed", "true");
 
     await openPanel(page);
-    await monaco.focus();
+    await clickCenter(page, monaco);
     await page.keyboard.press("Escape");
     await expect(panel(page)).toBeVisible();
     await expect(layer(page)).toBeVisible();
