@@ -255,11 +255,14 @@ test.describe("ask Esc stepwise exit", () => {
       await expect(page.getByRole("button", { name: `你问的 ${QUESTION}` })).toHaveCount(0);
 
       stream.release();
-      await expect(page.getByRole("button", { name: `你问的 ${QUESTION}` })).toBeVisible();
-      await expect(page.getByText(ANSWER_NARRATION)).toBeVisible();
-      // 后台完成不把 phase 拉去播放，圈选层还在。
+      const saved = page.getByRole("button", { name: `你问的 ${QUESTION}` });
+      await expect(saved).toBeVisible();
+      // 关面板后 token 已摘掉，回答只追加、不展开、不进入播放。
+      await expect(saved).toHaveAttribute("aria-expanded", "false");
+      await expect(page.getByText(ANSWER_NARRATION)).toHaveCount(0);
       await expect(layer(page)).toBeVisible();
       await expect(entry(page)).toHaveAttribute("aria-pressed", "true");
+      await expect(entry(page)).not.toHaveAttribute("aria-disabled", "true");
       expect(stream.requests()).toBe(1);
     } finally {
       await stream.close();
