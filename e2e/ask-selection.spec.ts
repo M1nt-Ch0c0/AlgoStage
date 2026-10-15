@@ -1672,6 +1672,7 @@ test.describe("390 selection flow", () => {
 
       const bar = page.locator("[data-ask-bottom-bar]");
       await expect(bar).toBeVisible();
+      await expect.poll(() => page.evaluate(() => { const bar=document.querySelector("[data-ask-bottom-bar]")?.getBoundingClientRect(); const pl=document.querySelector("[aria-label=\"讲解播放区\"]")?.getBoundingClientRect(); return !!bar && !!pl && bar.bottom + 8 <= pl.top + 0.5; })).toBe(true);
 
       const chips = bar.locator("[data-ask-shortcut]");
       const count = await chips.count();
@@ -1692,15 +1693,16 @@ test.describe("390 selection flow", () => {
       }
 
       const exitBtn = entry(page);
-      const exitBox = await exitBtn.boundingBox();
-      expect(exitBox).not.toBeNull();
-      const exitCx = exitBox!.x + exitBox!.width / 2;
-      const exitCy = exitBox!.y + exitBox!.height / 2;
-      const isExitHit = await exitBtn.evaluate((el, { x, y }) => {
-        const hit = document.elementFromPoint(x, y);
-        return hit !== null && (hit === el || el.contains(hit));
-      }, { x: exitCx, y: exitCy });
-      expect(isExitHit).toBe(true);
+      await expect.poll(async () => {
+        const exitBox = await exitBtn.boundingBox();
+        if (!exitBox) return false;
+        const exitCx = exitBox.x + exitBox.width / 2;
+        const exitCy = exitBox.y + exitBox.height / 2;
+        return exitBtn.evaluate((el, { x, y }) => {
+          const hit = document.elementFromPoint(x, y);
+          return hit !== null && (hit === el || el.contains(hit));
+        }, { x: exitCx, y: exitCy });
+      }).toBe(true);
     });
 
     test("e. after opening the panel, bar rect and [data-ask-panel] rect don't intersect", async ({ page }) => {
