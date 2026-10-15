@@ -73,6 +73,19 @@ export function resolveAskEscape(
   return "ignore";
 }
 
+/**
+ * 检查元素是否完全处于视口中（考虑底部栏遮挡）。
+ * 视口顶部为 0，可用底部为 innerHeight - bottomBarHeight。
+ */
+export function isElementFullyInView(
+  rect: { top: number; bottom: number },
+  viewport: { innerHeight: number; bottomBarHeight: number },
+): boolean {
+  if (rect.top < 0) return false;
+  if (rect.bottom > viewport.innerHeight - viewport.bottomBarHeight) return false;
+  return true;
+}
+
 /** 退出圈选并将焦点还给入口按钮（若在 DOM 中）。 */
 export function exitAskAndFocusEntry(): void {
   setAskCodeMissNotice(null);
@@ -325,6 +338,8 @@ function AskSelectionLayerActive({
   const lastMidRef = useRef<PointerSample | null>(null);
   const scrollDeltaRef = useRef({ x: 0, y: 0 });
   const scrollRafRef = useRef<number | null>(null);
+  const enteringSmoothScrollRef = useRef(false);
+  const enteringScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const chipDragCleanupRef = useRef<(() => void) | null>(null);
   const dragStartedRef = useRef(false);
 
@@ -438,6 +453,56 @@ function AskSelectionLayerActive({
       document.documentElement.style.setProperty("--ask-bottom-bar-h", "0px");
     };
   }, [active]);
+
+  // 当进入 ask 模式（selecting）在移动端时，确保代码区域可见。
+  useEffect(() => {
+    if (askPhase !== "selecting") return;
+    const isMobile = typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches;
+    if (!isMobile) return;
+
+    let rafId: number | null = null;
+    rafId = requestAnimationFrame(() => {
+      const host = getStage();
+      const codeEl = host?.querySelector<HTMLElement>('[data-ask-target="code"]');
+      if (!codeEl) return;
+
+      const barEl = bottomBarRef.current ?? document.querySelector<HTMLElement>("[data-ask-bottom-bar]");
+      const barHeight = barEl?.getBoundingClientRect().height ?? 0;
+      const codeRect = codeEl.getBoundingClientRect();
+
+      const inView = isElementFullyInView(
+        { top: codeRect.top, bottom: codeRect.bottom },
+        { innerHeight: window.innerHeight, bottomBarHeight: barHeight },
+      );
+
+      if (!inView) {
+        const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        if (!prefersReduced) {
+          enteringSmoothScrollRef.current = true;
+          if (enteringScrollTimerRef.current) clearTimeout(enteringScrollTimerRef.current);
+          const onScrollEnd = () => {
+            enteringSmoothScrollRef.current = false;
+            window.removeEventListener("scrollend", onScrollEnd);
+          };
+          window.addEventListener("scrollend", onScrollEnd, { once: true });
+          enteringScrollTimerRef.current = setTimeout(() => {
+            enteringSmoothScrollRef.current = false;
+            window.removeEventListener("scrollend", onScrollEnd);
+          }, 800);
+        }
+        codeEl.scrollIntoView({ block: "nearest", behavior: prefersReduced ? "auto" : "smooth" });
+      }
+    });
+
+    return () => {
+      if (rafId != null) cancelAnimationFrame(rafId);
+      if (enteringScrollTimerRef.current) {
+        clearTimeout(enteringScrollTimerRef.current);
+        enteringScrollTimerRef.current = null;
+      }
+      enteringSmoothScrollRef.current = false;
+    };
+  }, [askPhase, getStage]);
 
   useEffect(() => {
     setActiveShortcut((index) => Math.min(index, Math.max(visibleShortcuts.length - 1, 0)));

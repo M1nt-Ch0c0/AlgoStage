@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { scrollHeight, clientHeight, scrollWidth, clientWidth } from "happy-dom/lib/PropertySymbol.js";
 import AskEntry from "../components/board/ask-entry";
-import AskSelectionLayer, { resolveAskEscape } from "../components/board/ask-selection-layer";
+import AskSelectionLayer, { isElementFullyInView, resolveAskEscape } from "../components/board/ask-selection-layer";
 import { ASK_CODE_MISS_HINT, ASK_EMPTY_HIT, ASK_ENTERED_STATUS, ASK_RESIZE_HINT } from "../lib/ask/ask-ui-text";
 import { type CodeEditorHandle, getAskCodeMissNotice, registerCodeEditor, resetCodeEditorRegistry } from "../lib/ask/code-editor-registry";
 import { summarizeSelection } from "../lib/ask/collect-candidates";
@@ -1234,6 +1234,22 @@ describe("resolveAskEscape", () => {
       expect(document.documentElement.style.getPropertyValue("--ask-bottom-bar-h")).toBe("0px");
 
       window.matchMedia = originalMatchMedia;
+    });
+
+    test("isElementFullyInView pure function checks top >= 0 and bottom <= innerHeight - barHeight", () => {
+      const viewport = { innerHeight: 844, bottomBarHeight: 60 };
+      // Fully visible inside (0 .. 784)
+      expect(isElementFullyInView({ top: 10, bottom: 500 }, viewport)).toBe(true);
+      expect(isElementFullyInView({ top: 0, bottom: 784 }, viewport)).toBe(true);
+
+      // Top off-screen (< 0)
+      expect(isElementFullyInView({ top: -1, bottom: 500 }, viewport)).toBe(false);
+
+      // Bottom covered by bar (> 784)
+      expect(isElementFullyInView({ top: 100, bottom: 785 }, viewport)).toBe(false);
+
+      // Both off-screen
+      expect(isElementFullyInView({ top: -100, bottom: 900 }, viewport)).toBe(false);
     });
   });
 });
