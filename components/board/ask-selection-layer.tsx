@@ -394,6 +394,8 @@ function AskSelectionLayerActive({
   const enteringScrollRafRef = useRef<number | null>(null);
   const chipDragCleanupRef = useRef<(() => void) | null>(null);
   const dragStartedRef = useRef(false);
+  const suppressClickUntilRef = useRef<number | null>(null);
+  const lastPointerTypeRef = useRef<string | null>(null);
 
   const bottomBarRef = useRef<HTMLDivElement>(null);
 
@@ -423,6 +425,33 @@ function AskSelectionLayerActive({
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
   }, []);
+
+  // 触摸框选后浏览器会延时派发 ghost click，在此处吞掉以防误触下方元素。
+  useEffect(() => {
+    if (!active) return;
+    const onDocPointerDown = (event: globalThis.PointerEvent) => {
+      lastPointerTypeRef.current = event.pointerType;
+      suppressClickUntilRef.current = null;
+    };
+    const onDocClick = (event: globalThis.MouseEvent) => {
+      if (event.detail === 0) return;
+      if (lastPointerTypeRef.current !== "touch") return;
+      if (
+        suppressClickUntilRef.current != null &&
+        event.timeStamp <= suppressClickUntilRef.current
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        suppressClickUntilRef.current = null;
+      }
+    };
+    document.addEventListener("pointerdown", onDocPointerDown, true);
+    document.addEventListener("click", onDocClick, true);
+    return () => {
+      document.removeEventListener("pointerdown", onDocPointerDown, true);
+      document.removeEventListener("click", onDocClick, true);
+    };
+  }, [active]);
 
   // 处于 selecting 且无选区时播报（含首次进入与再次进入）。优先写入页面已有的 role=status。
   useEffect(() => {
@@ -823,6 +852,8 @@ function AskSelectionLayerActive({
   };
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    suppressClickUntilRef.current = null;
+    lastPointerTypeRef.current = event.pointerType;
     if ((event.target as Element | null)?.closest?.("[data-ask-entry], [data-ask-shortcut], [data-ask-bottom-bar]")) return;
     beginPointer(event.currentTarget, event.pointerId, event.pointerType, event.button, event.clientX, event.clientY);
   };
@@ -873,6 +904,9 @@ function AskSelectionLayerActive({
       originRef.current = null;
       setRubberBand(null);
       commitBand(origin, current);
+      if (event.pointerType === "touch" || lastPointerTypeRef.current === "touch") {
+        suppressClickUntilRef.current = event.timeStamp + 400;
+      }
       return;
     }
 

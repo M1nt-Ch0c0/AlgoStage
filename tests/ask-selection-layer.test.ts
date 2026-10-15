@@ -1475,4 +1475,97 @@ describe("resolveAskEscape", () => {
       expect(nextRovingIndex(0, 0, "ArrowRight")).toBe(0);
     });
   });
+
+  describe("touch selection ghost click suppression", () => {
+    test("touch selection suppresses the subsequent touch click within 400ms and only blocks once", async () => {
+      await render();
+      const host = layer();
+
+      const down = new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 1, clientX: 20, clientY: 20, pointerType: "touch" });
+      const move = new PointerEvent("pointermove", { bubbles: true, cancelable: true, pointerId: 1, clientX: 80, clientY: 80, pointerType: "touch" });
+      const up = new PointerEvent("pointerup", { bubbles: true, cancelable: true, pointerId: 1, clientX: 80, clientY: 80, pointerType: "touch" });
+
+      await act(async () => {
+        host.dispatchEvent(down);
+        host.dispatchEvent(move);
+        host.dispatchEvent(up);
+      });
+
+      const clickEvent = new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 });
+      Object.defineProperty(clickEvent, "timeStamp", { value: up.timeStamp + 50 });
+
+      let stopped = false;
+      clickEvent.stopPropagation = () => { stopped = true; };
+
+      await act(async () => {
+        document.dispatchEvent(clickEvent);
+      });
+
+      expect(clickEvent.defaultPrevented).toBe(true);
+      expect(stopped).toBe(true);
+
+      // Second click is not suppressed (only one click blocked)
+      const secondClick = new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 });
+      Object.defineProperty(secondClick, "timeStamp", { value: up.timeStamp + 60 });
+      let secondStopped = false;
+      secondClick.stopPropagation = () => { secondStopped = true; };
+
+      await act(async () => {
+        document.dispatchEvent(secondClick);
+      });
+
+      expect(secondClick.defaultPrevented).toBe(false);
+      expect(secondStopped).toBe(false);
+    });
+
+    test("subsequent pointerdown clears click suppression", async () => {
+      await render();
+      const host = layer();
+
+      const down = new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 1, clientX: 20, clientY: 20, pointerType: "touch" });
+      const up = new PointerEvent("pointerup", { bubbles: true, cancelable: true, pointerId: 1, clientX: 80, clientY: 80, pointerType: "touch" });
+
+      await act(async () => {
+        host.dispatchEvent(down);
+        host.dispatchEvent(up);
+      });
+
+      // Subsequent pointerdown (e.g. tap on bar chip)
+      const nextDown = new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 2, clientX: 50, clientY: 50, pointerType: "touch" });
+      await act(async () => {
+        document.dispatchEvent(nextDown);
+      });
+
+      // Click arrives after the subsequent pointerdown
+      const clickEvent = new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 });
+      Object.defineProperty(clickEvent, "timeStamp", { value: up.timeStamp + 50 });
+
+      await act(async () => {
+        document.dispatchEvent(clickEvent);
+      });
+
+      expect(clickEvent.defaultPrevented).toBe(false);
+    });
+
+    test("keyboard click (detail === 0) and mouse clicks are never blocked", async () => {
+      await render();
+
+      // Mouse selection
+      const mouseClick = new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 });
+      Object.defineProperty(mouseClick, "timeStamp", { value: 100 });
+      await act(async () => {
+        document.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerType: "mouse" }));
+        document.dispatchEvent(mouseClick);
+      });
+      expect(mouseClick.defaultPrevented).toBe(false);
+
+      // Keyboard click
+      const kbdClick = new MouseEvent("click", { bubbles: true, cancelable: true, detail: 0 });
+      Object.defineProperty(kbdClick, "timeStamp", { value: 100 });
+      await act(async () => {
+        document.dispatchEvent(kbdClick);
+      });
+      expect(kbdClick.defaultPrevented).toBe(false);
+    });
+  });
 });
