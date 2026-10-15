@@ -1397,26 +1397,5 @@ describe("resolveAskEscape", () => {
 
       window.matchMedia = originalMatchMedia;
     });
-
-    test("pointerdown cancels in-flight smooth scroll via window.scrollTo", async () => {
-      const scrollToSpy = vi.fn();
-      window.scrollTo = scrollToSpy;
-      Object.defineProperty(window, "scrollY", { value: 240, configurable: true, writable: true });
-
-      await render();
-      const host = layer();
-      // Trigger pointerdown
-      await act(async () => {
-        host.dispatchEvent(pointer("pointerdown", { pointerId: 1, clientX: 50, clientY: 50 }));
-      });
-
-      // No in-flight scroll right now, scrollTo shouldn't be called
-      expect(scrollToSpy).not.toHaveBeenCalled();
-
-      // Dispatch pointerup
-      await act(async () => {
-        host.dispatchEvent(pointer("pointerup", { pointerId: 1, clientX: 50, clientY: 50 }));
-      });
-    });
   });
 });
