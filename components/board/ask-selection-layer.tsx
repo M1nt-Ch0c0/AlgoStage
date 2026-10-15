@@ -412,6 +412,7 @@ function AskSelectionLayerActive({
   const chipDragCleanupRef = useRef<(() => void) | null>(null);
   const dragStartedRef = useRef(false);
   const suppressClickUntilRef = useRef<number | null>(null);
+  const touchCompletedSelectionRef = useRef(false);
   const lastPointerTypeRef = useRef<string | null>(null);
 
   const bottomBarRef = useRef<HTMLDivElement>(null);
@@ -445,14 +446,15 @@ function AskSelectionLayerActive({
 
   // 触摸框选后浏览器会延时派发 ghost click，在此处吞掉以防误触下方元素。
   useEffect(() => {
-    if (!active) return;
     const onDocPointerDown = (event: globalThis.PointerEvent) => {
       lastPointerTypeRef.current = event.pointerType;
       suppressClickUntilRef.current = null;
+      touchCompletedSelectionRef.current = false;
     };
     const onDocClick = (event: globalThis.MouseEvent) => {
       if (event.detail === 0) return;
       if (lastPointerTypeRef.current !== "touch") return;
+      if (!touchCompletedSelectionRef.current) return;
       if (
         suppressClickUntilRef.current != null &&
         event.timeStamp <= suppressClickUntilRef.current
@@ -460,6 +462,7 @@ function AskSelectionLayerActive({
         event.preventDefault();
         event.stopPropagation();
         suppressClickUntilRef.current = null;
+        touchCompletedSelectionRef.current = false;
       }
     };
     document.addEventListener("pointerdown", onDocPointerDown, true);
@@ -468,7 +471,7 @@ function AskSelectionLayerActive({
       document.removeEventListener("pointerdown", onDocPointerDown, true);
       document.removeEventListener("click", onDocClick, true);
     };
-  }, [active]);
+  }, []);
 
   // 处于 selecting 且无选区时播报（含首次进入与再次进入）。优先写入页面已有的 role=status。
   useEffect(() => {
@@ -822,7 +825,7 @@ function AskSelectionLayerActive({
           setHint(ASK_EMPTY_HIT);
         }
         setAskCodeMissNotice(null);
-        return;
+        return false;
       }
 
       setHint(null);
@@ -832,6 +835,7 @@ function AskSelectionLayerActive({
         setAskCodeMissNotice(null);
       }
       setAskSelection({ mode: hit.mode, bbox: box, targets: hit.targets });
+      return true;
     },
     [getStage, setAskSelection],
   );
@@ -870,6 +874,7 @@ function AskSelectionLayerActive({
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     suppressClickUntilRef.current = null;
+    touchCompletedSelectionRef.current = false;
     lastPointerTypeRef.current = event.pointerType;
     if ((event.target as Element | null)?.closest?.("[data-ask-entry], [data-ask-shortcut], [data-ask-bottom-bar], [data-ask-layer-part]")) return;
     beginPointer(event.currentTarget, event.pointerId, event.pointerType, event.button, event.clientX, event.clientY);
@@ -920,9 +925,10 @@ function AskSelectionLayerActive({
       drawingRef.current = false;
       originRef.current = null;
       setRubberBand(null);
-      commitBand(origin, current);
-      if (event.pointerType === "touch" || lastPointerTypeRef.current === "touch") {
+      const selected = commitBand(origin, current);
+      if (selected && event.pointerType === "touch") {
         suppressClickUntilRef.current = event.timeStamp + 400;
+        touchCompletedSelectionRef.current = true;
       }
       return;
     }

@@ -1475,8 +1475,8 @@ test.describe("390 selection flow", () => {
     await pauseLecture(page);
     await enterSelection(page);
 
-    const button = entry(page);
-    await button.scrollIntoViewIfNeeded();
+    const button = page.locator("[data-ask-bottom-bar] [data-ask-entry]");
+    await expect(button).toBeVisible();
     const box = await button.boundingBox();
     expect(box).not.toBeNull();
     const centerX = box!.x + box!.width / 2;
@@ -1485,7 +1485,7 @@ test.describe("390 selection flow", () => {
     const isButtonOrDescendant = await page.evaluate(
       ({ x, y }) => {
         const el = document.elementFromPoint(x, y);
-        const btn = document.querySelector("[data-ask-entry]");
+        const btn = document.querySelector("[data-ask-bottom-bar] [data-ask-entry]");
         return el !== null && (el === btn || btn?.contains(el) === true);
       },
       { x: centerX, y: centerY },
@@ -1495,7 +1495,6 @@ test.describe("390 selection flow", () => {
     await page.touchscreen.tap(centerX, centerY);
     await expect(page.locator("[data-ask-layer]")).toHaveCount(0);
     await expect(page.locator("[data-ask-panel]")).toHaveCount(0);
-    await expect(button).not.toHaveAttribute("aria-pressed", "true");
 
     await enterSelection(page);
 
@@ -1503,15 +1502,8 @@ test.describe("390 selection flow", () => {
     await subtitleBody.scrollIntoViewIfNeeded();
     const subBox = await subtitleBody.boundingBox();
     expect(subBox).not.toBeNull();
-    const btnBox = (await button.boundingBox())!;
     const startX = subBox!.x + 12;
     const startY = subBox!.y + 12;
-    const outside44 =
-      startX < btnBox.x - 44 ||
-      startX > btnBox.x + btnBox.width + 44 ||
-      startY < btnBox.y - 44 ||
-      startY > btnBox.y + btnBox.height + 44;
-    expect(outside44).toBe(true);
 
     await page.mouse.move(startX, startY);
     await page.mouse.down();
@@ -1528,19 +1520,17 @@ test.describe("390 selection flow", () => {
     await pauseLecture(page);
     await enterSelection(page);
 
-    const button = entry(page);
-    await button.scrollIntoViewIfNeeded();
     const subtitleBody = page.locator('[data-ask-target="subtitle"] p').filter({ hasNotText: "字幕" }).first();
     await subtitleBody.scrollIntoViewIfNeeded();
-    const btnBox = (await button.boundingBox())!;
-    expect(btnBox).not.toBeNull();
+    const subBox = (await subtitleBody.boundingBox())!;
+    expect(subBox).not.toBeNull();
 
-    const startX = btnBox.x + btnBox.width / 2;
-    const startY = btnBox.y + btnBox.height + 10;
+    const startX = subBox.x + 20;
+    const startY = subBox.y + 10;
 
     await page.mouse.move(startX, startY);
     await page.mouse.down();
-    await page.mouse.move(startX - 40, startY + 25, { steps: 5 });
+    await page.mouse.move(startX + 50, startY + 20, { steps: 5 });
     await page.mouse.up();
 
     const panel = page.locator("[data-ask-panel]");

@@ -1588,5 +1588,53 @@ describe("resolveAskEscape", () => {
       });
       expect(kbdClick.defaultPrevented).toBe(false);
     });
+
+    test("touch that does not complete a selection does not suppress clicks", async () => {
+      await render();
+      const host = layer();
+
+      const down = new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 1, clientX: 9999, clientY: 9999, pointerType: "touch" });
+      const move = new PointerEvent("pointermove", { bubbles: true, cancelable: true, pointerId: 1, clientX: 10005, clientY: 10005, pointerType: "touch" });
+      const up = new PointerEvent("pointerup", { bubbles: true, cancelable: true, pointerId: 1, clientX: 10005, clientY: 10005, pointerType: "touch" });
+
+      await act(async () => {
+        host.dispatchEvent(down);
+        host.dispatchEvent(move);
+        host.dispatchEvent(up);
+      });
+
+      const clickEvent = new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 });
+      Object.defineProperty(clickEvent, "timeStamp", { value: up.timeStamp + 50 });
+
+      await act(async () => {
+        document.dispatchEvent(clickEvent);
+      });
+
+      expect(clickEvent.defaultPrevented).toBe(false);
+    });
+
+    test("mouse selection does not suppress subsequent clicks", async () => {
+      await render();
+      const host = layer();
+
+      const down = new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 1, clientX: 20, clientY: 20, pointerType: "mouse" });
+      const move = new PointerEvent("pointermove", { bubbles: true, cancelable: true, pointerId: 1, clientX: 80, clientY: 80, pointerType: "mouse" });
+      const up = new PointerEvent("pointerup", { bubbles: true, cancelable: true, pointerId: 1, clientX: 80, clientY: 80, pointerType: "mouse" });
+
+      await act(async () => {
+        host.dispatchEvent(down);
+        host.dispatchEvent(move);
+        host.dispatchEvent(up);
+      });
+
+      const clickEvent = new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 });
+      Object.defineProperty(clickEvent, "timeStamp", { value: up.timeStamp + 50 });
+
+      await act(async () => {
+        document.dispatchEvent(clickEvent);
+      });
+
+      expect(clickEvent.defaultPrevented).toBe(false);
+    });
   });
 });
