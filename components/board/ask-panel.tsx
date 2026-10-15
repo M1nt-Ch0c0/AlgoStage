@@ -1,7 +1,7 @@
 /**
  * AskPanel · 提问面板。桌面（≥lg）绝对定位浮在选区右侧，放不下则放下方；
  * 窄屏固定底部抽屉，最高 50vh，bottom 跟 visualViewport 避开键盘。
- * 提问先 captureStage；stepId 或 selection 引用变了就丢弃。截图失败仍 sendAsk(null)。
+ * 提问先 captureStage；stepId、selection 引用或面板会话变了就丢弃。截图失败仍 sendAsk(null)。
  * Esc：closeAskPanel（回 selecting），并把焦点还给原选中目标或画选层。
  */
 "use client";
@@ -152,6 +152,15 @@ function AskPanelActive({ stage }: AskPanelProps) {
   const [drawerBottom, setDrawerBottom] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   const sendingRef = useRef(false);
+  /** Bumps on panel open and close. A submit that outlives the panel must not send. */
+  const askSessionRef = useRef(0);
+
+  useEffect(() => {
+    askSessionRef.current += 1;
+    return () => {
+      askSessionRef.current += 1;
+    };
+  }, []);
 
   const stepId = steps[currentIndex]?.id ?? "";
   const waiting = askPhase === "sending" || askPhase === "streaming";
@@ -245,6 +254,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
     const startStepId = state.steps[state.currentIndex]?.id ?? "";
     const startSelection = state.selection;
     if (!startSelection) return;
+    const session = askSessionRef.current;
     sendingRef.current = true;
     setPreparing(true);
     let capture: CaptureResult | null;
@@ -252,9 +262,12 @@ function AskPanelActive({ stage }: AskPanelProps) {
       capture = await captureStage(resolveStage(stage), startSelection);
     } catch {
       capture = null;
-    } finally {
-      setPreparing(false);
     }
+    if (askSessionRef.current !== session) {
+      sendingRef.current = false;
+      return;
+    }
+    setPreparing(false);
     const latest = usePlayerStore.getState();
     const latestStepId = latest.steps[latest.currentIndex]?.id ?? "";
     if (latestStepId !== startStepId || latest.selection !== startSelection) {
