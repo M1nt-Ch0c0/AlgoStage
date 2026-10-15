@@ -2368,6 +2368,12 @@ test.describe("390 selection flow", () => {
       await page.keyboard.press("Escape");
       await expect(panel).toHaveCount(0);
 
+      const selection = page.locator("[data-ask-layer] [data-ask-selection]");
+      await expect(selection).toBeVisible();
+      const selBoxBefore = (await selection.boundingBox())!;
+      const selLabel = page.locator("[data-ask-selection-label]");
+      await expect(selLabel).toHaveText("已选：代码第 9 行");
+
       const bar = page.locator("[data-ask-bottom-bar]");
       await expect(bar).toBeVisible();
       const chip0 = bar.locator("[data-ask-shortcut]").nth(0);
@@ -2378,11 +2384,57 @@ test.describe("390 selection flow", () => {
       const gapX = (box0.x + box0.width + box1.x) / 2;
       const gapY = box0.y + box0.height / 2;
 
-      await page.touchscreen.tap(gapX, gapY);
+      // In Chromium (and real mobile devices), page.touchscreen.tap in the 8px gap
+      // between chips is snapped by Chromium touch adjustment onto the nearest chip
+      // (targeting [data-ask-shortcut="step"] and selecting "当前步骤").
+      // Dispatch events directly to the gap element to bypass touch adjustment while
+      // verifying that tapping the gap leaves the existing selection unchanged.
+      await page.evaluate(
+        ({ gapX, gapY }) => {
+          const target = document.elementFromPoint(gapX, gapY);
+          const barEl = document.querySelector("[data-ask-bottom-bar]");
+          if (!target || !barEl || !barEl.contains(target)) {
+            throw new Error("Gap point element is not inside [data-ask-bottom-bar]");
+          }
+          if (target.closest("[data-ask-shortcut]") || target.closest("button")) {
+            throw new Error("Gap point element must not be a [data-ask-shortcut] or button");
+          }
+
+          const pointerProps = {
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+            pointerType: "touch",
+            isPrimary: true,
+            pointerId: 7,
+            clientX: gapX,
+            clientY: gapY,
+          };
+          target.dispatchEvent(new PointerEvent("pointerdown", pointerProps));
+          target.dispatchEvent(new PointerEvent("pointerup", pointerProps));
+          target.dispatchEvent(
+            new MouseEvent("click", {
+              bubbles: true,
+              cancelable: true,
+              clientX: gapX,
+              clientY: gapY,
+            }),
+          );
+        },
+        { gapX, gapY },
+      );
 
       await expect(page.locator("[data-ask-layer]")).toBeVisible();
       await expect(bar).toBeVisible();
-      await expect(page.locator("[data-ask-layer] [data-ask-selection]")).toBeVisible();
+      await expect(selection).toBeVisible();
+      await expect(panel).toHaveCount(0);
+
+      const selBoxAfter = (await selection.boundingBox())!;
+      expect(Math.abs(selBoxAfter.x - selBoxBefore.x)).toBeLessThanOrEqual(1);
+      expect(Math.abs(selBoxAfter.y - selBoxBefore.y)).toBeLessThanOrEqual(1);
+      expect(Math.abs(selBoxAfter.width - selBoxBefore.width)).toBeLessThanOrEqual(1);
+      expect(Math.abs(selBoxAfter.height - selBoxBefore.height)).toBeLessThanOrEqual(1);
+      await expect(selLabel).toHaveText("已选：代码第 9 行");
     });
 
     test("r. exit button inside [data-ask-bottom-bar], row layout, gaps, Tab order, ArrowRight", async ({ page }) => {
