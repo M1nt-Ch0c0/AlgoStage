@@ -14,6 +14,7 @@ import { cancelAsk, sendAsk } from "@/lib/ask/ask-client";
 import { ASK_ERROR_SPECS, resolveAskError, type AskErrorAction } from "@/lib/ask/ask-errors";
 import { captureStage, type CaptureResult } from "@/lib/ask/capture";
 import { yieldMacrotask } from "@/lib/ask/yield-macrotask";
+import { usePointerActivate } from "@/lib/ask/use-pointer-activate";
 import { collectAskCandidates, summarizeSelection } from "@/lib/ask/collect-candidates";
 import { getAskCodeMissNotice, subscribeAskCodeMissNotice } from "@/lib/ask/code-editor-registry";
 import {
@@ -272,13 +273,10 @@ function AskPanelActive({ stage }: AskPanelProps) {
     } catch {
       capture = null;
     }
-    // Capture can stall the main thread. Yield so a 取消 click queued during
-    // that stall runs and bumps the session before we decide to send.
+    // Capture can stall the main thread. Yield twice so a 取消 pointerup
+    // queued during that stall runs before we decide to send.
     await yieldMacrotask();
-    if (askSessionRef.current !== session) {
-      sendingRef.current = false;
-      return;
-    }
+    await yieldMacrotask();
     setPreparing(false);
     const latest = usePlayerStore.getState();
     const latestStepId = latest.steps[latest.currentIndex]?.id ?? "";
@@ -289,8 +287,13 @@ function AskPanelActive({ stage }: AskPanelProps) {
     const failed = !capture || capture.ok === false;
     // 记在 store 上：sendAsk 把 phase 推进后本组件不再靠本地 state 记住这次失败。
     usePlayerStore.setState({ askCaptureFallback: failed });
-    await sendAsk(failed ? null : capture);
-    sendingRef.current = false;
+    try {
+      await sendAsk(failed ? null : capture, {
+        isCurrent: () => askSessionRef.current === session,
+      });
+    } finally {
+      sendingRef.current = false;
+    }
   }, [stage]);
 
   const onQuestionChange = (value: string) => {
@@ -327,6 +330,8 @@ function AskPanelActive({ stage }: AskPanelProps) {
     }
   };
 
+  const cancelWaiting = usePointerActivate(() => cancelAsk());
+  const cancelDraft = usePointerActivate(() => closeAskPanel());
   const seconds = elapsedSeconds(askStartedAt, now);
   const positionClass = desktop ? "absolute z-40 w-80" : "fixed inset-x-0 z-40 max-h-[50vh] overflow-y-auto";
 
@@ -417,7 +422,11 @@ function AskPanelActive({ stage }: AskPanelProps) {
             type="button"
             data-ask-cancel
             className="pointer-coarse:min-h-11 pointer-coarse:min-w-11 rounded-md border border-board-600 px-3 py-1"
-            onClick={() => cancelAsk()}
+            onPointerDown={cancelWaiting.onPointerDown}
+            onPointerMove={cancelWaiting.onPointerMove}
+            onPointerUp={cancelWaiting.onPointerUp}
+            onPointerCancel={cancelWaiting.onPointerCancel}
+            onClick={cancelWaiting.onClick}
           >
             取消
           </button>
@@ -426,7 +435,11 @@ function AskPanelActive({ stage }: AskPanelProps) {
             type="button"
             data-ask-cancel
             className="pointer-coarse:min-h-11 pointer-coarse:min-w-11 rounded-md border border-board-600 px-3 py-1"
-            onClick={() => closeAskPanel()}
+            onPointerDown={cancelDraft.onPointerDown}
+            onPointerMove={cancelDraft.onPointerMove}
+            onPointerUp={cancelDraft.onPointerUp}
+            onPointerCancel={cancelDraft.onPointerCancel}
+            onClick={cancelDraft.onClick}
           >
             取消
           </button>

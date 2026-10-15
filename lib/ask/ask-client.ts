@@ -72,11 +72,37 @@ function isAbortError(error: unknown): boolean {
   );
 }
 
+export interface SendAskOptions {
+  /** False when the panel session that started this send is gone. */
+  isCurrent?: () => boolean;
+}
+
+/**
+ * Drop a request the panel abandoned before fetch. Same phase reset as cancelAsk
+ * when askSent already moved the player into sending.
+ */
+function abandonBeforeFetch(token: number | null): void {
+  if (token == null) return;
+  const runtime = runtimes.get(token);
+  if (!runtime || runtime.settled) return;
+  runtime.userCancel = true;
+  runtime.settled = true;
+  clearTimeout(runtime.timer);
+  runtime.controller.abort();
+  runtimes.delete(token);
+  usePlayerStore.getState().askCancelled(runtime.guard);
+}
+
 /**
  * Send the current draft. Returns without throwing when the phase, availability,
  * draft, or selection cannot be sent. In-flight work is tracked until settle.
+ * options.isCurrent is checked at the last synchronous point before askSent,
+ * and again immediately before fetch.
  */
-export async function sendAsk(capture: CaptureResult | null): Promise<void> {
+export async function sendAsk(
+  capture: CaptureResult | null,
+  options?: SendAskOptions,
+): Promise<void> {
   const state = usePlayerStore.getState();
   if (
     state.askPhase === "sending" ||
@@ -108,6 +134,7 @@ export async function sendAsk(capture: CaptureResult | null): Promise<void> {
     question,
   };
   if (!askSelectionSchema.safeParse(selection).success) return;
+  if (options?.isCurrent && !options.isCurrent()) return;
 
   const token = nextToken++;
   const guard: AskRequestGuard = {
@@ -141,6 +168,10 @@ export async function sendAsk(capture: CaptureResult | null): Promise<void> {
     const serverKeyDisabled = localByok
       ? await fetchServerKeyDisabled(controller.signal)
       : false;
+    if (options?.isCurrent && !options.isCurrent()) {
+      abandonBeforeFetch(token);
+      return;
+    }
     const body = withByok(
       {
         problemSlug,
