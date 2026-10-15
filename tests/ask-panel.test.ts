@@ -170,6 +170,20 @@ function keydown(el: EventTarget, init: KeyboardEventInit) {
   el.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init }));
 }
 
+/** Run queued macrotasks (post-capture yieldMacrotask) before the act callback ends. */
+async function finishCaptureTurn() {
+  await Promise.resolve();
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}
+
+function preparingSlot(): HTMLElement {
+  const el = container.querySelector<HTMLElement>("[data-ask-capture-preparing]");
+  if (!el) throw new Error("preparing slot missing");
+  return el;
+}
+
 describe("ask panel", () => {
   test("askPhase 为 idle 时面板渲染 null", async () => {
     expect(usePlayerStore.getState().askPhase).toBe("idle");
@@ -258,6 +272,7 @@ describe("ask panel", () => {
 
     await act(async () => {
       keydown(question(), { key: "Enter", ctrlKey: true });
+      await finishCaptureTurn();
     });
     expect(captureStage).toHaveBeenCalledTimes(1);
     expect(sendAsk).toHaveBeenCalledTimes(1);
@@ -267,6 +282,7 @@ describe("ask panel", () => {
     vi.mocked(captureStage).mockClear();
     await act(async () => {
       keydown(question(), { key: "Enter", metaKey: true });
+      await finishCaptureTurn();
     });
     expect(sendAsk).toHaveBeenCalledWith(OK_CAPTURE);
   });
@@ -294,6 +310,7 @@ describe("ask panel", () => {
     });
     await act(async () => {
       resolveCapture?.(OK_CAPTURE);
+      await finishCaptureTurn();
     });
     expect(sendAsk).not.toHaveBeenCalled();
     expect(container.querySelector("[data-ask-capture-fallback]")).toBeNull();
@@ -318,6 +335,7 @@ describe("ask panel", () => {
     });
     await act(async () => {
       resolveCapture?.(OK_CAPTURE);
+      await finishCaptureTurn();
     });
     expect(sendAsk).not.toHaveBeenCalled();
 
@@ -338,6 +356,7 @@ describe("ask panel", () => {
     });
     await act(async () => {
       submitButton().click();
+      await finishCaptureTurn();
     });
     expect(container.querySelector("[data-ask-capture-fallback]")?.textContent).toBe(CAPTURE_FALLBACK_NOTICE);
     expect(container.querySelector("[data-ask-capture-fallback]")?.textContent).toBe(ASK_CAPTURE_FALLBACK);
@@ -437,7 +456,49 @@ describe("ask panel", () => {
     expect(container.querySelector("[data-ask-capture-fallback]")).toBeNull();
   });
 
-  test("25b. 点提问后立刻显示准备截图，截图结束后消失", async () => {
+  test("25a. 准备截图占位在提问前就在 DOM 里且不可见，准备中同一节点变为可见", async () => {
+    draft("drafting", { draftQuestion: "为什么这样写？" });
+    await render();
+
+    const idle = preparingSlot();
+    expect(idle.classList.contains("invisible")).toBe(true);
+    expect(idle.className).toContain("min-h-[1.5rem]");
+    expect(idle.className).toContain("leading-6");
+    expect(idle.getAttribute("aria-hidden")).toBe("true");
+    expect(idle.getAttribute("role")).toBeNull();
+    expect(idle.textContent).not.toBe(ASK_CAPTURE_PREPARING);
+
+    let resolveCapture: ((value: CaptureResult) => void) | undefined;
+    vi.mocked(captureStage).mockImplementation(
+      () =>
+        new Promise<CaptureResult>((resolve) => {
+          resolveCapture = resolve;
+        }),
+    );
+
+    await act(async () => {
+      submitButton().click();
+    });
+    const shown = preparingSlot();
+    expect(shown).toBe(idle);
+    expect(shown.classList.contains("invisible")).toBe(false);
+    expect(shown.hasAttribute("aria-hidden")).toBe(false);
+    expect(shown.textContent).toBe(ASK_CAPTURE_PREPARING);
+    expect(shown.textContent).toBe("正在准备截图…");
+    expect(shown.getAttribute("role")).toBeNull();
+    expect(sendAsk).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveCapture?.(OK_CAPTURE);
+      await finishCaptureTurn();
+    });
+    expect(shown.isConnected).toBe(true);
+    expect(shown.classList.contains("invisible")).toBe(true);
+    expect(shown.getAttribute("aria-hidden")).toBe("true");
+    expect(sendAsk).toHaveBeenCalledTimes(1);
+  });
+
+  test("25b. 点提问后立刻显示准备截图，截图结束后不可见", async () => {
     draft("drafting", { draftQuestion: "为什么这样写？" });
     await render();
 
@@ -464,8 +525,12 @@ describe("ask panel", () => {
 
     await act(async () => {
       resolveCapture?.(OK_CAPTURE);
+      await finishCaptureTurn();
     });
-    expect(container.querySelector("[data-ask-capture-preparing]")).toBeNull();
+    const idle = preparingSlot();
+    expect(idle.className).toContain("invisible");
+    expect(idle.getAttribute("aria-hidden")).toBe("true");
+    expect(idle.textContent).not.toBe(ASK_CAPTURE_PREPARING);
     expect(sendAsk).toHaveBeenCalledWith(OK_CAPTURE);
   });
 
@@ -495,6 +560,7 @@ describe("ask panel", () => {
 
     await act(async () => {
       resolveCapture?.(OK_CAPTURE);
+      await finishCaptureTurn();
     });
     expect(sendAsk).not.toHaveBeenCalled();
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
@@ -522,9 +588,56 @@ describe("ask panel", () => {
 
     await act(async () => {
       resolveCapture?.(OK_CAPTURE);
+      await finishCaptureTurn();
     });
     expect(sendAsk).not.toHaveBeenCalled();
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
+  });
+
+  test("25e. 截图返回后、yield 完成前取消则不调用 sendAsk", async () => {
+    draft("drafting", { draftQuestion: "为什么这样写？" });
+    await render();
+
+    let releaseYield: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseYield = resolve;
+    });
+    const yieldFn = vi.fn(() => gate);
+    vi.stubGlobal("scheduler", { yield: yieldFn });
+
+    await act(async () => {
+      submitButton().click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(captureStage).toHaveBeenCalledTimes(1);
+    expect(yieldFn).toHaveBeenCalledTimes(1);
+    expect(sendAsk).not.toHaveBeenCalled();
+    expect(preparingSlot().textContent).toBe(ASK_CAPTURE_PREPARING);
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>("[data-ask-cancel]")?.click();
+    });
+    expect(container.querySelector("[data-ask-panel]")).toBeNull();
+    expect(usePlayerStore.getState().askPhase).toBe("idle");
+
+    releaseYield();
+    await act(async () => {
+      await gate;
+    });
+    expect(sendAsk).not.toHaveBeenCalled();
+  });
+
+  test("25f. 截图成功且中途未取消时 sendAsk 只调用一次", async () => {
+    draft("drafting", { draftQuestion: "为什么这样写？" });
+    await render();
+    await act(async () => {
+      submitButton().click();
+      await finishCaptureTurn();
+    });
+    expect(captureStage).toHaveBeenCalledTimes(1);
+    expect(sendAsk).toHaveBeenCalledTimes(1);
+    expect(sendAsk).toHaveBeenCalledWith(OK_CAPTURE);
   });
 
   test("25c. 截图 TIMEOUT 仍显示 #39 回退并 sendAsk(null)", async () => {
@@ -537,8 +650,9 @@ describe("ask panel", () => {
     });
     await act(async () => {
       submitButton().click();
+      await finishCaptureTurn();
     });
-    expect(container.querySelector("[data-ask-capture-preparing]")).toBeNull();
+    expect(preparingSlot().className).toContain("invisible");
     expect(container.querySelector("[data-ask-capture-fallback]")?.textContent).toBe(ASK_CAPTURE_FALLBACK);
     expect(sendAsk).toHaveBeenCalledTimes(1);
     expect(sendAsk).toHaveBeenCalledWith(null);
@@ -630,6 +744,7 @@ describe("ask panel", () => {
     expect(container.querySelector('[data-ask-error-action="settings"]')).toBeNull();
     await act(async () => {
       submitButton().click();
+      await finishCaptureTurn();
     });
     expect(sendAsk).toHaveBeenCalledWith(OK_CAPTURE);
 

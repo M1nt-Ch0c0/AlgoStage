@@ -13,6 +13,7 @@ import Link from "next/link";
 import { cancelAsk, sendAsk } from "@/lib/ask/ask-client";
 import { ASK_ERROR_SPECS, resolveAskError, type AskErrorAction } from "@/lib/ask/ask-errors";
 import { captureStage, type CaptureResult } from "@/lib/ask/capture";
+import { yieldMacrotask } from "@/lib/ask/yield-macrotask";
 import { collectAskCandidates, summarizeSelection } from "@/lib/ask/collect-candidates";
 import {
   ASK_CAPTURE_FALLBACK,
@@ -269,6 +270,9 @@ function AskPanelActive({ stage }: AskPanelProps) {
     } catch {
       capture = null;
     }
+    // Capture can stall the main thread. Yield so a 取消 click queued during
+    // that stall runs and bumps the session before we decide to send.
+    await yieldMacrotask();
     if (askSessionRef.current !== session) {
       sendingRef.current = false;
       return;
@@ -351,11 +355,13 @@ function AskPanelActive({ stage }: AskPanelProps) {
         {label}
       </p>
 
-      {preparing ? (
-        <p data-ask-capture-preparing className="text-xs text-chalk-300">
-          {ASK_CAPTURE_PREPARING}
-        </p>
-      ) : null}
+      <p
+        data-ask-capture-preparing
+        aria-hidden={preparing ? undefined : true}
+        className={`min-h-[1.5rem] text-xs leading-6 text-chalk-300${preparing ? "" : " invisible"}`}
+      >
+        {preparing ? ASK_CAPTURE_PREPARING : "\u00a0"}
+      </p>
 
       {captureFailed ? (
         <p data-ask-capture-fallback className="text-[11px] text-chalk-500">
