@@ -550,7 +550,45 @@ describe("AskSelectionLayer", () => {
     expect(getAskCodeMissNotice()).toBeNull();
   });
 
-  test("whole-block fallback to 当前代码 shows no hint", async () => {
+  test("case 1: box intersects code element and handle returns range -> target with codeRange and framed lines text", async () => {
+    const codeEl = document.createElement("div");
+    codeEl.setAttribute("data-ask-target", "code");
+    codeEl.setAttribute("data-ask-id", "code:main");
+    codeEl.setAttribute("data-ask-step-id", "s1");
+    codeEl.getBoundingClientRect = () => domRect(250, 10, 80, 50);
+    stage.append(codeEl);
+
+    const mockHandle: CodeEditorHandle = {
+      getLineRangeForClientBox: vi.fn(() => ({ startLine: 2, endLine: 4 })),
+      getLinesText: vi.fn((_start, _end) => "line 2\nline 3\nline 4"),
+      getFullText: vi.fn(() => "full code"),
+    };
+    registerCodeEditor(codeEl, mockHandle);
+
+    const setSpy = vi.spyOn(usePlayerStore.getState(), "setAskSelection");
+    await render();
+
+    // Box code element (250..330, 10..60)
+    await gesture(240, 5, 340, 65);
+
+    expect(setSpy).toHaveBeenCalledTimes(1);
+    const sel = usePlayerStore.getState().selection;
+    expect(sel).not.toBeNull();
+    expect(sel?.targets).toHaveLength(1);
+    expect(sel?.targets[0].kind).toBe("code");
+    expect(sel?.targets[0].codeRange).toEqual({ startLine: 2, endLine: 4 });
+    expect(sel?.targets[0].text).toBe("line 2\nline 3\nline 4");
+
+    const chip = summarizeSelection(sel!);
+    expect(chip).toBe("已选：代码第 2–4 行");
+
+    const labelEl = layer().querySelector("[data-ask-selection-label]");
+    expect(labelEl?.textContent).toBe("已选：代码第 2–4 行");
+    expect(layer().textContent).not.toContain(ASK_CODE_MISS_HINT);
+    expect(getAskCodeMissNotice()).toBeNull();
+  });
+
+  test("case 2: whole-block fallback to 当前代码 shows no hint", async () => {
     const codeEl = document.createElement("div");
     codeEl.setAttribute("data-ask-target", "code");
     codeEl.setAttribute("data-ask-id", "code:main");
@@ -583,8 +621,73 @@ describe("AskSelectionLayer", () => {
     expect(sel?.targets).toHaveLength(1);
     expect(sel?.targets[0].kind).toBe("code");
     expect(sel?.targets[0].codeRange).toBeUndefined();
-    expect(summarizeSelection(sel!)).toBe("已选：当前代码");
+    const chip = summarizeSelection(sel!);
+    expect(chip).toBe("已选：当前代码");
+    expect(/\d/.test(chip)).toBe(false);
+
+    const labelEl = layer().querySelector("[data-ask-selection-label]");
+    expect(labelEl?.textContent).toBe("已选：当前代码");
+    expect(/\d/.test(labelEl?.textContent ?? "")).toBe(false);
     expect(layer().textContent).not.toContain(ASK_CODE_MISS_HINT);
+    expect(getAskCodeMissNotice()).toBeNull();
+  });
+
+  test("case 3: getFullText '' and no textContent -> hint ASK_CODE_MISS_HINT, no selection", async () => {
+    const codeEl = document.createElement("div");
+    codeEl.setAttribute("data-ask-target", "code");
+    codeEl.setAttribute("data-ask-id", "code:main");
+    codeEl.setAttribute("data-ask-step-id", "s1");
+    codeEl.textContent = "";
+    codeEl.getBoundingClientRect = () => domRect(250, 10, 80, 50);
+    stage.append(codeEl);
+
+    const mockHandle: CodeEditorHandle = {
+      getLineRangeForClientBox: vi.fn(() => null),
+      getLinesText: vi.fn(() => ""),
+      getFullText: vi.fn(() => ""),
+    };
+    registerCodeEditor(codeEl, mockHandle);
+
+    const setSpy = vi.spyOn(usePlayerStore.getState(), "setAskSelection");
+    await render();
+
+    // Box only code element
+    await gesture(240, 5, 340, 65);
+
+    expect(setSpy).not.toHaveBeenCalled();
+    expect(usePlayerStore.getState().selection).toBeNull();
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
+    expect(layer().textContent).toContain(ASK_CODE_MISS_HINT);
+    expect(getAskCodeMissNotice()).toBeNull();
+  });
+
+  test("case 4: box over a viz element only, not the code element -> no code target", async () => {
+    const codeEl = document.createElement("div");
+    codeEl.setAttribute("data-ask-target", "code");
+    codeEl.setAttribute("data-ask-id", "code:main");
+    codeEl.setAttribute("data-ask-step-id", "s1");
+    codeEl.getBoundingClientRect = () => domRect(250, 10, 80, 50);
+    stage.append(codeEl);
+
+    const mockHandle: CodeEditorHandle = {
+      getLineRangeForClientBox: vi.fn(() => ({ startLine: 1, endLine: 5 })),
+      getLinesText: vi.fn(() => "code text"),
+      getFullText: vi.fn(() => "full code text"),
+    };
+    registerCodeEditor(codeEl, mockHandle);
+
+    const setSpy = vi.spyOn(usePlayerStore.getState(), "setAskSelection");
+    await render();
+
+    // Box only viz element (viz is at 150..210, 10..40; code is at 250..330, 10..60)
+    await gesture(145, 5, 215, 45);
+
+    expect(setSpy).toHaveBeenCalledTimes(1);
+    const sel = usePlayerStore.getState().selection;
+    expect(sel).not.toBeNull();
+    expect(sel?.targets.some((t) => t.kind === "viz")).toBe(true);
+    expect(sel?.targets.some((t) => t.kind === "code")).toBe(false);
+    expect(mockHandle.getLineRangeForClientBox).not.toHaveBeenCalled();
     expect(getAskCodeMissNotice()).toBeNull();
   });
 
