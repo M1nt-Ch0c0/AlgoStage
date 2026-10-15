@@ -1696,16 +1696,10 @@ test.describe("390 selection flow", () => {
       expect(exitBox).not.toBeNull();
       const exitCx = exitBox!.x + exitBox!.width / 2;
       const exitCy = exitBox!.y + exitBox!.height / 2;
-      const { isExitHit, hitHtml, closestBar, closestLabel } = await exitBtn.evaluate((el, { x, y }) => {
+      const isExitHit = await exitBtn.evaluate((el, { x, y }) => {
         const hit = document.elementFromPoint(x, y);
-        return {
-          isExitHit: hit !== null && (hit === el || el.contains(hit)),
-          hitHtml: hit ? hit.outerHTML.slice(0, 200) : "null",
-          closestBar: Boolean(hit?.closest("[data-ask-bottom-bar]")),
-          closestLabel: hit?.closest("[aria-label]")?.getAttribute("aria-label") ?? null,
-        };
+        return hit !== null && (hit === el || el.contains(hit));
       }, { x: exitCx, y: exitCy });
-      console.log(`[test d exit hit] html=${hitHtml} closestBar=${closestBar} closestLabel=${closestLabel}`);
       expect(isExitHit).toBe(true);
     });
 
@@ -2007,13 +2001,22 @@ test.describe("390 selection flow", () => {
       expect(hasLayerAncestor).toBe(true);
 
       // Make a selection
-      const line1 = await getMonacoLineBox(page, 1);
       const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
-      const box = (await code.boundingBox())!;
-      await page.mouse.click(box.x + 80, (line1.top + line1.bottom) / 2);
+      await code.scrollIntoViewIfNeeded();
+      await expect(code).toBeVisible();
+
+      const box = await code.boundingBox();
+      if (!box) throw new Error("code target has no box");
+
+      const line5 = await getMonacoLineBox(page, 5);
+      const clickX = box.x + 80;
+      const clickY = (line5.top + line5.bottom) / 2;
+
+      await page.touchscreen.tap(clickX, clickY);
 
       const panel = page.locator("[data-ask-panel]");
       await expect(panel).toBeVisible();
+      await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：代码第 5 行");
 
       // Close the panel with Esc so we are back in selecting with selection visible
       await page.keyboard.press("Escape");
@@ -2039,13 +2042,22 @@ test.describe("390 selection flow", () => {
       await enterSelection(page);
 
       // Make a selection and open the panel
-      const line1 = await getMonacoLineBox(page, 1);
       const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
-      const box = (await code.boundingBox())!;
-      await page.mouse.click(box.x + 80, (line1.top + line1.bottom) / 2);
+      await code.scrollIntoViewIfNeeded();
+      await expect(code).toBeVisible();
+
+      const box = await code.boundingBox();
+      if (!box) throw new Error("code target has no box");
+
+      const line5 = await getMonacoLineBox(page, 5);
+      const clickX = box.x + 80;
+      const clickY = (line5.top + line5.bottom) / 2;
+
+      await page.touchscreen.tap(clickX, clickY);
 
       const panel = page.locator("[data-ask-panel]");
       await expect(panel).toBeVisible();
+      await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：代码第 5 行");
 
       // Close with Esc (focus on layer)
       await page.keyboard.press("Escape");
@@ -2080,13 +2092,22 @@ test.describe("390 selection flow", () => {
       await enterSelection(page);
 
       // Make a selection so panel opens
-      const line1 = await getMonacoLineBox(page, 1);
       const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
-      const box = (await code.boundingBox())!;
-      await page.mouse.click(box.x + 80, (line1.top + line1.bottom) / 2);
+      await code.scrollIntoViewIfNeeded();
+      await expect(code).toBeVisible();
+
+      const box = await code.boundingBox();
+      if (!box) throw new Error("code target has no box");
+
+      const line5 = await getMonacoLineBox(page, 5);
+      const clickX = box.x + 80;
+      const clickY = (line5.top + line5.bottom) / 2;
+
+      await page.touchscreen.tap(clickX, clickY);
 
       const panel = page.locator("[data-ask-panel]");
       await expect(panel).toBeVisible();
+      await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：代码第 5 行");
 
       // Esc twice: first closes panel, second exits ask mode
       await page.keyboard.press("Escape");
