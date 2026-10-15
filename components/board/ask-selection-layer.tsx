@@ -282,6 +282,13 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
     const previous = previousPhaseRef.current;
     const closingPanel = previous === "drafting" || previous === "error";
     if (askPhase === "selecting" && closingPanel) {
+      if (previous === "drafting") {
+        const curSelection = usePlayerStore.getState().selection;
+        if (curSelection && curSelection.targets.length > 0) {
+          const status = document.querySelector("[role=status]");
+          if (status) status.textContent = summarizeSelection(curSelection);
+        }
+      }
       const timer = window.setTimeout(() => {
         previousPhaseRef.current = askPhase;
         if (usePlayerStore.getState().askPhase !== "selecting") return;

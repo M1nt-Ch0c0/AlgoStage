@@ -493,6 +493,29 @@ test.describe("1280 selection flow", () => {
     }
   });
 
+  test("1280: cancel from drafting returns to selecting with selection kept and announces summary in role=status", async ({ page }) => {
+    await startGenerated(page);
+    await pauseLecture(page);
+    await enterSelection(page);
+    await dragOnStage(page);
+
+    const panel = page.locator("[data-ask-panel]");
+    await expect(panel).toBeVisible();
+
+    await panel.locator("[data-ask-cancel]").click();
+    await expect(panel).toHaveCount(0);
+
+    const selection = page.locator("[data-ask-selection]");
+    await expect(selection).toBeVisible();
+
+    const chip = page.locator("[data-ask-selection-label]");
+    await expect(chip).toBeVisible();
+    const chipText = (await chip.textContent())?.trim();
+    expect(chipText).toBeTruthy();
+
+    await expect(page.locator("[role=status]").first()).toHaveText(chipText!);
+  });
+
   test("37. stepDisabled and busy grey copy, entry stays focusable", async ({ page }) => {
     const releaseAsk: { current: (() => void) | null } = { current: null };
     await mockAsk(page, async (route) => {

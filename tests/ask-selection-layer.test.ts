@@ -392,6 +392,34 @@ describe("AskSelectionLayer", () => {
     status.remove();
   });
 
+  test("从 drafting 取消（closeAskPanel）回到 selecting 保留选区，并将选区摘要写入 role=status", async () => {
+    const status = document.createElement("p");
+    status.setAttribute("role", "status");
+    status.textContent = "旧播报";
+    document.body.append(status);
+    await render();
+    expect(status.textContent).toBe(ASK_ENTERED_STATUS);
+
+    await gesture(20, 12, 120, 36);
+    const selection = usePlayerStore.getState().selection;
+    expect(selection).not.toBeNull();
+    expect(usePlayerStore.getState().askPhase).toBe("drafting");
+    const summary = summarizeSelection(selection!);
+    expect(status.textContent).toBe(summary);
+
+    // 覆盖 status 内容以验证取消时会重新写入摘要
+    status.textContent = "其他中间状态";
+
+    await act(async () => {
+      usePlayerStore.getState().closeAskPanel();
+    });
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
+    expect(usePlayerStore.getState().selection).not.toBeNull();
+    expect(status.textContent).toBe(summary);
+
+    status.remove();
+  });
+
   test("Tab 在捷径组内循环并切换 tabIndex", async () => {
     await render();
     const host = layer();
