@@ -1,10 +1,10 @@
 /**
  * AskPanel · 提问面板。桌面（≥lg）绝对定位浮在选区右侧，放不下则放下方；
  * 窄屏固定底部抽屉，最高 50vh，bottom 跟 visualViewport 避开键盘。
- * 提问先 captureStage；stepId 或 selection 引用变了就丢弃。截图失败仍 sendAsk(null)，
+ * 提问先 captureStage；stepId、selection 引用或面板会话变了就丢弃。截图失败仍 sendAsk(null)，
  * 并把「没截到图」记在 store。回答开始流出或落到 playing 时提问面板卸掉（选区已被清空，
  * 不能留着「已选：无」的草稿框）；截图失败提示留到下一次提问，或仍在圈选时退出。
- * Esc 由画选层的窗口监听处理。关面板（取消按钮或 Esc）后焦点回到选区原目标。
+ * Esc 由画选层的窗口监听处理：closeAskPanel（回 selecting）。关面板（取消按钮或 Esc）后焦点回到选区原目标。
  */
 "use client";
 
@@ -158,6 +158,15 @@ function AskPanelActive({ stage }: AskPanelProps) {
   const [now, setNow] = useState(() => Date.now());
   const sendingRef = useRef(false);
   const notice = useSyncExternalStore(subscribeAskCodeMissNotice, getAskCodeMissNotice, () => null);
+  /** Bumps on panel open and close. A submit that outlives the panel must not send. */
+  const askSessionRef = useRef(0);
+
+  useEffect(() => {
+    askSessionRef.current += 1;
+    return () => {
+      askSessionRef.current += 1;
+    };
+  }, []);
 
   const stepId = steps[currentIndex]?.id ?? "";
   const waiting = askPhase === "sending" || askPhase === "streaming";
@@ -251,6 +260,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
     const startStepId = state.steps[state.currentIndex]?.id ?? "";
     const startSelection = state.selection;
     if (!startSelection) return;
+    const session = askSessionRef.current;
     sendingRef.current = true;
     // 新的一次截图开始：上一轮「没截到图」先清掉，这次失败再写回。
     usePlayerStore.setState({ askCaptureFallback: false });
@@ -260,9 +270,12 @@ function AskPanelActive({ stage }: AskPanelProps) {
       capture = await captureStage(resolveStage(stage), startSelection);
     } catch {
       capture = null;
-    } finally {
-      setPreparing(false);
     }
+    if (askSessionRef.current !== session) {
+      sendingRef.current = false;
+      return;
+    }
+    setPreparing(false);
     const latest = usePlayerStore.getState();
     const latestStepId = latest.steps[latest.currentIndex]?.id ?? "";
     if (latestStepId !== startStepId || latest.selection !== startSelection) {
