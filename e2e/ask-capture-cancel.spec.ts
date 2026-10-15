@@ -159,45 +159,158 @@ async function openAskPanel(page: Page) {
   await page.locator("[data-ask-panel] [data-ask-question]").fill(QUESTION);
 }
 
-test.describe("ask capture layout and late cancel", () => {
-  test.use({ viewport: { width: 1280, height: 800 } });
+type AskHold = { release: () => void };
 
-  test("preparing status does not move 取消", async ({ page }) => {
-    await openAskPanel(page);
-    const cancel = page.locator("[data-ask-cancel]");
-    const before = await cancel.boundingBox();
-    if (!before) throw new Error("取消 has no box");
-
-    await page.locator("[data-ask-submit]").click();
-    await expect(page.locator("[data-ask-capture-preparing]")).toBeVisible();
-    await expect(page.locator("[data-ask-capture-preparing]")).toHaveText("正在准备截图…");
-
-    const during = await cancel.boundingBox();
-    if (!during) throw new Error("取消 has no box while preparing");
-    expect(Math.abs(during.y - before.y)).toBeLessThanOrEqual(0.5);
+/** Hold /api/lecture/ask until the test releases it, so waiting stays on screen. */
+async function routeHeldAsk(page: Page): Promise<AskHold> {
+  let release = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
   });
-
-  test("取消 during capture sends no ask request", async ({ page }) => {
-    let askRequests = 0;
-    await page.route("**/api/lecture/ask", async (route) => {
-      askRequests += 1;
-      await route.fulfill({
-        status: 200,
-        contentType: "application/x-ndjson",
-        body: askStream("s1"),
-      });
+  await page.route("**/api/lecture/ask", async (route) => {
+    await gate;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/x-ndjson",
+      body: askStream("s1"),
     });
-    await openAskPanel(page);
+  });
+  return { release };
+}
 
-    const client = await page.context().newCDPSession(page);
-    await client.send("Emulation.setCPUThrottlingRate", { rate: 4 });
-    try {
-      await page.locator("[data-ask-submit]").click();
-      await page.locator("[data-ask-cancel]").click({ force: true });
-      await page.waitForTimeout(3000);
-      expect(askRequests).toBe(0);
-    } finally {
-      await client.send("Emulation.setCPUThrottlingRate", { rate: 1 }).catch(() => {});
+async function withCpuThrottle(page: Page, rate: number, run: () => Promise<void>) {
+  const client = await page.context().newCDPSession(page);
+  await client.send("Emulation.setCPUThrottlingRate", { rate });
+  try {
+    await run();
+  } finally {
+    await client.send("Emulation.setCPUThrottlingRate", { rate: 1 }).catch(() => {});
+  }
+}
+
+async function boxCenter(page: Page, selector: string) {
+  const box = await page.locator(selector).boundingBox();
+  if (!box) throw new Error(`${selector} has no box`);
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2, top: box.y };
+}
+
+async function pressAt(page: Page, x: number, y: number, touch: boolean) {
+  if (touch) await page.touchscreen.tap(x, y);
+  else await page.mouse.click(x, y);
+}
+
+function installStatusStability(width: number, touch: boolean) {
+  const label = width === 1280 ? "Desktop" : "390";
+
+  test.describe(`${label} ${width}`, () => {
+    test.use(
+      width === 1280
+        ? { viewport: { width: 1280, height: 800 } }
+        : {
+            hasTouch: true,
+            isMobile: true,
+            deviceScaleFactor: 3,
+            viewport: { width: 390, height: 844 },
+          },
+    );
+
+    test("取消 y equal in idle/preparing/streaming", async ({ page }) => {
+      const held = await routeHeldAsk(page);
+      try {
+        await openAskPanel(page);
+        const cancel = page.locator("[data-ask-cancel]");
+        const idleBox = await cancel.boundingBox();
+        if (!idleBox) throw new Error("取消 has no box");
+        const idleY = idleBox.y;
+
+        const submit = await boxCenter(page, "[data-ask-submit]");
+        const client = await page.context().newCDPSession(page);
+        await client.send("Emulation.setCPUThrottlingRate", { rate: 4 });
+        try {
+          await pressAt(page, submit.x, submit.y, touch);
+          await expect(page.locator("[data-ask-capture-preparing]")).toBeVisible();
+          const preparing = await cancel.boundingBox();
+          if (!preparing) throw new Error("取消 has no box while preparing");
+          expect(Math.abs(preparing.y - idleY)).toBeLessThanOrEqual(0.5);
+        } finally {
+          await client.send("Emulation.setCPUThrottlingRate", { rate: 1 }).catch(() => {});
+        }
+
+        await expect(page.locator("[data-ask-waiting]")).toBeVisible();
+        const waiting = await cancel.boundingBox();
+        if (!waiting) throw new Error("取消 has no box while waiting");
+        expect(Math.abs(waiting.y - idleY)).toBeLessThanOrEqual(0.5);
+      } finally {
+        held.release();
+      }
+    });
+
+    for (let i = 1; i <= 10; i += 1) {
+      test(`coordinate 取消 during capture stall sends no ask run ${i}`, async ({ page }) => {
+        let askRequests = 0;
+        await page.route("**/api/lecture/ask", async (route) => {
+          askRequests += 1;
+          await route.fulfill({
+            status: 200,
+            contentType: "application/x-ndjson",
+            body: askStream("s1"),
+          });
+        });
+        await openAskPanel(page);
+
+        const cancelAt = await boxCenter(page, "[data-ask-cancel]");
+        const submitAt = await boxCenter(page, "[data-ask-submit]");
+        await withCpuThrottle(page, 4, async () => {
+          await pressAt(page, submitAt.x, submitAt.y, touch);
+          await expect(page.locator("[data-ask-capture-preparing]")).toBeVisible();
+          await pressAt(page, cancelAt.x, cancelAt.y, touch);
+          await page.waitForTimeout(3000);
+          expect(askRequests).toBe(0);
+        });
+      });
+    }
+
+    if (touch) {
+      test("touch drag starting on 取消 does not cancel", async ({ page }) => {
+        let askRequests = 0;
+        await page.route("**/api/lecture/ask", async (route) => {
+          askRequests += 1;
+          await route.fulfill({
+            status: 200,
+            contentType: "application/x-ndjson",
+            body: askStream("s1"),
+          });
+        });
+        await openAskPanel(page);
+        const submitAt = await boxCenter(page, "[data-ask-submit]");
+        await pressAt(page, submitAt.x, submitAt.y, true);
+        await expect(page.locator("[data-ask-capture-preparing]")).toBeVisible();
+
+        const cancelAt = await boxCenter(page, "[data-ask-cancel]");
+        const client = await page.context().newCDPSession(page);
+        const touchPoint = (x: number, y: number) => [{ x: Math.round(x), y: Math.round(y), id: 0 }];
+        await client.send("Input.dispatchTouchEvent", {
+          type: "touchStart",
+          touchPoints: touchPoint(cancelAt.x, cancelAt.y),
+        });
+        for (const step of [1, 2, 3, 4]) {
+          await client.send("Input.dispatchTouchEvent", {
+            type: "touchMove",
+            touchPoints: touchPoint(cancelAt.x, cancelAt.y - step * 15),
+          });
+        }
+        await client.send("Input.dispatchTouchEvent", {
+          type: "touchEnd",
+          touchPoints: touchPoint(cancelAt.x, cancelAt.y - 60),
+        });
+
+        await expect.poll(() => askRequests).toBe(1);
+        await expect(page.locator("[data-ask-panel]")).toBeVisible();
+        await expect(page.locator("[data-ask-waiting]")).toBeVisible();
+      });
     }
   });
-});
+}
+
+installStatusStability(1280, false);
+installStatusStability(390, true);
