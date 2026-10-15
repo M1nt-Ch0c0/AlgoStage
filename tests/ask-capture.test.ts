@@ -7,7 +7,9 @@ import {
   buildFallbackText,
   captureStage,
   decodedBase64Bytes,
+  intersectsBBox,
   toCropRect,
+  yieldTwoFrames,
 } from "@/lib/ask/capture";
 
 const { mockState, domToCanvasMock } = vi.hoisted(() => ({
@@ -160,6 +162,30 @@ describe("lib/ask/capture", () => {
       expect(decodedBase64Bytes("AAAA" + "AAAA")).toBe(6);
       expect(decodedBase64Bytes("AAAA" + "AAA=")).toBe(5);
       expect(decodedBase64Bytes("AAAA" + "AA==")).toBe(4);
+    });
+  });
+
+  describe("intersectsBBox", () => {
+    const containerRect = { left: 100, top: 50, width: 400, height: 300 };
+
+    it("keeps a rect that overlaps the normalized selection", () => {
+      expect(
+        intersectsBBox(
+          { left: 120, top: 70, width: 40, height: 20 },
+          containerRect,
+          { x: 50, y: 40, width: -30, height: -20 },
+        ),
+      ).toBe(true);
+    });
+
+    it("drops a rect that only touches an edge", () => {
+      expect(
+        intersectsBBox(
+          { left: 140, top: 50, width: 10, height: 20 },
+          containerRect,
+          { x: 10, y: 20, width: 30, height: 40 },
+        ),
+      ).toBe(false);
     });
   });
 
@@ -688,6 +714,78 @@ describe("lib/ask/capture", () => {
       vi.doMock("modern-screenshot", () => ({
         domToCanvas: domToCanvasMock,
       }));
+    });
+
+    it("calls domToCanvas with font:false and a filter that drops non-intersecting elements", async () => {
+      const inside = document.createElement("div");
+      const outside = document.createElement("span");
+      const frame = document.createElement("iframe");
+      const clip = document.createElement("video");
+      const text = document.createTextNode("kept");
+      inside.getBoundingClientRect = () =>
+        ({ left: 20, top: 30, width: 10, height: 10, right: 30, bottom: 40, x: 20, y: 30, toJSON() {} }) as DOMRect;
+      outside.getBoundingClientRect = () =>
+        ({ left: 180, top: 180, width: 10, height: 10, right: 190, bottom: 190, x: 180, y: 180, toJSON() {} }) as DOMRect;
+      frame.getBoundingClientRect = () =>
+        ({ left: 20, top: 30, width: 10, height: 10, right: 30, bottom: 40, x: 20, y: 30, toJSON() {} }) as DOMRect;
+      clip.getBoundingClientRect = () =>
+        ({ left: 20, top: 30, width: 10, height: 10, right: 30, bottom: 40, x: 20, y: 30, toJSON() {} }) as DOMRect;
+
+      const res = await captureStage(container, baseSel);
+      expect(res.ok).toBe(true);
+      expect(domToCanvasMock).toHaveBeenCalledTimes(1);
+      const options = domToCanvasMock.mock.calls[0]?.[1] as {
+        font: unknown;
+        filter: (node: Node) => boolean;
+        timeout: number;
+        width: number;
+        height: number;
+      };
+      expect(options.font).toBe(false);
+      expect(options.width).toBe(200);
+      expect(options.height).toBe(200);
+      expect(options.timeout).toBeLessThanOrEqual(CAPTURE_DEFAULTS.timeoutMs);
+      expect(options.timeout).toBeGreaterThan(0);
+      expect(options.filter(inside)).toBe(true);
+      expect(options.filter(outside)).toBe(false);
+      expect(options.filter(frame)).toBe(false);
+      expect(options.filter(clip)).toBe(false);
+      expect(options.filter(text)).toBe(true);
+    });
+
+    it("yields two animation frames before calling domToCanvas", async () => {
+      const order: string[] = [];
+      const raf = vi.fn((cb: FrameRequestCallback) => {
+        order.push("raf");
+        cb(0);
+        return 1;
+      });
+      vi.stubGlobal("requestAnimationFrame", raf);
+      domToCanvasMock.mockImplementation(() => {
+        order.push("dom");
+        return Promise.resolve(sourceCanvas);
+      });
+
+      const res = await captureStage(container, baseSel);
+      expect(res.ok).toBe(true);
+      expect(raf).toHaveBeenCalledTimes(2);
+      expect(order).toEqual(["raf", "raf", "dom"]);
+      vi.unstubAllGlobals();
+    });
+
+    it("uses setTimeout(0) when requestAnimationFrame is missing", async () => {
+      vi.useFakeTimers();
+      vi.stubGlobal("requestAnimationFrame", undefined);
+      const pending = yieldTwoFrames();
+      await vi.advanceTimersByTimeAsync(0);
+      await pending;
+
+      const promise = captureStage(container, baseSel);
+      await vi.advanceTimersByTimeAsync(0);
+      const res = await promise;
+      expect(res.ok).toBe(true);
+      expect(domToCanvasMock).toHaveBeenCalledTimes(1);
+      vi.unstubAllGlobals();
     });
 
     it("honors custom timeoutMs option", async () => {

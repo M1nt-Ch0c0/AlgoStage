@@ -41,3 +41,6 @@ export const ASK_REASON_TEXT: Record<AskDisabledReason, string> = {
 
 /** Screenshot failure notice. Same string as capture.ts; do not fork the wording. */
 export const ASK_CAPTURE_FALLBACK = CAPTURE_FALLBACK_NOTICE;
+
+/** Shown the moment submit starts, before captureStage paints a frame. */
+export const ASK_CAPTURE_PREPARING = "正在准备截图…";
