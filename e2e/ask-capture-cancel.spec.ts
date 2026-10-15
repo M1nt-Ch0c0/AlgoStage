@@ -241,6 +241,18 @@ async function moveTo(page: Page, client: PointerClient, x: number, y: number, t
   await page.mouse.move(x, y);
 }
 
+/**
+ * Stall tests run against the compile-time hook in lib/ask/capture.ts.
+ * NEXT_PUBLIC_ASK_TEST_STALL_MS is inlined next to domToCanvas; unset builds
+ * tree-shake the loop, so those tests skip instead of racing a short capture.
+ */
+const STALL_HOOK_MS = Number(process.env.NEXT_PUBLIC_ASK_TEST_STALL_MS);
+const stallHookOn = Number.isFinite(STALL_HOOK_MS) && STALL_HOOK_MS > 0;
+
+function requireStallHook() {
+  test.skip(!stallHookOn, "requires NEXT_PUBLIC_ASK_TEST_STALL_MS (hook build, e.g. 1500)");
+}
+
 /** Resolves only when the main thread is free enough to run this evaluate. */
 async function waitStallEnd(page: Page) {
   await page.evaluate(() => 0);
@@ -292,6 +304,56 @@ async function installFlashObserver(page: Page) {
 async function readFlashes(page: Page): Promise<string[]> {
   return page.evaluate(() => {
     const bag = (window as unknown as { __askFlash?: { stop: () => string[] } }).__askFlash;
+    return bag ? bag.stop() : [];
+  });
+}
+
+/**
+ * Records add and remove of ask chips and the code-miss hint only.
+ * Used by the natural (no-hook) cancel path.
+ */
+async function installChipHintObserver(page: Page) {
+  await page.evaluate(() => {
+    const selector = "[data-ask-chip], [data-testid='ask-code-miss-hint']";
+    const changes: string[] = [];
+    const label = (node: Node) => {
+      if (!(node instanceof Element)) return null;
+      if (node.matches("[data-ask-chip]")) return "chip";
+      if (node.matches("[data-testid='ask-code-miss-hint']")) return "hint";
+      return null;
+    };
+    const note = (node: Node, kind: "add" | "remove") => {
+      // Closing the panel removes the chip subtree in one go. That is the
+      // cancel, not a flicker of the chips while the panel stays up.
+      if (kind === "remove" && node instanceof Element && node.matches("[data-ask-panel]")) return;
+      const own = label(node);
+      if (own) changes.push(`${kind}:${own}`);
+      if (node instanceof Element) {
+        for (const el of node.querySelectorAll(selector)) {
+          const nested = label(el);
+          if (nested) changes.push(`${kind}:${nested}`);
+        }
+      }
+    };
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) note(node, "add");
+        for (const node of record.removedNodes) note(node, "remove");
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    (window as unknown as { __askChipHint?: { stop: () => string[] } }).__askChipHint = {
+      stop: () => {
+        observer.disconnect();
+        return changes;
+      },
+    };
+  });
+}
+
+async function readChipHintChanges(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const bag = (window as unknown as { __askChipHint?: { stop: () => string[] } }).__askChipHint;
     return bag ? bag.stop() : [];
   });
 }
@@ -394,6 +456,7 @@ function installStatusStability(width: number, touch: boolean) {
 
     for (let i = 1; i <= 10; i += 1) {
       test(`coordinate 取消 during capture stall sends no ask run ${i}`, async ({ page }) => {
+        requireStallHook();
         let askRequests = 0;
         await page.route("**/api/lecture/ask", async (route) => {
           askRequests += 1;
@@ -598,6 +661,7 @@ function installStatusStability(width: number, touch: boolean) {
       test(`取消 held through capture stall, released 150ms after stall on button sends no ask run ${i}`, async ({
         page,
       }) => {
+        requireStallHook();
         test.setTimeout(60_000);
         let askRequests = 0;
         await page.route("**/api/lecture/ask", async (route) => {
@@ -638,6 +702,7 @@ function installStatusStability(width: number, touch: boolean) {
     }
 
     test("press 取消 during stall, slide off, release sends normally", async ({ page }) => {
+      requireStallHook();
       test.setTimeout(60_000);
       let askRequests = 0;
       await page.route("**/api/lecture/ask", async (route) => {
@@ -670,6 +735,7 @@ function installStatusStability(width: number, touch: boolean) {
     });
 
     test("hold 取消 past 2s timeout sends, then release on button aborts", async ({ page }) => {
+      requireStallHook();
       test.setTimeout(60_000);
       let askRequests = 0;
       let parkedRelease = () => {};
@@ -738,6 +804,7 @@ function installStatusStability(width: number, touch: boolean) {
 
     for (let i = 1; i <= 10; i += 1) {
       test(`forced stall: 取消 pressed mid-stall sends no ask run ${i}`, async ({ page }) => {
+        requireStallHook();
         test.setTimeout(60_000);
         let askRequests = 0;
         const failedTexts: string[] = [];
@@ -765,14 +832,8 @@ function installStatusStability(width: number, touch: boolean) {
         await withStallSession(page, async (client) => {
           await pressAt(page, submitAt.x, submitAt.y, touch);
           await expect(page.locator("[data-ask-capture-preparing]")).toBeAttached({ timeout: 15_000 });
-          await page.evaluate(() => {
-            setTimeout(() => {
-              const t = performance.now();
-              while (performance.now() - t < 600) {
-                // Busy-wait so the 取消 press is queued during the long task.
-              }
-            }, 0);
-          });
+          // The press lands inside the compile-time stall (ASK_TEST_STALL_HOOK),
+          // which runs in the same task as domToCanvas. No page.evaluate busy-wait.
           await down(page, client, cancelAt.x, cancelAt.y, touch);
           await page.waitForTimeout(150);
           await up(page, client, cancelAt.x, cancelAt.y, touch);
@@ -794,3 +855,97 @@ function installStatusStability(width: number, touch: boolean) {
 
 installStatusStability(1280, false);
 installStatusStability(390, true);
+
+/**
+ * Prod path (no stall hook). Press 取消 within 150ms of submit and release
+ * on the button. Either cancel wins before send, or the request is aborted
+ * with no 回答中, no reminder red dot, and no chip/hint flicker.
+ */
+function installNaturalCancel(width: number, touch: boolean) {
+  const label = width === 1280 ? "Desktop" : "390";
+
+  test.describe(`natural cancel ${label} ${width}`, () => {
+    test.use(
+      width === 1280
+        ? { viewport: { width: 1280, height: 800 } }
+        : {
+            hasTouch: true,
+            isMobile: true,
+            deviceScaleFactor: 3,
+            viewport: { width: 390, height: 844 },
+          },
+    );
+
+    for (let i = 1; i <= 10; i += 1) {
+      test(`press 取消 within 150ms of submit run ${i}`, async ({ page }) => {
+        test.setTimeout(60_000);
+        let askRequests = 0;
+        let routeSawAbort = false;
+        const failedTexts: string[] = [];
+        page.on("requestfailed", (request) => {
+          if (!request.url().includes("/api/lecture/ask")) return;
+          failedTexts.push(request.failure()?.errorText ?? "");
+        });
+        await page.route("**/api/lecture/ask", async (route) => {
+          askRequests += 1;
+          try {
+            await new Promise((resolve) => {
+              setTimeout(resolve, 15_000);
+            });
+            if (route.request().failure()) {
+              routeSawAbort = true;
+              return;
+            }
+            await route.fulfill({
+              status: 200,
+              contentType: "application/x-ndjson",
+              body: askStream("s1"),
+            });
+          } catch {
+            routeSawAbort = true;
+          }
+        });
+
+        await openAskPanel(page);
+        const cancelAt = await boxCenter(page, "[data-ask-cancel]");
+        const submitAt = await boxCenter(page, "[data-ask-submit]");
+        const client = await page.context().newCDPSession(page);
+        if (!touch) await page.mouse.move(cancelAt.x, cancelAt.y);
+
+        const submittedAt = Date.now();
+        await pressAt(page, submitAt.x, submitAt.y, touch);
+        // After submit: the chips are already on screen, so an add or a
+        // remove from here is a flicker. The observer ignores a removal
+        // that is the whole panel unmounting on a successful cancel.
+        await installChipHintObserver(page);
+        await down(page, client, cancelAt.x, cancelAt.y, touch);
+        const pressedAt = Date.now();
+        expect(pressedAt - submittedAt).toBeLessThanOrEqual(150);
+        await up(page, client, cancelAt.x, cancelAt.y, touch);
+
+        // Either the press cancelled before send, or the request went out and
+        // was aborted. A request that stays in flight is neither.
+        await expect
+          .poll(
+            () => (askRequests === 0 || failedTexts.length > 0 || routeSawAbort ? "settled" : "pending"),
+            { timeout: 10_000 },
+          )
+          .toBe("settled");
+
+        await expect(page.getByText("回答中")).toHaveCount(0);
+        await expect(page.locator("[data-answer-mark]")).toHaveCount(0);
+        await expect(page.getByText(ANSWER_NARRATION)).toHaveCount(0);
+        expect(await readChipHintChanges(page)).toEqual([]);
+
+        if (askRequests === 0) {
+          await expectClosedLikeCancel(page);
+          return;
+        }
+        expect(failedTexts.some((text) => /abort/i.test(text)) || routeSawAbort).toBe(true);
+      });
+    }
+  });
+}
+
+installNaturalCancel(1280, false);
+installNaturalCancel(390, true);
