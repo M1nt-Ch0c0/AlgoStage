@@ -1798,19 +1798,118 @@ test.describe("390 selection flow", () => {
       await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：代码第 2–4 行");
     });
 
-    test("h. selection fully visible above drawer: record scrollY, open panel, scrollY unchanged", async ({ page: _page }) => {
+    test("h. selection fully visible above drawer: record scrollY, open panel, scrollY unchanged", async ({ page }) => {
       // fixme: depends on S4 r4 ask-panel.tsx:181 block:'nearest' (Gavin)
       test.fixme(true, "depends on S4 r4 ask-panel.tsx:181 block:'nearest' (Gavin)");
+
+      await startGenerated(page);
+      await pauseLecture(page);
+      await enterSelection(page);
+
+      const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+      await code.scrollIntoViewIfNeeded();
+      await expect(code).toBeVisible();
+
+      const box = await code.boundingBox();
+      if (!box) throw new Error("code target has no box");
+
+      const line1 = await getMonacoLineBox(page, 1);
+      const clickX = box.x + 80;
+      const clickY = (line1.top + line1.bottom) / 2;
+
+      const scrollYBefore = await page.evaluate(() => window.scrollY);
+
+      await page.touchscreen.tap(clickX, clickY);
+
+      const panel = page.locator("[data-ask-panel]");
+      await expect(panel).toBeVisible();
+
+      const start = Date.now();
+      await expect.poll(async () => {
+        const y = await page.evaluate(() => window.scrollY);
+        if (Math.abs(y - scrollYBefore) > 1) return false;
+        return Date.now() - start >= 500;
+      }, { timeout: 2000, intervals: [50, 100] }).toBe(true);
+      expect(await page.evaluate(() => window.scrollY)).toBe(scrollYBefore);
     });
 
-    test("i. selection covered by the drawer: selection rect bottom <= panel rect top", async ({ page: _page }) => {
+    test("i. selection covered by the drawer: selection rect bottom <= panel rect top", async ({ page }) => {
       // fixme: depends on S4 r4 ask-panel.tsx:181 block:'nearest' (Gavin)
       test.fixme(true, "depends on S4 r4 ask-panel.tsx:181 block:'nearest' (Gavin)");
+
+      await startGenerated(page);
+      await pauseLecture(page);
+      await enterSelection(page);
+
+      const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+      await code.scrollIntoViewIfNeeded();
+      await expect(code).toBeVisible();
+
+      const box = await code.boundingBox();
+      if (!box) throw new Error("code target has no box");
+
+      const line5 = await getMonacoLineBox(page, 5);
+      const targetY = 650;
+      await page.evaluate((delta) => window.scrollBy(0, delta), line5.top - targetY);
+
+      const line5AfterScroll = await getMonacoLineBox(page, 5);
+      const clickX = box.x + 80;
+      const clickY = (line5AfterScroll.top + line5AfterScroll.bottom) / 2;
+
+      await page.touchscreen.tap(clickX, clickY);
+
+      const panel = page.locator("[data-ask-panel]");
+      await expect(panel).toBeVisible();
+
+      await expect.poll(async () => {
+        return page.evaluate(() => {
+          const sel = document.querySelector("[data-ask-selection]");
+          const pan = document.querySelector("[data-ask-panel]");
+          if (!sel || !pan) return false;
+          const selRect = sel.getBoundingClientRect();
+          const panRect = pan.getBoundingClientRect();
+          return selRect.top >= 0 && selRect.bottom <= panRect.top + 1;
+        });
+      }).toBe(true);
     });
 
-    test("j. tall selection: selection rect top >= 0 and < innerHeight", async ({ page: _page }) => {
+    test("j. tall selection: selection rect top >= 0 and < innerHeight", async ({ page }) => {
       // fixme: depends on S4 r4 ask-panel.tsx:181 block:'nearest' (Gavin)
       test.fixme(true, "depends on S4 r4 ask-panel.tsx:181 block:'nearest' (Gavin)");
+
+      await startGenerated(page);
+      await pauseLecture(page);
+      await enterSelection(page);
+
+      const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+      await code.scrollIntoViewIfNeeded();
+      await expect(code).toBeVisible();
+
+      const box = await code.boundingBox();
+      if (!box) throw new Error("code target has no box");
+
+      const line1 = await getMonacoLineBox(page, 1);
+      const startX = box.x + 60;
+      const startY = line1.top + 4;
+      const endX = box.x + 160;
+      const endY = startY + 480;
+
+      await page.mouse.move(startX, startY);
+      await page.mouse.down();
+      await page.mouse.move(endX, endY, { steps: 8 });
+      await page.mouse.up();
+
+      const panel = page.locator("[data-ask-panel]");
+      await expect(panel).toBeVisible();
+
+      await expect.poll(async () => {
+        return page.evaluate(() => {
+          const sel = document.querySelector("[data-ask-selection]");
+          if (!sel) return false;
+          const rect = sel.getBoundingClientRect();
+          return rect.top >= 0 && rect.top < window.innerHeight;
+        });
+      }).toBe(true);
     });
   });
 
