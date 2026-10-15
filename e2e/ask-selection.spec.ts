@@ -199,6 +199,30 @@ async function askQuestion(page: Page) {
   await panel.locator("[data-ask-submit]").click();
 }
 
+async function getMonacoLineY(page: Page, lineNumber: number): Promise<number> {
+  return page.evaluate((line) => {
+    const viewLines = Array.from(document.querySelectorAll<HTMLElement>(".monaco-editor .view-line"));
+    if (viewLines.length >= line) {
+      const el = viewLines[line - 1];
+      const r = el.getBoundingClientRect();
+      return r.top + r.height / 2;
+    }
+    const lineNumbers = Array.from(document.querySelectorAll<HTMLElement>(".monaco-editor .line-numbers"));
+    for (const ln of lineNumbers) {
+      if (ln.textContent?.trim() === String(line)) {
+        const r = ln.getBoundingClientRect();
+        return r.top + r.height / 2;
+      }
+    }
+    const editor = document.querySelector<HTMLElement>(".monaco-editor");
+    if (!editor) throw new Error("monaco-editor not found");
+    const r = editor.getBoundingClientRect();
+    const lineHeight = 22;
+    const paddingTop = 12;
+    return r.top + paddingTop + (line - 1) * lineHeight + lineHeight / 2;
+  }, lineNumber);
+}
+
 /** 直接子项按中心线合并成行。播放中基线 4，讲完 3。 */
 async function controlRows(bar: Locator) {
   return bar.evaluate((el) => {
@@ -668,6 +692,67 @@ test.describe("1280 selection flow", () => {
     expect(codeTarget!.text).toBeTruthy();
   });
 
+  for (const [startLine, endLine] of [
+    [2, 4],
+    [4, 6],
+    [8, 9],
+  ] as const) {
+    test(`S5-a 1280: drag over Monaco lines ${startLine}–${endLine}`, async ({ page }) => {
+      let capturedTargets: Array<{
+        kind?: string;
+        codeRange?: { startLine: number; endLine: number };
+        text?: string;
+      }> = [];
+      await mockAsk(page, async (route) => {
+        const body = route.request().postDataJSON() as {
+          selection?: {
+            targets?: Array<{
+              kind?: string;
+              codeRange?: { startLine: number; endLine: number };
+              text?: string;
+            }>;
+          };
+        };
+        capturedTargets = body?.selection?.targets ?? [];
+        await route.fulfill({
+          status: 200,
+          contentType: "application/x-ndjson",
+          body: askStream("s1"),
+        });
+      });
+      await startGenerated(page);
+      await pauseLecture(page);
+      await enterSelection(page);
+
+      const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+      await expect(code).toBeVisible();
+
+      const box = await code.boundingBox();
+      if (!box) throw new Error("code target has no box");
+
+      const startY = await getMonacoLineY(page, startLine);
+      const endY = await getMonacoLineY(page, endLine);
+      const startX = box.x + 80;
+      const endX = box.x + 180;
+
+      await page.mouse.move(startX, startY);
+      await page.mouse.down();
+      await page.mouse.move(endX, endY, { steps: 8 });
+      await page.mouse.up();
+
+      const panel = page.locator("[data-ask-panel]");
+      await expect(panel).toBeVisible();
+      await expect(panel.locator("[data-ask-panel-label]")).toHaveText(`已选：代码第 ${startLine}–${endLine} 行`);
+
+      await askQuestion(page);
+      await expect(page.getByText(ANSWER_NARRATION)).toBeVisible();
+
+      const codeTarget = capturedTargets.find((t) => t.kind === "code");
+      expect(codeTarget).toBeDefined();
+      expect(codeTarget!.codeRange).toEqual({ startLine, endLine });
+    });
+  }
+
   test("S5. code box selection shows no 代码部分没选上 hint", async ({ page }) => {
     await startGenerated(page);
     await pauseLecture(page);
@@ -874,6 +959,67 @@ test.describe("390 selection flow", () => {
       expect(codeTarget!.codeRange!.endLine).toBeGreaterThanOrEqual(codeTarget!.codeRange!.startLine);
       expect(codeTarget!.text).toBeTruthy();
     });
+
+    for (const [startLine, endLine] of [
+      [1, 5],
+      [4, 6],
+      [8, 9],
+    ] as const) {
+      test(`S5-a 390: drag over Monaco lines ${startLine}–${endLine}`, async ({ page }) => {
+        let capturedTargets: Array<{
+          kind?: string;
+          codeRange?: { startLine: number; endLine: number };
+          text?: string;
+        }> = [];
+        await mockAsk(page, async (route) => {
+          const body = route.request().postDataJSON() as {
+            selection?: {
+              targets?: Array<{
+                kind?: string;
+                codeRange?: { startLine: number; endLine: number };
+                text?: string;
+              }>;
+            };
+          };
+          capturedTargets = body?.selection?.targets ?? [];
+          await route.fulfill({
+            status: 200,
+            contentType: "application/x-ndjson",
+            body: askStream("s1"),
+          });
+        });
+        await startGenerated(page);
+        await pauseLecture(page);
+        await enterSelection(page);
+
+        const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+        await expect(code).toBeVisible();
+
+        const box = await code.boundingBox();
+        if (!box) throw new Error("code target has no box");
+
+        const startY = await getMonacoLineY(page, startLine);
+        const endY = await getMonacoLineY(page, endLine);
+        const startX = box.x + 60;
+        const endX = box.x + 160;
+
+        await page.mouse.move(startX, startY);
+        await page.mouse.down();
+        await page.mouse.move(endX, endY, { steps: 8 });
+        await page.mouse.up();
+
+        const panel = page.locator("[data-ask-panel]");
+        await expect(panel).toBeVisible();
+        await expect(panel.locator("[data-ask-panel-label]")).toHaveText(`已选：代码第 ${startLine}–${endLine} 行`);
+
+        await askQuestion(page);
+        await expect(page.getByText(ANSWER_NARRATION)).toBeVisible();
+
+        const codeTarget = capturedTargets.find((t) => t.kind === "code");
+        expect(codeTarget).toBeDefined();
+        expect(codeTarget!.codeRange).toEqual({ startLine, endLine });
+      });
+    }
   });
 
   test("32. same ask flow; player-controls stays 4 rows while playing and 3 when finished", async ({ page }) => {
