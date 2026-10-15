@@ -42,14 +42,12 @@ vi.mock("monaco-editor", () => {
           })),
           getDomNode: () => container,
           getLayoutInfo: vi.fn(() => ({ contentLeft: 30 })),
+          getScrollTop: vi.fn(() => 0),
+          getTopForLineNumber: vi.fn((n: number) => (n - 1) * 20),
+          getOption: vi.fn(() => 20),
           getVisibleRanges: vi.fn(() => [
             { startLineNumber: 1, endLineNumber: 10 },
           ]),
-          getTargetAtClientPoint: vi.fn((x: number, y: number) => {
-            if (y === 50) return { position: { lineNumber: 3 } };
-            if (y === 100) return { position: { lineNumber: 6 } };
-            return null;
-          }),
           updateOptions: vi.fn(),
           onDidChangeModelContent: vi.fn(),
           onDidScrollChange: vi.fn(),
@@ -122,7 +120,7 @@ describe("CodeEditor handle & ask integration", () => {
 
     // Test getLineRangeForClientBox with hits
     const range = handle!.getLineRangeForClientBox(50, 100);
-    expect(range).toEqual({ startLine: 3, endLine: 6 });
+    expect(range).toEqual({ startLine: 3, endLine: 5 });
 
     // Test getLinesText
     const linesText = handle!.getLinesText(3, 5);
@@ -131,7 +129,7 @@ describe("CodeEditor handle & ask integration", () => {
     // Test getFullText
     expect(handle!.getFullText()).toContain("line 1\nline 2");
 
-    // Test null targets clamping to visible ranges
+    // Test coordinates clamping to visible ranges
     const clampedRange = handle!.getLineRangeForClientBox(0, 999);
     expect(clampedRange).toEqual({ startLine: 1, endLine: 10 });
 
