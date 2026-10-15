@@ -72,6 +72,36 @@ export default function AskEntry() {
     return () => clearTimeout(timer);
   }, [awaitingPending, pendingEnterIntent]);
 
+  const prevAskPhaseRef = useRef(askPhase);
+  useEffect(() => {
+    const prev = prevAskPhaseRef.current;
+    prevAskPhaseRef.current = askPhase;
+    if (IN_ASK.has(prev) && askPhase === "idle") {
+      const schedule = () => {
+        const btn = document.querySelector<HTMLElement>("[data-ask-entry]");
+        btn?.focus({ preventScroll: true });
+      };
+      if (typeof requestAnimationFrame !== "undefined") {
+        requestAnimationFrame(schedule);
+      }
+      setTimeout(schedule, 0);
+    }
+  }, [askPhase]);
+
+  // 当在 390 移动端从入口按钮进入圈选时，将焦点转移到底部条退出按钮
+  useEffect(() => {
+    if (hideAtMobileAsk) {
+      const schedule = () => {
+        const barExit = document.querySelector<HTMLElement>("[data-ask-bottom-bar] [data-ask-entry]");
+        barExit?.focus({ preventScroll: true });
+      };
+      if (typeof requestAnimationFrame !== "undefined") {
+        requestAnimationFrame(schedule);
+      }
+      setTimeout(schedule, 0);
+    }
+  }, [hideAtMobileAsk]);
+
   const reason: AskDisabledReason | null = pendingIdle ? null : availability.reason;
 
   function activate() {

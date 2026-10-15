@@ -115,15 +115,32 @@ export function nextRovingIndex(
 /** 退出圈选并将焦点还给入口按钮（若在 DOM 中）。 */
 export function exitAskAndFocusEntry(): void {
   setAskCodeMissNotice(null);
+  const active = typeof document !== "undefined" ? document.activeElement : null;
+  const focusWasInLayer =
+    active != null &&
+    (Boolean(document.querySelector("[data-ask-layer]")?.contains(active)) ||
+      Boolean(document.querySelector("[data-ask-bottom-bar]")?.contains(active)));
+
   usePlayerStore.getState().exitAsk();
   if (usePlayerStore.getState().askPhase !== "idle") return;
   if (typeof document === "undefined") return;
+
+  if (focusWasInLayer && typeof (active as HTMLElement).blur === "function") {
+    (active as HTMLElement).blur();
+  }
+
   const focusEntry = () => {
     if (typeof document === "undefined") return;
     if (usePlayerStore.getState().askPhase !== "idle") return;
-    document.querySelector<HTMLElement>("[data-ask-entry]")?.focus({ preventScroll: true });
+    const bar = document.querySelector("[data-ask-bottom-bar]");
+    const candidates = Array.from(document.querySelectorAll<HTMLElement>("[data-ask-entry]"));
+    const persistent = candidates.find((el) => !bar || !bar.contains(el)) ?? candidates[0];
+    persistent?.focus({ preventScroll: true });
   };
   focusEntry();
+  if (typeof requestAnimationFrame !== "undefined") {
+    requestAnimationFrame(focusEntry);
+  }
   if (typeof window !== "undefined") {
     window.setTimeout(focusEntry, 0);
   }

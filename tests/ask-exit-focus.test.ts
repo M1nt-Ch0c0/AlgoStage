@@ -95,4 +95,35 @@ describe("exitAskAndFocusEntry", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(document.activeElement).toBe(other);
   });
+
+  test("at 390 with exit button in bar, persistent entry outside bar receives focus after exit", async () => {
+    const persistent = document.createElement("button");
+    persistent.setAttribute("data-ask-entry", "");
+    persistent.tabIndex = 0;
+    document.body.append(persistent);
+
+    const bar = document.createElement("div");
+    bar.setAttribute("data-ask-bottom-bar", "");
+    const barExit = document.createElement("button");
+    barExit.setAttribute("data-ask-entry", "");
+    barExit.tabIndex = 0;
+    bar.append(barExit);
+    document.body.append(bar);
+
+    barExit.focus();
+    expect(document.activeElement).toBe(barExit);
+
+    usePlayerStore.setState({ askPhase: "selecting" });
+
+    exitAskAndFocusEntry();
+
+    expect(usePlayerStore.getState().askPhase).toBe("idle");
+    expect(document.activeElement).toBe(persistent);
+
+    // Simulate bar unmount on idle
+    bar.remove();
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(document.activeElement).toBe(persistent);
+  });
 });
