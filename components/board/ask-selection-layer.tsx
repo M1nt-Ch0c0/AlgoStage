@@ -770,7 +770,7 @@ function AskSelectionLayerActive({
   };
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    if ((event.target as Element | null)?.closest?.("[data-ask-entry], [data-ask-shortcut]")) return;
+    if ((event.target as Element | null)?.closest?.("[data-ask-entry], [data-ask-shortcut], [data-ask-bottom-bar]")) return;
     if (enteringScrollRafRef.current != null) {
       cancelAnimationFrame(enteringScrollRafRef.current);
       enteringScrollRafRef.current = null;
@@ -903,6 +903,13 @@ function AskSelectionLayerActive({
       const count = visibleShortcuts.length;
       if (count === 0) return;
       event.preventDefault();
+      if (!event.shiftKey && activeShortcut === count - 1) {
+        const entryEl = document.querySelector<HTMLElement>("[data-ask-entry]");
+        if (entryEl) {
+          entryEl.focus();
+          return;
+        }
+      }
       const dir = event.shiftKey ? -1 : 1;
       const next = (activeShortcut + dir + count) % count;
       setActiveShortcut(next);
@@ -977,6 +984,9 @@ function AskSelectionLayerActive({
             role="group"
             aria-label="点选捷径"
             className={`pointer-events-auto flex flex-wrap gap-2 max-sm:fixed max-sm:inset-x-2 max-sm:top-auto max-sm:bottom-[calc(var(--ask-player-bar-h)+env(safe-area-inset-bottom)+8px)] max-sm:z-40 max-sm:rounded-xl max-sm:border max-sm:border-board-600 max-sm:bg-board-900/95 max-sm:p-2 max-sm:shadow-lg sm:relative sm:inset-auto sm:bottom-auto sm:z-auto sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none sm:gap-1 ${keyboardOpen ? "max-sm:hidden" : ""}`}
+            onPointerDown={(event) => {
+              event.stopPropagation();
+            }}
           >
             {visibleShortcuts.map((item, index) => (
               <button

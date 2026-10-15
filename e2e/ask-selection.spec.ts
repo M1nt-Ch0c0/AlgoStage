@@ -1948,6 +1948,177 @@ test.describe("390 selection flow", () => {
         });
       }).toBe(true);
     });
+
+    test("k. while in selecting, tap each visible player-controls button in [aria-label=\"讲解播放区\"] by coordinate center", async ({ page }) => {
+      await startGenerated(page);
+      await pauseLecture(page);
+      await enterSelection(page);
+
+      const playerArea = page.locator('[aria-label="讲解播放区"]');
+      await expect(playerArea).toBeVisible();
+
+      const bar = page.locator("[data-ask-bottom-bar]");
+      await expect(bar).toBeVisible();
+
+      const barBox = (await bar.boundingBox())!;
+      const playerBox = (await playerArea.boundingBox())!;
+      expect(barBox.y + barBox.height + 7.9).toBeLessThanOrEqual(playerBox.y);
+
+      const buttons = playerArea.locator("button:visible");
+      const count = await buttons.count();
+      expect(count).toBeGreaterThan(0);
+
+      for (let i = 0; i < count; i++) {
+        const btn = buttons.nth(i);
+        const box = (await btn.boundingBox())!;
+        const cx = box.x + box.width / 2;
+        const cy = box.y + box.height / 2;
+
+        const isInsidePlayer = await page.evaluate(({ cx, cy }) => {
+          const el = document.elementFromPoint(cx, cy);
+          const player = document.querySelector('[aria-label="讲解播放区"]');
+          const bottomBar = document.querySelector('[data-ask-bottom-bar]');
+          if (!el || !player) return false;
+          if (bottomBar && (bottomBar === el || bottomBar.contains(el))) return false;
+          return player.contains(el) || player === el;
+        }, { cx, cy });
+
+        expect(isInsidePlayer).toBe(true);
+        await page.touchscreen.tap(cx, cy);
+      }
+    });
+
+    test("l. tapping bar background or chips is not treated as tap-outside", async ({ page }) => {
+      await startGenerated(page);
+      await pauseLecture(page);
+      await enterSelection(page);
+
+      // Verify the bar element has [data-ask-layer] ancestor
+      const hasLayerAncestor = await page.evaluate(() => {
+        const bar = document.querySelector("[data-ask-bottom-bar]");
+        return Boolean(bar?.closest("[data-ask-layer]"));
+      });
+      expect(hasLayerAncestor).toBe(true);
+
+      // Make a selection
+      const line1 = await getMonacoLineBox(page, 1);
+      const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+      const box = (await code.boundingBox())!;
+      await page.mouse.click(box.x + 80, (line1.top + line1.bottom) / 2);
+
+      const panel = page.locator("[data-ask-panel]");
+      await expect(panel).toBeVisible();
+
+      // Close the panel with Esc so we are back in selecting with selection visible
+      await page.keyboard.press("Escape");
+      await expect(panel).toHaveCount(0);
+      const selectionEl = page.locator("[data-ask-selection]");
+      await expect(selectionEl).toBeVisible();
+
+      // With a selection made, pointerdown/up on the bar background (not a chip) keeps the selection
+      const bar = page.locator("[data-ask-bottom-bar]");
+      const barBox = (await bar.boundingBox())!;
+      await page.mouse.move(barBox.x + 4, barBox.y + 4);
+      await page.mouse.down();
+      await page.mouse.up();
+
+      // Selection is still visible, ask not exited
+      await expect(selectionEl).toBeVisible();
+      await expect(page.locator("[data-ask-layer]")).toBeVisible();
+    });
+
+    test("m. Tab order: after closing panel with Esc, Tab moves focus to bar chips then entry button", async ({ page }) => {
+      await startGenerated(page);
+      await pauseLecture(page);
+      await enterSelection(page);
+
+      // Make a selection and open the panel
+      const line1 = await getMonacoLineBox(page, 1);
+      const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+      const box = (await code.boundingBox())!;
+      await page.mouse.click(box.x + 80, (line1.top + line1.bottom) / 2);
+
+      const panel = page.locator("[data-ask-panel]");
+      await expect(panel).toBeVisible();
+
+      // Close with Esc (focus on layer)
+      await page.keyboard.press("Escape");
+      await expect(panel).toHaveCount(0);
+      await expect(page.locator("[data-ask-layer]")).toBeFocused();
+
+      // Pressing Tab moves focus to bar chips in order, then to the exit/entry button
+      const activeElements: string[] = [];
+      const chipsCount = await page.locator("[data-ask-shortcut]").count();
+      for (let i = 0; i < chipsCount + 2; i++) {
+        await page.keyboard.press("Tab");
+        const info = await page.evaluate(() => {
+          const el = document.activeElement;
+          if (!el) return "none";
+          if (el.hasAttribute("data-ask-shortcut")) return `shortcut:${el.getAttribute("data-ask-shortcut")}`;
+          if (el.hasAttribute("data-ask-entry")) return "entry";
+          return el.tagName.toLowerCase();
+        });
+        activeElements.push(info);
+      }
+
+      const firstShortcutIndex = activeElements.findIndex((id) => id.startsWith("shortcut:"));
+      const firstEntryIndex = activeElements.findIndex((id) => id === "entry");
+
+      expect(firstShortcutIndex).toBeGreaterThanOrEqual(0);
+      expect(firstEntryIndex).toBeGreaterThan(firstShortcutIndex);
+    });
+
+    test("n. after exit (Esc twice) and after switching problems, no bottom bar and CSS variables are 0px or empty", async ({ page }) => {
+      await startGenerated(page);
+      await pauseLecture(page);
+      await enterSelection(page);
+
+      // Make a selection so panel opens
+      const line1 = await getMonacoLineBox(page, 1);
+      const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+      const box = (await code.boundingBox())!;
+      await page.mouse.click(box.x + 80, (line1.top + line1.bottom) / 2);
+
+      const panel = page.locator("[data-ask-panel]");
+      await expect(panel).toBeVisible();
+
+      // Esc twice: first closes panel, second exits ask mode
+      await page.keyboard.press("Escape");
+      await expect(panel).toHaveCount(0);
+      await page.keyboard.press("Escape");
+
+      // Verify no bottom bar in DOM after exit
+      await expect(page.locator("[data-ask-bottom-bar]")).toHaveCount(0);
+      const varsAfterExit = await page.evaluate(() => {
+        const style = document.documentElement.style;
+        return {
+          bar: style.getPropertyValue("--ask-bottom-bar-h"),
+          player: style.getPropertyValue("--ask-player-bar-h"),
+          occlusion: style.getPropertyValue("--ask-bottom-occlusion-h"),
+        };
+      });
+      expect(varsAfterExit.bar === "0px" || varsAfterExit.bar === "").toBe(true);
+      expect(varsAfterExit.player === "0px" || varsAfterExit.player === "").toBe(true);
+      expect(varsAfterExit.occlusion === "0px" || varsAfterExit.occlusion === "").toBe(true);
+
+      // Switch problems
+      await page.goto("/problem/two-sum");
+      await page.waitForLoadState("domcontentloaded");
+
+      // Verify no bottom bar and CSS variables are 0px or empty
+      await expect(page.locator("[data-ask-bottom-bar]")).toHaveCount(0);
+      const varsAfterSwitch = await page.evaluate(() => {
+        const style = document.documentElement.style;
+        return {
+          bar: style.getPropertyValue("--ask-bottom-bar-h"),
+          player: style.getPropertyValue("--ask-player-bar-h"),
+          occlusion: style.getPropertyValue("--ask-bottom-occlusion-h"),
+        };
+      });
+      expect(varsAfterSwitch.bar === "0px" || varsAfterSwitch.bar === "").toBe(true);
+      expect(varsAfterSwitch.player === "0px" || varsAfterSwitch.player === "").toBe(true);
+      expect(varsAfterSwitch.occlusion === "0px" || varsAfterSwitch.occlusion === "").toBe(true);
+    });
   });
 
   test.describe("S5-chip390 reduced motion", () => {
