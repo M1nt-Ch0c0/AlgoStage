@@ -226,17 +226,12 @@ test.describe("ask Esc stepwise exit", () => {
     await startGenerated(page);
     const monaco = page.locator(".monaco-editor");
     await expect(monaco).toBeVisible();
-    // 练习会换掉编辑器实例。Monaco 另有 aria-hidden 的 ime textarea，按键进可访问的那个。
+    // 讲课编辑器只读。Monaco 的输入 textarea 是 1px，按键进可访问的那个。
+    // 切练习会停课并卸掉提问入口，所以圈选断言留在这一节课上。
     const textarea = () => page.getByRole("textbox", { name: "Editor content" });
-    const lines = page.locator(".monaco-editor .view-lines");
 
-    // 讲课中编辑器只读。先记下可提问的课，再切练习打字；切练习会停课，打完字再切回听课恢复同一节课。
-    await page.getByRole("button", { name: "练习", exact: true }).click();
-    await expect(page.getByRole("button", { name: "练习", exact: true })).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByText("练习中 · 可编辑")).toBeVisible();
-    await expect(textarea()).toBeVisible();
-
-    // 圈选外：在 Monaco 里打字（含 Q）、选中文本、按 Esc，都不进入圈选。
+    // 圈选外：焦点在 Monaco 里打字（含 Q）、选中文本、按 Esc，都不进入圈选。
+    await expect(textarea()).toBeAttached();
     await textarea().focus();
     await expect(textarea()).toBeFocused();
     await page.keyboard.press("Control+End");
@@ -244,17 +239,8 @@ test.describe("ask Esc stepwise exit", () => {
     await page.keyboard.press("Escape");
     await page.keyboard.press("Shift+ArrowLeft");
     await page.keyboard.press("Control+A");
-    await expect(lines).toContainText("qQ");
     await expect(layer(page)).toHaveCount(0);
     await expect(entry(page)).not.toHaveAttribute("aria-pressed", "true");
-
-    await page.getByRole("button", { name: "听课", exact: true }).click();
-    await expect(page.getByText("第 1 / 3 步")).toBeVisible();
-    const pause = page.locator("header").getByRole("button", { name: "暂停", exact: true });
-    const resume = page.locator("header").getByRole("button", { name: "继续", exact: true });
-    await expect(pause.or(resume)).toBeVisible();
-    if (await pause.isVisible()) await pause.click();
-    await expect(lines).toContainText("qQ");
 
     await enterSelection(page);
     // 画选层 absolute inset-0 z-30 盖住 Monaco，鼠标点不到编辑器；圈选中只能用键盘或程序把焦点送进 textarea。
@@ -265,7 +251,6 @@ test.describe("ask Esc stepwise exit", () => {
     await page.keyboard.press("Shift+ArrowLeft");
     await page.keyboard.press("Control+A");
     await page.keyboard.press("Escape");
-    await expect(lines).toContainText("qQqQ");
     await expect(layer(page)).toBeVisible();
     await expect(entry(page)).toHaveAttribute("aria-pressed", "true");
 
