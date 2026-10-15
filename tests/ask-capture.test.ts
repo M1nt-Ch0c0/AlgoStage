@@ -115,6 +115,7 @@ describe("lib/ask/capture", () => {
     expect(CAPTURE_DEFAULTS.qualities).toEqual([0.85, 0.7, 0.55]);
     expect(CAPTURE_DEFAULTS.downscaleFactor).toBe(0.75);
     expect(CAPTURE_DEFAULTS.maxDownscales).toBe(2);
+    expect(CAPTURE_DEFAULTS.maxNodes).toBe(1500);
   });
 
   describe("buildFallbackText", () => {
@@ -716,32 +717,48 @@ describe("lib/ask/capture", () => {
       }));
     });
 
-    it("calls domToCanvas with font:false and a filter that drops non-intersecting elements", async () => {
+    it("calls domToCanvas with font:false, scale:1, and a filter that drops non-intersecting / monaco / iframe / video", async () => {
+      const hitRect = () =>
+        ({ left: 20, top: 30, width: 10, height: 10, right: 30, bottom: 40, x: 20, y: 30, toJSON() {} }) as DOMRect;
+      const missRect = () =>
+        ({ left: 180, top: 180, width: 10, height: 10, right: 190, bottom: 190, x: 180, y: 180, toJSON() {} }) as DOMRect;
+
       const inside = document.createElement("div");
       const outside = document.createElement("span");
       const frame = document.createElement("iframe");
       const clip = document.createElement("video");
+      const monacoRoot = document.createElement("div");
+      monacoRoot.className = "monaco-editor";
+      const monacoChild = document.createElement("div");
+      monacoChild.className = "view-lines";
+      monacoRoot.appendChild(monacoChild);
       const text = document.createTextNode("kept");
-      inside.getBoundingClientRect = () =>
-        ({ left: 20, top: 30, width: 10, height: 10, right: 30, bottom: 40, x: 20, y: 30, toJSON() {} }) as DOMRect;
-      outside.getBoundingClientRect = () =>
-        ({ left: 180, top: 180, width: 10, height: 10, right: 190, bottom: 190, x: 180, y: 180, toJSON() {} }) as DOMRect;
-      frame.getBoundingClientRect = () =>
-        ({ left: 20, top: 30, width: 10, height: 10, right: 30, bottom: 40, x: 20, y: 30, toJSON() {} }) as DOMRect;
-      clip.getBoundingClientRect = () =>
-        ({ left: 20, top: 30, width: 10, height: 10, right: 30, bottom: 40, x: 20, y: 30, toJSON() {} }) as DOMRect;
+
+      inside.getBoundingClientRect = hitRect;
+      outside.getBoundingClientRect = missRect;
+      frame.getBoundingClientRect = hitRect;
+      clip.getBoundingClientRect = hitRect;
+      monacoRoot.getBoundingClientRect = hitRect;
+      monacoChild.getBoundingClientRect = hitRect;
+
+      // Must be in the container so the pre-render walk populates `dropped`.
+      container.append(inside, outside, frame, clip, monacoRoot, text);
 
       const res = await captureStage(container, baseSel);
       expect(res.ok).toBe(true);
       expect(domToCanvasMock).toHaveBeenCalledTimes(1);
       const options = domToCanvasMock.mock.calls[0]?.[1] as {
         font: unknown;
+        scale: number;
+        features: { restoreScrollPosition: boolean };
         filter: (node: Node) => boolean;
         timeout: number;
         width: number;
         height: number;
       };
       expect(options.font).toBe(false);
+      expect(options.scale).toBe(1);
+      expect(options.features).toEqual({ restoreScrollPosition: false });
       expect(options.width).toBe(200);
       expect(options.height).toBe(200);
       expect(options.timeout).toBeLessThanOrEqual(CAPTURE_DEFAULTS.timeoutMs);
@@ -750,7 +767,46 @@ describe("lib/ask/capture", () => {
       expect(options.filter(outside)).toBe(false);
       expect(options.filter(frame)).toBe(false);
       expect(options.filter(clip)).toBe(false);
+      expect(options.filter(monacoRoot)).toBe(false);
+      // Child is not entered by the walk (REJECT on root) and modern-screenshot
+      // also skips children of filtered roots; the set may not list the child.
       expect(options.filter(text)).toBe(true);
+    });
+
+    it("returns TOO_MANY_NODES when more than maxNodes kept elements intersect the selection", async () => {
+      const hitRect = () =>
+        ({ left: 20, top: 30, width: 10, height: 10, right: 30, bottom: 40, x: 20, y: 30, toJSON() {} }) as DOMRect;
+      const count = CAPTURE_DEFAULTS.maxNodes + 1;
+      for (let i = 0; i < count; i++) {
+        const el = document.createElement("div");
+        el.getBoundingClientRect = hitRect;
+        container.appendChild(el);
+      }
+
+      const res = await captureStage(container, baseSel);
+      expect(res).toEqual({
+        ok: false,
+        reason: "TOO_MANY_NODES",
+        fallbackText: "Code target",
+      });
+      expect(domToCanvasMock).not.toHaveBeenCalled();
+    });
+
+    it("falls back to main-thread encode when Worker is unavailable", async () => {
+      // Force the off-thread gate off (happy-dom usually already lacks Worker).
+      vi.stubGlobal("Worker", undefined);
+      vi.stubGlobal("OffscreenCanvas", undefined);
+      vi.stubGlobal("createImageBitmap", undefined);
+
+      const res = await captureStage(container, baseSel);
+      expect(res.ok).toBe(true);
+      if (res.ok) {
+        expect(res.image.dataBase64.length).toBeGreaterThan(0);
+      }
+      expect(createdCanvases.length).toBeGreaterThan(0);
+      expect(domToCanvasMock).toHaveBeenCalledTimes(1);
+
+      vi.unstubAllGlobals();
     });
 
     it("yields two animation frames before calling domToCanvas", async () => {
