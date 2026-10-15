@@ -18,13 +18,13 @@ import { collectAskCandidates, summarizeSelection } from "@/lib/ask/collect-cand
 import { getAskCodeMissNotice, subscribeAskCodeMissNotice } from "@/lib/ask/code-editor-registry";
 import {
   ASK_CAPTURE_FALLBACK,
-  ASK_CAPTURE_PREPARING,
   ASK_CHIPS,
   ASK_SHORTCUT_STEP,
   ASK_SHORTCUT_SUBTITLE,
   ASK_SHORTCUT_VIZ,
   ASK_WAITING_STATUS,
 } from "@/lib/ask/ask-ui-text";
+import { AskStatusRow } from "@/components/board/ask-status-row";
 import { ASK_LIMITS, type AskSelectionSummary, type AskTarget } from "@/lib/ask/types";
 import { usePlayerStore } from "@/lib/player/store";
 
@@ -363,23 +363,14 @@ function AskPanelActive({ stage }: AskPanelProps) {
         {label}
       </p>
 
-      <p
-        data-ask-capture-preparing
-        aria-hidden={preparing ? undefined : true}
-        className={`min-h-[1.5rem] text-xs leading-6 text-chalk-300${preparing ? "" : " invisible"}`}
-      >
-        {preparing ? ASK_CAPTURE_PREPARING : "\u00a0"}
-      </p>
+      <AskStatusRow
+        state={preparing ? "preparing" : waiting ? "waiting" : "idle"}
+        seconds={seconds}
+      />
 
       {captureFailed ? (
         <p data-ask-capture-fallback className="text-[11px] text-chalk-500">
           {ASK_CAPTURE_FALLBACK}
-        </p>
-      ) : null}
-
-      {waiting ? (
-        <p data-ask-waiting className="text-xs text-chalk-300">
-          {ASK_WAITING_STATUS(seconds)}
         </p>
       ) : null}
 

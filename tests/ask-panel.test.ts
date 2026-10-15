@@ -180,6 +180,12 @@ async function finishCaptureTurn() {
   });
 }
 
+function statusRow(): HTMLElement {
+  const el = container.querySelector<HTMLElement>("[data-ask-status-row]");
+  if (!el) throw new Error("status row missing");
+  return el;
+}
+
 function preparingSlot(): HTMLElement {
   const el = container.querySelector<HTMLElement>("[data-ask-capture-preparing]");
   if (!el) throw new Error("preparing slot missing");
@@ -465,12 +471,13 @@ describe("ask panel", () => {
     draft("drafting", { draftQuestion: "为什么这样写？" });
     await render();
 
-    const idle = preparingSlot();
+    const idle = statusRow();
     expect(idle.classList.contains("invisible")).toBe(true);
-    expect(idle.className).toContain("min-h-[1.5rem]");
+    expect(idle.className).toContain("h-6");
     expect(idle.className).toContain("leading-6");
     expect(idle.getAttribute("aria-hidden")).toBe("true");
     expect(idle.getAttribute("role")).toBeNull();
+    expect(idle.hasAttribute("data-ask-waiting")).toBe(false);
     expect(idle.textContent).not.toBe(ASK_CAPTURE_PREPARING);
 
     let resolveCapture: ((value: CaptureResult) => void) | undefined;
@@ -485,9 +492,10 @@ describe("ask panel", () => {
       submitButton().click();
     });
     const shown = preparingSlot();
-    expect(shown).toBe(idle);
+    expect(shown).toBe(statusRow());
     expect(shown.classList.contains("invisible")).toBe(false);
     expect(shown.hasAttribute("aria-hidden")).toBe(false);
+    expect(shown.hasAttribute("data-ask-waiting")).toBe(false);
     expect(shown.textContent).toBe(ASK_CAPTURE_PREPARING);
     expect(shown.textContent).toBe("正在准备截图…");
     expect(shown.getAttribute("role")).toBeNull();
@@ -497,9 +505,11 @@ describe("ask panel", () => {
       resolveCapture?.(OK_CAPTURE);
       await finishCaptureTurn();
     });
-    expect(shown.isConnected).toBe(true);
-    expect(shown.classList.contains("invisible")).toBe(true);
-    expect(shown.getAttribute("aria-hidden")).toBe("true");
+    const after = statusRow();
+    expect(after.isConnected).toBe(true);
+    expect(after.classList.contains("invisible")).toBe(true);
+    expect(after.getAttribute("aria-hidden")).toBe("true");
+    expect(after.hasAttribute("data-ask-capture-preparing")).toBe(false);
     expect(sendAsk).toHaveBeenCalledTimes(1);
   });
 
@@ -532,9 +542,11 @@ describe("ask panel", () => {
       resolveCapture?.(OK_CAPTURE);
       await finishCaptureTurn();
     });
-    const idle = preparingSlot();
+    const idle = statusRow();
     expect(idle.className).toContain("invisible");
+    expect(idle.className).toContain("h-6");
     expect(idle.getAttribute("aria-hidden")).toBe("true");
+    expect(idle.hasAttribute("data-ask-capture-preparing")).toBe(false);
     expect(idle.textContent).not.toBe(ASK_CAPTURE_PREPARING);
     expect(sendAsk).toHaveBeenCalledWith(OK_CAPTURE);
   });
@@ -618,7 +630,7 @@ describe("ask panel", () => {
     expect(captureStage).toHaveBeenCalledTimes(1);
     expect(yieldFn).toHaveBeenCalledTimes(1);
     expect(sendAsk).not.toHaveBeenCalled();
-    expect(preparingSlot().textContent).toBe(ASK_CAPTURE_PREPARING);
+    expect(statusRow().textContent).toBe(ASK_CAPTURE_PREPARING);
 
     await act(async () => {
       container.querySelector<HTMLButtonElement>("[data-ask-cancel]")?.click();
@@ -657,7 +669,8 @@ describe("ask panel", () => {
       submitButton().click();
       await finishCaptureTurn();
     });
-    expect(preparingSlot().className).toContain("invisible");
+    expect(statusRow().className).toContain("invisible");
+    expect(statusRow().hasAttribute("data-ask-capture-preparing")).toBe(false);
     expect(container.querySelector("[data-ask-capture-fallback]")?.textContent).toBe(ASK_CAPTURE_FALLBACK);
     expect(sendAsk).toHaveBeenCalledTimes(1);
     expect(sendAsk).toHaveBeenCalledWith(null);
@@ -671,7 +684,11 @@ describe("ask panel", () => {
     draft("sending", { draftQuestion: "老师在想的问题", selection: kept, askStartedAt: started });
     await render();
 
-    expect(container.querySelector("[data-ask-waiting]")?.textContent).toBe(ASK_WAITING_STATUS(3));
+    const waitingRow = container.querySelector("[data-ask-waiting]");
+    expect(waitingRow).toBe(statusRow());
+    expect(waitingRow?.textContent).toBe(ASK_WAITING_STATUS(3));
+    expect(waitingRow?.className).toContain("h-6");
+    expect(waitingRow?.hasAttribute("data-ask-capture-preparing")).toBe(false);
     expect(status.textContent).toBe(ASK_WAITING_STATUS(3));
     const waitingSubmit = submitButton();
     expect(waitingSubmit.getAttribute("aria-disabled")).toBe("true");
@@ -701,6 +718,8 @@ describe("ask panel", () => {
       usePlayerStore.setState({ askPhase: "drafting", askStartedAt: null });
     });
     expect(usePlayerStore.getState().askPhase).toBe("drafting");
+    expect(statusRow().hasAttribute("data-ask-waiting")).toBe(false);
+    expect(statusRow().className).toContain("invisible");
     expect(question().value).toBe("老师在想的问题");
     expect(container.querySelector("[data-ask-panel-label]")?.textContent).toBe("已选：当前步骤");
     expect(usePlayerStore.getState().selection).toBe(kept);
