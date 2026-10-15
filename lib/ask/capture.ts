@@ -207,9 +207,10 @@ function canEncodeOffThread(): boolean {
 /**
  * Crop + scale on the main thread via createImageBitmap, then encode in a
  * module worker. The main thread asks again with a smaller size when the
- * worker reports the blob is still over maxBytes.
+ * worker reports the blob is still over maxBytes. WebP stays on for those
+ * retries; only the worker itself drops it when the browser cannot encode WebP.
  */
-async function encodeOffThread(
+export async function encodeOffThread(
   canvas: HTMLCanvasElement,
   crop: { x: number; y: number; w: number; h: number },
   maxBytes: number,
@@ -226,7 +227,7 @@ async function encodeOffThread(
     return "FALLBACK";
   }
 
-  let webp = true;
+  const webp = true;
   let outW = Math.max(
     1,
     Math.round(crop.w * Math.min(1, CAPTURE_DEFAULTS.maxLongSide / Math.max(crop.w, crop.h))),
@@ -297,7 +298,6 @@ async function encodeOffThread(
         };
       }
       if ("tooLarge" in response && response.tooLarge) {
-        webp = false;
         continue;
       }
       return "FALLBACK";

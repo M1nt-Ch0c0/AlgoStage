@@ -7,10 +7,12 @@ import {
   buildFallbackText,
   captureStage,
   decodedBase64Bytes,
+  encodeOffThread,
   intersectsBBox,
   toCropRect,
   yieldTwoFrames,
 } from "@/lib/ask/capture";
+import type { EncodeRequest, EncodeResponse } from "@/lib/ask/capture-encode.worker";
 
 const { mockState, domToCanvasMock } = vi.hoisted(() => ({
   mockState: { shouldThrow: false },
@@ -790,6 +792,72 @@ describe("lib/ask/capture", () => {
         fallbackText: "Code target",
       });
       expect(domToCanvasMock).not.toHaveBeenCalled();
+    });
+
+    it("keeps webp true across off-thread downscale retries after tooLarge", async () => {
+      const posted: EncodeRequest[] = [];
+      const bitmap = { close: vi.fn() };
+      vi.stubGlobal(
+        "createImageBitmap",
+        vi.fn(async () => bitmap),
+      );
+      vi.stubGlobal("OffscreenCanvas", class OffscreenCanvas {});
+
+      class FakeWorker {
+        listeners = new Map<string, Set<(event: unknown) => void>>();
+        terminated = false;
+        addEventListener(type: string, handler: (event: unknown) => void) {
+          const set = this.listeners.get(type) ?? new Set();
+          set.add(handler);
+          this.listeners.set(type, set);
+        }
+        removeEventListener(type: string, handler: (event: unknown) => void) {
+          this.listeners.get(type)?.delete(handler);
+        }
+        postMessage(request: EncodeRequest) {
+          posted.push(request);
+          const response: EncodeResponse =
+            posted.length >= 3
+              ? { ok: true, mime: "image/webp", base64: "AAAA", bytes: 3 }
+              : { ok: false, tooLarge: true };
+          queueMicrotask(() => {
+            for (const handler of this.listeners.get("message") ?? []) {
+              handler({ data: response });
+            }
+          });
+        }
+        terminate() {
+          this.terminated = true;
+        }
+      }
+
+      const worker = new FakeWorker();
+      vi.stubGlobal(
+        "Worker",
+        vi.fn(function Worker() {
+          return worker;
+        }),
+      );
+
+      const canvas = document.createElement("canvas");
+      const result = await encodeOffThread(
+        canvas,
+        { x: 0, y: 0, w: 40, h: 40 },
+        100,
+        () => false,
+      );
+
+      expect(result).toEqual({
+        ok: true,
+        mime: "image/webp",
+        dataBase64: "AAAA",
+        bytes: 3,
+      });
+      expect(posted).toHaveLength(3);
+      expect(posted.map((request) => request.webp)).toEqual([true, true, true]);
+      expect(worker.terminated).toBe(true);
+
+      vi.unstubAllGlobals();
     });
 
     it("falls back to main-thread encode when Worker is unavailable", async () => {
