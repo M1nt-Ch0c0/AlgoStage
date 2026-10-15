@@ -1,5 +1,8 @@
+// @vitest-environment happy-dom
 import { afterEach, describe, expect, test } from "vitest";
+import { resolveAskEscape } from "../components/board/ask-selection-layer";
 import { countAnswers } from "../lib/ask/answers";
+import { getAskCodeMissNotice } from "../lib/ask/code-editor-registry";
 import type { AnswerSegment, AskSelectionSummary, StepAnswer } from "../lib/ask/types";
 import {
   selectAskAvailability,
@@ -140,7 +143,41 @@ describe("进入 / 退出 / 草稿", () => {
     expect(s().selection?.targets).toHaveLength(1);
   });
 
-  test("drafting 取消退出保留选区和草稿，同一步重进直接 drafting 并更新 prev", () => {
+  test("exitAsk 后重进提问：askPhase 为 selecting，selection 为 null，code miss notice 为 null，保留 draftQuestion，Monaco 内 Esc 返回 exit 且 exitAsk 回 idle", () => {
+    loadReady();
+    s().enterAsk();
+    s().setAskSelection({
+      mode: "single",
+      bbox: { x: 0, y: 0, width: 100, height: 20 },
+      targets: [{ kind: "code", id: "code:s1", text: "const x = 1;" }],
+    });
+    s().setAskQuestion("abc");
+    s().exitAsk();
+    s().enterAsk();
+
+    expect(s().askPhase).toBe("selecting");
+    expect(s().selection).toBeNull();
+    expect(getAskCodeMissNotice()).toBeNull();
+    expect(s().draftQuestion).toBe("abc");
+
+    const monaco = document.createElement("div");
+    monaco.className = "monaco-editor";
+    const divInside = document.createElement("div");
+    monaco.appendChild(divInside);
+    expect(
+      resolveAskEscape(s().askPhase, divInside, {
+        composing: false,
+        defaultPrevented: false,
+        ctrlKey: false,
+        metaKey: false,
+        altKey: false,
+      }),
+    ).toBe("exit");
+    s().exitAsk();
+    expect(s().askPhase).toBe("idle");
+  });
+
+  test("drafting 取消退出清空选区但保留草稿，同一步重进回到 selecting 并更新 prev", () => {
     loadReady();
     s().play();
     enterDrafting("  保留的问题  ");
@@ -151,11 +188,12 @@ describe("进入 / 退出 / 草稿", () => {
       draftQuestion: "  保留的问题  ",
       draftStepId: "s1",
     });
-    expect(s().selection?.targets).toHaveLength(1);
+    expect(s().selection).toBeNull();
     s().pause();
     usePlayerStore.setState({ awaitingContinue: true });
     s().enterAsk();
-    expect(s()).toMatchObject({ askPhase: "drafting", status: "interrupted" });
+    expect(s()).toMatchObject({ askPhase: "selecting", status: "interrupted" });
+    expect(s().selection).toBeNull();
     expect(s().askContext).toMatchObject({ prevStatus: "paused", prevAwaitingContinue: true });
     expect(s().draftQuestion).toBe("  保留的问题  ");
   });
@@ -204,7 +242,7 @@ describe("进入 / 退出 / 草稿", () => {
     expect(s().askCaptureFallback).toBe(false);
   });
 
-  test("error 态退出保留选区和草稿", () => {
+  test("error 态退出清空选区，保留草稿", () => {
     loadReady();
     enterDrafting("失败也留着");
     s().askSent(guard({ token: 4 }));
@@ -216,7 +254,7 @@ describe("进入 / 退出 / 草稿", () => {
       draftQuestion: "失败也留着",
       askErrorCode: null,
     });
-    expect(s().selection).not.toBeNull();
+    expect(s().selection).toBeNull();
   });
 
   test("askCancelled：sending 回 drafting，清预览，保留草稿", () => {
@@ -306,7 +344,7 @@ describe("换步守卫与播放路由", () => {
       draftQuestion: "同一步",
       askPhase: "idle",
     });
-    expect(s().selection).not.toBeNull();
+    expect(s().selection).toBeNull();
   });
 
   test("idle 换步丢掉草稿，回到旧步没有旧草稿", () => {

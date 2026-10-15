@@ -450,7 +450,7 @@ function applyEnterAsk(state: PlayerState): Partial<PlayerState> | AskDisabledRe
     state.askContext.stepId === step.id &&
     state.askContext.stepIndex === state.currentIndex;
 
-  const selection = keepDraft ? state.selection : null;
+  const selection = resumeError ? state.selection : null;
   const hasSelection = selection != null && selection.targets.length > 0;
 
   const askContext: AskContext = resumeError
@@ -946,6 +946,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const ctx = state.askContext;
     set({
       askPhase: "idle",
+      selection: null,
       askCaptureFallback: false,
       status: ctx?.prevStatus ?? "paused",
       awaitingContinue: ctx?.prevAwaitingContinue ?? false,
