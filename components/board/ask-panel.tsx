@@ -22,12 +22,12 @@ import Link from "next/link";
 import { cancelAsk, retroCancelAsk, sendAsk } from "@/lib/ask/ask-client";
 import { chooseAskScrollBlock } from "@/lib/ask/ask-scroll";
 import { ASK_ERROR_SPECS, resolveAskError, type AskErrorAction } from "@/lib/ask/ask-errors";
-import { markAskPointerDown, markAskTiming } from "@/lib/ask/ask-timing";
+import { markAskPhase, markAskPointerDown, markAskTiming, msSinceLongTaskEnd } from "@/lib/ask/ask-timing";
 import { listenCancelPress, pointHitsAskCancel } from "@/lib/ask/cancel-press";
 import { captureStage, type CaptureResult } from "@/lib/ask/capture";
 import { createCancelHold } from "@/lib/ask/cancel-hold";
 import { shouldRetroCancel } from "@/lib/ask/retro-cancel";
-import { settleInput, yieldToInput } from "@/lib/ask/yield-macrotask";
+import { ASK_INPUT_SETTLE_MS, settleInput } from "@/lib/ask/yield-macrotask";
 import { usePointerActivate } from "@/lib/ask/use-pointer-activate";
 import { collectAskCandidates, summarizeSelection } from "@/lib/ask/collect-candidates";
 import { getAskCodeMissNotice, subscribeAskCodeMissNotice } from "@/lib/ask/code-editor-registry";
@@ -403,13 +403,16 @@ function AskPanelActive({ stage }: AskPanelProps) {
       } catch {
         capture = null;
       }
-      // Capture can stall the main thread. Let a frame and queued input run
-      // before deciding to send, so a 取消 press during that stall is visible.
-      await yieldToInput();
-      await yieldToInput();
-      // Input queued during the stall can still be in transit after those
-      // yields. Wait a fixed settle window before the hold decision.
-      await settleInput();
+      // The 取消 press listener is already attached. One settle, at most
+      // ASK_INPUT_SETTLE_MS measured from the end of the long task (not added
+      // on top of encode), lets a press that landed as the stall ended reach it.
+      const elapsedSinceLongTask = msSinceLongTaskEnd();
+      const settleStarted = performance.now();
+      await settleInput(elapsedSinceLongTask);
+      markAskPhase(
+        "settleMs",
+        Math.min(ASK_INPUT_SETTLE_MS, performance.now() - settleStarted),
+      );
       holdWaitingRef.current = true;
       const holdResult = await holdRef.current.wait(session, 2000);
       holdWaitingRef.current = false;

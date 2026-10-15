@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { encodeCapture, handleEncodeMessage, type EncodeRequest } from "@/lib/ask/capture-encode";
+import {
+  encodeCapture,
+  encodeTransferList,
+  handleEncodeMessage,
+  type EncodeRequest,
+} from "@/lib/ask/capture-encode";
 
 type BlobPlan = { type: string; bytes: Uint8Array };
 
@@ -73,12 +78,13 @@ describe("encodeCapture", () => {
       request({ bitmap: source as unknown as ImageBitmap, qualities: [0.9], maxBytes: payload.length }),
     );
 
-    expect(response).toEqual({
+    expect(response).toMatchObject({
       ok: true,
       mime: "image/webp",
       base64: btoa("webp-ok"),
       bytes: payload.length,
     });
+    expect(response.ok && response.buffer?.byteLength).toBe(payload.length);
     expect(source.close).toHaveBeenCalledOnce();
     expect(drawImage).toHaveBeenCalledWith(source, 0, 0);
     expect(convertCalls).toEqual([{ type: "image/webp", quality: 0.9 }]);
@@ -101,7 +107,7 @@ describe("encodeCapture", () => {
       }),
     );
 
-    expect(response).toEqual({
+    expect(response).toMatchObject({
       ok: true,
       mime: "image/webp",
       base64: btoa("ok"),
@@ -141,7 +147,7 @@ describe("encodeCapture", () => {
 
     const response = await encodeCapture(request({ qualities: [0.9, 0.4], maxBytes: jpeg.length }));
 
-    expect(response).toEqual({
+    expect(response).toMatchObject({
       ok: true,
       mime: "image/jpeg",
       base64: btoa("jpeg"),
@@ -161,7 +167,7 @@ describe("encodeCapture", () => {
 
     const response = await encodeCapture(request({ webp: false, qualities: [0.7], maxBytes: payload.length }));
 
-    expect(response).toEqual({
+    expect(response).toMatchObject({
       ok: true,
       mime: "image/jpeg",
       base64: btoa("jpg"),
@@ -199,12 +205,14 @@ describe("handleEncodeMessage", () => {
     await handleEncodeMessage(request({ qualities: [0.8], maxBytes: payload.length }), post);
 
     expect(post).toHaveBeenCalledOnce();
-    expect(post).toHaveBeenCalledWith({
-      ok: true,
-      mime: "image/webp",
-      base64: btoa("posted"),
-      bytes: payload.length,
-    });
+    expect(post).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ok: true,
+        mime: "image/webp",
+        base64: btoa("posted"),
+        bytes: payload.length,
+      }),
+    );
   });
 
   it("posts NO_CONTEXT when encodeCapture rejects with an Error", async () => {
@@ -235,5 +243,21 @@ describe("handleEncodeMessage", () => {
 
     expect(post).toHaveBeenCalledOnce();
     expect(post).toHaveBeenCalledWith({ ok: false, error: "ENCODE_FAILED" });
+  });
+
+  it("transfers the encoded buffer and transfers nothing for a failure", async () => {
+    drawImage = vi.fn();
+    context = { drawImage };
+    vi.stubGlobal("OffscreenCanvas", FakeOffscreenCanvas);
+    const payload = bytes("moved");
+    plans = [{ type: "image/webp", bytes: payload }];
+    const post = vi.fn();
+
+    await handleEncodeMessage(request({ qualities: [0.8], maxBytes: payload.length }), post);
+    const ok = post.mock.calls[0]?.[0];
+    expect(encodeTransferList(ok)).toEqual([ok.buffer]);
+
+    expect(encodeTransferList({ ok: false, tooLarge: true })).toEqual([]);
+    expect(encodeTransferList({ ok: false, error: "ENCODE_FAILED" })).toEqual([]);
   });
 });

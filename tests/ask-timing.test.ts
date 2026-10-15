@@ -4,6 +4,9 @@ import {
   markAskPhase,
   markAskPointerDown,
   markAskTiming,
+  msSinceLongTaskEnd,
+  noteLongTaskEnded,
+  resetLongTaskEndForTests,
   type AskTimingProbe,
 } from "../lib/ask/ask-timing";
 
@@ -15,6 +18,7 @@ function install(probe: AskTimingProbe | undefined) {
 }
 
 afterEach(() => {
+  resetLongTaskEndForTests();
   Reflect.deleteProperty(globalThis, "window");
 });
 
@@ -82,5 +86,14 @@ describe("ask timing probe", () => {
     expect(probe.firstPointerDownTs).toBe(3);
     expect(probe.encodeMs).toBe(12);
     expect(probe.settleMs).toBeUndefined();
+  });
+
+  test("remembers when the long task ended even with the probe off", () => {
+    install(undefined);
+    expect(msSinceLongTaskEnd(1000)).toBe(0);
+    noteLongTaskEnded(1000);
+    expect(msSinceLongTaskEnd(1040)).toBe(40);
+    expect(msSinceLongTaskEnd(900)).toBe(0);
+    expect((globalThis as { window?: { __ASK_TIMING__?: AskTimingProbe } }).window?.__ASK_TIMING__).toBeUndefined();
   });
 });

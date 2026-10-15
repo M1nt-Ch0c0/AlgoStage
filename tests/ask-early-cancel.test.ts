@@ -9,6 +9,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import AskPanel from "../components/board/ask-panel";
 import { retroCancelAsk, sendAsk } from "../lib/ask/ask-client";
+import { resetLongTaskEndForTests } from "../lib/ask/ask-timing";
 import { captureStage } from "../lib/ask/capture";
 import type { AskSelectionSummary } from "../lib/ask/types";
 import { usePlayerStore } from "../lib/player/store";
@@ -88,6 +89,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   usePlayerStore.getState().reset();
+  resetLongTaskEndForTests();
   container.remove();
   stage.remove();
   vi.unstubAllGlobals();
@@ -95,18 +97,14 @@ afterEach(async () => {
 
 async function finishCaptureTurn() {
   await Promise.resolve();
-  for (let frame = 0; frame < 4; frame += 1) {
+  for (let frame = 0; frame < 2; frame += 1) {
     await new Promise<void>((resolve) => {
       requestAnimationFrame(() => resolve());
     });
   }
-  for (let turn = 0; turn < 2; turn += 1) {
-    await new Promise<void>((resolve) => {
-      setTimeout(resolve, 0);
-    });
-  }
+  await Promise.resolve();
   await new Promise<void>((resolve) => {
-    setTimeout(resolve, 50);
+    setTimeout(resolve, 60);
   });
 }
 

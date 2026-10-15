@@ -6,7 +6,8 @@
 
 import { ASK_LIMITS } from "@/lib/ask/types";
 import type { AskBBox, AskSelection, AskTarget } from "@/lib/ask/types";
-import { markAskPhase, markAskTiming } from "./ask-timing";
+import { markAskPhase, markAskTiming, noteLongTaskEnded } from "./ask-timing";
+import { acquireEncodeWorker, retireEncodeWorker } from "./capture-worker";
 import { intersects, normalizeBBox } from "./hit-test";
 import type { EncodeRequest, EncodeResponse } from "./capture-encode";
 
@@ -241,14 +242,8 @@ export async function encodeOffThread(
 ): Promise<EncodeOk | "TOO_LARGE" | "FALLBACK"> {
   if (!canEncodeOffThread()) return "FALLBACK";
 
-  let worker: Worker;
-  try {
-    worker = new Worker(new URL("./capture-encode.worker.ts", import.meta.url), {
-      type: "module",
-    });
-  } catch {
-    return "FALLBACK";
-  }
+  const worker = acquireEncodeWorker();
+  if (!worker) return "FALLBACK";
 
   const webp = true;
   let outW = Math.max(
@@ -260,8 +255,8 @@ export async function encodeOffThread(
     Math.round(crop.h * Math.min(1, CAPTURE_DEFAULTS.maxLongSide / Math.max(crop.w, crop.h))),
   );
 
-  const finish = () => {
-    worker.terminate();
+  const retire = () => {
+    retireEncodeWorker(worker);
   };
 
   try {
@@ -337,9 +332,8 @@ export async function encodeOffThread(
     }
     return "TOO_LARGE";
   } catch {
+    retire();
     return "FALLBACK";
-  } finally {
-    finish();
   }
 }
 
@@ -424,6 +418,7 @@ export async function captureStage(
 
     let timedOut = false;
     const startedAt = Date.now();
+    const captureStartedAt = performance.now();
 
     const timeoutPromise = new Promise<CaptureResult>((resolve) => {
       timer = setTimeout(() => {
@@ -479,8 +474,10 @@ export async function captureStage(
       } catch {
         return { ok: false, reason: "RENDER_FAILED", fallbackText };
       }
-      markAskTiming("longTaskEnd");
-      markAskPhase("domToCanvasMs", performance.now() - startedAt);
+      const longTaskEndedAt = performance.now();
+      noteLongTaskEnded(longTaskEndedAt);
+      markAskTiming("longTaskEnd", longTaskEndedAt);
+      markAskPhase("domToCanvasMs", longTaskEndedAt - captureStartedAt);
 
       const scaleX =
         Number.isFinite(rect.width) && rect.width > 0

@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import AskPanel from "../components/board/ask-panel";
 import StepAnswers from "../components/board/step-answers";
 import { answersStorageKey } from "../lib/ask/answers-storage";
+import { resetLongTaskEndForTests } from "../lib/ask/ask-timing";
 import { disposeAskRequests } from "../lib/ask/ask-client";
 import { captureStage } from "../lib/ask/capture";
 import type { AnswerSegment, AskSelectionSummary, StepAnswer } from "../lib/ask/types";
@@ -134,6 +135,7 @@ afterEach(async () => {
   await act(async () => root.unmount());
   disposeAskRequests();
   usePlayerStore.getState().reset();
+  resetLongTaskEndForTests();
   container.remove();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
@@ -160,7 +162,7 @@ async function drainUntilFetch(fetchStarted: Promise<void>) {
       setTimeout(resolve, 1500);
     }),
   ]);
-  for (let frame = 0; frame < 8; frame += 1) {
+  for (let frame = 0; frame < 4; frame += 1) {
     await act(async () => {
       await new Promise<void>((resolve) => {
         requestAnimationFrame(() => resolve());

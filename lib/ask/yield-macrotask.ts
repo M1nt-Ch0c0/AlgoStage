@@ -41,14 +41,17 @@ export function yieldMacrotask(): Promise<void> {
 }
 
 /**
- * Fixed wait after capture so input queued during the stall can reach the
- * renderer queue. yieldToInput only sees input already in that queue.
+ * Fixed wait after the capture long task so input queued during the stall
+ * can reach the renderer queue. The budget is measured from longTaskEnd,
+ * so time already spent yielding counts toward the 50ms.
  */
 export const ASK_INPUT_SETTLE_MS = 50;
 
-export function settleInput(): Promise<void> {
+export function settleInput(elapsedMs = 0): Promise<void> {
+  const remaining = Math.max(0, ASK_INPUT_SETTLE_MS - Math.max(0, elapsedMs));
+  if (remaining === 0) return Promise.resolve();
   return new Promise((resolve) => {
-    setTimeout(resolve, ASK_INPUT_SETTLE_MS);
+    setTimeout(resolve, remaining);
   });
 }
 

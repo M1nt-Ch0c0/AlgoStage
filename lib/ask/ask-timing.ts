@@ -63,6 +63,27 @@ export function markAskTiming(mark: AskTimingMark, at = now()): void {
   probe[mark] = at;
 }
 
+/**
+ * performance.now() when domToCanvas returned, kept even when the probe is off.
+ * The post-capture settle measures its 50ms budget from this instant.
+ */
+let longTaskEndedAt: number | null = null;
+
+export function noteLongTaskEnded(at = now()): void {
+  longTaskEndedAt = at;
+}
+
+/** Milliseconds since noteLongTaskEnded, or 0 when capture has not marked it. */
+export function msSinceLongTaskEnd(at = now()): number {
+  if (longTaskEndedAt == null) return 0;
+  return Math.max(0, at - longTaskEndedAt);
+}
+
+/** Test hook. Production only writes the mark from capture. */
+export function resetLongTaskEndForTests(): void {
+  longTaskEndedAt = null;
+}
+
 /** Record the first 取消 pointerdown timeStamp. Later presses do not replace it. */
 export function markAskPointerDown(timeStamp: number): void {
   const probe = askTimingProbe();

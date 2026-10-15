@@ -2,6 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { resetLongTaskEndForTests } from "../lib/ask/ask-timing";
 import AskPanel, { yieldPaintFrames } from "../components/board/ask-panel";
 import { ASK_CAPTURE_FALLBACK, ASK_CAPTURE_PREPARING, ASK_CHIPS, ASK_WAITING_STATUS } from "../lib/ask/ask-ui-text";
 import { ASK_ERROR_SPECS } from "../lib/ask/ask-errors";
@@ -119,6 +120,7 @@ afterEach(async () => {
   await act(async () => root.unmount());
   usePlayerStore.getState().reset();
   resetCodeEditorRegistry();
+  resetLongTaskEndForTests();
   container.remove();
   stage.remove();
   status.remove();
@@ -189,20 +191,13 @@ async function drainPaintFrames() {
   });
 }
 
-/** Drain the pre-capture double rAF, then both post-capture yieldToInput turns and the settle wait. */
+/** Drain the pre-capture double rAF, then the post-capture settle wait. */
 async function finishCaptureTurn() {
   await Promise.resolve();
   await drainPaintFrames();
-  for (let turn = 0; turn < 2; turn += 1) {
-    await new Promise<void>((resolve) => {
-      requestAnimationFrame(() => resolve());
-    });
-    await new Promise<void>((resolve) => {
-      setTimeout(resolve, 0);
-    });
-  }
+  await Promise.resolve();
   await new Promise<void>((resolve) => {
-    setTimeout(resolve, 50);
+    setTimeout(resolve, 60);
   });
 }
 
@@ -979,25 +974,10 @@ describe("ask panel", () => {
     draft("drafting", { draftQuestion: "为什么这样写？" });
     await render();
 
-    const realRaf = window.requestAnimationFrame.bind(window);
-    let releaseSecond: (() => void) | undefined;
-    let settle: (() => void) | undefined;
-    let calls = 0;
-    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
-      calls += 1;
-      // Paint uses the first two frames. The fourth frame is the second
-      // post-capture yield, which this test holds open across the cancel.
-      if (calls === 4) {
-        releaseSecond = () => {
-          realRaf(callback);
-        };
-        return 2;
-      }
-      return realRaf(callback);
-    });
+    let releaseSettle: (() => void) | undefined;
     vi.stubGlobal("setTimeout", (callback: TimerHandler, delay?: number) => {
       if (delay === 50 && typeof callback === "function") {
-        settle = () => {
+        releaseSettle = () => {
           callback();
         };
         return 50;
@@ -1010,7 +990,7 @@ describe("ask panel", () => {
       submitButton().click();
     });
     await vi.waitFor(() => {
-      expect(releaseSecond).toBeTypeOf("function");
+      expect(releaseSettle).toBeTypeOf("function");
     });
     expect(captureStage).toHaveBeenCalledTimes(1);
     expect(sendAsk).not.toHaveBeenCalled();
@@ -1023,11 +1003,7 @@ describe("ask panel", () => {
     expect(container.querySelector("[data-ask-panel]")).toBeNull();
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
 
-    releaseSecond?.();
-    await vi.waitFor(() => {
-      expect(settle).toBeTypeOf("function");
-    });
-    settle?.();
+    releaseSettle?.();
     await act(async () => {
       await pendingSubmit;
     });

@@ -161,6 +161,19 @@ describe("settleInput", () => {
     await settleInput();
     expect(delays).toEqual([ASK_INPUT_SETTLE_MS]);
   });
+
+  test("time already spent since the long task shortens the settle, and a spent budget waits nothing", async () => {
+    const delays: number[] = [];
+    vi.stubGlobal("setTimeout", (callback: () => void, delayMs: number) => {
+      delays.push(delayMs);
+      callback();
+      return 1;
+    });
+    await settleInput(20);
+    await settleInput(ASK_INPUT_SETTLE_MS);
+    await settleInput(80);
+    expect(delays).toEqual([30]);
+  });
 });
 
 describe("yieldMacrotask", () => {

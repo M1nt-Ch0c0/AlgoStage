@@ -12,6 +12,8 @@ import {
   toCropRect,
   yieldTwoFrames,
 } from "@/lib/ask/capture";
+import { resetLongTaskEndForTests } from "@/lib/ask/ask-timing";
+import { resetEncodeWorkerForTests } from "@/lib/ask/capture-worker";
 import type { EncodeRequest, EncodeResponse } from "@/lib/ask/capture-encode";
 
 const { mockState, domToCanvasMock } = vi.hoisted(() => ({
@@ -95,6 +97,8 @@ describe("lib/ask/capture", () => {
   });
 
   afterEach(() => {
+    resetEncodeWorkerForTests();
+    resetLongTaskEndForTests();
     vi.restoreAllMocks();
     vi.useRealTimers();
   });
@@ -861,7 +865,7 @@ describe("lib/ask/capture", () => {
       });
       expect(posted).toHaveLength(3);
       expect(posted.map((request) => request.webp)).toEqual([true, true, true]);
-      expect(worker.terminated).toBe(true);
+      expect(worker.terminated).toBe(false);
 
       vi.unstubAllGlobals();
     });

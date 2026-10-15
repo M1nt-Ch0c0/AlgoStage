@@ -28,6 +28,7 @@ import {
 import { ASK_LIMITS, type AskBBox, type AskSelectionSummary, type AskTarget } from "@/lib/ask/types";
 import { setAskCodeMissNotice } from "@/lib/ask/code-editor-registry";
 import { getAskBottomObstacle, measureAskElementHeight } from "@/lib/ask/ask-occlusion";
+import { prewarmEncodeWorker } from "@/lib/ask/capture-worker";
 import { usePlayerStore } from "@/lib/player/store";
 import { useIsMobile } from "./use-is-mobile";
 
@@ -308,6 +309,13 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
   // 上一阶段在 effect 里更新。关面板的那次要等 0ms 回调记上：
   // 严格模式会先清掉这次回调再跑一遍，第二遍仍要看得到 drafting。
   const previousPhaseRef = useRef(askPhase);
+
+  // Selection mode pays for the encode worker up front, so the first capture
+  // reuses it instead of constructing one after the screenshot.
+  useEffect(() => {
+    if (!ACTIVE_PHASES.has(askPhase)) return;
+    prewarmEncodeWorker();
+  }, [askPhase]);
 
   // 圈选期间唯一的 Esc。挂在始终挂载的这层。sending/streaming 不注册：
   // closeAskPanel / exitAsk 在这两态是空操作，和 0.3.1 一样。
