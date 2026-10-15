@@ -280,6 +280,7 @@ test.describe("ask Esc stepwise exit", () => {
     await page.keyboard.press("Escape");
     await expect(layer(page)).toHaveCount(0);
     await expect(entry(page)).not.toHaveAttribute("aria-pressed", "true");
+    await expect(entry(page)).toBeFocused();
 
     // (c) 面板打开且焦点在 Monaco：第一次 Esc 关面板，第二次退出圈选。
     await enterSelection(page);
@@ -293,6 +294,7 @@ test.describe("ask Esc stepwise exit", () => {
     await page.keyboard.press("Escape");
     await expect(layer(page)).toHaveCount(0);
     await expect(entry(page)).not.toHaveAttribute("aria-pressed", "true");
+    await expect(entry(page)).toBeFocused();
   });
 
   test("held Esc exits one level: the panel closes and selection stays", async ({ page }) => {
