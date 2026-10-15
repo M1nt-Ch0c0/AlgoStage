@@ -1356,14 +1356,14 @@ describe("resolveAskEscape", () => {
       // Player and bar present, no panel: 60 + 52 + 8 = 120
       expect(computeBottomOcclusion({ playerHeight: 60, barHeight: 52 })).toBe(120);
 
-      // Player, bar, and panel present: 60 + 52 + 200 + 8 = 320
-      expect(computeOcclusion({ playerHeight: 60, barHeight: 52, panelHeight: 200 })).toBe(320);
+      // Player and panel present (bar hidden while panel open): 60 + 200 + 8 = 268
+      expect(computeOcclusion({ playerHeight: 60, barHeight: 52, panelHeight: 200 })).toBe(268);
 
       // Only bar present: 0 + 52 + 0 + 8 = 60
       expect(computeBottomOcclusion({ barHeight: 52 })).toBe(60);
 
-      // Ceiling of fractional heights
-      expect(computeBottomOcclusion({ playerHeight: 59.4, barHeight: 51.2, panelHeight: 199.1 })).toBe(60 + 52 + 200 + 8);
+      // Ceiling of fractional heights (bar hidden while panel open)
+      expect(computeBottomOcclusion({ playerHeight: 59.4, barHeight: 51.2, panelHeight: 199.1 })).toBe(60 + 200 + 8);
     });
 
     test("sets --ask-bottom-occlusion on mobile and reacts to panel and unmount", async () => {
@@ -1412,8 +1412,8 @@ describe("resolveAskEscape", () => {
         window.dispatchEvent(new Event("resize"));
       });
 
-      // player 60 + bar 52 + panel 200 + gap 8 = 320px
-      expect(document.documentElement.style.getPropertyValue("--ask-bottom-occlusion")).toBe("320px");
+      // player 60 + panel 200 + gap 8 = 268px (bar hidden while panel open)
+      expect(document.documentElement.style.getPropertyValue("--ask-bottom-occlusion")).toBe("268px");
 
       panelEl.remove();
       playerEl.remove();
@@ -1423,6 +1423,56 @@ describe("resolveAskEscape", () => {
       });
       expect(document.documentElement.style.getPropertyValue("--ask-bottom-occlusion")).toBe("0px");
 
+      window.matchMedia = originalMatchMedia;
+    });
+
+    test("on mobile, closing panel (drafting -> selecting) restores bar, chip focus, and occlusion in one frame synchronously", async () => {
+      const originalMatchMedia = window.matchMedia;
+      window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+        matches: query === "(max-width: 639px)",
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }));
+
+      const playerEl = document.createElement("div");
+      playerEl.setAttribute("aria-label", "讲解播放区");
+      playerEl.getBoundingClientRect = () => domRect(0, 784, 390, 60);
+      document.body.appendChild(playerEl);
+
+      await render();
+
+      // Make a selection to enter drafting
+      await gesture(20, 12, 120, 36);
+      expect(usePlayerStore.getState().askPhase).toBe("drafting");
+      expect(document.querySelector("[data-ask-bottom-bar]")).toBeNull();
+
+      // Add mock panel element in DOM as AskPanel would render
+      const panelEl = document.createElement("div");
+      panelEl.setAttribute("data-ask-panel", "");
+      panelEl.getBoundingClientRect = () => domRect(8, 500, 374, 200);
+      document.body.appendChild(panelEl);
+
+      // Close panel
+      panelEl.remove();
+      await act(async () => {
+        usePlayerStore.getState().closeAskPanel();
+      });
+
+      expect(usePlayerStore.getState().askPhase).toBe("selecting");
+      const bar = document.querySelector("[data-ask-bottom-bar]");
+      expect(bar).not.toBeNull();
+      const selectionEl = document.querySelector("[data-ask-selection]");
+      expect(selectionEl).not.toBeNull();
+
+      // Focus is on the roving tabIndex=0 chip
+      const activeEl = document.activeElement as HTMLElement | null;
+      expect(activeEl).not.toBeNull();
+      expect(bar!.contains(activeEl)).toBe(true);
+      expect(activeEl!.hasAttribute("data-ask-shortcut")).toBe(true);
+      expect(activeEl!.tabIndex).toBe(0);
+
+      playerEl.remove();
       window.matchMedia = originalMatchMedia;
     });
 
