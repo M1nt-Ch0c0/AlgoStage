@@ -380,6 +380,7 @@ describe("ask panel", () => {
     });
     await act(async () => {
       submitButton().click();
+      await finishCaptureTurn();
     });
     expect(usePlayerStore.getState().askPhase).toBe("playing");
     expect(usePlayerStore.getState().askCaptureFallback).toBe(true);
@@ -396,6 +397,7 @@ describe("ask panel", () => {
     });
     await act(async () => {
       submitButton().click();
+      await finishCaptureTurn();
     });
     expect(usePlayerStore.getState().askCaptureFallback).toBe(false);
     expect(container.querySelector("[data-ask-panel]")).toBeNull();
@@ -415,6 +417,7 @@ describe("ask panel", () => {
     });
     await act(async () => {
       submitButton().click();
+      await finishCaptureTurn();
     });
     expect(usePlayerStore.getState().askPhase).toBe("streaming");
     // start 之后选区还在，草稿面板留着，失败提示同时在。
@@ -621,7 +624,7 @@ describe("ask panel", () => {
       container.querySelector<HTMLButtonElement>("[data-ask-cancel]")?.click();
     });
     expect(container.querySelector("[data-ask-panel]")).toBeNull();
-    expect(usePlayerStore.getState().askPhase).toBe("idle");
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
 
     releaseYield();
     await act(async () => {
