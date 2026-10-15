@@ -16,6 +16,7 @@ import { captureStage, type CaptureResult } from "@/lib/ask/capture";
 import { collectAskCandidates, summarizeSelection } from "@/lib/ask/collect-candidates";
 import {
   ASK_CAPTURE_FALLBACK,
+  ASK_CAPTURE_PREPARING,
   ASK_CHIPS,
   ASK_SHORTCUT_STEP,
   ASK_SHORTCUT_SUBTITLE,
@@ -149,6 +150,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
 
   const labelId = useId();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [preparing, setPreparing] = useState(false);
   const [desktop, setDesktop] = useState(false);
   const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
   const [drawerBottom, setDrawerBottom] = useState(0);
@@ -160,6 +162,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
   const errored = askPhase === "error";
   const drafting = askPhase === "drafting";
   const trimmedEmpty = draftQuestion.trim().length === 0;
+  const submitLocked = trimmedEmpty || waiting || preparing;
   const count = draftQuestion.length;
   const view = errored ? errorView(askErrorCode) : null;
   const label = selection ? summarizeSelection(selection) : "已选：无";
@@ -249,11 +252,14 @@ function AskPanelActive({ stage }: AskPanelProps) {
     sendingRef.current = true;
     // 新的一次截图开始：上一轮「没截到图」先清掉，这次失败再写回。
     usePlayerStore.setState({ askCaptureFallback: false });
+    setPreparing(true);
     let capture: CaptureResult | null;
     try {
       capture = await captureStage(resolveStage(stage), startSelection);
     } catch {
       capture = null;
+    } finally {
+      setPreparing(false);
     }
     const latest = usePlayerStore.getState();
     const latestStepId = latest.steps[latest.currentIndex]?.id ?? "";
@@ -332,6 +338,12 @@ function AskPanelActive({ stage }: AskPanelProps) {
         {label}
       </p>
 
+      {preparing ? (
+        <p data-ask-capture-preparing className="text-xs text-chalk-300">
+          {ASK_CAPTURE_PREPARING}
+        </p>
+      ) : null}
+
       {captureFailed ? (
         <p data-ask-capture-fallback className="text-[11px] text-chalk-500">
           {ASK_CAPTURE_FALLBACK}
@@ -408,12 +420,12 @@ function AskPanelActive({ stage }: AskPanelProps) {
           <button
             type="button"
             data-ask-submit
-            aria-disabled={trimmedEmpty || waiting ? true : undefined}
+            aria-disabled={submitLocked ? true : undefined}
             className={`pointer-coarse:min-h-11 pointer-coarse:min-w-11 rounded-md bg-beam-gold px-3 py-1 text-on-accent${
-              trimmedEmpty || waiting ? " opacity-50 cursor-not-allowed" : ""
+              submitLocked ? " opacity-50 cursor-not-allowed" : ""
             }`}
             onClick={() => {
-              if (trimmedEmpty || waiting) return;
+              if (submitLocked) return;
               void submit();
             }}
           >

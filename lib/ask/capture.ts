@@ -6,7 +6,7 @@
 
 import { ASK_LIMITS } from "@/lib/ask/types";
 import type { AskBBox, AskSelection, AskTarget } from "@/lib/ask/types";
-import { normalizeBBox } from "./hit-test";
+import { intersects, normalizeBBox } from "./hit-test";
 
 export const CAPTURE_FALLBACK_NOTICE = "没截到图，这次只发送选中的文字。";
 
@@ -85,6 +85,63 @@ export function toCropRect(
   };
 }
 
+type ClientRectLike = Pick<DOMRect, "left" | "top" | "width" | "height">;
+
+/**
+ * Element rect and bbox are both container-relative CSS px.
+ * Touching edges do not count; bbox is normalized first.
+ */
+export function intersectsBBox(
+  rect: ClientRectLike,
+  containerRect: ClientRectLike,
+  bbox: AskBBox,
+): boolean {
+  return intersects(
+    {
+      x: rect.left - containerRect.left,
+      y: rect.top - containerRect.top,
+      width: rect.width,
+      height: rect.height,
+    },
+    normalizeBBox(bbox),
+  );
+}
+
+/** Let the preparing line paint before import and domToCanvas. */
+export function yieldTwoFrames(): Promise<void> {
+  const raf = globalThis.requestAnimationFrame;
+  if (typeof raf !== "function") {
+    return new Promise((resolve) => {
+      setTimeout(resolve, 0);
+    });
+  }
+  return new Promise((resolve) => {
+    raf(() => {
+      raf(() => {
+        resolve();
+      });
+    });
+  });
+}
+
+function yieldEncodeTurn(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}
+
+/** Text nodes stay. iframe/video are always dropped. Other elements must hit the selection. */
+function keepCaptureNode(
+  node: Node,
+  containerRect: ClientRectLike,
+  bbox: AskBBox,
+): boolean {
+  if (!(node instanceof Element)) return true;
+  const tag = node.tagName.toUpperCase();
+  if (tag === "IFRAME" || tag === "VIDEO") return false;
+  return intersectsBBox(node.getBoundingClientRect(), containerRect, bbox);
+}
+
 export async function captureStage(
   container: HTMLElement | null,
   sel: Pick<AskSelection, "bbox" | "targets">,
@@ -108,6 +165,7 @@ export async function captureStage(
     const maxBytes = opts?.maxBytes ?? CAPTURE_DEFAULTS.maxBytes;
 
     let timedOut = false;
+    const startedAt = Date.now();
 
     const timeoutPromise = new Promise<CaptureResult>((resolve) => {
       timer = setTimeout(() => {
@@ -116,23 +174,38 @@ export async function captureStage(
       }, timeoutMs);
     });
 
+    const timeoutResult = (): CaptureResult => ({
+      ok: false,
+      reason: "TIMEOUT",
+      fallbackText,
+    });
+
     const doCapture = async (): Promise<CaptureResult> => {
+      await yieldTwoFrames();
+      if (timedOut) return timeoutResult();
+
       let mod: typeof import("modern-screenshot");
       try {
         mod = await import("modern-screenshot");
       } catch {
         return { ok: false, reason: "IMPORT_FAILED", fallbackText };
       }
-      if (timedOut) {
-        return { ok: false, reason: "TIMEOUT", fallbackText };
-      }
+      if (timedOut) return timeoutResult();
+
+      const rect = container.getBoundingClientRect();
+      const remaining = timeoutMs - (Date.now() - startedAt);
+      if (remaining <= 0) return timeoutResult();
 
       let canvas: HTMLCanvasElement;
       try {
-        const rendered = await mod.domToCanvas(container);
-        if (timedOut) {
-          return { ok: false, reason: "TIMEOUT", fallbackText };
-        }
+        const rendered = await mod.domToCanvas(container, {
+          font: false,
+          filter: (node) => keepCaptureNode(node, rect, normBox),
+          timeout: remaining,
+          width: rect.width,
+          height: rect.height,
+        });
+        if (timedOut) return timeoutResult();
         if (!rendered || typeof rendered.getContext !== "function") {
           return { ok: false, reason: "RENDER_FAILED", fallbackText };
         }
@@ -141,7 +214,6 @@ export async function captureStage(
         return { ok: false, reason: "RENDER_FAILED", fallbackText };
       }
 
-      const rect = container.getBoundingClientRect();
       const scaleX =
         Number.isFinite(rect.width) && rect.width > 0
           ? canvas.width / rect.width
@@ -174,7 +246,10 @@ export async function captureStage(
         attempt <= CAPTURE_DEFAULTS.maxDownscales;
         attempt++
       ) {
+        if (timedOut) return timeoutResult();
         if (attempt > 0) {
+          await yieldEncodeTurn();
+          if (timedOut) return timeoutResult();
           outW = Math.max(
             1,
             Math.round(outW * CAPTURE_DEFAULTS.downscaleFactor),
@@ -195,7 +270,12 @@ export async function captureStage(
 
         ctx.drawImage(canvas, cropX, cropY, cropW, cropH, 0, 0, outW, outH);
 
-        for (const q of CAPTURE_DEFAULTS.qualities) {
+        for (let qi = 0; qi < CAPTURE_DEFAULTS.qualities.length; qi++) {
+          if (qi > 0) {
+            await yieldEncodeTurn();
+            if (timedOut) return timeoutResult();
+          }
+          const q = CAPTURE_DEFAULTS.qualities[qi]!;
           let mime: "image/webp" | "image/jpeg" = "image/webp";
           let url: string;
           if (webpSupported) {

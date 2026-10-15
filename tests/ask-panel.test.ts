@@ -3,7 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import AskPanel from "../components/board/ask-panel";
-import { ASK_CAPTURE_FALLBACK, ASK_CHIPS, ASK_WAITING_STATUS } from "../lib/ask/ask-ui-text";
+import { ASK_CAPTURE_FALLBACK, ASK_CAPTURE_PREPARING, ASK_CHIPS, ASK_WAITING_STATUS } from "../lib/ask/ask-ui-text";
 import { ASK_ERROR_SPECS } from "../lib/ask/ask-errors";
 import { ASK_LIMITS, type AskSelectionSummary } from "../lib/ask/types";
 import { CAPTURE_FALLBACK_NOTICE, type CaptureResult } from "../lib/ask/capture";
@@ -433,6 +433,55 @@ describe("ask panel", () => {
     });
     expect(usePlayerStore.getState().askCaptureFallback).toBe(false);
     expect(container.querySelector("[data-ask-capture-fallback]")).toBeNull();
+  });
+
+  test("25b. 点提问后立刻显示准备截图，截图结束后消失", async () => {
+    draft("drafting", { draftQuestion: "为什么这样写？" });
+    await render();
+
+    let resolveCapture: ((value: CaptureResult) => void) | undefined;
+    vi.mocked(captureStage).mockImplementation(
+      () =>
+        new Promise<CaptureResult>((resolve) => {
+          resolveCapture = resolve;
+        }),
+    );
+
+    await act(async () => {
+      submitButton().click();
+    });
+    const preparing = container.querySelector("[data-ask-capture-preparing]");
+    expect(preparing?.textContent).toBe(ASK_CAPTURE_PREPARING);
+    expect(preparing?.textContent).toBe("正在准备截图…");
+    expect(preparing?.getAttribute("role")).toBeNull();
+    expect(sendAsk).not.toHaveBeenCalled();
+    const locked = submitButton();
+    expect(locked.getAttribute("aria-disabled")).toBe("true");
+    expect(locked.className).toContain("opacity-50");
+    expect(locked.className).toContain("cursor-not-allowed");
+
+    await act(async () => {
+      resolveCapture?.(OK_CAPTURE);
+    });
+    expect(container.querySelector("[data-ask-capture-preparing]")).toBeNull();
+    expect(sendAsk).toHaveBeenCalledWith(OK_CAPTURE);
+  });
+
+  test("25c. 截图 TIMEOUT 仍显示 #39 回退并 sendAsk(null)", async () => {
+    draft("drafting", { draftQuestion: "换个例子讲讲" });
+    await render();
+    vi.mocked(captureStage).mockResolvedValue({
+      ok: false,
+      reason: "TIMEOUT",
+      fallbackText: "步骤内容",
+    });
+    await act(async () => {
+      submitButton().click();
+    });
+    expect(container.querySelector("[data-ask-capture-preparing]")).toBeNull();
+    expect(container.querySelector("[data-ask-capture-fallback]")?.textContent).toBe(ASK_CAPTURE_FALLBACK);
+    expect(sendAsk).toHaveBeenCalledTimes(1);
+    expect(sendAsk).toHaveBeenCalledWith(null);
   });
 
   test("26. sending 显示等待秒数，每 10 秒更新 status；取消调用 cancelAsk，回到 drafting 后草稿与选区还在", async () => {
