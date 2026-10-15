@@ -4,8 +4,8 @@
  * 第二指按下放弃当前框，按两指中点位移 scrollBy 最近可滚祖先。
  * 窗口 resize 只清选区（clearAskSelection），不关面板。
  * visualViewport resize 是软键盘，不清选区，留给提问抽屉去抬高。
- * Esc 由窗口级单一监听处理：drafting/error/sending/streaming 先关面板，selecting 再退出。
- * 面板外的输入框 / contenteditable / Monaco 不抢 Esc。
+ * Esc 由窗口级单一监听处理（捕获阶段）：drafting/error/sending/streaming 先关面板，selecting 再退出。
+ * 面板外的输入框 / contenteditable 不抢 Esc。圈选期间 Monaco 内的 Esc 同样按阶段退出，避免编辑器吞掉按键。
  */
 "use client";
 
@@ -42,9 +42,15 @@ export interface AskEscapeModifiers {
   altKey: boolean;
 }
 
+/** 圈选期间 Monaco 会在目标阶段吞掉 Esc，这里把它当成面板内目标，按阶段处理。 */
+function isMonacoTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest(".monaco-editor") !== null;
+}
+
 /**
  * 圈选期间 Esc 的唯一决策。
- * 面板外的输入控件留给控件自己；提问框（面板内 textarea）仍按阶段关面板或退出。
+ * 面板外的输入控件留给控件自己；提问框（面板内 textarea）与 Monaco 按阶段关面板或退出。
+ * idle/playing/done 一律忽略，Monaco 保持编辑器自己的 Esc。
  * sending/streaming 只关面板，不退出、不取消请求。
  */
 export function resolveAskEscape(
@@ -56,7 +62,8 @@ export function resolveAskEscape(
   if (modifiers.ctrlKey || modifiers.metaKey || modifiers.altKey) return "ignore";
   if (phase === "idle" || phase === "playing" || phase === "done") return "ignore";
   const insidePanel = target instanceof Element && target.closest("[data-ask-panel]") !== null;
-  if (isTypingTarget(target) && !insidePanel) return "ignore";
+  const inMonaco = isMonacoTarget(target);
+  if (isTypingTarget(target) && !insidePanel && !inMonaco) return "ignore";
   if (phase === "drafting" || phase === "error" || phase === "sending" || phase === "streaming") {
     return "close-panel";
   }
@@ -191,7 +198,8 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
   const exitAsk = usePlayerStore((s) => s.exitAsk);
 
   // 圈选期间唯一的 Esc。挂在始终挂载的这层，sending/streaming 时画选层本身不渲染。
-  // 不 stopPropagation；只有真正关面板或退出时才 preventDefault。
+  // 捕获阶段先于 Monaco 接到按键；真正关面板或退出时 preventDefault + stopPropagation，
+  // 避免编辑器再处理同一次 Esc。忽略时不拦截，非圈选阶段不注册监听。
   useEffect(() => {
     if (!ESCAPE_PHASES.has(askPhase)) return;
     const onKey = (event: globalThis.KeyboardEvent) => {
@@ -205,11 +213,12 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
       });
       if (action === "ignore") return;
       event.preventDefault();
+      event.stopPropagation();
       if (action === "close-panel") closeAskPanel();
       else exitAsk();
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, [askPhase, closeAskPanel, exitAsk]);
 
   if (!ACTIVE_PHASES.has(askPhase)) return null;

@@ -425,8 +425,14 @@ describe("AskSelectionLayer", () => {
     expect(usePlayerStore.getState().askPhase).toBe("idle");
   });
 
-  test("窗口级 Esc：面板外的 Monaco 忽略，面板内 textarea 关面板", async () => {
+  test("窗口级 Esc：面板外的 Monaco 按阶段退出，面板内 textarea 关面板", async () => {
+    const addSpy = vi.spyOn(window, "addEventListener");
     await render();
+    const escapeListen = addSpy.mock.calls.find(
+      (call) => call[0] === "keydown" && call[2] === true,
+    );
+    expect(escapeListen).toBeTruthy();
+
     const monaco = document.createElement("textarea");
     monaco.className = "inputarea";
     const editor = document.createElement("div");
@@ -435,9 +441,12 @@ describe("AskSelectionLayer", () => {
     document.body.append(editor);
     monaco.focus();
 
-    const ignored = await act(async () => pressEscape(monaco));
-    expect(ignored.defaultPrevented).toBe(false);
-    expect(usePlayerStore.getState().askPhase).toBe("selecting");
+    const fromMonaco = await act(async () => pressEscape(monaco));
+    expect(fromMonaco.defaultPrevented).toBe(true);
+    expect(usePlayerStore.getState().askPhase).toBe("idle");
+
+    usePlayerStore.setState({ askPhase: "selecting", status: "interrupted" });
+    await render();
 
     const panel = document.createElement("div");
     panel.setAttribute("data-ask-panel", "");
@@ -516,8 +525,15 @@ describe("resolveAskEscape", () => {
     expect(resolveAskEscape("streaming", body, plain)).toBe("close-panel");
     expect(resolveAskEscape("playing", body, plain)).toBe("ignore");
     expect(resolveAskEscape("idle", body, plain)).toBe("ignore");
-    expect(resolveAskEscape("selecting", cell, plain)).toBe("ignore");
-    expect(resolveAskEscape("drafting", cell, plain)).toBe("ignore");
+    expect(resolveAskEscape("selecting", cell, plain)).toBe("exit");
+    expect(resolveAskEscape("drafting", cell, plain)).toBe("close-panel");
+    expect(resolveAskEscape("playing", cell, plain)).toBe("ignore");
+    expect(resolveAskEscape("idle", cell, plain)).toBe("ignore");
+    const outside = document.createElement("input");
+    document.body.append(outside);
+    expect(resolveAskEscape("selecting", outside, plain)).toBe("ignore");
+    expect(resolveAskEscape("drafting", outside, plain)).toBe("ignore");
+    outside.remove();
     expect(resolveAskEscape("drafting", question, plain)).toBe("close-panel");
     expect(resolveAskEscape("sending", question, plain)).toBe("close-panel");
   });
