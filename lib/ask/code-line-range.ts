@@ -82,7 +82,6 @@ export function computeLineRange(
 
   const testY1 = y1 + 2;
   const testY2 = y2 - 2;
-  console.log("DEBUG_LINE_RANGE", { top, bottom, editorRectTop: editorRect.top, contentTop, scrollTop, y1, y2, testY1, testY2 });
   if (testY1 >= testY2) return null;
 
   let callerLineHeight: number | undefined;
@@ -116,7 +115,6 @@ export function computeLineRange(
     if (typeof top_n !== "number" || !Number.isFinite(top_n)) return null;
     const lh = getLineHeight(n);
     if (typeof lh !== "number" || !Number.isFinite(lh) || lh <= 0) return null;
-    console.log("LINE_CHECK", { n, top_n, lh, top_plus_lh: top_n + lh, testY1, testY2 });
     if (top_n + lh > testY1) {
       start = n;
       break;
