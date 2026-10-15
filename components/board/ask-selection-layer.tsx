@@ -355,8 +355,8 @@ function AskSelectionLayerActive({
   clearAskSelection: () => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
-  const pointersRef = useRef<Map<number, { clientX: number; clientY: number }>>(new Map());
-  const originRef = useRef<{ clientX: number; clientY: number } | null>(null);
+  const pointersRef = useRef<Map<number, PointerSample>>(new Map());
+  const originRef = useRef<PointerSample | null>(null);
   const drawingRef = useRef(false);
   const scrollModeRef = useRef(false);
   const suppressDrawRef = useRef(false);
@@ -681,7 +681,7 @@ function AskSelectionLayerActive({
   }, []);
 
   const commitBand = useCallback(
-    (origin: { clientX: number; clientY: number }, current: { clientX: number; clientY: number }) => {
+    (origin: PointerSample, current: PointerSample) => {
       const host = getStage();
       if (!host) return;
       const freshOrigin = sampleAt(host, origin.clientX, origin.clientY);
@@ -705,7 +705,7 @@ function AskSelectionLayerActive({
         intersects(dragBox, normalizeBBox(relativeRect(host, codeEl))),
       );
 
-      const isPointInside = (pt: { clientX: number; clientY: number }, el: HTMLElement) => {
+      const isPointInside = (pt: PointerSample, el: HTMLElement) => {
         const freshPt = sampleAt(host, pt.clientX, pt.clientY);
         const r = normalizeBBox(relativeRect(host, el));
         return freshPt.x >= r.x && freshPt.x <= r.x + r.width && freshPt.y >= r.y && freshPt.y <= r.y + r.height;
@@ -713,7 +713,7 @@ function AskSelectionLayerActive({
 
       const isClick = motion < ASK_LIMITS.dragThresholdPx;
       const clickCodeEl = isClick
-        ? codeElements.find((codeEl) => isPointInside(current, codeEl) || isPointInside(origin, codeEl))
+        ? codeElements.find((codeEl) => isPointInside(freshCurrent, codeEl) || isPointInside(freshOrigin, codeEl))
         : undefined;
 
       let point: { x: number; y: number } | null;
@@ -723,7 +723,7 @@ function AskSelectionLayerActive({
         candidateBox = box;
         point = null;
       } else if (isClick && clickCodeEl) {
-        const pointerPos = isPointInside(current, clickCodeEl) ? freshCurrent : freshOrigin;
+        const pointerPos = isPointInside(freshCurrent, clickCodeEl) ? freshCurrent : freshOrigin;
         candidateBox = { x: pointerPos.x, y: pointerPos.y, width: 1, height: 1 };
         point = { x: pointerPos.x, y: pointerPos.y };
       } else {
@@ -777,7 +777,8 @@ function AskSelectionLayerActive({
     if (button !== 0 && pointerType === "mouse") return;
     const stageHost = getStage();
     if (!stageHost) return;
-    pointersRef.current.set(pointerId, { clientX, clientY });
+    const sample = sampleAt(stageHost, clientX, clientY);
+    pointersRef.current.set(pointerId, sample);
     if (!hostEl.hasPointerCapture(pointerId)) hostEl.setPointerCapture(pointerId);
 
     if (pointersRef.current.size >= 2) {
@@ -792,10 +793,9 @@ function AskSelectionLayerActive({
     }
 
     if (scrollModeRef.current || suppressDrawRef.current) return;
-    originRef.current = { clientX, clientY };
+    originRef.current = sample;
     drawingRef.current = true;
-    const freshSample = sampleAt(stageHost, clientX, clientY);
-    setRubberBand(bandFrom(freshSample, freshSample));
+    setRubberBand(bandFrom(sample, sample));
   };
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
@@ -814,7 +814,7 @@ function AskSelectionLayerActive({
         window.scrollTo({ top: window.scrollY, left: window.scrollX, behavior: "auto" });
       }
       const scroller = findScrollable(getStage());
-      if (scroller) {
+      if (scroller && scroller !== document.documentElement && scroller !== document.body) {
         scroller.scrollTo({ top: scroller.scrollTop, left: scroller.scrollLeft, behavior: "auto" });
       }
     }
@@ -823,7 +823,9 @@ function AskSelectionLayerActive({
 
   const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
     if (!pointersRef.current.has(event.pointerId)) return;
-    pointersRef.current.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
+    const host = getStage();
+    if (!host) return;
+    pointersRef.current.set(event.pointerId, sampleAt(host, event.clientX, event.clientY));
 
     if (scrollModeRef.current && pointersRef.current.size >= 2) {
       const mid = clientMidpoint(pointersRef.current);
@@ -834,17 +836,18 @@ function AskSelectionLayerActive({
     }
 
     if (!drawingRef.current || !originRef.current || suppressDrawRef.current) return;
-    const host = getStage();
-    if (!host) return;
+    const current = pointersRef.current.get(event.pointerId);
+    if (!current) return;
     const freshOrigin = sampleAt(host, originRef.current.clientX, originRef.current.clientY);
-    const freshCurrent = sampleAt(host, event.clientX, event.clientY);
-    setRubberBand(bandFrom(freshOrigin, freshCurrent));
+    setRubberBand(bandFrom(freshOrigin, current));
   };
 
   const onPointerUp = (event: PointerEvent<HTMLDivElement>) => {
+    const host = getStage();
+    const upSample = host ? sampleAt(host, event.clientX, event.clientY) : undefined;
     const wasDrawing = drawingRef.current && originRef.current != null && !scrollModeRef.current;
     const origin = originRef.current;
-    const current = { clientX: event.clientX, clientY: event.clientY };
+    const current = upSample ?? pointersRef.current.get(event.pointerId) ?? origin;
     pointersRef.current.delete(event.pointerId);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
@@ -1115,7 +1118,7 @@ function AskSelectionLayerActive({
 }
 
 /** Midpoint in client (viewport) coordinates, so scroll delta is independent of stage scroll. */
-function clientMidpoint(pointers: Map<number, { clientX: number; clientY: number }>): PointerSample {
+function clientMidpoint(pointers: Map<number, PointerSample>): PointerSample {
   let x = 0;
   let y = 0;
   let n = 0;

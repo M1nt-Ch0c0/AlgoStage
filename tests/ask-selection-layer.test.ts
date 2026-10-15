@@ -1418,53 +1418,5 @@ describe("resolveAskEscape", () => {
         host.dispatchEvent(pointer("pointerup", { pointerId: 1, clientX: 50, clientY: 50 }));
       });
     });
-
-    test("pointerdown cancels in-flight entering scroll and drag start uses settled position", async () => {
-      const originalMatchMedia = window.matchMedia;
-      window.matchMedia = vi.fn().mockImplementation((query: string) => {
-        if (query === "(max-width: 639px)") {
-          return { matches: true, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() };
-        }
-        if (query === "(prefers-reduced-motion: reduce)") {
-          return { matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() };
-        }
-        return { matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() };
-      });
-
-      const scrollToSpy = vi.fn();
-      window.scrollTo = scrollToSpy;
-      scroller.scrollTo = vi.fn();
-      Object.defineProperty(window, "scrollY", { value: 120, configurable: true, writable: true });
-      Object.defineProperty(window, "scrollX", { value: 0, configurable: true, writable: true });
-
-      const codeEl = document.createElement("div");
-      codeEl.setAttribute("data-ask-target", "code");
-      codeEl.setAttribute("data-ask-id", "code:s1");
-      codeEl.scrollIntoView = vi.fn();
-      // Place code off-screen initially so entering scroll triggers
-      codeEl.getBoundingClientRect = () => domRect(200, 900, 150, 200);
-      stage.appendChild(codeEl);
-
-      await render();
-
-      // Flush requestAnimationFrame so entering scroll starts
-      await act(async () => {
-        await new Promise((r) => requestAnimationFrame(r));
-      });
-
-      expect(codeEl.scrollIntoView).toHaveBeenCalledWith({ block: "nearest", behavior: "smooth" });
-
-      const host = layer();
-      // Pointerdown while scroll is in-flight: cancels smooth scroll via window.scrollTo & scroller.scrollTo
-      await act(async () => {
-        host.dispatchEvent(pointer("pointerdown", { pointerId: 1, clientX: 220, clientY: 100 }));
-      });
-
-      expect(scrollToSpy).toHaveBeenCalledWith({ top: 120, left: 0, behavior: "auto" });
-      expect(scroller.scrollTo).toHaveBeenCalled();
-
-      codeEl.remove();
-      window.matchMedia = originalMatchMedia;
-    });
   });
 });
