@@ -1,6 +1,6 @@
 export interface CodeLineRangeEditor {
-  getDomNode?(): { getBoundingClientRect?(): { top: number; bottom?: number; left?: number; right?: number } } | null;
-  getLayoutInfo?(): unknown;
+  getDomNode?(): { getBoundingClientRect?(): { top: number; bottom?: number; left?: number; right?: number; width?: number; height?: number } } | null;
+  getLayoutInfo?(): { contentTop?: number } | null | unknown;
   getModel?(): { getLineCount?(): number } | null;
   getVisibleRanges?(): Array<{ startLineNumber: number; endLineNumber: number }> | null;
   getScrollTop?(): number;
@@ -12,6 +12,13 @@ export interface CodeLineRangeEditor {
 export interface ComputeLineRangeOptions {
   lineHeight?: number;
   lineHeightOption?: unknown;
+}
+
+export function formatCodeRangeLabel(range: { startLine: number; endLine: number }): string {
+  if (range.startLine === range.endLine) {
+    return `代码第 ${range.startLine} 行`;
+  }
+  return `代码第 ${range.startLine}–${range.endLine} 行`;
 }
 
 /**
@@ -31,10 +38,17 @@ export function computeLineRange(
 
   const domNode = editor.getDomNode?.();
   if (!domNode || typeof domNode.getBoundingClientRect !== "function") return null;
-  const rect = domNode.getBoundingClientRect();
-  if (!rect || typeof rect.top !== "number" || Number.isNaN(rect.top)) return null;
+  const editorRect = domNode.getBoundingClientRect();
+  if (!editorRect || typeof editorRect.top !== "number" || Number.isNaN(editorRect.top)) return null;
 
-  editor.getLayoutInfo?.();
+  const layout = (typeof editor.getLayoutInfo === "function" ? editor.getLayoutInfo() : null) as { contentTop?: number } | null;
+  const contentTop = (layout && typeof layout.contentTop === "number" && !Number.isNaN(layout.contentTop))
+    ? layout.contentTop
+    : 0;
+
+  if (typeof editor.getScrollTop !== "function") return null;
+  const scrollTop = editor.getScrollTop();
+  if (typeof scrollTop !== "number" || Number.isNaN(scrollTop)) return null;
 
   const model = editor.getModel?.();
   if (!model || typeof model.getLineCount !== "function") return null;
@@ -47,7 +61,7 @@ export function computeLineRange(
   let minVisible = Infinity;
   let maxVisible = -Infinity;
   for (const r of visibleRanges) {
-    if (typeof r.startLineNumber === "number" && typeof r.endLineNumber === "number") {
+    if (r && typeof r.startLineNumber === "number" && typeof r.endLineNumber === "number") {
       if (r.startLineNumber < minVisible) minVisible = r.startLineNumber;
       if (r.endLineNumber > maxVisible) maxVisible = r.endLineNumber;
     }
@@ -56,88 +70,74 @@ export function computeLineRange(
 
   minVisible = Math.max(1, Math.min(minVisible, lineCount));
   maxVisible = Math.max(minVisible, Math.min(maxVisible, lineCount));
+  if (minVisible > maxVisible) return null;
 
-  if (typeof editor.getScrollTop !== "function" || typeof editor.getTopForLineNumber !== "function") {
-    return null;
+  if (typeof editor.getTopForLineNumber !== "function") return null;
+
+  const boxTop = Math.min(top, bottom);
+  const boxBottom = Math.max(top, bottom);
+  const y1 = boxTop - editorRect.top - contentTop + scrollTop;
+  const y2 = boxBottom - editorRect.top - contentTop + scrollTop;
+  if (!Number.isFinite(y1) || !Number.isFinite(y2)) return null;
+
+  const testY1 = y1 + 2;
+  const testY2 = y2 - 2;
+  console.log("DEBUG_LINE_RANGE", { top, bottom, editorRectTop: editorRect.top, contentTop, scrollTop, y1, y2, testY1, testY2 });
+  if (testY1 >= testY2) return null;
+
+  let callerLineHeight: number | undefined;
+  if (typeof options?.lineHeight === "number" && Number.isFinite(options.lineHeight) && options.lineHeight > 0) {
+    callerLineHeight = options.lineHeight;
+  } else if (typeof editor.lineHeight === "number" && Number.isFinite(editor.lineHeight) && editor.lineHeight > 0) {
+    callerLineHeight = editor.lineHeight;
+  } else if (options?.lineHeightOption !== undefined && typeof editor.getOption === "function") {
+    const opt = editor.getOption(options.lineHeightOption);
+    if (typeof opt === "number" && Number.isFinite(opt) && opt > 0) {
+      callerLineHeight = opt;
+    }
   }
-  const scrollTop = editor.getScrollTop();
-  if (typeof scrollTop !== "number" || Number.isNaN(scrollTop)) return null;
 
-  const getLineHeight = (line: number): number => {
-    if (typeof options?.lineHeight === "number" && options.lineHeight > 0) {
-      return options.lineHeight;
+  const getLineHeight = (n: number): number => {
+    if (callerLineHeight !== undefined) return callerLineHeight;
+    if (n < lineCount) {
+      const diff = editor.getTopForLineNumber!(n + 1) - editor.getTopForLineNumber!(n);
+      if (Number.isFinite(diff) && diff > 0) return diff;
     }
-    if (typeof editor.lineHeight === "number" && editor.lineHeight > 0) {
-      return editor.lineHeight;
-    }
-    if (typeof editor.getOption === "function") {
-      if (options?.lineHeightOption !== undefined) {
-        const opt = editor.getOption(options.lineHeightOption);
-        if (typeof opt === "number" && !Number.isNaN(opt) && opt > 0) return opt;
-      }
-      const optDirect = editor.getOption("lineHeight");
-      if (typeof optDirect === "number" && !Number.isNaN(optDirect) && optDirect > 0) return optDirect;
-    }
-    if (line < lineCount) {
-      const diff = editor.getTopForLineNumber!(line + 1) - editor.getTopForLineNumber!(line);
-      if (typeof diff === "number" && !Number.isNaN(diff) && diff > 0) return diff;
-    } else if (line > 1) {
-      const diff = editor.getTopForLineNumber!(line) - editor.getTopForLineNumber!(line - 1);
-      if (typeof diff === "number" && !Number.isNaN(diff) && diff > 0) return diff;
+    if (n > 1) {
+      const diff = editor.getTopForLineNumber!(n) - editor.getTopForLineNumber!(n - 1);
+      if (Number.isFinite(diff) && diff > 0) return diff;
     }
     return 0;
   };
 
-  const firstTop = editor.getTopForLineNumber(minVisible);
-  const lastLineHeight = getLineHeight(maxVisible);
-  const lastTop = editor.getTopForLineNumber(maxVisible);
-  if (Number.isNaN(firstTop) || Number.isNaN(lastTop) || Number.isNaN(lastLineHeight) || lastLineHeight <= 0) {
-    return null;
-  }
-  const topBound = firstTop;
-  const bottomBound = lastTop + lastLineHeight;
-
-  const boxTop = Math.min(top, bottom);
-  const boxBottom = Math.max(top, bottom);
-  const testBottom = boxBottom > boxTop ? boxBottom - 1 : boxTop;
-
-  const yTop = boxTop - rect.top + scrollTop;
-  const yBottom = testBottom - rect.top + scrollTop;
-
-  if (yBottom < topBound || yTop >= bottomBound) {
-    return null;
-  }
-
-  const findLineForY = (y: number): number => {
-    if (y <= topBound) return minVisible;
-    if (y >= bottomBound) return maxVisible;
-
-    for (let n = minVisible; n <= maxVisible; n++) {
-      const lineTop = editor.getTopForLineNumber!(n);
-      const lh = getLineHeight(n);
-      const lineBottom = lineTop + lh;
-      if (y >= lineTop && y < lineBottom) {
-        return n;
-      }
-      if (n < maxVisible) {
-        const nextTop = editor.getTopForLineNumber!(n + 1);
-        if (y >= lineBottom && y < nextTop) {
-          return n;
-        }
-      }
+  let start: number | null = null;
+  for (let n = minVisible; n <= maxVisible; n++) {
+    const top_n = editor.getTopForLineNumber(n);
+    if (typeof top_n !== "number" || !Number.isFinite(top_n)) return null;
+    const lh = getLineHeight(n);
+    if (typeof lh !== "number" || !Number.isFinite(lh) || lh <= 0) return null;
+    console.log("LINE_CHECK", { n, top_n, lh, top_plus_lh: top_n + lh, testY1, testY2 });
+    if (top_n + lh > testY1) {
+      start = n;
+      break;
     }
-    return maxVisible;
-  };
-
-  let startLine = findLineForY(yTop);
-  let endLine = findLineForY(yBottom);
-  if (startLine > endLine) {
-    const tmp = startLine;
-    startLine = endLine;
-    endLine = tmp;
   }
-  startLine = Math.max(minVisible, Math.min(maxVisible, startLine));
-  endLine = Math.max(startLine, Math.min(maxVisible, endLine));
 
-  return { startLine, endLine };
+  let end: number | null = null;
+  for (let n = maxVisible; n >= minVisible; n--) {
+    const top_n = editor.getTopForLineNumber(n);
+    if (typeof top_n !== "number" || !Number.isFinite(top_n)) return null;
+    if (top_n < testY2) {
+      end = n;
+      break;
+    }
+  }
+
+  if (start === null || end === null || start > end) return null;
+
+  start = Math.max(1, Math.max(minVisible, start));
+  end = Math.min(lineCount, Math.min(maxVisible, end));
+  if (start > end) return null;
+
+  return { startLine: start, endLine: end };
 }
