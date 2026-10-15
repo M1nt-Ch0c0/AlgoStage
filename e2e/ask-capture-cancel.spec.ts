@@ -273,40 +273,49 @@ function installStatusStability(width: number, touch: boolean) {
     if (touch) {
       test("touch drag starting on 取消 does not cancel", async ({ page }) => {
         let askRequests = 0;
+        let release = () => {};
+        const gate = new Promise<void>((resolve) => {
+          release = resolve;
+        });
         await page.route("**/api/lecture/ask", async (route) => {
           askRequests += 1;
+          await gate;
           await route.fulfill({
             status: 200,
             contentType: "application/x-ndjson",
             body: askStream("s1"),
           });
         });
-        await openAskPanel(page);
-        const submitAt = await boxCenter(page, "[data-ask-submit]");
-        await pressAt(page, submitAt.x, submitAt.y, true);
-        await expect(page.locator("[data-ask-capture-preparing]")).toBeVisible();
+        try {
+          await openAskPanel(page);
+          const submitAt = await boxCenter(page, "[data-ask-submit]");
+          await pressAt(page, submitAt.x, submitAt.y, true);
+          await expect(page.locator("[data-ask-capture-preparing]")).toBeVisible();
 
-        const cancelAt = await boxCenter(page, "[data-ask-cancel]");
-        const client = await page.context().newCDPSession(page);
-        const touchPoint = (x: number, y: number) => [{ x: Math.round(x), y: Math.round(y), id: 0 }];
-        await client.send("Input.dispatchTouchEvent", {
-          type: "touchStart",
-          touchPoints: touchPoint(cancelAt.x, cancelAt.y),
-        });
-        for (const step of [1, 2, 3, 4]) {
+          const cancelAt = await boxCenter(page, "[data-ask-cancel]");
+          const client = await page.context().newCDPSession(page);
+          const touchPoint = (x: number, y: number) => [{ x: Math.round(x), y: Math.round(y), id: 0 }];
           await client.send("Input.dispatchTouchEvent", {
-            type: "touchMove",
-            touchPoints: touchPoint(cancelAt.x, cancelAt.y - step * 15),
+            type: "touchStart",
+            touchPoints: touchPoint(cancelAt.x, cancelAt.y),
           });
-        }
-        await client.send("Input.dispatchTouchEvent", {
-          type: "touchEnd",
-          touchPoints: touchPoint(cancelAt.x, cancelAt.y - 60),
-        });
+          for (const step of [1, 2, 3, 4]) {
+            await client.send("Input.dispatchTouchEvent", {
+              type: "touchMove",
+              touchPoints: touchPoint(cancelAt.x, cancelAt.y - step * 15),
+            });
+          }
+          await client.send("Input.dispatchTouchEvent", {
+            type: "touchEnd",
+            touchPoints: touchPoint(cancelAt.x, cancelAt.y - 60),
+          });
 
-        await expect.poll(() => askRequests).toBe(1);
-        await expect(page.locator("[data-ask-panel]")).toBeVisible();
-        await expect(page.locator("[data-ask-waiting]")).toBeVisible();
+          await expect.poll(() => askRequests).toBe(1);
+          await expect(page.locator("[data-ask-panel]")).toBeVisible();
+          await expect(page.locator("[data-ask-waiting]")).toBeVisible();
+        } finally {
+          release();
+        }
       });
     }
 
