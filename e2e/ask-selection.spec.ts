@@ -593,6 +593,26 @@ test.describe("1280 selection flow", () => {
     await expectCaptureFallbackThroughPlayback(page);
   });
 
+  test("S5-chip390 1280: chip row position unchanged", async ({ page }) => {
+    await startGenerated(page);
+    await pauseLecture(page);
+    await enterSelection(page);
+
+    const layer = page.locator("[data-ask-layer]");
+    const group = layer.locator('[role="group"][aria-label="点选捷径"]');
+    await expect(group).toBeVisible();
+
+    const layerBox = await layer.boundingBox();
+    const groupBox = await group.boundingBox();
+    expect(layerBox).not.toBeNull();
+    expect(groupBox).not.toBeNull();
+
+    expect(groupBox!.y - layerBox!.y).toBeLessThan(80);
+
+    const positionStyle = await group.evaluate((el) => window.getComputedStyle(el).position);
+    expect(positionStyle).not.toBe("fixed");
+  });
+
   test("S2. Q enters, exit button >=44x44, Esc exits", async ({ page }) => {
     await startGenerated(page);
     await pauseLecture(page);
@@ -1536,6 +1556,287 @@ test.describe("390 selection flow", () => {
     test.setTimeout(45_000);
     await page.emulateMedia({ reducedMotion: "reduce" });
     await expectCaptureFallbackThroughPlayback(page);
+  });
+
+  test.describe("S5-chip390", () => {
+    test("a. tap code line 1 -> panel label 已选：代码第 1 行", async ({ page }) => {
+      await startGenerated(page);
+      await pauseLecture(page);
+      await enterSelection(page);
+
+      const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+      await code.scrollIntoViewIfNeeded();
+      await expect(code).toBeVisible();
+
+      const box = await code.boundingBox();
+      if (!box) throw new Error("code target has no box");
+
+      const line1 = await getMonacoLineBox(page, 1);
+      const clickX = box.x + 80;
+      const clickY = (line1.top + line1.bottom) / 2;
+
+      await page.touchscreen.tap(clickX, clickY);
+
+      const panel = page.locator("[data-ask-panel]");
+      await expect(panel).toBeVisible();
+      await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：代码第 1 行");
+    });
+
+    test("b. touch drag over lines 1–5 -> panel visible", async ({ page }) => {
+      await startGenerated(page);
+      await pauseLecture(page);
+      await enterSelection(page);
+
+      const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+      await code.scrollIntoViewIfNeeded();
+      await expect(code).toBeVisible();
+
+      const box = await code.boundingBox();
+      if (!box) throw new Error("code target has no box");
+
+      const startBox = await getMonacoLineBox(page, 1);
+      const endBox = await getMonacoLineBox(page, 5);
+      const startY = startBox.top + 4;
+      const endY = endBox.bottom - 4;
+      const startX = box.x + 60;
+      const endX = box.x + 160;
+
+      await page.mouse.move(startX, startY);
+      await page.mouse.down();
+      await page.mouse.move(endX, endY, { steps: 8 });
+      await page.mouse.up();
+
+      const panel = page.locator("[data-ask-panel]");
+      await expect(panel).toBeVisible();
+      await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：代码第 1–5 行");
+    });
+
+    test("c. tap the last code line -> label 已选：代码第 N 行", async ({ page }) => {
+      await startGenerated(page);
+      await pauseLecture(page);
+      await enterSelection(page);
+
+      const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+      await code.scrollIntoViewIfNeeded();
+      await expect(code).toBeVisible();
+
+      const lastLine = await page.evaluate(() => {
+        const lineNumbers = Array.from(document.querySelectorAll<HTMLElement>(".monaco-editor .line-numbers"));
+        const nums = lineNumbers
+          .map((ln) => parseInt(ln.textContent?.trim() ?? "", 10))
+          .filter((n) => !Number.isNaN(n));
+        return Math.max(...nums);
+      });
+
+      const box = await code.boundingBox();
+      if (!box) throw new Error("code target has no box");
+
+      const lastLineBox = await getMonacoLineBox(page, lastLine);
+      const clickX = box.x + 80;
+      const clickY = (lastLineBox.top + lastLineBox.bottom) / 2;
+
+      await page.touchscreen.tap(clickX, clickY);
+
+      const panel = page.locator("[data-ask-panel]");
+      await expect(panel).toBeVisible();
+      await expect(panel.locator("[data-ask-panel-label]")).toHaveText(`已选：代码第 ${lastLine} 行`);
+    });
+
+    test("d. each chip in [data-ask-bottom-bar] and exit button: document.elementFromPoint at center is self or inside", async ({ page }) => {
+      await startGenerated(page);
+      await pauseLecture(page);
+      await enterSelection(page);
+
+      const bar = page.locator("[data-ask-bottom-bar]");
+      await expect(bar).toBeVisible();
+
+      const chips = bar.locator("[data-ask-shortcut]");
+      const count = await chips.count();
+      expect(count).toBeGreaterThan(0);
+
+      for (let i = 0; i < count; i++) {
+        const chip = chips.nth(i);
+        const box = await chip.boundingBox();
+        expect(box).not.toBeNull();
+        const cx = box!.x + box!.width / 2;
+        const cy = box!.y + box!.height / 2;
+
+        const isHit = await chip.evaluate((el, { x, y }) => {
+          const hit = document.elementFromPoint(x, y);
+          return hit !== null && (hit === el || el.contains(hit));
+        }, { x: cx, y: cy });
+        expect(isHit).toBe(true);
+      }
+
+      const exitBtn = entry(page);
+      const exitBox = await exitBtn.boundingBox();
+      expect(exitBox).not.toBeNull();
+      const exitCx = exitBox!.x + exitBox!.width / 2;
+      const exitCy = exitBox!.y + exitBox!.height / 2;
+      const isExitHit = await exitBtn.evaluate((el, { x, y }) => {
+        const hit = document.elementFromPoint(x, y);
+        return hit !== null && (hit === el || el.contains(hit));
+      }, { x: exitCx, y: exitCy });
+      expect(isExitHit).toBe(true);
+    });
+
+    test("e. after opening the panel, bar rect and [data-ask-panel] rect don't intersect", async ({ page }) => {
+      await startGenerated(page);
+      await pauseLecture(page);
+      await enterSelection(page);
+
+      const shortcut = page.locator('[data-ask-shortcut="subtitle"]');
+      await expect(shortcut).toBeVisible();
+      await shortcut.click();
+
+      const panel = page.locator("[data-ask-panel]");
+      await expect(panel).toBeVisible();
+
+      const bar = page.locator("[data-ask-bottom-bar]");
+      const barCount = await bar.count();
+      if (barCount > 0 && await bar.isVisible()) {
+        const panelBox = await panel.boundingBox();
+        const barBox = await bar.boundingBox();
+        expect(panelBox).not.toBeNull();
+        expect(barBox).not.toBeNull();
+        const intersects =
+          panelBox!.x < barBox!.x + barBox!.width &&
+          panelBox!.x + panelBox!.width > barBox!.x &&
+          panelBox!.y < barBox!.y + barBox!.height &&
+          panelBox!.y + panelBox!.height > barBox!.y;
+        expect(intersects).toBe(false);
+      }
+    });
+
+    test("f. scroll page to entry button, tap it to enter, expect code rect within viewport above bar", async ({ page }) => {
+      await startGenerated(page);
+      await pauseLecture(page);
+
+      const button = entry(page);
+      await button.scrollIntoViewIfNeeded();
+
+      await button.click();
+      await expect(page.locator("[data-ask-layer]")).toBeVisible();
+
+      const bar = page.locator("[data-ask-bottom-bar]");
+      await expect(bar).toBeVisible();
+      const barBox = await bar.boundingBox();
+      expect(barBox).not.toBeNull();
+
+      const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+      await expect.poll(async () => {
+        const box = await code.boundingBox();
+        if (!box) return false;
+        return box.y >= 0 && box.y + box.height <= barBox!.y + 2;
+      }).toBe(true);
+    });
+
+    test("(A) touch hit area >= 44x44 each and gap >= 8px", async ({ page }) => {
+      await startGenerated(page);
+      await pauseLecture(page);
+      await enterSelection(page);
+
+      const bar = page.locator("[data-ask-bottom-bar]");
+      await expect(bar).toBeVisible();
+
+      const chips = bar.locator("[data-ask-shortcut]");
+      const count = await chips.count();
+      expect(count).toBeGreaterThanOrEqual(2);
+
+      const boxes: Array<{ x: number; y: number; width: number; height: number }> = [];
+      for (let i = 0; i < count; i++) {
+        const chip = chips.nth(i);
+        const box = await chip.boundingBox();
+        expect(box).not.toBeNull();
+        expect(box!.width).toBeGreaterThanOrEqual(44);
+        expect(box!.height).toBeGreaterThanOrEqual(44);
+        boxes.push(box!);
+      }
+
+      for (let i = 0; i < boxes.length - 1; i++) {
+        const curr = boxes[i];
+        const next = boxes[i + 1];
+        // Adjacent gap in horizontal row
+        const gap = next.x - (curr.x + curr.width);
+        expect(gap).toBeGreaterThanOrEqual(7.9);
+      }
+
+      const exitBtn = entry(page);
+      const exitBox = await exitBtn.boundingBox();
+      expect(exitBox).not.toBeNull();
+      expect(exitBox!.width).toBeGreaterThanOrEqual(44);
+      expect(exitBox!.height).toBeGreaterThanOrEqual(44);
+    });
+
+    test("(B) immediate touch drag over lines 2–4 without waiting", async ({ page }) => {
+      await startGenerated(page);
+      await pauseLecture(page);
+
+      const button = entry(page);
+      await button.scrollIntoViewIfNeeded();
+      await button.click();
+
+      const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+      await expect(code).toBeVisible();
+
+      const box = (await code.boundingBox())!;
+      const line2 = await getMonacoLineBox(page, 2);
+      const line4 = await getMonacoLineBox(page, 4);
+
+      const startX = box.x + 60;
+      const startY = line2.top + 4;
+      const endX = box.x + 160;
+      const endY = line4.bottom - 4;
+
+      await page.mouse.move(startX, startY);
+      await page.mouse.down();
+      await page.mouse.move(endX, endY, { steps: 5 });
+      await page.mouse.up();
+
+      const panel = page.locator("[data-ask-panel]");
+      await expect(panel).toBeVisible();
+      await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：代码第 2–4 行");
+    });
+
+    test("h. selection fully visible above drawer: record scrollY, open panel, scrollY unchanged", async ({ page: _page }) => {
+      // fixme: depends on S4 r4 ask-panel.tsx:181 block:'nearest' (Gavin)
+      test.fixme(true, "depends on S4 r4 ask-panel.tsx:181 block:'nearest' (Gavin)");
+    });
+
+    test("i. selection covered by the drawer: selection rect bottom <= panel rect top", async ({ page: _page }) => {
+      // fixme: depends on S4 r4 ask-panel.tsx:181 block:'nearest' (Gavin)
+      test.fixme(true, "depends on S4 r4 ask-panel.tsx:181 block:'nearest' (Gavin)");
+    });
+
+    test("j. tall selection: selection rect top >= 0 and < innerHeight", async ({ page: _page }) => {
+      // fixme: depends on S4 r4 ask-panel.tsx:181 block:'nearest' (Gavin)
+      test.fixme(true, "depends on S4 r4 ask-panel.tsx:181 block:'nearest' (Gavin)");
+    });
+  });
+
+  test.describe("S5-chip390 reduced motion", () => {
+    test.use({ reducedMotion: "reduce" });
+
+    test("g. scroll to entry button, tap enter, immediately assert code in place in 2 animation frames", async ({ page }) => {
+      await startGenerated(page);
+      await pauseLecture(page);
+
+      const button = entry(page);
+      await button.scrollIntoViewIfNeeded();
+      await button.click();
+
+      // Wait 2 animation frames
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+
+      const bar = page.locator("[data-ask-bottom-bar]");
+      await expect(bar).toBeVisible();
+      const barBox = (await bar.boundingBox())!;
+
+      const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+      const box = (await code.boundingBox())!;
+      expect(box.y).toBeGreaterThanOrEqual(0);
+      expect(box.y + box.height).toBeLessThanOrEqual(barBox.y + 2);
+    });
   });
 });
 
