@@ -113,6 +113,27 @@ function clampQuestion(value: string): string {
   return value.length > ASK_LIMITS.questionMax ? value.slice(0, ASK_LIMITS.questionMax) : value;
 }
 
+/**
+ * Two animation frames so setPreparing(true) paints the busy 取消 row and
+ * the button is pressable before captureStage stalls the main thread.
+ * When requestAnimationFrame is missing, one macrotask stands in for both.
+ */
+export function yieldPaintFrames(): Promise<void> {
+  const raf = globalThis.requestAnimationFrame;
+  if (typeof raf !== "function") {
+    return new Promise((resolve) => {
+      setTimeout(resolve, 0);
+    });
+  }
+  return new Promise((resolve) => {
+    raf(() => {
+      raf(() => {
+        resolve();
+      });
+    });
+  });
+}
+
 function errorView(code: string | null) {
   if (code && ASK_ERROR_SPECS[code]) return ASK_ERROR_SPECS[code];
   return resolveAskError(code ? { code } : { code: "UPSTREAM_ERROR" });
@@ -305,6 +326,9 @@ function AskPanelActive({ stage }: AskPanelProps) {
     // 新的一次截图开始：上一轮「没截到图」先清掉，这次失败再写回。
     usePlayerStore.setState({ askCaptureFallback: false });
     setPreparing(true);
+    // Paint the busy 取消 row before captureStage stalls the main thread,
+    // so a press during the stall has a live button to hit.
+    await yieldPaintFrames();
     let capture: CaptureResult | null;
     try {
       capture = await captureStage(resolveStage(stage), startSelection);

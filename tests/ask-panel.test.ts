@@ -2,7 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import AskPanel from "../components/board/ask-panel";
+import AskPanel, { yieldPaintFrames } from "../components/board/ask-panel";
 import { ASK_CAPTURE_FALLBACK, ASK_CAPTURE_PREPARING, ASK_CHIPS, ASK_WAITING_STATUS } from "../lib/ask/ask-ui-text";
 import { ASK_ERROR_SPECS } from "../lib/ask/ask-errors";
 import { ASK_LIMITS, type AskSelectionSummary } from "../lib/ask/types";
@@ -177,9 +177,20 @@ function activateButton(button: HTMLButtonElement) {
   button.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 0 }));
 }
 
-/** Drain both post-capture yieldToInput turns (rAF + macrotask, twice). */
+/** Let the two pre-capture animation frames run so captureStage can start. */
+async function drainPaintFrames() {
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
+}
+
+/** Drain the pre-capture double rAF, then both post-capture yieldToInput turns. */
 async function finishCaptureTurn() {
   await Promise.resolve();
+  await drainPaintFrames();
   for (let turn = 0; turn < 2; turn += 1) {
     await new Promise<void>((resolve) => {
       requestAnimationFrame(() => resolve());
@@ -319,6 +330,7 @@ describe("ask panel", () => {
 
     await act(async () => {
       submitButton().click();
+      await drainPaintFrames();
     });
     expect(captureStage).toHaveBeenCalledTimes(1);
     expect(sendAsk).not.toHaveBeenCalled();
@@ -342,6 +354,7 @@ describe("ask panel", () => {
     );
     await act(async () => {
       submitButton().click();
+      await drainPaintFrames();
     });
     await act(async () => {
       usePlayerStore.setState({
@@ -477,6 +490,71 @@ describe("ask panel", () => {
     expect(container.querySelector("[data-ask-capture-fallback]")).toBeNull();
   });
 
+  test("yieldPaintFrames resolves after two animation frames", async () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    try {
+      let settled = false;
+      const pending = yieldPaintFrames().then(() => {
+        settled = true;
+      });
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      expect(frames).toHaveLength(1);
+      frames[0]?.(0);
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      expect(frames).toHaveLength(2);
+      frames[1]?.(0);
+      await pending;
+      expect(settled).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test("yieldPaintFrames uses one macrotask when requestAnimationFrame is missing", async () => {
+    const jobs: Array<() => void> = [];
+    vi.stubGlobal("requestAnimationFrame", undefined);
+    vi.stubGlobal("setTimeout", (callback: () => void) => {
+      jobs.push(callback);
+      return jobs.length;
+    });
+    try {
+      let settled = false;
+      const pending = yieldPaintFrames().then(() => {
+        settled = true;
+      });
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      expect(jobs).toHaveLength(1);
+      jobs[0]?.();
+      await pending;
+      expect(settled).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test("preparing row is painted before captureStage starts", async () => {
+    draft("drafting", { draftQuestion: "为什么这样写？" });
+    await render();
+    const seen: string[] = [];
+    vi.mocked(captureStage).mockImplementation(async () => {
+      seen.push(container.querySelector("[data-ask-capture-preparing]")?.textContent ?? "");
+      return OK_CAPTURE;
+    });
+    await act(async () => {
+      submitButton().click();
+      await finishCaptureTurn();
+    });
+    expect(seen).toEqual([ASK_CAPTURE_PREPARING]);
+    expect(captureStage).toHaveBeenCalledTimes(1);
+  });
+
   test("25a. 准备截图占位在提问前就在 DOM 里且不可见，准备中同一节点变为可见", async () => {
     draft("drafting", { draftQuestion: "为什么这样写？" });
     await render();
@@ -500,6 +578,7 @@ describe("ask panel", () => {
 
     await act(async () => {
       submitButton().click();
+      await drainPaintFrames();
     });
     const shown = preparingSlot();
     expect(shown).toBe(statusRow());
@@ -537,6 +616,7 @@ describe("ask panel", () => {
 
     await act(async () => {
       submitButton().click();
+      await drainPaintFrames();
     });
     const preparing = container.querySelector("[data-ask-capture-preparing]");
     expect(preparing?.textContent).toBe(ASK_CAPTURE_PREPARING);
@@ -575,6 +655,7 @@ describe("ask panel", () => {
 
     await act(async () => {
       submitButton().click();
+      await drainPaintFrames();
     });
     expect(container.querySelector("[data-ask-capture-preparing]")?.textContent).toBe(ASK_CAPTURE_PREPARING);
     expect(captureStage).toHaveBeenCalledTimes(1);
@@ -605,6 +686,7 @@ describe("ask panel", () => {
     );
     await act(async () => {
       submitButton().click();
+      await drainPaintFrames();
     });
     expect(container.querySelector("[data-ask-capture-preparing]")).not.toBeNull();
 
@@ -634,7 +716,9 @@ describe("ask panel", () => {
     let calls = 0;
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
       calls += 1;
-      if (calls === 2) {
+      // Paint uses the first two frames. The fourth frame is the second
+      // post-capture yield, which this test holds open across the cancel.
+      if (calls === 4) {
         releaseSecond = () => {
           realRaf(callback);
         };
