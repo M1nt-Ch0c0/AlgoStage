@@ -22,6 +22,7 @@ import Link from "next/link";
 import { cancelAsk, retroCancelAsk, sendAsk } from "@/lib/ask/ask-client";
 import { chooseAskScrollBlock } from "@/lib/ask/ask-scroll";
 import { ASK_ERROR_SPECS, resolveAskError, type AskErrorAction } from "@/lib/ask/ask-errors";
+import { markAskTiming } from "@/lib/ask/ask-timing";
 import { captureStage, type CaptureResult } from "@/lib/ask/capture";
 import { createCancelHold } from "@/lib/ask/cancel-hold";
 import { shouldRetroCancel } from "@/lib/ask/retro-cancel";
@@ -221,6 +222,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
   useEffect(() => {
     const hold = holdRef.current;
     return () => {
+      markAskTiming("cancelUnmountAt");
       hold.reset();
     };
   }, []);

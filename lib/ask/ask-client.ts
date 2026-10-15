@@ -8,6 +8,7 @@ import {
   decodedBase64Bytes,
   type CaptureResult,
 } from "@/lib/ask/capture";
+import { markAskPhase, markAskTiming } from "@/lib/ask/ask-timing";
 import { resolveAskError } from "@/lib/ask/ask-errors";
 import { readAskResponse } from "@/lib/ask/ask-response";
 import { answersStorageKey, writeBrowserAnswers } from "@/lib/ask/answers-storage";
@@ -131,6 +132,7 @@ export async function sendAsk(
   const { cacheKey, scriptVersion } = state.answerMeta;
   if (!problemSlug || !cacheKey || !scriptVersion) return;
 
+  const preFetchStarted = typeof performance !== "undefined" ? performance.now() : Date.now();
   const selection = {
     stepId: step.id,
     mode: state.selection!.mode,
@@ -190,9 +192,11 @@ export async function sendAsk(
       serverKeyDisabled,
       localByok,
     );
-    options?.onFetch?.(
-      typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now(),
-    );
+    const sentAt =
+      typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now();
+    markAskTiming("sentAt", sentAt);
+    markAskPhase("preFetchMs", sentAt - preFetchStarted);
+    options?.onFetch?.(sentAt);
     const res = await fetch(apiPath("/api/lecture/ask"), {
       method: "POST",
       headers: {

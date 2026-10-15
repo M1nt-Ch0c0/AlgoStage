@@ -6,6 +6,7 @@
 
 import { ASK_LIMITS } from "@/lib/ask/types";
 import type { AskBBox, AskSelection, AskTarget } from "@/lib/ask/types";
+import { markAskPhase, markAskTiming } from "./ask-timing";
 import { intersects, normalizeBBox } from "./hit-test";
 import type { EncodeRequest, EncodeResponse } from "./capture-encode";
 
@@ -286,6 +287,7 @@ export async function encodeOffThread(
         maxBytes,
         webp,
       };
+      let postedAt = 0;
       const response = await new Promise<EncodeResponse>((resolve, reject) => {
         const onMessage = (event: MessageEvent<EncodeResponse>) => {
           cleanup();
@@ -314,8 +316,11 @@ export async function encodeOffThread(
         worker.addEventListener("message", onMessage);
         worker.addEventListener("error", onError);
         worker.addEventListener("messageerror", onMessageError);
+        postedAt = performance.now();
         worker.postMessage(request, [bitmap]);
+        markAskPhase("postToWorkerMs", performance.now() - postedAt);
       });
+      if (postedAt > 0) markAskPhase("encodeMs", performance.now() - postedAt);
 
       if (response.ok) {
         return {
@@ -434,6 +439,7 @@ export async function captureStage(
     });
 
     const doCapture = async (): Promise<CaptureResult> => {
+      markAskTiming("captureStart");
       await yieldTwoFrames();
       if (timedOut) return timeoutResult();
 
@@ -473,6 +479,8 @@ export async function captureStage(
       } catch {
         return { ok: false, reason: "RENDER_FAILED", fallbackText };
       }
+      markAskTiming("longTaskEnd");
+      markAskPhase("domToCanvasMs", performance.now() - startedAt);
 
       const scaleX =
         Number.isFinite(rect.width) && rect.width > 0

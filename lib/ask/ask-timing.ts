@@ -1,0 +1,82 @@
+/**
+ * Capture timing probe. Records only when a test has set window.__ASK_TIMING__
+ * to an object. Production (and any page that never sets it) is a no-op.
+ * Durations are performance.now() deltas. firstPointerDownTs is event.timeStamp.
+ */
+
+export type AskTimingMark =
+  | "captureStart"
+  | "longTaskEnd"
+  | "sentAt"
+  | "cancelUnmountAt";
+
+export type AskTimingPhase =
+  | "domToCanvasMs"
+  | "postToWorkerMs"
+  | "encodeMs"
+  | "settleMs"
+  | "preFetchMs";
+
+export type AskTimingProbe = {
+  captureStart?: number;
+  longTaskEnd?: number;
+  sentAt?: number;
+  cancelUnmountAt?: number;
+  firstPointerDownTs?: number;
+  domToCanvasMs?: number;
+  postToWorkerMs?: number;
+  encodeMs?: number;
+  settleMs?: number;
+  preFetchMs?: number;
+};
+
+declare global {
+  interface Window {
+    __ASK_TIMING__?: AskTimingProbe;
+  }
+}
+
+function now(): number {
+  if (typeof performance !== "undefined" && typeof performance.now === "function") {
+    return performance.now();
+  }
+  return Date.now();
+}
+
+/** The live probe, or null when timing is not enabled. */
+export function askTimingProbe(): AskTimingProbe | null {
+  if (typeof window === "undefined") return null;
+  const probe = window.__ASK_TIMING__;
+  if (probe == null || typeof probe !== "object") return null;
+  return probe;
+}
+
+export function isAskTimingEnabled(): boolean {
+  return askTimingProbe() !== null;
+}
+
+/** Stamp a point in time. Later calls do not overwrite an existing mark. */
+export function markAskTiming(mark: AskTimingMark, at = now()): void {
+  const probe = askTimingProbe();
+  if (!probe) return;
+  if (probe[mark] != null) return;
+  probe[mark] = at;
+}
+
+/** Record the first 取消 pointerdown timeStamp. Later presses do not replace it. */
+export function markAskPointerDown(timeStamp: number): void {
+  const probe = askTimingProbe();
+  if (!probe) return;
+  if (probe.firstPointerDownTs != null) return;
+  if (!Number.isFinite(timeStamp)) return;
+  probe.firstPointerDownTs = timeStamp;
+}
+
+/** Record a phase duration in milliseconds. Later calls do not overwrite it. */
+export function markAskPhase(phase: AskTimingPhase, durationMs: number): void {
+  const probe = askTimingProbe();
+  if (!probe) return;
+  if (probe[phase] != null) return;
+  if (!Number.isFinite(durationMs)) return;
+  probe[phase] = durationMs;
+}
