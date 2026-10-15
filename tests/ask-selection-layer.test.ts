@@ -389,6 +389,13 @@ describe("AskSelectionLayer", () => {
     return event;
   }
 
+  /** 关面板的焦点恢复排在 0ms timeout 上，act 会把它冲掉。 */
+  async function flushFocus() {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  }
+
   test("窗口级 Esc：selecting 退出，drafting 先关面板再退出", async () => {
     await render();
     const body = document.body;
@@ -418,6 +425,7 @@ describe("AskSelectionLayer", () => {
     expect(close.defaultPrevented).toBe(true);
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
     expect(usePlayerStore.getState().draftQuestion).toBe("窗口也能关");
+    await flushFocus();
     expect(document.activeElement).toBe(target);
 
     const exit = await act(async () => pressEscape(layer()));
@@ -459,6 +467,7 @@ describe("AskSelectionLayer", () => {
     const close = await act(async () => pressEscape(question));
     expect(close.defaultPrevented).toBe(true);
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
+    await flushFocus();
     expect(document.activeElement).toBe(layer());
 
     editor.remove();
@@ -501,6 +510,7 @@ describe("AskSelectionLayer", () => {
       cancel.click();
     });
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
+    await flushFocus();
     expect(document.activeElement).toBe(target);
     panel.remove();
   });
@@ -514,7 +524,29 @@ describe("AskSelectionLayer", () => {
     const close = await act(async () => pressEscape(document.body));
     expect(close.defaultPrevented).toBe(true);
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
+    await flushFocus();
     expect(document.activeElement).toBe(target);
+  });
+
+  test("从 idle 进入 selecting 不抢走入口按钮的焦点", async () => {
+    usePlayerStore.setState({ askPhase: "idle", status: "paused" });
+    await render();
+    const button = document.createElement("button");
+    button.type = "button";
+    button.setAttribute("data-ask-entry", "");
+    button.textContent = "圈选提问";
+    document.body.append(button);
+    button.focus();
+    expect(document.activeElement).toBe(button);
+
+    await act(async () => {
+      usePlayerStore.setState({ askPhase: "selecting", status: "interrupted" });
+    });
+    await flushFocus();
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
+    expect(container.querySelector("[data-ask-layer]")).not.toBeNull();
+    expect(document.activeElement).toBe(button);
+    button.remove();
   });
 
   test("关面板后目标已不在文档里，焦点落到画选层", async () => {
@@ -535,6 +567,7 @@ describe("AskSelectionLayer", () => {
     const close = await act(async () => pressEscape(document.body));
     expect(close.defaultPrevented).toBe(true);
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
+    await flushFocus();
     expect(document.activeElement).toBe(layer());
   });
 

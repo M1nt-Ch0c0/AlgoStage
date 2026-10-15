@@ -210,6 +210,9 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
   const clearAskSelection = usePlayerStore((s) => s.clearAskSelection);
   const closeAskPanel = usePlayerStore((s) => s.closeAskPanel);
   const exitAsk = usePlayerStore((s) => s.exitAsk);
+  // 上一阶段在 effect 里更新。关面板的那次要等 0ms 回调记上：
+  // 严格模式会先清掉这次回调再跑一遍，第二遍仍要看得到 drafting。
+  const previousPhaseRef = useRef(askPhase);
 
   // 圈选期间唯一的 Esc。挂在始终挂载的这层。sending/streaming 不注册：
   // closeAskPanel / exitAsk 在这两态是空操作，和 0.3.1 一样。
@@ -236,6 +239,31 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [askPhase, closeAskPanel, exitAsk]);
+
+  // 关面板回到 selecting：焦点还给选区原目标。
+  // 只在 drafting/error → selecting 时还。刚进入圈选、或已经在圈选里 Tab，不动焦点。
+  // 挂在始终挂载的这层。内层只在 selecting 才画出节点，排在内层的回调会被清理掉。
+  // 0ms 等这次提交把画选层放进文档，取消按钮也已卸掉。
+  // 目标已不在文档里，或 focus() 之后 activeElement 不是它，才落到画选层。
+  useEffect(() => {
+    const previous = previousPhaseRef.current;
+    const closingPanel = previous === "drafting" || previous === "error";
+    if (askPhase === "selecting" && closingPanel) {
+      const timer = window.setTimeout(() => {
+        previousPhaseRef.current = askPhase;
+        if (usePlayerStore.getState().askPhase !== "selecting") return;
+        const target = focusTargetFor(usePlayerStore.getState().selection);
+        if (target) {
+          if (!target.hasAttribute("tabindex")) target.tabIndex = -1;
+          target.focus();
+          if (document.activeElement === target) return;
+        }
+        document.querySelector<HTMLElement>("[data-ask-layer]")?.focus();
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
+    previousPhaseRef.current = askPhase;
+  }, [askPhase]);
 
   return (
     <AskSelectionLayerActive
@@ -289,11 +317,14 @@ function AskSelectionLayerActive({
 
   const getStage = useCallback(() => resolveStage(stage, stageRef), [stage, stageRef]);
 
-  const visibleShortcuts = SHORTCUTS.filter((item) => {
-    if (item.key !== "viz") return true;
-    const host = getStage();
-    return host ? stageHasViz(host, stepId) : false;
-  });
+  // 不活动时不查 document：这层在 idle / sending 也挂着，服务端渲染没有 document。
+  const visibleShortcuts = !active
+    ? []
+    : SHORTCUTS.filter((item) => {
+        if (item.key !== "viz") return true;
+        const host = getStage();
+        return host ? stageHasViz(host, stepId) : false;
+      });
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -333,29 +364,6 @@ function AskSelectionLayerActive({
       window.removeEventListener("resize", onResize);
     };
   }, [clearAskSelection]);
-
-  // 关面板回到 selecting：焦点还给选区原目标。
-  // 这层在面板打开时也留着，drafting → selecting 才跑得到这次恢复。
-  // 画选层节点要等这次提交才进文档，所以放到微任务里：取消按钮卸掉之后再还焦点。
-  // 目标已不在文档里，或 focus() 之后 activeElement 不是它，才落到画选层。
-  useEffect(() => {
-    if (askPhase !== "selecting") return;
-    let cancelled = false;
-    queueMicrotask(() => {
-      if (cancelled) return;
-      if (usePlayerStore.getState().askPhase !== "selecting") return;
-      const target = focusTargetFor(usePlayerStore.getState().selection);
-      if (target) {
-        if (!target.hasAttribute("tabindex")) target.tabIndex = -1;
-        target.focus();
-        if (document.activeElement === target) return;
-      }
-      rootRef.current?.focus();
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [askPhase]);
 
   useEffect(() => {
     return () => {
