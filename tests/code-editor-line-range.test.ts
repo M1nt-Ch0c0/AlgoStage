@@ -152,10 +152,16 @@ describe("computeLineRange / getLineRangeForClientBox", () => {
     expect(computeLineRange(editor, 350, 400)).toBeNull();
   });
 
-  it("returns null when box height is exactly 4px (inset interval empty)", () => {
+  it("box height is exactly 4px resolves to line under pointer", () => {
     const editor = createMockEditor();
-    // 4px box: y1=20, y2=24 -> y1+2=22, y2-2=22 (empty test interval)
-    expect(computeLineRange(editor, 120, 124)).toBeNull();
+    // 4px box: y1=20, y2=24 -> midpoint y=22 (line 2: [20, 40))
+    expect(computeLineRange(editor, 120, 124)).toEqual({ startLine: 2, endLine: 2 });
+  });
+
+  it("box height is 3px resolves to line under pointer", () => {
+    const editor = createMockEditor();
+    // 3px box: y1=20, y2=23 -> midpoint y=21.5 (line 2: [20, 40))
+    expect(computeLineRange(editor, 120, 123)).toEqual({ startLine: 2, endLine: 2 });
   });
 
   it("point-like box (<4px): 1px box inside line 5 -> {5,5}; and 1px box on exact boundary between 5 and 6 -> 6", () => {

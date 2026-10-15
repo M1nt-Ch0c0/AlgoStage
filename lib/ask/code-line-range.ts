@@ -105,7 +105,7 @@ export function computeLineRange(
     return 0;
   };
 
-  if (y2 - y1 < 4) {
+  if (y2 - y1 <= 4) {
     const y = (y1 + y2) / 2;
     for (let n = minVisible; n <= maxVisible; n++) {
       const top_n = editor.getTopForLineNumber(n);
