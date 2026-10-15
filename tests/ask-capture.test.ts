@@ -936,6 +936,55 @@ describe("lib/ask/capture", () => {
       vi.unstubAllGlobals();
     });
 
+    it("falls back to main-thread encode when the worker fires messageerror", async () => {
+      const bitmap = { close: vi.fn() };
+      vi.stubGlobal("createImageBitmap", vi.fn(async () => bitmap));
+      vi.stubGlobal("OffscreenCanvas", class OffscreenCanvas {});
+
+      class FakeWorker {
+        listeners = new Map<string, Set<(event: Event) => void>>();
+        terminated = false;
+        addEventListener(type: string, handler: (event: Event) => void) {
+          const set = this.listeners.get(type) ?? new Set();
+          set.add(handler);
+          this.listeners.set(type, set);
+        }
+        removeEventListener(type: string, handler: (event: Event) => void) {
+          this.listeners.get(type)?.delete(handler);
+        }
+        postMessage() {
+          queueMicrotask(() => {
+            const event = new Event("messageerror");
+            for (const handler of this.listeners.get("messageerror") ?? []) {
+              handler(event);
+            }
+          });
+        }
+        terminate() {
+          this.terminated = true;
+        }
+      }
+
+      const worker = new FakeWorker();
+      vi.stubGlobal(
+        "Worker",
+        vi.fn(function Worker() {
+          return worker;
+        }),
+      );
+
+      const canvas = document.createElement("canvas");
+      const off = await encodeOffThread(canvas, { x: 0, y: 0, w: 40, h: 40 }, 100, () => false);
+      expect(off).toBe("FALLBACK");
+      expect(worker.terminated).toBe(true);
+
+      const res = await captureStage(container, baseSel);
+      expect(res).toMatchObject({ ok: true, encoder: "main" });
+      expect(createdCanvases.length).toBeGreaterThan(0);
+
+      vi.unstubAllGlobals();
+    });
+
     it("falls back to main-thread encode when Worker is unavailable", async () => {
       // Force the off-thread gate off (happy-dom usually already lacks Worker).
       vi.stubGlobal("Worker", undefined);
