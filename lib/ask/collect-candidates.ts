@@ -11,6 +11,7 @@ import type {
   AskTargetKind,
 } from "@/lib/ask/types";
 import { getCodeEditorHandle } from "@/lib/ask/code-editor-registry";
+import { formatCodeRangeLabel } from "@/lib/ask/code-line-range";
 import { intersects, normalizeBBox } from "@/lib/ask/hit-test";
 
 const KINDS: ReadonlySet<string> = new Set<AskTargetKind>([
@@ -205,7 +206,7 @@ export function summarizeSelection(sel: AskSelectionSummary): string {
   if (kinds.size === 1 && kinds.has("code") && targets.length === 1) {
     const code = targets[0];
     if (code.codeRange) {
-      return cap(`已选：代码第 ${code.codeRange.startLine}–${code.codeRange.endLine} 行`);
+      return cap(`已选：${formatCodeRangeLabel(code.codeRange)}`);
     }
     return "已选：当前代码";
   }
@@ -222,7 +223,7 @@ export function summarizeSelection(sel: AskSelectionSummary): string {
   if (codeTargets.length > 0) {
     const firstCode = codeTargets[0];
     const codeLabel = firstCode.codeRange
-      ? `代码第 ${firstCode.codeRange.startLine}–${firstCode.codeRange.endLine} 行`
+      ? formatCodeRangeLabel(firstCode.codeRange)
       : "当前代码";
     parts.push(codeLabel);
   }
