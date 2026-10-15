@@ -837,8 +837,7 @@ test.describe("1280 selection flow", () => {
   });
 
   test("S5. code + viz collects both", async ({ page }) => {
-    // S5-b (Gavin): drag starting in code collects only code units, never viz. Remove test.fail() when drag-origin filtering lands.
-    test.fail();
+    // Locks the S5-b rule: a drag starting in code collects code units only, never viz.
     let capturedTargets: Array<{ kind?: string }> = [];
     await mockAsk(page, async (route) => {
       const body = route.request().postDataJSON() as {
