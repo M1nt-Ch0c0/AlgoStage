@@ -7,7 +7,7 @@
 import { ASK_LIMITS } from "@/lib/ask/types";
 import type { AskBBox, AskSelection, AskTarget } from "@/lib/ask/types";
 import { intersects, normalizeBBox } from "./hit-test";
-import type { EncodeRequest, EncodeResponse } from "./capture-encode.worker";
+import type { EncodeRequest, EncodeResponse } from "./capture-encode";
 
 export const CAPTURE_FALLBACK_NOTICE = "没截到图，这次只发送选中的文字。";
 
