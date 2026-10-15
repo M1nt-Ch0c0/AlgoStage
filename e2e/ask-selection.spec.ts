@@ -2317,6 +2317,7 @@ test.describe("390 selection flow", () => {
     });
 
     // regression guard vs a9cedbb (c852e36 fresh sampling broke it)
+    // a9cedbb measures an 11px inset with and without scroll; compare against a no-scroll baseline
     test("scroll mid-drag: lines 3–8 stay aligned", async ({ page }) => {
       await startGenerated(page);
       await pauseLecture(page);
@@ -2335,26 +2336,24 @@ test.describe("390 selection flow", () => {
         await page.evaluate((dy) => window.scrollBy(0, dy), line10Box.bottom - barBox.y + 16);
       }
 
-      const codeBox = (await code.boundingBox())!;
-      const line3Box = await getMonacoLineBox(page, 3);
-      const startX = codeBox.x + 60;
-      const startY = (line3Box.top + line3Box.bottom) / 2;
+      // 1. No-scroll baseline drag line 3 -> line 8
+      const codeBox1 = (await code.boundingBox())!;
+      const line3Box1 = await getMonacoLineBox(page, 3);
+      const startX1 = codeBox1.x + 60;
+      const startY1 = (line3Box1.top + line3Box1.bottom) / 2;
 
-      await page.mouse.move(startX, startY);
+      await page.mouse.move(startX1, startY1);
       await page.mouse.down();
 
-      const line5Box = await getMonacoLineBox(page, 5);
-      const line5Y = (line5Box.top + line5Box.bottom) / 2;
-      await page.mouse.move(codeBox.x + 100, line5Y, { steps: 4 });
+      const line5Box1 = await getMonacoLineBox(page, 5);
+      const line5Y1 = (line5Box1.top + line5Box1.bottom) / 2;
+      await page.mouse.move(codeBox1.x + 100, line5Y1, { steps: 4 });
 
-      await page.evaluate(() => window.scrollBy(0, 44));
-      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
-
-      const line8Box = await getMonacoLineBox(page, 8);
-      const endBox = (await code.boundingBox())!;
-      const endX = endBox.x + 160;
-      const endY = (line8Box.top + line8Box.bottom) / 2;
-      await page.mouse.move(endX, endY, { steps: 5 });
+      const line8Box1 = await getMonacoLineBox(page, 8);
+      const endBox1 = (await code.boundingBox())!;
+      const endX1 = endBox1.x + 160;
+      const endY1 = (line8Box1.top + line8Box1.bottom) / 2;
+      await page.mouse.move(endX1, endY1, { steps: 5 });
       await page.mouse.up();
 
       const panel = page.locator("[data-ask-panel]");
@@ -2364,6 +2363,61 @@ test.describe("390 selection flow", () => {
       const selection = page.locator("[data-ask-selection]");
       await expect(selection).toBeVisible();
 
+      const baseLine3 = await getMonacoLineBox(page, 3);
+      const baseLine8 = await getMonacoLineBox(page, 8);
+      const baseSel = await selection.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        return { top: r.top, bottom: r.bottom };
+      });
+      const baseTop = baseSel.top - baseLine3.top;
+      const baseBottom = baseSel.bottom - baseLine8.bottom;
+
+      // Clear selection
+      await page.keyboard.press("Escape");
+      await expect(panel).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      await expect(selection).toHaveCount(0);
+      await expect(page.locator("[data-ask-layer]")).toHaveCount(0);
+      await enterSelection(page);
+
+      await code.scrollIntoViewIfNeeded();
+      await expect(code).toBeVisible();
+      await expect(bar).toBeVisible();
+      const barBox2 = (await bar.boundingBox())!;
+      const line10Box2 = await getMonacoLineBox(page, 10);
+      if (line10Box2.bottom > barBox2.y - 8) {
+        await page.evaluate((dy) => window.scrollBy(0, dy), line10Box2.bottom - barBox2.y + 16);
+      }
+
+      // 2. Scroll mid-drag line 3 -> line 8
+      const codeBox2 = (await code.boundingBox())!;
+      const line3Box2 = await getMonacoLineBox(page, 3);
+      const startX2 = codeBox2.x + 60;
+      const startY2 = (line3Box2.top + line3Box2.bottom) / 2;
+
+      await page.mouse.move(startX2, startY2);
+      await page.mouse.down();
+
+      const line5Box2 = await getMonacoLineBox(page, 5);
+      const line5Y2 = (line5Box2.top + line5Box2.bottom) / 2;
+      await page.mouse.move(codeBox2.x + 100, line5Y2, { steps: 4 });
+
+      await page.evaluate(() => window.scrollBy(0, 44));
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+
+      const line8Box2 = await getMonacoLineBox(page, 8);
+      const endBox2 = (await code.boundingBox())!;
+      const endX2 = endBox2.x + 160;
+      const endY2 = (line8Box2.top + line8Box2.bottom) / 2;
+      await page.mouse.move(endX2, endY2, { steps: 5 });
+      await page.mouse.up();
+
+      // 3. Assert label and alignment vs baseline
+      await expect(panel).toBeVisible();
+      await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：代码第 3–8 行");
+
+      await expect(selection).toBeVisible();
+
       const currentLine3 = await getMonacoLineBox(page, 3);
       const currentLine8 = await getMonacoLineBox(page, 8);
       const selRect = await selection.evaluate((el) => {
@@ -2371,8 +2425,8 @@ test.describe("390 selection flow", () => {
         return { top: r.top, bottom: r.bottom };
       });
 
-      expect(Math.abs(selRect.top - currentLine3.top)).toBeLessThanOrEqual(6);
-      expect(Math.abs(selRect.bottom - currentLine8.bottom)).toBeLessThanOrEqual(6);
+      expect(Math.abs((selRect.top - currentLine3.top) - baseTop)).toBeLessThanOrEqual(2);
+      expect(Math.abs((selRect.bottom - currentLine8.bottom) - baseBottom)).toBeLessThanOrEqual(2);
     });
   });
 
