@@ -362,3 +362,93 @@ test.describe("ask Esc from entry at 390", () => {
     await expectEscFromEntry(page, "click");
   });
 });
+
+test.describe("1280 exit-clear", () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test("exit clears selection, focus steps, draft kept", async ({ page }) => {
+    await startGenerated(page);
+    await enterSelection(page);
+    await openPanel(page);
+    await panel(page).locator("[data-ask-question]").fill("保留草稿");
+    await page.keyboard.press("Escape");
+    await expect(panel(page)).toHaveCount(0);
+    await expect(layer(page)).toBeVisible();
+    await expect.poll(() =>
+      page.evaluate(() => {
+        const active = document.activeElement;
+        if (!active) return false;
+        const lyr = document.querySelector("[data-ask-layer]");
+        if (lyr && (lyr === active || lyr.contains(active))) return true;
+        const target = document.querySelector('[data-ask-id="step:s1"]');
+        return active === target;
+      }),
+    ).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(layer(page)).toHaveCount(0);
+    await expect(entry(page)).not.toHaveAttribute("aria-pressed", "true");
+    await expect(entry(page)).toBeFocused();
+    await page.keyboard.press("q");
+    await expect(layer(page)).toBeVisible();
+    await expect(panel(page)).toHaveCount(0);
+    await expect(page.getByText("已选：")).not.toBeVisible();
+    await expect(page.locator('[data-testid="ask-code-miss-hint"]')).not.toBeVisible();
+    await openPanel(page);
+    await expect(panel(page).locator("[data-ask-question]")).toHaveValue("保留草稿");
+  });
+});
+
+test.describe("390 exit-clear", () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+
+  test("exit clears selection, focus steps, draft kept", async ({ page }) => {
+    await startGenerated(page);
+    await enterSelection(page);
+    await openPanel(page);
+    await panel(page).locator("[data-ask-question]").fill("保留草稿");
+    await page.keyboard.press("Escape");
+    await expect(panel(page)).toHaveCount(0);
+    await expect(layer(page)).toBeVisible();
+    await expect.poll(() =>
+      page.evaluate(() => {
+        const active = document.activeElement;
+        if (!active) return false;
+        const lyr = document.querySelector("[data-ask-layer]");
+        if (lyr && (lyr === active || lyr.contains(active))) return true;
+        const target = document.querySelector('[data-ask-id="step:s1"]');
+        return active === target;
+      }),
+    ).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(layer(page)).toHaveCount(0);
+    await expect(entry(page)).not.toHaveAttribute("aria-pressed", "true");
+    await expect(entry(page)).toBeFocused();
+    await page.keyboard.press("q");
+    await expect(layer(page)).toBeVisible();
+    await expect(panel(page)).toHaveCount(0);
+    await expect(page.getByText("已选：")).not.toBeVisible();
+    await expect(page.locator('[data-testid="ask-code-miss-hint"]')).not.toBeVisible();
+    await openPanel(page);
+    await expect(panel(page).locator("[data-ask-question]")).toHaveValue("保留草稿");
+  });
+
+  test("Esc from Monaco steps back level by level", async ({ page }) => {
+    await startGenerated(page);
+    const monaco = page.locator(".monaco-editor");
+    await monaco.scrollIntoViewIfNeeded();
+    await expect(monaco).toBeVisible();
+    const textarea = () => page.getByRole("textbox", { name: "Editor content" });
+
+    await enterSelection(page);
+    await openPanel(page);
+    await expect(textarea()).toBeAttached();
+    await textarea().focus();
+    await expect(textarea()).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(panel(page)).toHaveCount(0);
+    await expect(layer(page)).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(layer(page)).toHaveCount(0);
+    await expect(entry(page)).not.toHaveAttribute("aria-pressed", "true");
+  });
+});
