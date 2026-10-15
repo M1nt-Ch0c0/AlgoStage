@@ -449,12 +449,20 @@ function AskSelectionLayerActive({
     return () => mq.removeEventListener("change", onChange);
   }, []);
 
-  // 触摸框选后浏览器会延时派发 ghost click，在此处吞掉以防误触下方元素。
+  // 触摸框选后或触摸取消按钮后浏览器会延时派发 ghost click，在此处吞掉以防误触下方元素。
   useEffect(() => {
     const onDocPointerDown = (event: globalThis.PointerEvent) => {
       lastPointerTypeRef.current = event.pointerType;
       suppressClickUntilRef.current = null;
       touchCompletedSelectionRef.current = false;
+    };
+    const onDocPointerUp = (event: globalThis.PointerEvent) => {
+      if (event.pointerType !== "touch") return;
+      const target = event.target as Element | null;
+      if (target?.closest?.("[data-ask-panel] [data-ask-cancel], [data-ask-cancel]")) {
+        suppressClickUntilRef.current = event.timeStamp + 400;
+        touchCompletedSelectionRef.current = true;
+      }
     };
     const onDocClick = (event: globalThis.MouseEvent) => {
       if (event.detail === 0) return;
@@ -471,9 +479,11 @@ function AskSelectionLayerActive({
       }
     };
     document.addEventListener("pointerdown", onDocPointerDown, true);
+    document.addEventListener("pointerup", onDocPointerUp, true);
     document.addEventListener("click", onDocClick, true);
     return () => {
       document.removeEventListener("pointerdown", onDocPointerDown, true);
+      document.removeEventListener("pointerup", onDocPointerUp, true);
       document.removeEventListener("click", onDocClick, true);
     };
   }, []);

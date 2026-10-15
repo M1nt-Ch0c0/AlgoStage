@@ -1686,5 +1686,113 @@ describe("resolveAskEscape", () => {
 
       expect(clickEvent.defaultPrevented).toBe(false);
     });
+
+    test("touch pointerup on [data-ask-panel] [data-ask-cancel] suppresses subsequent ghost click once", async () => {
+      await render();
+
+      const panel = document.createElement("div");
+      panel.setAttribute("data-ask-panel", "");
+      const cancelBtn = document.createElement("button");
+      cancelBtn.setAttribute("data-ask-cancel", "");
+      cancelBtn.textContent = "取消";
+      panel.append(cancelBtn);
+      document.body.append(panel);
+
+      const down = new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 1, pointerType: "touch" });
+      const up = new PointerEvent("pointerup", { bubbles: true, cancelable: true, pointerId: 1, pointerType: "touch" });
+
+      await act(async () => {
+        cancelBtn.dispatchEvent(down);
+        cancelBtn.dispatchEvent(up);
+      });
+
+      const clickEvent = new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 });
+      Object.defineProperty(clickEvent, "timeStamp", { value: up.timeStamp + 50 });
+
+      await act(async () => {
+        cancelBtn.dispatchEvent(clickEvent);
+      });
+
+      expect(clickEvent.defaultPrevented).toBe(true);
+
+      // Block-once rule: second click is not blocked
+      const secondClick = new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 });
+      Object.defineProperty(secondClick, "timeStamp", { value: up.timeStamp + 60 });
+
+      await act(async () => {
+        cancelBtn.dispatchEvent(secondClick);
+      });
+
+      expect(secondClick.defaultPrevented).toBe(false);
+
+      panel.remove();
+    });
+
+    test("touch pointerup on cancel followed by new pointerdown clears suppression", async () => {
+      await render();
+
+      const panel = document.createElement("div");
+      panel.setAttribute("data-ask-panel", "");
+      const cancelBtn = document.createElement("button");
+      cancelBtn.setAttribute("data-ask-cancel", "");
+      cancelBtn.textContent = "取消";
+      panel.append(cancelBtn);
+
+      const exitBtn = document.createElement("button");
+      exitBtn.setAttribute("data-ask-entry", "");
+      document.body.append(panel, exitBtn);
+
+      const down = new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 1, pointerType: "touch" });
+      const up = new PointerEvent("pointerup", { bubbles: true, cancelable: true, pointerId: 1, pointerType: "touch" });
+
+      await act(async () => {
+        cancelBtn.dispatchEvent(down);
+        cancelBtn.dispatchEvent(up);
+      });
+
+      // User immediately taps another button within 100ms
+      const newDown = new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 2, pointerType: "touch" });
+      const newUp = new PointerEvent("pointerup", { bubbles: true, cancelable: true, pointerId: 2, pointerType: "touch" });
+      const clickEvent = new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 });
+      Object.defineProperty(clickEvent, "timeStamp", { value: up.timeStamp + 50 });
+
+      await act(async () => {
+        exitBtn.dispatchEvent(newDown);
+        exitBtn.dispatchEvent(newUp);
+        exitBtn.dispatchEvent(clickEvent);
+      });
+
+      expect(clickEvent.defaultPrevented).toBe(false);
+
+      panel.remove();
+      exitBtn.remove();
+    });
+
+    test("mouse pointerup on cancel button does not block clicks", async () => {
+      await render();
+
+      const panel = document.createElement("div");
+      panel.setAttribute("data-ask-panel", "");
+      const cancelBtn = document.createElement("button");
+      cancelBtn.setAttribute("data-ask-cancel", "");
+      cancelBtn.textContent = "取消";
+      panel.append(cancelBtn);
+      document.body.append(panel);
+
+      const down = new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 1, pointerType: "mouse" });
+      const up = new PointerEvent("pointerup", { bubbles: true, cancelable: true, pointerId: 1, pointerType: "mouse" });
+      const clickEvent = new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 });
+      Object.defineProperty(clickEvent, "timeStamp", { value: up.timeStamp + 50 });
+
+      await act(async () => {
+        cancelBtn.dispatchEvent(down);
+        cancelBtn.dispatchEvent(up);
+        cancelBtn.dispatchEvent(clickEvent);
+      });
+
+      expect(clickEvent.defaultPrevented).toBe(false);
+
+      panel.remove();
+    });
   });
 });
