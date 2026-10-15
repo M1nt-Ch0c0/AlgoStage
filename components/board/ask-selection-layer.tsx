@@ -288,10 +288,10 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
         const target = focusTargetFor(usePlayerStore.getState().selection);
         if (target) {
           if (!target.hasAttribute("tabindex")) target.tabIndex = -1;
-          target.focus();
+          target.focus({ preventScroll: true });
           if (document.activeElement === target) return;
         }
-        document.querySelector<HTMLElement>("[data-ask-layer]")?.focus();
+        document.querySelector<HTMLElement>("[data-ask-layer]")?.focus({ preventScroll: true });
       }, 0);
       return () => window.clearTimeout(timer);
     }
@@ -659,6 +659,16 @@ function AskSelectionLayerActive({
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if ((event.target as Element | null)?.closest?.("[data-ask-entry], [data-ask-shortcut]")) return;
+    if (enteringSmoothScrollRef.current) {
+      enteringSmoothScrollRef.current = false;
+      if (enteringScrollTimerRef.current) {
+        clearTimeout(enteringScrollTimerRef.current);
+        enteringScrollTimerRef.current = null;
+      }
+      if (typeof window !== "undefined") {
+        window.scrollTo({ top: window.scrollY, behavior: "auto" });
+      }
+    }
     beginPointer(event.currentTarget, event.pointerId, event.pointerType, event.button, event.clientX, event.clientY);
   };
 
