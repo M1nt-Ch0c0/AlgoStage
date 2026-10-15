@@ -2094,7 +2094,7 @@ test.describe("390 selection flow", () => {
         return {
           bar: style.getPropertyValue("--ask-bottom-bar-h"),
           player: style.getPropertyValue("--ask-player-bar-h"),
-          occlusion: style.getPropertyValue("--ask-bottom-occlusion-h"),
+          occlusion: style.getPropertyValue("--ask-bottom-occlusion"),
         };
       });
       expect(varsAfterExit.bar === "0px" || varsAfterExit.bar === "").toBe(true);
@@ -2112,7 +2112,7 @@ test.describe("390 selection flow", () => {
         return {
           bar: style.getPropertyValue("--ask-bottom-bar-h"),
           player: style.getPropertyValue("--ask-player-bar-h"),
-          occlusion: style.getPropertyValue("--ask-bottom-occlusion-h"),
+          occlusion: style.getPropertyValue("--ask-bottom-occlusion"),
         };
       });
       expect(varsAfterSwitch.bar === "0px" || varsAfterSwitch.bar === "").toBe(true);

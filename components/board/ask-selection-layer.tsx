@@ -190,10 +190,7 @@ export function computeBottomOcclusion(parts: OcclusionParts): number {
 
   if (player === 0 && bar === 0 && panel === 0) return 0;
 
-  const playerBarGap = player > 0 || bar > 0 ? 8 : 0;
-  const barAboveGap = bar > 0 || panel > 0 ? 16 : 0;
-
-  return player + bar + panel + playerBarGap + barAboveGap;
+  return player + bar + panel + 8;
 }
 
 export const computeOcclusion = computeBottomOcclusion;
@@ -440,7 +437,7 @@ function AskSelectionLayerActive({
     };
   }, []);
 
-  // 测量底部条高度、播放区高度与抽屉面板高度，并同步 --ask-bottom-bar-h、--ask-player-bar-h 和 --ask-bottom-occlusion-h。
+  // 测量底部条高度、播放区高度与抽屉面板高度，并同步 --ask-bottom-bar-h、--ask-player-bar-h 和 --ask-bottom-occlusion。
   // 桌面/inactive/unmount/键盘打开时设为 0px（或 removeProperty）。
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -460,7 +457,7 @@ function AskSelectionLayerActive({
       if (!active || !isMobile() || kbOpen) {
         document.documentElement.style.setProperty("--ask-bottom-bar-h", "0px");
         document.documentElement.style.setProperty("--ask-player-bar-h", "0px");
-        document.documentElement.style.setProperty("--ask-bottom-occlusion-h", "0px");
+        document.documentElement.style.setProperty("--ask-bottom-occlusion", "0px");
         return;
       }
 
@@ -507,7 +504,7 @@ function AskSelectionLayerActive({
         barHeight: barH,
         panelHeight: panelH,
       });
-      document.documentElement.style.setProperty("--ask-bottom-occlusion-h", `${totalOcclusion}px`);
+      document.documentElement.style.setProperty("--ask-bottom-occlusion", `${totalOcclusion}px`);
     };
 
     updateMeasurements();
@@ -552,7 +549,7 @@ function AskSelectionLayerActive({
       window.visualViewport?.removeEventListener("resize", onMqChange);
       document.documentElement.style.setProperty("--ask-bottom-bar-h", "0px");
       document.documentElement.style.setProperty("--ask-player-bar-h", "0px");
-      document.documentElement.style.setProperty("--ask-bottom-occlusion-h", "0px");
+      document.documentElement.style.setProperty("--ask-bottom-occlusion", "0px");
     };
   }, [active, askPhase]);
 

@@ -3,7 +3,7 @@
 :root {
   --ask-bottom-bar-h: 0px;
   --ask-player-bar-h: 0px;
-  --ask-bottom-occlusion-h: 0px;
+  --ask-bottom-occlusion: 0px;
 }
 
 @media (max-width: 639px) {
@@ -18,11 +18,11 @@
 
   [data-ask-target="code"] {
     scroll-margin-top: 3.5rem;
-    scroll-margin-bottom: calc(var(--ask-bottom-occlusion-h) + env(safe-area-inset-bottom));
+    scroll-margin-bottom: calc(var(--ask-bottom-occlusion) + env(safe-area-inset-bottom));
   }
 
   [data-ask-selection] {
-    scroll-margin-bottom: calc(var(--ask-bottom-occlusion-h) + env(safe-area-inset-bottom));
+    scroll-margin-bottom: calc(var(--ask-bottom-occlusion) + env(safe-area-inset-bottom));
   }
 }
 

@@ -1325,20 +1325,20 @@ describe("resolveAskEscape", () => {
       expect(computeBottomOcclusion({})).toBe(0);
       expect(computeOcclusion({ playerHeight: 0, barHeight: 0, panelHeight: 0 })).toBe(0);
 
-      // Player and bar present, no panel: 60 + 52 + 8 + 16 = 136
-      expect(computeBottomOcclusion({ playerHeight: 60, barHeight: 52 })).toBe(136);
+      // Player and bar present, no panel: 60 + 52 + 8 = 120
+      expect(computeBottomOcclusion({ playerHeight: 60, barHeight: 52 })).toBe(120);
 
-      // Player, bar, and panel present: 60 + 52 + 200 + 8 + 16 = 336
-      expect(computeOcclusion({ playerHeight: 60, barHeight: 52, panelHeight: 200 })).toBe(336);
+      // Player, bar, and panel present: 60 + 52 + 200 + 8 = 320
+      expect(computeOcclusion({ playerHeight: 60, barHeight: 52, panelHeight: 200 })).toBe(320);
 
-      // Only bar present: 0 + 52 + 0 + 8 + 16 = 76
-      expect(computeBottomOcclusion({ barHeight: 52 })).toBe(76);
+      // Only bar present: 0 + 52 + 0 + 8 = 60
+      expect(computeBottomOcclusion({ barHeight: 52 })).toBe(60);
 
       // Ceiling of fractional heights
-      expect(computeBottomOcclusion({ playerHeight: 59.4, barHeight: 51.2, panelHeight: 199.1 })).toBe(60 + 52 + 200 + 8 + 16);
+      expect(computeBottomOcclusion({ playerHeight: 59.4, barHeight: 51.2, panelHeight: 199.1 })).toBe(60 + 52 + 200 + 8);
     });
 
-    test("sets --ask-bottom-occlusion-h on mobile and reacts to panel and unmount", async () => {
+    test("sets --ask-bottom-occlusion on mobile and reacts to panel and unmount", async () => {
       const originalMatchMedia = window.matchMedia;
       window.matchMedia = vi.fn().mockImplementation((query: string) => {
         if (query === "(max-width: 639px)") {
@@ -1371,8 +1371,8 @@ describe("resolveAskEscape", () => {
         window.dispatchEvent(new Event("resize"));
       });
 
-      // player 60 + bar 52 + gaps 24 = 136px
-      expect(document.documentElement.style.getPropertyValue("--ask-bottom-occlusion-h")).toBe("136px");
+      // player 60 + bar 52 + gap 8 = 120px
+      expect(document.documentElement.style.getPropertyValue("--ask-bottom-occlusion")).toBe("120px");
 
       // Add panel
       const panelEl = document.createElement("div");
@@ -1384,8 +1384,8 @@ describe("resolveAskEscape", () => {
         window.dispatchEvent(new Event("resize"));
       });
 
-      // player 60 + bar 52 + panel 200 + gaps 24 = 336px
-      expect(document.documentElement.style.getPropertyValue("--ask-bottom-occlusion-h")).toBe("336px");
+      // player 60 + bar 52 + panel 200 + gap 8 = 320px
+      expect(document.documentElement.style.getPropertyValue("--ask-bottom-occlusion")).toBe("320px");
 
       panelEl.remove();
       playerEl.remove();
@@ -1393,7 +1393,7 @@ describe("resolveAskEscape", () => {
       await act(async () => {
         root.unmount();
       });
-      expect(document.documentElement.style.getPropertyValue("--ask-bottom-occlusion-h")).toBe("0px");
+      expect(document.documentElement.style.getPropertyValue("--ask-bottom-occlusion")).toBe("0px");
 
       window.matchMedia = originalMatchMedia;
     });
