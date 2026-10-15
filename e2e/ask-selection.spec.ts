@@ -201,12 +201,6 @@ async function askQuestion(page: Page) {
 
 async function getMonacoLineY(page: Page, lineNumber: number): Promise<number> {
   return page.evaluate((line) => {
-    const viewLines = Array.from(document.querySelectorAll<HTMLElement>(".monaco-editor .view-line"));
-    if (viewLines.length >= line) {
-      const el = viewLines[line - 1];
-      const r = el.getBoundingClientRect();
-      return r.top + r.height / 2;
-    }
     const lineNumbers = Array.from(document.querySelectorAll<HTMLElement>(".monaco-editor .line-numbers"));
     for (const ln of lineNumbers) {
       if (ln.textContent?.trim() === String(line)) {
@@ -214,12 +208,7 @@ async function getMonacoLineY(page: Page, lineNumber: number): Promise<number> {
         return r.top + r.height / 2;
       }
     }
-    const editor = document.querySelector<HTMLElement>(".monaco-editor");
-    if (!editor) throw new Error("monaco-editor not found");
-    const r = editor.getBoundingClientRect();
-    const lineHeight = 22;
-    const paddingTop = 12;
-    return r.top + paddingTop + (line - 1) * lineHeight + lineHeight / 2;
+    throw new Error(`monaco line ${line} not rendered`);
   }, lineNumber);
 }
 
