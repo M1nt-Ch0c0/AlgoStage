@@ -467,6 +467,64 @@ describe("ask panel", () => {
     expect(sendAsk).toHaveBeenCalledWith(OK_CAPTURE);
   });
 
+  test("25d. 截图进行中 Esc 或取消关掉面板后，截图返回也不发送", async () => {
+    draft("drafting", { draftQuestion: "为什么这样写？" });
+    await render();
+
+    let resolveCapture: ((value: CaptureResult) => void) | undefined;
+    vi.mocked(captureStage).mockImplementation(
+      () =>
+        new Promise<CaptureResult>((resolve) => {
+          resolveCapture = resolve;
+        }),
+    );
+
+    await act(async () => {
+      submitButton().click();
+    });
+    expect(container.querySelector("[data-ask-capture-preparing]")?.textContent).toBe(ASK_CAPTURE_PREPARING);
+    expect(captureStage).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      usePlayerStore.getState().closeAskPanel();
+    });
+    expect(container.querySelector("[data-ask-panel]")).toBeNull();
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
+
+    await act(async () => {
+      resolveCapture?.(OK_CAPTURE);
+    });
+    expect(sendAsk).not.toHaveBeenCalled();
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
+
+    resolveCapture = undefined;
+    draft("drafting", { draftQuestion: "为什么这样写？", askPhase: "drafting" });
+    await render();
+    vi.mocked(captureStage).mockImplementation(
+      () =>
+        new Promise<CaptureResult>((resolve) => {
+          resolveCapture = resolve;
+        }),
+    );
+    await act(async () => {
+      submitButton().click();
+    });
+    expect(container.querySelector("[data-ask-capture-preparing]")).not.toBeNull();
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>("[data-ask-cancel]")?.click();
+    });
+    expect(container.querySelector("[data-ask-panel]")).toBeNull();
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
+    expect(cancelAsk).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveCapture?.(OK_CAPTURE);
+    });
+    expect(sendAsk).not.toHaveBeenCalled();
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
+  });
+
   test("25c. 截图 TIMEOUT 仍显示 #39 回退并 sendAsk(null)", async () => {
     draft("drafting", { draftQuestion: "换个例子讲讲" });
     await render();
