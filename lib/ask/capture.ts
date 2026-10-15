@@ -6,7 +6,7 @@
 
 import { ASK_LIMITS } from "@/lib/ask/types";
 import type { AskBBox, AskSelection, AskTarget } from "@/lib/ask/types";
-import { markAskPhase, markAskTiming, noteLongTaskEnded } from "./ask-timing";
+import { markAskPhase, markAskTiming, noteLongTaskEnded, notePreCapture } from "./ask-timing";
 import { acquireEncodeWorker, retireEncodeWorker } from "./capture-worker";
 import { intersects, normalizeBBox } from "./hit-test";
 import type { EncodeRequest, EncodeResponse } from "./capture-encode";
@@ -435,6 +435,7 @@ export async function captureStage(
 
     const doCapture = async (): Promise<CaptureResult> => {
       markAskTiming("captureStart");
+      notePreCapture();
       await yieldTwoFrames();
       if (timedOut) return timeoutResult();
 

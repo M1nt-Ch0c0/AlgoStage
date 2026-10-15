@@ -6,11 +6,21 @@
  * missing Worker falls back to main-thread encode.
  */
 
+import { markAskTiming } from "./ask-timing";
+
 let singleton: Worker | null = null;
 let failed = false;
 
 function workerUrl(): URL {
   return new URL("./capture-encode.worker.ts", import.meta.url);
+}
+
+/** performance.now() around new Worker(), so the probe can see boot cost. */
+function createEncodeWorker(): Worker {
+  markAskTiming("workerInitAt");
+  const worker = new Worker(workerUrl(), { type: "module" });
+  markAskTiming("workerReadyAt");
+  return worker;
 }
 
 /** Start the singleton if Worker exists and a previous attempt did not fail. */
@@ -19,7 +29,7 @@ export function prewarmEncodeWorker(): Worker | null {
   if (failed) return null;
   if (typeof Worker !== "function") return null;
   try {
-    singleton = new Worker(workerUrl(), { type: "module" });
+    singleton = createEncodeWorker();
     singleton.addEventListener("error", () => {
       // A boot error means later captures should not keep this instance.
       singleton = null;
@@ -41,7 +51,7 @@ export function acquireEncodeWorker(): Worker | null {
   if (singleton) return singleton;
   if (typeof Worker !== "function") return null;
   try {
-    const worker = new Worker(workerUrl(), { type: "module" });
+    const worker = createEncodeWorker();
     singleton = worker;
     failed = false;
     return worker;

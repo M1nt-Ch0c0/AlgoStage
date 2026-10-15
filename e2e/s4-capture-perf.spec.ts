@@ -314,6 +314,10 @@ async function measureCapture(page: Page, width: number) {
         imageAttached,
         encoder,
         phases,
+        submitAt: phases?.submitAt ?? null,
+        preCaptureMs: phases?.preCaptureMs ?? null,
+        workerInitAt: phases?.workerInitAt ?? null,
+        workerReadyAt: phases?.workerReadyAt ?? null,
       }),
     );
     console.log(

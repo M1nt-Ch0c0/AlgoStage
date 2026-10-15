@@ -6,6 +6,7 @@ import {
   markAskTiming,
   msSinceLongTaskEnd,
   noteLongTaskEnded,
+  notePreCapture,
   resetLongTaskEndForTests,
   type AskTimingProbe,
 } from "../lib/ask/ask-timing";
@@ -47,10 +48,14 @@ describe("ask timing probe", () => {
     install(probe);
     expect(isAskTimingEnabled()).toBe(true);
 
+    markAskTiming("submitAt", 40);
     markAskTiming("captureStart", 100);
+    notePreCapture();
     markAskTiming("longTaskEnd", 900);
     markAskTiming("sentAt", 980);
     markAskTiming("cancelUnmountAt", 990);
+    markAskTiming("workerInitAt", 12);
+    markAskTiming("workerReadyAt", 18);
     markAskPhase("domToCanvasMs", 800);
     markAskPhase("postToWorkerMs", 4);
     markAskPhase("encodeMs", 30);
@@ -59,10 +64,14 @@ describe("ask timing probe", () => {
     markAskPointerDown(940);
 
     expect(probe).toEqual({
+      submitAt: 40,
       captureStart: 100,
+      preCaptureMs: 60,
       longTaskEnd: 900,
       sentAt: 980,
       cancelUnmountAt: 990,
+      workerInitAt: 12,
+      workerReadyAt: 18,
       domToCanvasMs: 800,
       postToWorkerMs: 4,
       encodeMs: 30,
@@ -70,6 +79,20 @@ describe("ask timing probe", () => {
       preFetchMs: 20,
       firstPointerDownTs: 940,
     });
+  });
+
+  test("preCaptureMs waits for both submitAt and captureStart and keeps the first value", () => {
+    const probe: AskTimingProbe = {};
+    install(probe);
+    notePreCapture();
+    expect(probe.preCaptureMs).toBeUndefined();
+    markAskTiming("submitAt", 10);
+    notePreCapture();
+    expect(probe.preCaptureMs).toBeUndefined();
+    markAskTiming("captureStart", 25);
+    notePreCapture();
+    notePreCapture();
+    expect(probe.preCaptureMs).toBe(15);
   });
 
   test("keeps the first value of each mark", () => {

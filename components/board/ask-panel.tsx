@@ -347,6 +347,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
   }, [showWaiting, askStartedAt]);
 
   const submit = useCallback(async () => {
+    markAskTiming("submitAt");
     if (sendingRef.current) return;
     const state = usePlayerStore.getState();
     if (state.askPhase !== "drafting" && state.askPhase !== "error") return;

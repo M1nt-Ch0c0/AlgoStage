@@ -5,12 +5,16 @@
  */
 
 export type AskTimingMark =
+  | "submitAt"
   | "captureStart"
   | "longTaskEnd"
   | "sentAt"
-  | "cancelUnmountAt";
+  | "cancelUnmountAt"
+  | "workerInitAt"
+  | "workerReadyAt";
 
 export type AskTimingPhase =
+  | "preCaptureMs"
   | "domToCanvasMs"
   | "postToWorkerMs"
   | "encodeMs"
@@ -18,11 +22,19 @@ export type AskTimingPhase =
   | "preFetchMs";
 
 export type AskTimingProbe = {
+  /** performance.now() at the submit handler entry. */
+  submitAt?: number;
   captureStart?: number;
   longTaskEnd?: number;
   sentAt?: number;
   cancelUnmountAt?: number;
+  /** performance.now() just before new Worker() for the encode worker. */
+  workerInitAt?: number;
+  /** performance.now() just after new Worker() returns. */
+  workerReadyAt?: number;
   firstPointerDownTs?: number;
+  /** submitAt → captureStart, which includes the pre-capture double rAF. */
+  preCaptureMs?: number;
   domToCanvasMs?: number;
   postToWorkerMs?: number;
   encodeMs?: number;
@@ -100,4 +112,21 @@ export function markAskPhase(phase: AskTimingPhase, durationMs: number): void {
   if (probe[phase] != null) return;
   if (!Number.isFinite(durationMs)) return;
   probe[phase] = durationMs;
+}
+
+/**
+ * submitAt is the submit handler entry. captureStart is the start of
+ * captureStage. The gap includes the double rAF that paints the busy 取消 row.
+ * No-op until both marks exist, and a later call does not overwrite it.
+ */
+export function notePreCapture(): void {
+  const probe = askTimingProbe();
+  if (!probe) return;
+  if (probe.preCaptureMs != null) return;
+  const submitAt = probe.submitAt;
+  const captureStart = probe.captureStart;
+  if (submitAt == null || captureStart == null) return;
+  const duration = captureStart - submitAt;
+  if (!Number.isFinite(duration)) return;
+  probe.preCaptureMs = duration;
 }
