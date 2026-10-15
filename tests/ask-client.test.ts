@@ -323,6 +323,7 @@ describe("capture image", () => {
     const oversize = "A".repeat(Math.ceil(((CAPTURE_DEFAULTS.maxBytes + 1) * 4) / 3));
     const capture: CaptureResult = {
       ok: true,
+      encoder: "main",
       image: { mime: "image/webp", dataBase64: oversize },
       bytes: CAPTURE_DEFAULTS.maxBytes + 1,
     };
@@ -339,6 +340,7 @@ describe("capture image", () => {
     const fetchMock = installFetch(async () => responseOf(happyBody()));
     const capture: CaptureResult = {
       ok: true,
+      encoder: "main",
       image: { mime: "image/webp", dataBase64: "AAAA" },
       bytes: 3,
     };

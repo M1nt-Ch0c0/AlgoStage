@@ -30,6 +30,7 @@ vi.mock("../lib/ask/capture", async () => {
     ...actual,
     captureStage: vi.fn(async () => ({
       ok: true as const,
+      encoder: "main" as const,
       image: { mime: "image/jpeg" as const, dataBase64: "qq==" },
       bytes: 1,
     })),
@@ -49,6 +50,7 @@ const script: TeachingScript = {
 
 const OK_CAPTURE: CaptureResult = {
   ok: true,
+  encoder: "main",
   image: { mime: "image/jpeg", dataBase64: "qq==" },
   bytes: 1,
 };
