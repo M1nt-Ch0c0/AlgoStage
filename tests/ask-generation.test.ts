@@ -177,6 +177,28 @@ describe("buildAskPrompt", () => {
     expect(prompt.indexOf(question)).toBe(prompt.lastIndexOf(question));
   });
 
+  it("says the screenshot code area is blank only when an image is attached", () => {
+    const sentence = "截图中代码区为空白，代码以文本提供";
+    const withImage = buildAskPrompt({
+      script: TWO_SUM_SCRIPT,
+      step,
+      referenceCode,
+      selection,
+      question: "这一步在做什么？",
+      imageAttached: true,
+    });
+    const withoutImage = buildAskPrompt({
+      script: TWO_SUM_SCRIPT,
+      step,
+      referenceCode,
+      selection,
+      question: "这一步在做什么？",
+    });
+    expect(withImage).toContain(sentence);
+    expect(withoutImage).not.toContain(sentence);
+    expect(withImage.indexOf(sentence)).toBe(withImage.lastIndexOf(sentence));
+  });
+
   it("uses English for an English script and omits a non-array viz", () => {
     const prompt = buildAskPrompt({
       script: { ...TWO_SUM_SCRIPT, language: "en" },
