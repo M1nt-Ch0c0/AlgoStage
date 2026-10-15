@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "node node_modules/next/dist/bin/next dev",
     "build": "node node_modules/next/dist/bin/next build",
+    "postbuild": "node scripts/write-build-commit.mjs",
     "start": "node node_modules/next/dist/bin/next start",
     "db:push": "node node_modules/prisma/build/index.js db push",
     "db:seed": "node node_modules/tsx/dist/cli.mjs prisma/seed.ts",

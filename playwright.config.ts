@@ -6,6 +6,7 @@ const baseURL = `http://127.0.0.1:${port}`;
 const byokBaseURL = `http://127.0.0.1:${byokPort}`;
 
 export default defineConfig({
+  globalSetup: "./e2e/global-setup.ts",
   testDir: "./e2e",
   fullyParallel: false,
   workers: 1,
