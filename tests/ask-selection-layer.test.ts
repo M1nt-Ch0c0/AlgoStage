@@ -582,6 +582,55 @@ describe("resolveAskEscape", () => {
     expect(usePlayerStore.getState().selection).toBeNull();
   });
 
+  test("捷径上拖过阈值只出框，随后的 click 不选中捷径", async () => {
+    await render();
+    const host = layer();
+    const chip = host.querySelector<HTMLButtonElement>('[data-ask-shortcut="subtitle"]')!;
+
+    await act(async () => {
+      chip.dispatchEvent(pointer("pointerdown", { clientX: 20, clientY: 12 }));
+      window.dispatchEvent(pointer("pointermove", { clientX: 160, clientY: 120 }));
+      host.dispatchEvent(pointer("pointermove", { clientX: 160, clientY: 120 }));
+    });
+    expect(host.querySelector("[data-ask-rubber]")).not.toBeNull();
+
+    await act(async () => {
+      chip.click();
+    });
+    // 拖动压住 click：捷径没有被点选，phase 还停在 selecting。
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
+    expect(chip.getAttribute("aria-pressed")).not.toBe("true");
+
+    await act(async () => {
+      host.dispatchEvent(pointer("pointerup", { clientX: 160, clientY: 120 }));
+    });
+    const committed = usePlayerStore.getState().selection;
+    expect(committed).not.toBeNull();
+    expect(committed?.mode).toBe("region");
+    expect(usePlayerStore.getState().askPhase).toBe("drafting");
+  });
+
+  test("捷径拖动的窗口监听在卸载时卸掉", async () => {
+    const addSpy = vi.spyOn(window, "addEventListener");
+    const removeSpy = vi.spyOn(window, "removeEventListener");
+    await render();
+    const chip = layer().querySelector<HTMLButtonElement>('[data-ask-shortcut="subtitle"]')!;
+    await act(async () => {
+      chip.dispatchEvent(pointer("pointerdown", { clientX: 20, clientY: 12 }));
+    });
+    const move = addSpy.mock.calls.find((call) => call[0] === "pointermove");
+    const up = addSpy.mock.calls.find((call) => call[0] === "pointerup");
+    const cancel = addSpy.mock.calls.find((call) => call[0] === "pointercancel");
+    expect(move?.[1]).toBeTypeOf("function");
+    expect(up?.[1]).toBeTypeOf("function");
+    expect(cancel?.[1]).toBeTypeOf("function");
+
+    await act(async () => root.unmount());
+    expect(removeSpy.mock.calls.some((call) => call[0] === "pointermove" && call[1] === move?.[1])).toBe(true);
+    expect(removeSpy.mock.calls.some((call) => call[0] === "pointerup" && call[1] === up?.[1])).toBe(true);
+    expect(removeSpy.mock.calls.some((call) => call[0] === "pointercancel" && call[1] === cancel?.[1])).toBe(true);
+  });
+
   test("guard: pointerdown inside [data-ask-entry] does not start selection", async () => {
     const entryBtn = document.createElement("button");
     entryBtn.setAttribute("data-ask-entry", "");

@@ -262,6 +262,8 @@ function AskSelectionLayerActive({
   const scrollDeltaRef = useRef({ x: 0, y: 0 });
   const scrollRafRef = useRef<number | null>(null);
   const announcedRef = useRef(false);
+  const chipDragCleanupRef = useRef<(() => void) | null>(null);
+  const dragStartedRef = useRef(false);
 
   const [rubberBand, setRubberBand] = useState<RubberBand | null>(null);
   const [hint, setHint] = useState<string | null>(null);
@@ -321,6 +323,13 @@ function AskSelectionLayerActive({
     if (askPhase !== "selecting") return;
     rootRef.current?.focus();
   }, [askPhase]);
+
+  useEffect(() => {
+    return () => {
+      chipDragCleanupRef.current?.();
+      chipDragCleanupRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     setActiveShortcut((index) => Math.min(index, Math.max(visibleShortcuts.length - 1, 0)));
@@ -605,6 +614,11 @@ function AskSelectionLayerActive({
                 className="pointer-coarse:min-h-11 pointer-coarse:min-w-11 rounded-full border border-board-600 bg-board-900/80 px-2 py-0.5 text-[10px] text-chalk-100"
                 onClick={(event) => {
                   event.stopPropagation();
+                  // 拖过阈值后的 click 只留下框选，不再把捷径当成点选。
+                  if (dragStartedRef.current) {
+                    dragStartedRef.current = false;
+                    return;
+                  }
                   setActiveShortcut(index);
                   pickShortcut(item.key);
                 }}
@@ -616,20 +630,33 @@ function AskSelectionLayerActive({
                   const pointerId = event.pointerId;
                   const host = event.currentTarget.closest<HTMLElement>("[data-ask-layer]");
                   if (!host) return;
+                  chipDragCleanupRef.current?.();
+                  dragStartedRef.current = false;
+                  const detach = () => {
+                    window.removeEventListener("pointermove", onMove);
+                    window.removeEventListener("pointerup", onUp);
+                    window.removeEventListener("pointercancel", onCancel);
+                    if (chipDragCleanupRef.current === detach) chipDragCleanupRef.current = null;
+                  };
                   const onMove = (move: globalThis.PointerEvent) => {
                     if (move.pointerId !== pointerId) return;
                     if (Math.hypot(move.clientX - startX, move.clientY - startY) < ASK_LIMITS.dragThresholdPx) return;
-                    window.removeEventListener("pointermove", onMove);
-                    window.removeEventListener("pointerup", onUp);
+                    dragStartedRef.current = true;
+                    detach();
                     beginPointer(host, pointerId, event.pointerType, 0, startX, startY);
                   };
                   const onUp = (up: globalThis.PointerEvent) => {
                     if (up.pointerId !== pointerId) return;
-                    window.removeEventListener("pointermove", onMove);
-                    window.removeEventListener("pointerup", onUp);
+                    detach();
                   };
+                  const onCancel = (cancel: globalThis.PointerEvent) => {
+                    if (cancel.pointerId !== pointerId) return;
+                    detach();
+                  };
+                  chipDragCleanupRef.current = detach;
                   window.addEventListener("pointermove", onMove);
                   window.addEventListener("pointerup", onUp);
+                  window.addEventListener("pointercancel", onCancel);
                 }}
               >
                 {item.label}

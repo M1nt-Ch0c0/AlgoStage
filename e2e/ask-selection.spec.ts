@@ -325,6 +325,32 @@ test.describe("1280 selection flow", () => {
     await expect(page.locator("[data-ask-layer]")).toHaveCount(0);
   });
 
+  test("drag starting on a shortcut chip draws a box and does not select the chip", async ({ page }) => {
+    await startGenerated(page);
+    await pauseLecture(page);
+    await enterSelection(page);
+
+    const chip = page.locator('[data-ask-shortcut="subtitle"]');
+    await expect(chip).toBeVisible();
+    const box = await chip.boundingBox();
+    expect(box).not.toBeNull();
+    const startX = box!.x + box!.width / 2;
+    const startY = box!.y + box!.height / 2;
+
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(startX + 80, startY + 60, { steps: 6 });
+    await expect(page.locator("[data-ask-rubber]")).toBeVisible();
+    await page.mouse.up();
+
+    await expect(page.locator("[data-ask-selection]")).toBeVisible();
+    await expect(chip).not.toHaveAttribute("aria-pressed", "true");
+    await expect(chip).not.toHaveAttribute("aria-selected", "true");
+    const panel = page.locator("[data-ask-panel]");
+    await expect(panel).toBeVisible();
+    await expect(panel.locator("[data-ask-panel-label]")).not.toHaveText("已选：当前字幕");
+  });
+
   test("35. three shortcuts each open the panel with a matching label", async ({ page }) => {
     await startGenerated(page);
     await pauseLecture(page);
