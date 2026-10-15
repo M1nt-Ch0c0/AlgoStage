@@ -491,6 +491,17 @@ export async function captureStage(
       const dropped = walk.dropped;
       let canvas: HTMLCanvasElement;
       try {
+        // ASK_TEST_STALL_HOOK: compile-time stall. Next inlines
+        // process.env.NEXT_PUBLIC_ASK_TEST_STALL_MS and drops this block
+        // when the env is unset. The loop is synchronous and shares the
+        // domToCanvas task; the call is the next statement.
+        if (process.env.NEXT_PUBLIC_ASK_TEST_STALL_MS) {
+          const ms = Number(process.env.NEXT_PUBLIC_ASK_TEST_STALL_MS);
+          const t = performance.now();
+          while (performance.now() - t < ms) {
+            /* busy */
+          }
+        }
         const rendered = await mod.domToCanvas(container, {
           font: false,
           scale: 1,

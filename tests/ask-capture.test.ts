@@ -1093,6 +1093,34 @@ describe("lib/ask/capture", () => {
       vi.unstubAllGlobals();
     });
 
+    it("runs the ASK_TEST_STALL_HOOK busy loop in the same task as domToCanvas when NEXT_PUBLIC_ASK_TEST_STALL_MS is set", async () => {
+      const source = captureStage.toString();
+      expect(source).toContain("ASK_TEST_STALL_HOOK");
+      expect(source).toContain("process.env.NEXT_PUBLIC_ASK_TEST_STALL_MS");
+      const hookAt = source.indexOf("ASK_TEST_STALL_HOOK");
+      const callAt = source.indexOf("mod.domToCanvas");
+      expect(callAt).toBeGreaterThan(hookAt);
+      // No await between the hook and the domToCanvas call: same task.
+      // The slice stops before the await that is the call itself.
+      const between = source.slice(hookAt, callAt).replace(/await\s*$/, "");
+      expect(between).not.toContain("await");
+
+      vi.stubEnv("NEXT_PUBLIC_ASK_TEST_STALL_MS", "80");
+      let enteredAfterMs = 0;
+      const stalledStart = performance.now();
+      domToCanvasMock.mockImplementation(() => {
+        enteredAfterMs = performance.now() - stalledStart;
+        return Promise.resolve(sourceCanvas);
+      });
+      const res = await captureStage(container, baseSel);
+      expect(res.ok).toBe(true);
+      expect(domToCanvasMock).toHaveBeenCalledTimes(1);
+      // The stubbed 80ms elapses inside the synchronous loop, before the call.
+      expect(enteredAfterMs).toBeGreaterThanOrEqual(70);
+
+      vi.unstubAllEnvs();
+    });
+
     it("calls domToCanvas without a second animation-frame pair", async () => {
       const order: string[] = [];
       const raf = vi.fn((cb: FrameRequestCallback) => {
