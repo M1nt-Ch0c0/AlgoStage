@@ -123,4 +123,48 @@ describe("listenCancelPress", () => {
     document.dispatchEvent(pointer("pointerdown", cancel, 120));
     expect(onDown).toHaveBeenCalledTimes(1);
   });
+
+  test("with the listener attached, the button's pointerdown, pointerup, and click still fire", () => {
+    const cancel = button();
+    const fired: string[] = [];
+    cancel.addEventListener("pointerdown", () => {
+      fired.push("pointerdown");
+    });
+    cancel.addEventListener("pointerup", () => {
+      fired.push("pointerup");
+    });
+    cancel.addEventListener("click", () => {
+      fired.push("click");
+    });
+
+    let lastSeen: { timeStamp: number; pointerId: number } | null = null;
+    const stop = listenCancelPress(document, {
+      onDown: (event) => {
+        // The production handler stores only these two fields.
+        lastSeen = { timeStamp: event.timeStamp, pointerId: event.pointerId };
+      },
+    });
+
+    const down = pointer("pointerdown", cancel, 40);
+    const up = pointer("pointerup", cancel, 90);
+    const click = pointer("click", cancel, 91);
+    const preventDefault = vi.spyOn(down, "preventDefault");
+    const stopPropagation = vi.spyOn(down, "stopPropagation");
+    const setPointerCapture = vi.spyOn(cancel, "setPointerCapture");
+
+    expect(cancel.dispatchEvent(down)).toBe(true);
+    expect(cancel.dispatchEvent(up)).toBe(true);
+    expect(cancel.dispatchEvent(click)).toBe(true);
+
+    expect(fired).toEqual(["pointerdown", "pointerup", "click"]);
+    expect(down.defaultPrevented).toBe(false);
+    expect(up.defaultPrevented).toBe(false);
+    expect(click.defaultPrevented).toBe(false);
+    expect(preventDefault).not.toHaveBeenCalled();
+    expect(stopPropagation).not.toHaveBeenCalled();
+    expect(setPointerCapture).not.toHaveBeenCalled();
+    expect(lastSeen).toEqual({ timeStamp: 40, pointerId: 1 });
+
+    stop();
+  });
 });
