@@ -14,6 +14,7 @@ const SCRIPT_VERSION = "b".repeat(40);
 const QUESTION = "这一步在做什么？";
 const ANSWER_NARRATION = "把相同字母的词放进同一组。";
 // Capture (modern-screenshot domToCanvas) is a synchronous main-thread task; its 3s timeout cannot preempt it, and under long --repeat-each runs it took ~6.7s before the ask request was sent (S4 capture lag, ask-v032-capture). Answer waits get extra budget until S4 lands.
+// TODO(S4-r3): revert after ask-v032-capture-r3 merges
 const ANSWER_TIMEOUT_MS = 20_000;
 
 const REASONS = {
