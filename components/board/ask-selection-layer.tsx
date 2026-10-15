@@ -935,15 +935,23 @@ function AskSelectionLayerActive({
     setRubberBand(bandFrom(sample, sample));
   };
 
+  const isIgnoredTarget = (target: EventTarget | null): boolean => {
+    const el = target instanceof Element ? target : (target as Node | null)?.parentElement;
+    return Boolean(
+      el?.closest?.("[data-ask-bottom-bar], [data-ask-entry], [data-ask-shortcut]"),
+    );
+  };
+
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     suppressClickUntilRef.current = null;
     touchCompletedSelectionRef.current = false;
     lastPointerTypeRef.current = event.pointerType;
-    if ((event.target as Element | null)?.closest?.("[data-ask-entry], [data-ask-shortcut], [data-ask-bottom-bar], [data-ask-layer-part]")) return;
+    if (isIgnoredTarget(event.target)) return;
     beginPointer(event.currentTarget, event.pointerId, event.pointerType, event.button, event.clientX, event.clientY);
   };
 
   const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    if (isIgnoredTarget(event.target)) return;
     if (!pointersRef.current.has(event.pointerId)) return;
     const host = getStage();
     if (!host) return;
@@ -964,6 +972,7 @@ function AskSelectionLayerActive({
   };
 
   const onPointerUp = (event: PointerEvent<HTMLDivElement>) => {
+    if (isIgnoredTarget(event.target)) return;
     const wasDrawing = drawingRef.current && originRef.current != null && !scrollModeRef.current;
     const origin = originRef.current;
     const current = pointersRef.current.get(event.pointerId) ?? origin;
@@ -1005,6 +1014,7 @@ function AskSelectionLayerActive({
   };
 
   const onPointerCancel = (event: PointerEvent<HTMLDivElement>) => {
+    if (isIgnoredTarget(event.target)) return;
     pointersRef.current.delete(event.pointerId);
     if (pointersRef.current.size === 0) resetGesture();
     else {

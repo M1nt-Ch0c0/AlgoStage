@@ -1522,6 +1522,84 @@ describe("resolveAskEscape", () => {
       // Rubberband was not started
       expect(host.querySelector("[data-ask-rubber]")).toBeNull();
     });
+
+    test("pointerdown/up on the bar background keeps selection and phase", async () => {
+      const initialSelection = {
+        mode: "single" as const,
+        bbox: { x: 80, y: 10, width: 60, height: 30 },
+        targets: [{ kind: "step" as const, id: "step:s1", stepId: "s1", text: "步骤内容" }],
+      };
+      usePlayerStore.setState({
+        askPhase: "selecting",
+        selection: initialSelection,
+      });
+
+      await render();
+      const host = layer();
+      const bar = host.querySelector<HTMLElement>("[data-ask-bottom-bar]");
+      expect(bar).not.toBeNull();
+
+      const exitSpy = vi.spyOn(usePlayerStore.getState(), "exitAsk");
+      const setSelectionSpy = vi.spyOn(usePlayerStore.getState(), "setAskSelection");
+
+      // 1. Dispatch pointerdown and pointerup directly on the bar element
+      const pdBar = pointer("pointerdown", { pointerId: 1, clientX: 100, clientY: 100 });
+      Object.defineProperty(pdBar, "target", { value: bar });
+      const puBar = pointer("pointerup", { pointerId: 1, clientX: 100, clientY: 100 });
+      Object.defineProperty(puBar, "target", { value: bar });
+
+      await act(async () => {
+        bar!.dispatchEvent(pdBar);
+        bar!.dispatchEvent(puBar);
+      });
+
+      expect(host.querySelector("[data-ask-rubber]")).toBeNull();
+      expect(setSelectionSpy).not.toHaveBeenCalled();
+      expect(exitSpy).not.toHaveBeenCalled();
+      expect(usePlayerStore.getState().selection).toEqual(initialSelection);
+      expect(usePlayerStore.getState().askPhase).toBe("selecting");
+
+      // 2. Dispatch on the layer host with target set to bar background (gap between chips)
+      await act(async () => {
+        host.dispatchEvent(pdBar);
+        host.dispatchEvent(puBar);
+      });
+
+      expect(host.querySelector("[data-ask-rubber]")).toBeNull();
+      expect(setSelectionSpy).not.toHaveBeenCalled();
+      expect(exitSpy).not.toHaveBeenCalled();
+      expect(usePlayerStore.getState().selection).toEqual(initialSelection);
+      expect(usePlayerStore.getState().askPhase).toBe("selecting");
+
+      // 3. Dispatch on the chips container gap element inside the bar
+      const chipsContainer = bar!.querySelector<HTMLElement>('[role="group"][aria-label="快捷选项"]') ?? bar!;
+      const pdGap = pointer("pointerdown", { pointerId: 2, clientX: 120, clientY: 100 });
+      Object.defineProperty(pdGap, "target", { value: chipsContainer });
+      const puGap = pointer("pointerup", { pointerId: 2, clientX: 120, clientY: 100 });
+      Object.defineProperty(puGap, "target", { value: chipsContainer });
+
+      await act(async () => {
+        chipsContainer.dispatchEvent(pdGap);
+        chipsContainer.dispatchEvent(puGap);
+      });
+
+      expect(host.querySelector("[data-ask-rubber]")).toBeNull();
+      expect(setSelectionSpy).not.toHaveBeenCalled();
+      expect(exitSpy).not.toHaveBeenCalled();
+      expect(usePlayerStore.getState().selection).toEqual(initialSelection);
+      expect(usePlayerStore.getState().askPhase).toBe("selecting");
+
+      await act(async () => {
+        host.dispatchEvent(pdGap);
+        host.dispatchEvent(puGap);
+      });
+
+      expect(host.querySelector("[data-ask-rubber]")).toBeNull();
+      expect(setSelectionSpy).not.toHaveBeenCalled();
+      expect(exitSpy).not.toHaveBeenCalled();
+      expect(usePlayerStore.getState().selection).toEqual(initialSelection);
+      expect(usePlayerStore.getState().askPhase).toBe("selecting");
+    });
   });
 
   describe("nextRovingIndex", () => {
