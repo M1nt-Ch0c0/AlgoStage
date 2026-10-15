@@ -10,7 +10,7 @@ import {
 } from "@/lib/ask/capture";
 import { resolveAskError } from "@/lib/ask/ask-errors";
 import { readAskResponse } from "@/lib/ask/ask-response";
-import { writeBrowserAnswers } from "@/lib/ask/answers-storage";
+import { answersStorageKey, writeBrowserAnswers } from "@/lib/ask/answers-storage";
 import { askSelectionSchema } from "@/lib/ask/schema";
 import { ASK_LIMITS } from "@/lib/ask/types";
 import { fetchServerKeyDisabled, withByok } from "@/lib/byok/client";
@@ -75,6 +75,11 @@ function isAbortError(error: unknown): boolean {
 export interface SendAskOptions {
   /** False when the panel session that started this send is gone. */
   isCurrent?: () => boolean;
+  /**
+   * Called at the instant the ask fetch is issued, with performance.now().
+   * The panel compares this with a late pointerdown.timeStamp.
+   */
+  onFetch?: (sentAt: number) => void;
 }
 
 /**
@@ -185,6 +190,9 @@ export async function sendAsk(
       serverKeyDisabled,
       localByok,
     );
+    options?.onFetch?.(
+      typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now(),
+    );
     const res = await fetch(apiPath("/api/lecture/ask"), {
       method: "POST",
       headers: {
@@ -247,6 +255,47 @@ export async function sendAsk(
     }
     runtimes.delete(token);
   }
+}
+
+/**
+ * Abort the foreground request and drop anything it already streamed or stored.
+ * A press whose pointerdown.timeStamp is at or before the fetch must leave no
+ * answer, no preview text, no error, and no history or browser-cache row.
+ */
+export function retroCancelAsk(): void {
+  const token = usePlayerStore.getState().askContext?.token;
+  let runtime: AskRuntime | undefined;
+  if (token != null) runtime = runtimes.get(token);
+  if (!runtime || runtime.settled) {
+    for (const candidate of runtimes.values()) {
+      if (candidate.foreground && !candidate.settled) {
+        runtime = candidate;
+        break;
+      }
+    }
+  }
+  if (runtime && !runtime.settled) {
+    runtime.userCancel = true;
+    runtime.settled = true;
+    clearTimeout(runtime.timer);
+    runtime.controller.abort();
+    runtimes.delete(runtime.guard.token);
+  }
+  usePlayerStore.getState().retroCancelAsk();
+  const after = usePlayerStore.getState();
+  if (after.answerMeta.storageMode !== "browser") return;
+  const { cacheKey, scriptVersion } = after.answerMeta;
+  if (!cacheKey || !scriptVersion) return;
+  const hasAny = Object.values(after.answers).some((list) => list.length > 0);
+  if (!hasAny) {
+    try {
+      window.localStorage.removeItem(answersStorageKey(cacheKey, scriptVersion));
+    } catch {
+      // Storage can be unavailable. The in-memory map is already clear.
+    }
+    return;
+  }
+  writeBrowserAnswers(cacheKey, scriptVersion, after.answers);
 }
 
 /** Abort the foreground request for the current ask token. */

@@ -19,11 +19,12 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import Link from "next/link";
-import { cancelAsk, sendAsk } from "@/lib/ask/ask-client";
+import { cancelAsk, retroCancelAsk, sendAsk } from "@/lib/ask/ask-client";
 import { chooseAskScrollBlock } from "@/lib/ask/ask-scroll";
 import { ASK_ERROR_SPECS, resolveAskError, type AskErrorAction } from "@/lib/ask/ask-errors";
 import { captureStage, type CaptureResult } from "@/lib/ask/capture";
 import { createCancelHold } from "@/lib/ask/cancel-hold";
+import { shouldRetroCancel } from "@/lib/ask/retro-cancel";
 import { settleInput, yieldToInput } from "@/lib/ask/yield-macrotask";
 import { usePointerActivate } from "@/lib/ask/use-pointer-activate";
 import { collectAskCandidates, summarizeSelection } from "@/lib/ask/collect-candidates";
@@ -197,6 +198,10 @@ function AskPanelActive({ stage }: AskPanelProps) {
   const askSessionRef = useRef(0);
   const holdRef = useRef(createCancelHold());
   const holdWaitingRef = useRef(false);
+  /** performance.now() at the ask fetch, keyed by the panel session that sent it. */
+  const sentAtBySessionRef = useRef(new Map<number, number>());
+  /** pointerdown.timeStamp for a press that has not released yet. */
+  const pointerDownTsRef = useRef<number | null>(null);
   const heldAfterSendRef = useRef(false);
   const [holdPressed, setHoldPressed] = useState(false);
   const [heldAfterSend, setHeldAfterSend] = useState(false);
@@ -371,6 +376,9 @@ function AskPanelActive({ stage }: AskPanelProps) {
     try {
       await sendAsk(failed ? null : capture, {
         isCurrent: () => askSessionRef.current === session,
+        onFetch: (sentAt) => {
+          sentAtBySessionRef.current.set(session, sentAt);
+        },
       });
     } finally {
       sendingRef.current = false;
@@ -425,6 +433,16 @@ function AskPanelActive({ stage }: AskPanelProps) {
     markHeldAfterSend(false);
   };
 
+  const retroCancel = (releasedOnButton: boolean) => {
+    const downTs = pointerDownTsRef.current;
+    pointerDownTsRef.current = null;
+    if (downTs == null) return;
+    const sentAt = sentAtBySessionRef.current.get(askSessionRef.current) ?? null;
+    if (!shouldRetroCancel(downTs, sentAt, releasedOnButton)) return;
+    sentAtBySessionRef.current.delete(askSessionRef.current);
+    retroCancelAsk();
+  };
+
   const bindCancelHold = (
     activate: {
       onPointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => void;
@@ -434,6 +452,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
     },
   ) => ({
     onPointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => {
+      if (event.button === 0) pointerDownTsRef.current = event.timeStamp;
       if (event.button === 0 && sendingRef.current) {
         holdRef.current.press(askSessionRef.current);
         try {
@@ -472,10 +491,12 @@ function AskPanelActive({ stage }: AskPanelProps) {
       holdRef.current.release(inside);
       setHoldPressed(false);
       if (!inside) clearHeldAfterSendOffButton();
+      retroCancel(inside);
       if (held && inside) return;
       activate.onPointerUp(event);
     },
     onPointerCancel: (event: ReactPointerEvent<HTMLButtonElement>) => {
+      pointerDownTsRef.current = null;
       holdRef.current.pointerCancel();
       setHoldPressed(false);
       clearHeldAfterSendOffButton();

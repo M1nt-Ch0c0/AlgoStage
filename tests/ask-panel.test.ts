@@ -7,7 +7,7 @@ import { ASK_CAPTURE_FALLBACK, ASK_CAPTURE_PREPARING, ASK_CHIPS, ASK_WAITING_STA
 import { ASK_ERROR_SPECS } from "../lib/ask/ask-errors";
 import { ASK_LIMITS, type AskSelectionSummary } from "../lib/ask/types";
 import { CAPTURE_FALLBACK_NOTICE, type CaptureResult } from "../lib/ask/capture";
-import { cancelAsk, sendAsk } from "../lib/ask/ask-client";
+import { cancelAsk, retroCancelAsk, sendAsk } from "../lib/ask/ask-client";
 import { captureStage } from "../lib/ask/capture";
 import { resetCodeEditorRegistry, setAskCodeMissNotice } from "../lib/ask/code-editor-registry";
 import { usePlayerStore } from "../lib/player/store";
@@ -23,6 +23,7 @@ vi.mock("next/link", () => ({
 vi.mock("../lib/ask/ask-client", () => ({
   sendAsk: vi.fn(async () => {}),
   cancelAsk: vi.fn(),
+  retroCancelAsk: vi.fn(),
 }));
 
 vi.mock("../lib/ask/capture", async () => {
@@ -76,6 +77,7 @@ beforeEach(() => {
   vi.mocked(sendAsk).mockReset();
   vi.mocked(sendAsk).mockResolvedValue(undefined);
   vi.mocked(cancelAsk).mockReset();
+  vi.mocked(retroCancelAsk).mockReset();
   vi.mocked(captureStage).mockReset();
   vi.mocked(captureStage).mockResolvedValue(OK_CAPTURE);
 

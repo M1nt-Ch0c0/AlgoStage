@@ -91,6 +91,18 @@ function emptyAnswers(): StepAnswersMap {
   return Object.create(null) as StepAnswersMap;
 }
 
+/** Drop one answer id. A retro-cancelled send must not stay in history. */
+function dropAnswerById(map: StepAnswersMap, stepId: string | null, answerId: string | null): StepAnswersMap {
+  if (!stepId || !answerId) return map;
+  const list = map[stepId];
+  if (!list || !list.some((answer) => answer.id === answerId)) return map;
+  const next = Object.assign(Object.create(null), map) as StepAnswersMap;
+  const kept = list.filter((answer) => answer.id !== answerId);
+  if (kept.length === 0) delete next[stepId];
+  else next[stepId] = kept;
+  return next;
+}
+
 /** 前台发送 / 流式 / 播放占用入口。selecting、drafting、error 不算 busy。 */
 const BUSY_PHASES: ReadonlySet<AskPhase> = new Set(["sending", "streaming", "playing"]);
 
@@ -184,6 +196,8 @@ interface PlayerState {
   answerArrived: (answer: StepAnswer, guard: AskRequestGuard) => void;
   answerFailed: (code: string, retryable: boolean, guard: AskRequestGuard) => void;
   askCancelled: (guard: AskRequestGuard) => void;
+  /** Drop a send whose pointerdown started before the fetch. No answer, no preview, no error. */
+  retroCancelAsk: () => void;
   playAnswer: (answerId: string) => void;
   nextAnswerSegment: (run: number) => void;
   setAnswerPlaybackPaused: (paused: boolean) => void;
@@ -1092,6 +1106,36 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       askContext: state.askContext
         ? { ...state.askContext, answerId: null, segmentIndex: -1, token: null }
         : state.askContext,
+    });
+  },
+
+  retroCancelAsk: () => {
+    const state = get();
+    if (
+      state.askPhase !== "sending" &&
+      state.askPhase !== "streaming" &&
+      state.askPhase !== "playing" &&
+      state.askPhase !== "error"
+    ) {
+      return;
+    }
+    const stepId = state.askContext?.stepId ?? null;
+    const answerId = state.askContext?.answerId ?? null;
+    const answers = dropAnswerById(state.answers, stepId, answerId);
+    const expanded = new Set(state.expandedAnswerIds);
+    if (answerId) expanded.delete(answerId);
+    set({
+      askPhase: "selecting",
+      status: "interrupted",
+      awaitingContinue: false,
+      answers,
+      expandedAnswerIds: expanded,
+      previewSegments: [],
+      askErrorCode: null,
+      askErrorRetryable: false,
+      askStartedAt: null,
+      askPlaybackPaused: false,
+      askContext: null,
     });
   },
 
