@@ -1031,7 +1031,7 @@ function AskSelectionLayerActive({
             data-keyboard-open={keyboardOpen ? "" : undefined}
             role="group"
             aria-label="点选捷径"
-            className={`pointer-events-auto flex items-center max-sm:flex-nowrap gap-2 max-sm:fixed max-sm:inset-x-2 max-sm:top-auto max-sm:bottom-[calc(var(--ask-player-bar-h)+env(safe-area-inset-bottom)+8px)] max-sm:z-40 max-sm:rounded-xl max-sm:border max-sm:border-board-600 max-sm:bg-board-900/95 max-sm:p-2 max-sm:shadow-lg sm:relative sm:inset-auto sm:bottom-auto sm:z-auto sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none sm:gap-1 sm:flex-wrap ${keyboardOpen ? "max-sm:hidden" : ""}`}
+            className={`pointer-events-auto flex items-center max-sm:flex-nowrap gap-2 max-sm:fixed max-sm:inset-x-2 max-sm:top-auto max-sm:bottom-[calc(var(--ask-player-bar-h)+env(safe-area-inset-bottom)+8px)] max-sm:z-40 max-sm:h-[60px] max-sm:box-border max-sm:rounded-xl max-sm:border max-sm:border-board-600 max-sm:bg-board-900/95 max-sm:px-2 max-sm:py-0 max-sm:shadow-lg sm:relative sm:inset-auto sm:bottom-auto sm:z-auto sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none sm:gap-1 sm:flex-wrap ${keyboardOpen ? "max-sm:hidden" : ""}`}
             onPointerDown={(event) => {
               event.stopPropagation();
             }}
@@ -1059,7 +1059,7 @@ function AskSelectionLayerActive({
                 <div
                   role="group"
                   aria-label="快捷选项"
-                  className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto py-0.5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden sm:contents"
+                  className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto py-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden sm:contents"
                 >
                   {visibleShortcuts.map((item, index) => {
                     const isSelected = selectedShortcutIndex === index;

@@ -283,7 +283,7 @@ test("on mobile when in ask mode, entry button in player area is hidden and has 
   const button = container.querySelector<HTMLButtonElement>("button");
   expect(button).not.toBeNull();
   expect(button?.getAttribute("data-ask-entry")).toBeNull();
-  expect(button?.className).toContain("max-sm:hidden");
+  expect(button?.className).toContain("invisible");
 
   window.matchMedia = original;
 });
