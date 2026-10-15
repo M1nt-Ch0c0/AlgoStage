@@ -328,6 +328,8 @@ function AskSelectionLayerActive({
   const chipDragCleanupRef = useRef<(() => void) | null>(null);
   const dragStartedRef = useRef(false);
 
+  const bottomBarRef = useRef<HTMLDivElement>(null);
+
   const [rubberBand, setRubberBand] = useState<RubberBand | null>(null);
   const [hint, setHint] = useState<string | null>(null);
   const [activeShortcut, setActiveShortcut] = useState(0);
@@ -392,6 +394,50 @@ function AskSelectionLayerActive({
       chipDragCleanupRef.current = null;
     };
   }, []);
+
+  // 测量底部条高度并同步 --ask-bottom-bar-h。
+  // 桌面/inactive/unmount 时设为 0px（或 removeProperty）。
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const isMobile = () => typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches;
+    const updateBarHeight = () => {
+      if (!active || !isMobile()) {
+        document.documentElement.style.setProperty("--ask-bottom-bar-h", "0px");
+        return;
+      }
+      const el = bottomBarRef.current ?? document.querySelector<HTMLElement>("[data-ask-bottom-bar]");
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        const h = rect.height || 0;
+        document.documentElement.style.setProperty("--ask-bottom-bar-h", `${h}px`);
+      } else {
+        document.documentElement.style.setProperty("--ask-bottom-bar-h", "0px");
+      }
+    };
+
+    updateBarHeight();
+
+    const barEl = bottomBarRef.current ?? document.querySelector<HTMLElement>("[data-ask-bottom-bar]");
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined" && barEl) {
+      ro = new ResizeObserver(() => {
+        updateBarHeight();
+      });
+      ro.observe(barEl);
+    }
+
+    const mq = window.matchMedia("(max-width: 639px)");
+    const onMqChange = () => updateBarHeight();
+    mq.addEventListener("change", onMqChange);
+    window.addEventListener("resize", onMqChange);
+
+    return () => {
+      ro?.disconnect();
+      mq.removeEventListener("change", onMqChange);
+      window.removeEventListener("resize", onMqChange);
+      document.documentElement.style.setProperty("--ask-bottom-bar-h", "0px");
+    };
+  }, [active]);
 
   useEffect(() => {
     setActiveShortcut((index) => Math.min(index, Math.max(visibleShortcuts.length - 1, 0)));
@@ -726,14 +772,20 @@ function AskSelectionLayerActive({
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-col gap-1 p-2">
         <p className="text-xs text-chalk-100">{hint ?? ASK_LAYER_HINT}</p>
         {showShortcuts ? (
-          <div role="group" aria-label="点选捷径" className="pointer-events-auto flex flex-wrap gap-1">
+          <div
+            ref={bottomBarRef}
+            data-ask-bottom-bar
+            role="group"
+            aria-label="点选捷径"
+            className="pointer-events-auto flex flex-wrap gap-2 max-sm:fixed max-sm:inset-x-2 max-sm:top-auto max-sm:bottom-[calc(env(safe-area-inset-bottom)+8px)] max-sm:z-40 max-sm:rounded-xl max-sm:border max-sm:border-board-600 max-sm:bg-board-900/95 max-sm:p-2 max-sm:shadow-lg sm:relative sm:inset-auto sm:bottom-auto sm:z-auto sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none sm:gap-1"
+          >
             {visibleShortcuts.map((item, index) => (
               <button
                 key={item.key}
                 type="button"
                 data-ask-shortcut={item.key}
                 tabIndex={index === activeShortcut ? 0 : -1}
-                className="pointer-coarse:min-h-11 pointer-coarse:min-w-11 rounded-full border border-board-600 bg-board-900/80 px-2 py-0.5 text-[10px] text-chalk-100"
+                className="min-h-11 min-w-11 pointer-coarse:min-h-11 pointer-coarse:min-w-11 inline-flex items-center justify-center rounded-full border border-board-600 bg-board-900/80 px-3 py-1 text-xs sm:px-2 sm:py-0.5 sm:text-[10px] sm:min-h-0 sm:min-w-0 sm:pointer-coarse:min-h-11 sm:pointer-coarse:min-w-11 text-chalk-100"
                 onClick={(event) => {
                   event.stopPropagation();
                   // 拖过阈值后的 click 只留下框选，不再把捷径当成点选。

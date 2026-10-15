@@ -1193,4 +1193,47 @@ describe("resolveAskEscape", () => {
     expect(sel?.targets[0].codeRange).toEqual({ startLine: 4, endLine: 4 });
     expect(summarizeSelection(sel!)).toBe("已选：代码第 4 行");
   });
+
+  describe("S5-chip390 bottom bar & CSS variable", () => {
+    test("sets --ask-bottom-bar-h on mobile and resets to 0px on unmount or desktop", async () => {
+      // Mock matchMedia for mobile
+      const originalMatchMedia = window.matchMedia;
+      window.matchMedia = vi.fn().mockImplementation((query: string) => {
+        if (query === "(max-width: 639px)") {
+          return {
+            matches: true,
+            media: query,
+            addEventListener: vi.fn(),
+            removeEventListener: vi.fn(),
+          };
+        }
+        return {
+          matches: false,
+          media: query,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+        };
+      });
+
+      await render();
+      const bar = layer().querySelector<HTMLElement>("[data-ask-bottom-bar]");
+      expect(bar).not.toBeNull();
+      bar!.getBoundingClientRect = () => domRect(8, 790, 374, 52);
+
+      // Trigger update
+      await act(async () => {
+        window.dispatchEvent(new Event("resize"));
+      });
+
+      expect(document.documentElement.style.getPropertyValue("--ask-bottom-bar-h")).toBe("52px");
+
+      // When unmounted, cleans up to 0px
+      await act(async () => {
+        root.unmount();
+      });
+      expect(document.documentElement.style.getPropertyValue("--ask-bottom-bar-h")).toBe("0px");
+
+      window.matchMedia = originalMatchMedia;
+    });
+  });
 });
