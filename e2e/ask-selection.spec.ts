@@ -13,6 +13,8 @@ const CACHE_KEY = "a".repeat(40);
 const SCRIPT_VERSION = "b".repeat(40);
 const QUESTION = "这一步在做什么？";
 const ANSWER_NARRATION = "把相同字母的词放进同一组。";
+// Capture (modern-screenshot domToCanvas) is a synchronous main-thread task; its 3s timeout cannot preempt it, and under long --repeat-each runs it took ~6.7s before the ask request was sent (S4 capture lag, ask-v032-capture). Answer waits get extra budget until S4 lands.
+const ANSWER_TIMEOUT_MS = 20_000;
 
 const REASONS = {
   builtin: "生成讲课后就可以提问",
@@ -433,7 +435,7 @@ test.describe("1280 selection flow", () => {
     await dragOnStage(page);
     await askQuestion(page);
     await expect(page.getByRole("button", { name: `你问的 ${QUESTION}` })).toBeVisible();
-    await expect(page.getByText(ANSWER_NARRATION)).toBeVisible();
+    await expect(page.getByText(ANSWER_NARRATION)).toBeVisible({ timeout: ANSWER_TIMEOUT_MS });
     await expect(page.getByText(/第 \d+ \/ 3 步/)).toHaveText(indexBefore!);
     await expect(page.locator("[data-ask-layer]")).toHaveCount(0);
   });
@@ -524,7 +526,7 @@ test.describe("1280 selection flow", () => {
     await expect(page.locator("#ask-entry-reason")).toHaveText(REASONS.busy);
     await expect(entry(page)).toHaveAttribute("aria-describedby", "ask-entry-reason");
     releaseAsk.current?.();
-    await expect(page.getByText(ANSWER_NARRATION)).toBeVisible();
+    await expect(page.getByText(ANSWER_NARRATION)).toBeVisible({ timeout: ANSWER_TIMEOUT_MS });
   });
 
   test("40. 504 TIMEOUT then 重新问 succeeds and keeps the draft", async ({ page }) => {
@@ -558,7 +560,7 @@ test.describe("1280 selection flow", () => {
     await expect(panel.locator("[data-ask-panel-label]")).not.toHaveText("已选：无");
     await expect(page.locator("[data-ask-layer] [data-ask-selection]")).toBeVisible();
     await panel.getByRole("button", { name: "重新问", exact: true }).click();
-    await expect(page.getByText(ANSWER_NARRATION)).toBeVisible();
+    await expect(page.getByText(ANSWER_NARRATION)).toBeVisible({ timeout: ANSWER_TIMEOUT_MS });
     expect(calls).toBe(2);
   });
 
@@ -580,7 +582,7 @@ test.describe("1280 selection flow", () => {
     await stubCapture(page);
     await askQuestion(page);
     await expect(page.locator("[data-ask-capture-fallback]")).toHaveText(CAPTURE_FALLBACK);
-    await expect(page.getByText(ANSWER_NARRATION)).toBeVisible();
+    await expect(page.getByText(ANSWER_NARRATION)).toBeVisible({ timeout: ANSWER_TIMEOUT_MS });
     expect(image).toBeNull();
   });
 
@@ -756,7 +758,7 @@ test.describe("1280 selection flow", () => {
     await expect(panel).toBeVisible();
 
     await askQuestion(page);
-    await expect(page.getByText(ANSWER_NARRATION)).toBeVisible();
+    await expect(page.getByText(ANSWER_NARRATION)).toBeVisible({ timeout: ANSWER_TIMEOUT_MS });
 
     // Missing before S5 because the code area had no data-ask-target. Code is now collected.
     expect(capturedTargets.some((t) => t.kind === "code")).toBe(true);
@@ -811,7 +813,7 @@ test.describe("1280 selection flow", () => {
     await expect(panel.locator("[data-ask-panel-label]")).toHaveText(/代码第 \d+–\d+ 行/);
 
     await askQuestion(page);
-    await expect(page.getByText(ANSWER_NARRATION)).toBeVisible();
+    await expect(page.getByText(ANSWER_NARRATION)).toBeVisible({ timeout: ANSWER_TIMEOUT_MS });
 
     const codeTarget = capturedTargets.find((t) => t.kind === "code");
     expect(codeTarget).toBeDefined();
@@ -876,7 +878,7 @@ test.describe("1280 selection flow", () => {
       await expect(panel.locator("[data-ask-panel-label]")).toHaveText(`已选：代码第 ${startLine}–${endLine} 行`);
 
       await askQuestion(page);
-      await expect(page.getByText(ANSWER_NARRATION)).toBeVisible();
+      await expect(page.getByText(ANSWER_NARRATION)).toBeVisible({ timeout: ANSWER_TIMEOUT_MS });
 
       const codeTarget = capturedTargets.find((t) => t.kind === "code");
       expect(codeTarget).toBeDefined();
@@ -936,7 +938,7 @@ test.describe("1280 selection flow", () => {
     await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：代码第 9 行");
 
     await askQuestion(page);
-    await expect(page.getByText(ANSWER_NARRATION)).toBeVisible();
+    await expect(page.getByText(ANSWER_NARRATION)).toBeVisible({ timeout: ANSWER_TIMEOUT_MS });
 
     const codeTarget = capturedTargets.find((t) => t.kind === "code");
     expect(codeTarget).toBeDefined();
@@ -1017,7 +1019,7 @@ test.describe("1280 selection flow", () => {
     await expect(panel).toBeVisible();
 
     await askQuestion(page);
-    await expect(page.getByText(ANSWER_NARRATION)).toBeVisible();
+    await expect(page.getByText(ANSWER_NARRATION)).toBeVisible({ timeout: ANSWER_TIMEOUT_MS });
 
     expect(capturedTargets.some((t) => t.kind === 'code')).toBe(true);
     expect(capturedTargets.some((t) => t.kind === 'viz')).toBe(false);
@@ -1140,7 +1142,7 @@ test.describe("390 selection flow", () => {
       await expect(panel.locator("[data-ask-panel-label]")).toHaveText(/代码第 \d+–\d+ 行/);
 
       await askQuestion(page);
-      await expect(page.getByText(ANSWER_NARRATION)).toBeVisible();
+      await expect(page.getByText(ANSWER_NARRATION)).toBeVisible({ timeout: ANSWER_TIMEOUT_MS });
 
       const codeTarget = capturedTargets.find((t) => t.kind === "code");
       expect(codeTarget).toBeDefined();
@@ -1205,7 +1207,7 @@ test.describe("390 selection flow", () => {
         await expect(panel.locator("[data-ask-panel-label]")).toHaveText(`已选：代码第 ${startLine}–${endLine} 行`);
 
         await askQuestion(page);
-        await expect(page.getByText(ANSWER_NARRATION)).toBeVisible();
+        await expect(page.getByText(ANSWER_NARRATION)).toBeVisible({ timeout: ANSWER_TIMEOUT_MS });
 
         const codeTarget = capturedTargets.find((t) => t.kind === "code");
         expect(codeTarget).toBeDefined();
