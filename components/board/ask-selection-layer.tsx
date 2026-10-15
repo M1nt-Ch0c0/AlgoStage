@@ -854,7 +854,7 @@ function AskSelectionLayerActive({
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     suppressClickUntilRef.current = null;
     lastPointerTypeRef.current = event.pointerType;
-    if ((event.target as Element | null)?.closest?.("[data-ask-entry], [data-ask-shortcut], [data-ask-bottom-bar]")) return;
+    if ((event.target as Element | null)?.closest?.("[data-ask-entry], [data-ask-shortcut], [data-ask-bottom-bar], [data-ask-layer-part]")) return;
     beginPointer(event.currentTarget, event.pointerId, event.pointerType, event.button, event.clientX, event.clientY);
   };
 
@@ -1027,11 +1027,18 @@ function AskSelectionLayerActive({
           <div
             ref={bottomBarRef}
             data-ask-bottom-bar
+            data-ask-layer-part="bottom-bar"
             data-keyboard-open={keyboardOpen ? "" : undefined}
             role="group"
             aria-label="点选捷径"
             className={`pointer-events-auto flex items-center max-sm:flex-nowrap gap-2 max-sm:fixed max-sm:inset-x-2 max-sm:top-auto max-sm:bottom-[calc(var(--ask-player-bar-h)+env(safe-area-inset-bottom)+8px)] max-sm:z-40 max-sm:rounded-xl max-sm:border max-sm:border-board-600 max-sm:bg-board-900/95 max-sm:p-2 max-sm:shadow-lg sm:relative sm:inset-auto sm:bottom-auto sm:z-auto sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none sm:gap-1 sm:flex-wrap ${keyboardOpen ? "max-sm:hidden" : ""}`}
             onPointerDown={(event) => {
+              event.stopPropagation();
+            }}
+            onPointerUp={(event) => {
+              event.stopPropagation();
+            }}
+            onClick={(event) => {
               event.stopPropagation();
             }}
           >

@@ -1451,6 +1451,27 @@ describe("resolveAskEscape", () => {
 
       window.matchMedia = originalMatchMedia;
     });
+
+    test("bar container has data-ask-layer-part and pointerdown on gap does not start selection", async () => {
+      await render();
+      const host = layer();
+      expect(document.querySelectorAll("[data-ask-layer]").length).toBe(1);
+
+      const bar = host.querySelector<HTMLElement>("[data-ask-bottom-bar]");
+      expect(bar).not.toBeNull();
+      expect(bar!.getAttribute("data-ask-layer-part")).toBe("bottom-bar");
+
+      // Pointerdown on the bar itself (between chips)
+      const pd = new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 1, clientX: 100, clientY: 100 });
+      let stopped = false;
+      pd.stopPropagation = () => { stopped = true; };
+
+      bar!.dispatchEvent(pd);
+      expect(stopped).toBe(true);
+
+      // Rubberband was not started
+      expect(host.querySelector("[data-ask-rubber]")).toBeNull();
+    });
   });
 
   describe("nextRovingIndex", () => {
