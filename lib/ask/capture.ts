@@ -169,8 +169,20 @@ function yieldEncodeTurn(): Promise<void> {
   });
 }
 
+/** Busy ask UI (preparing row, 取消, waiting copy) opts out of the screenshot. */
+export const CAPTURE_EXCLUDE_SELECTOR = "[data-ask-capture-exclude]";
+
 /**
- * Text nodes stay. iframe/video and the whole .monaco-editor subtree are dropped.
+ * The node or an ancestor carries data-ask-capture-exclude.
+ * Text nodes stay; only elements can opt out.
+ */
+export function isCaptureExcluded(node: Node): boolean {
+  return node instanceof Element && node.closest(CAPTURE_EXCLUDE_SELECTOR) !== null;
+}
+
+/**
+ * Text nodes stay. iframe/video, the whole .monaco-editor subtree, and
+ * data-ask-capture-exclude subtrees are dropped.
  * Other elements must hit the selection. Layout is read only when not already decided.
  */
 function shouldDropCaptureNode(
@@ -179,6 +191,7 @@ function shouldDropCaptureNode(
   bbox: AskBBox,
 ): boolean {
   if (!(node instanceof Element)) return false;
+  if (isCaptureExcluded(node)) return true;
   if (node.closest(".monaco-editor") !== null) return true;
   const tag = node.tagName.toUpperCase();
   if (tag === "IFRAME" || tag === "VIDEO") return true;
@@ -477,7 +490,7 @@ export async function captureStage(
           font: false,
           scale: 1,
           features: { restoreScrollPosition: false },
-          filter: (node) => !dropped.has(node),
+          filter: (node) => !dropped.has(node) && !isCaptureExcluded(node),
           timeout: remaining,
           width: rect.width,
           height: rect.height,

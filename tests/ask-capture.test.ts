@@ -3,9 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AskSelection, AskTarget } from "@/lib/ask/types";
 import {
   CAPTURE_DEFAULTS,
+  CAPTURE_EXCLUDE_SELECTOR,
   CAPTURE_FALLBACK_NOTICE,
   buildFallbackText,
   captureStage,
+  isCaptureExcluded,
   decodedBase64Bytes,
   encodeOffThread,
   intersectsBBox,
@@ -786,6 +788,50 @@ describe("lib/ask/capture", () => {
       // Child is not entered by the walk (REJECT on root) and modern-screenshot
       // also skips children of filtered roots; the set may not list the child.
       expect(options.filter(text)).toBe(true);
+    });
+
+    it("drops data-ask-capture-exclude subtrees even when they intersect the selection", async () => {
+      const hitRect = () =>
+        ({ left: 20, top: 30, width: 10, height: 10, right: 30, bottom: 40, x: 20, y: 30, toJSON() {} }) as DOMRect;
+
+      const busy = document.createElement("div");
+      busy.setAttribute("data-ask-capture-exclude", "");
+      const preparing = document.createElement("p");
+      preparing.setAttribute("data-ask-capture-preparing", "");
+      preparing.textContent = "正在准备截图…";
+      const cancel = document.createElement("button");
+      cancel.setAttribute("data-ask-cancel", "");
+      cancel.textContent = "取消";
+      const waiting = document.createElement("p");
+      waiting.setAttribute("data-ask-waiting", "");
+      waiting.textContent = "正在想…";
+      busy.append(preparing, cancel, waiting);
+
+      const kept = document.createElement("div");
+      kept.textContent = "scene";
+      busy.getBoundingClientRect = hitRect;
+      preparing.getBoundingClientRect = hitRect;
+      cancel.getBoundingClientRect = hitRect;
+      waiting.getBoundingClientRect = hitRect;
+      kept.getBoundingClientRect = hitRect;
+      container.append(busy, kept);
+
+      expect(CAPTURE_EXCLUDE_SELECTOR).toBe("[data-ask-capture-exclude]");
+      expect(isCaptureExcluded(busy)).toBe(true);
+      expect(isCaptureExcluded(preparing)).toBe(true);
+      expect(isCaptureExcluded(cancel)).toBe(true);
+      expect(isCaptureExcluded(waiting)).toBe(true);
+      expect(isCaptureExcluded(kept)).toBe(false);
+      expect(isCaptureExcluded(document.createTextNode("kept"))).toBe(false);
+
+      const res = await captureStage(container, baseSel);
+      expect(res.ok).toBe(true);
+      const filter = (domToCanvasMock.mock.calls[0]?.[1] as { filter: (node: Node) => boolean }).filter;
+      expect(filter(busy)).toBe(false);
+      expect(filter(preparing)).toBe(false);
+      expect(filter(cancel)).toBe(false);
+      expect(filter(waiting)).toBe(false);
+      expect(filter(kept)).toBe(true);
     });
 
     it("returns TOO_MANY_NODES when more than maxNodes kept elements intersect the selection", async () => {
