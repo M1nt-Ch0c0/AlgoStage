@@ -73,6 +73,23 @@ export function resolveAskEscape(
   return "ignore";
 }
 
+/** 退出圈选并将焦点还给入口按钮（若在 DOM 中）。 */
+export function exitAskAndFocusEntry(): void {
+  setAskCodeMissNotice(null);
+  usePlayerStore.getState().exitAsk();
+  if (usePlayerStore.getState().askPhase !== "idle") return;
+  if (typeof document === "undefined") return;
+  const focusEntry = () => {
+    if (typeof document === "undefined") return;
+    if (usePlayerStore.getState().askPhase !== "idle") return;
+    document.querySelector<HTMLElement>("[data-ask-entry]")?.focus({ preventScroll: true });
+  };
+  focusEntry();
+  if (typeof window !== "undefined") {
+    window.setTimeout(focusEntry, 0);
+  }
+}
+
 const SHORTCUTS = [
   { key: "subtitle", label: ASK_SHORTCUT_SUBTITLE },
   { key: "step", label: ASK_SHORTCUT_STEP },
@@ -211,7 +228,6 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
   const setAskSelection = usePlayerStore((s) => s.setAskSelection);
   const clearAskSelection = usePlayerStore((s) => s.clearAskSelection);
   const closeAskPanel = usePlayerStore((s) => s.closeAskPanel);
-  const exitAsk = usePlayerStore((s) => s.exitAsk);
   // 上一阶段在 effect 里更新。关面板的那次要等 0ms 回调记上：
   // 严格模式会先清掉这次回调再跑一遍，第二遍仍要看得到 drafting。
   const previousPhaseRef = useRef(askPhase);
@@ -237,13 +253,12 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
       event.stopPropagation();
       if (action === "close-panel") closeAskPanel();
       else {
-        setAskCodeMissNotice(null);
-        exitAsk();
+        exitAskAndFocusEntry();
       }
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [askPhase, closeAskPanel, exitAsk]);
+  }, [askPhase, closeAskPanel]);
 
   // 关面板回到 selecting：焦点还给选区原目标。
   // 只在 drafting/error → selecting 时还。刚进入圈选、或已经在圈选里 Tab，不动焦点。

@@ -22,6 +22,7 @@ import {
   type AskDisabledReason,
 } from "@/lib/player/store";
 import { usePrefersReducedMotion } from "@/components/effects/fx-context";
+import { exitAskAndFocusEntry } from "./ask-selection-layer";
 
 const PENDING_TIMEOUT_MS = 3000;
 const REASON_ID = "ask-entry-reason";
@@ -39,7 +40,6 @@ export default function AskEntry() {
   const storageMode = usePlayerStore((s) => s.answerMeta.storageMode);
   const requestEnterAsk = usePlayerStore((s) => s.requestEnterAsk);
   const enterAsk = usePlayerStore((s) => s.enterAsk);
-  const exitAsk = usePlayerStore((s) => s.exitAsk);
   const reduced = usePrefersReducedMotion();
 
   const [awaitingPending, setAwaitingPending] = useState(false);
@@ -128,7 +128,7 @@ export default function AskEntry() {
   function onClick(event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation();
     if (inAsk) {
-      exitAsk();
+      exitAskAndFocusEntry();
       return;
     }
     activate();
