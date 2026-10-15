@@ -425,6 +425,56 @@ describe("disposeAskRequests", () => {
   });
 });
 
+describe("isCurrent session guard", () => {
+  test("isCurrent false before any mutation does not fetch and leaves the phase", async () => {
+    loadReady("server");
+    enterDrafting();
+    const fetchMock = installFetch(async () => responseOf(happyBody()));
+
+    await sendAsk(null, { isCurrent: () => false });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(s().askPhase).toBe("drafting");
+    expect(s().askStartedAt).toBeNull();
+  });
+
+  test("isCurrent flipping false during the server-key await does not fetch", async () => {
+    loadReady("server");
+    enterDrafting();
+    window.localStorage.setItem(BYOK_STORAGE_KEY, JSON.stringify({ apiKey: "sk-fake-e2e-0000" }));
+    let current = true;
+    let releaseSettings: (() => void) | undefined;
+    const settingsGate = new Promise<void>((resolve) => {
+      releaseSettings = resolve;
+    });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes("/api/settings")) {
+        await settingsGate;
+        return settingsResponse(true);
+      }
+      return responseOf(happyBody());
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = sendAsk(null, {
+      isCurrent: () => current,
+    });
+    await vi.waitFor(() => {
+      expect(s().askPhase).toBe("sending");
+    });
+    expect(askCallCount(fetchMock)).toBe(0);
+
+    current = false;
+    releaseSettings?.();
+    await pending;
+
+    expect(askCallCount(fetchMock)).toBe(0);
+    expect(s().askPhase).toBe("drafting");
+    expect(s().askErrorCode).toBeNull();
+    expect(s().askStartedAt).toBeNull();
+  });
+});
+
 describe("in-flight guard", () => {
   test("a second sendAsk while sending starts only one fetch", async () => {
     loadReady("server");

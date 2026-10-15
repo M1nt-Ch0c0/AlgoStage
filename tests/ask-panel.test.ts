@@ -170,9 +170,17 @@ function keydown(el: EventTarget, init: KeyboardEventInit) {
   el.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init }));
 }
 
-/** Run queued macrotasks (post-capture yieldMacrotask) before the act callback ends. */
+/** Keyboard activation: click detail 0, which usePointerActivate still runs. */
+function activateButton(button: HTMLButtonElement) {
+  button.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 0 }));
+}
+
+/** Run both post-capture yieldMacrotask turns before the act callback ends. */
 async function finishCaptureTurn() {
   await Promise.resolve();
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 0);
+  });
   await new Promise<void>((resolve) => {
     setTimeout(resolve, 0);
   });
@@ -282,7 +290,7 @@ describe("ask panel", () => {
     });
     expect(captureStage).toHaveBeenCalledTimes(1);
     expect(sendAsk).toHaveBeenCalledTimes(1);
-    expect(sendAsk).toHaveBeenCalledWith(OK_CAPTURE);
+    expect(sendAsk).toHaveBeenCalledWith(OK_CAPTURE, expect.objectContaining({ isCurrent: expect.any(Function) }));
 
     vi.mocked(sendAsk).mockClear();
     vi.mocked(captureStage).mockClear();
@@ -290,7 +298,7 @@ describe("ask panel", () => {
       keydown(question(), { key: "Enter", metaKey: true });
       await finishCaptureTurn();
     });
-    expect(sendAsk).toHaveBeenCalledWith(OK_CAPTURE);
+    expect(sendAsk).toHaveBeenCalledWith(OK_CAPTURE, expect.objectContaining({ isCurrent: expect.any(Function) }));
   });
 
   test("25. 截图返回前 selection 或 stepId 变化则不发送；失败仍提示并 sendAsk(null)", async () => {
@@ -367,7 +375,7 @@ describe("ask panel", () => {
     expect(container.querySelector("[data-ask-capture-fallback]")?.textContent).toBe(CAPTURE_FALLBACK_NOTICE);
     expect(container.querySelector("[data-ask-capture-fallback]")?.textContent).toBe(ASK_CAPTURE_FALLBACK);
     expect(sendAsk).toHaveBeenCalledTimes(1);
-    expect(sendAsk).toHaveBeenCalledWith(null);
+    expect(sendAsk).toHaveBeenCalledWith(null, expect.objectContaining({ isCurrent: expect.any(Function) }));
     expect(usePlayerStore.getState().askCaptureFallback).toBe(true);
   });
 
@@ -546,7 +554,7 @@ describe("ask panel", () => {
     expect(idle.getAttribute("aria-hidden")).toBe("true");
     expect(idle.hasAttribute("data-ask-capture-preparing")).toBe(false);
     expect(idle.textContent).not.toBe(ASK_CAPTURE_PREPARING);
-    expect(sendAsk).toHaveBeenCalledWith(OK_CAPTURE);
+    expect(sendAsk).toHaveBeenCalledWith(OK_CAPTURE, expect.objectContaining({ isCurrent: expect.any(Function) }));
   });
 
   test("25d. 截图进行中 Esc 或取消关掉面板后，截图返回也不发送", async () => {
@@ -577,9 +585,11 @@ describe("ask panel", () => {
       resolveCapture?.(OK_CAPTURE);
       await finishCaptureTurn();
     });
-    expect(sendAsk).not.toHaveBeenCalled();
+    expect(sendAsk).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(sendAsk).mock.calls[0]?.[1]?.isCurrent?.()).toBe(false);
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
 
+    vi.mocked(sendAsk).mockClear();
     resolveCapture = undefined;
     draft("drafting", { draftQuestion: "为什么这样写？", askPhase: "drafting" });
     await render();
@@ -595,7 +605,8 @@ describe("ask panel", () => {
     expect(container.querySelector("[data-ask-capture-preparing]")).not.toBeNull();
 
     await act(async () => {
-      container.querySelector<HTMLButtonElement>("[data-ask-cancel]")?.click();
+      const cancel = container.querySelector<HTMLButtonElement>("[data-ask-cancel]");
+      if (cancel) activateButton(cancel);
     });
     expect(container.querySelector("[data-ask-panel]")).toBeNull();
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
@@ -605,7 +616,8 @@ describe("ask panel", () => {
       resolveCapture?.(OK_CAPTURE);
       await finishCaptureTurn();
     });
-    expect(sendAsk).not.toHaveBeenCalled();
+    expect(sendAsk).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(sendAsk).mock.calls[0]?.[1]?.isCurrent?.()).toBe(false);
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
   });
 
@@ -613,34 +625,43 @@ describe("ask panel", () => {
     draft("drafting", { draftQuestion: "为什么这样写？" });
     await render();
 
-    let releaseYield: () => void = () => {};
-    const gate = new Promise<void>((resolve) => {
-      releaseYield = resolve;
-    });
-    const yieldFn = vi.fn(() => gate);
+    let releaseSecond: (() => void) | undefined;
+    let calls = 0;
+    const yieldFn = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          calls += 1;
+          if (calls === 1) resolve();
+          else releaseSecond = resolve;
+        }),
+    );
     vi.stubGlobal("scheduler", { yield: yieldFn });
 
     await act(async () => {
       submitButton().click();
       await Promise.resolve();
       await Promise.resolve();
+      await Promise.resolve();
     });
     expect(captureStage).toHaveBeenCalledTimes(1);
-    expect(yieldFn).toHaveBeenCalledTimes(1);
+    expect(yieldFn).toHaveBeenCalledTimes(2);
     expect(sendAsk).not.toHaveBeenCalled();
     expect(statusRow().textContent).toBe(ASK_CAPTURE_PREPARING);
 
     await act(async () => {
-      container.querySelector<HTMLButtonElement>("[data-ask-cancel]")?.click();
+      const cancel = container.querySelector<HTMLButtonElement>("[data-ask-cancel]");
+      if (cancel) activateButton(cancel);
     });
     expect(container.querySelector("[data-ask-panel]")).toBeNull();
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
 
-    releaseYield();
+    releaseSecond?.();
     await act(async () => {
-      await gate;
+      await Promise.resolve();
     });
-    expect(sendAsk).not.toHaveBeenCalled();
+    expect(sendAsk).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(sendAsk).mock.calls[0]?.[1]?.isCurrent?.()).toBe(false);
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
   });
 
   test("25f. 截图成功且中途未取消时 sendAsk 只调用一次", async () => {
@@ -652,7 +673,7 @@ describe("ask panel", () => {
     });
     expect(captureStage).toHaveBeenCalledTimes(1);
     expect(sendAsk).toHaveBeenCalledTimes(1);
-    expect(sendAsk).toHaveBeenCalledWith(OK_CAPTURE);
+    expect(sendAsk).toHaveBeenCalledWith(OK_CAPTURE, expect.objectContaining({ isCurrent: expect.any(Function) }));
   });
 
   test("25c. 截图 TIMEOUT 仍显示 #39 回退并 sendAsk(null)", async () => {
@@ -671,7 +692,7 @@ describe("ask panel", () => {
     expect(statusRow().hasAttribute("data-ask-capture-preparing")).toBe(false);
     expect(container.querySelector("[data-ask-capture-fallback]")?.textContent).toBe(ASK_CAPTURE_FALLBACK);
     expect(sendAsk).toHaveBeenCalledTimes(1);
-    expect(sendAsk).toHaveBeenCalledWith(null);
+    expect(sendAsk).toHaveBeenCalledWith(null, expect.objectContaining({ isCurrent: expect.any(Function) }));
   });
 
   test("26. sending 显示等待秒数，每 10 秒更新 status；取消调用 cancelAsk，回到 drafting 后草稿与选区还在", async () => {
@@ -706,7 +727,8 @@ describe("ask panel", () => {
     expect(document.querySelectorAll("[role=status]")).toHaveLength(1);
 
     await act(async () => {
-      container.querySelector<HTMLButtonElement>("[data-ask-cancel]")?.click();
+      const cancel = container.querySelector<HTMLButtonElement>("[data-ask-cancel]");
+      if (cancel) activateButton(cancel);
     });
     expect(cancelAsk).toHaveBeenCalledTimes(1);
     expect(usePlayerStore.getState().draftQuestion).toBe("老师在想的问题");
@@ -768,7 +790,7 @@ describe("ask panel", () => {
       submitButton().click();
       await finishCaptureTurn();
     });
-    expect(sendAsk).toHaveBeenCalledWith(OK_CAPTURE);
+    expect(sendAsk).toHaveBeenCalledWith(OK_CAPTURE, expect.objectContaining({ isCurrent: expect.any(Function) }));
 
     Object.defineProperty(window, "location", { configurable: true, value: original });
   });
@@ -778,7 +800,8 @@ describe("ask panel", () => {
     draft("drafting", { draftQuestion: "下次还在", selection: kept });
     await render();
     await act(async () => {
-      container.querySelector<HTMLButtonElement>("[data-ask-cancel]")?.click();
+      const cancel = container.querySelector<HTMLButtonElement>("[data-ask-cancel]");
+      if (cancel) activateButton(cancel);
     });
     const state = usePlayerStore.getState();
     expect(state.askPhase).toBe("selecting");
