@@ -307,33 +307,58 @@ function AskSelectionLayerActive({
       const dy = current.y - origin.y;
       const raw = bandFrom(origin, current);
       const box = normalizeBBox(raw);
-      const pointLike =
-        Math.max(Math.abs(dx), Math.abs(dy)) < ASK_LIMITS.dragThresholdPx ||
-        box.width < MIN_REGION_SIDE ||
-        box.height < MIN_REGION_SIDE;
-      const point = pointLike
-        ? { x: box.x + box.width / 2, y: box.y + box.height / 2 }
-        : null;
+      const motion = Math.max(Math.abs(dx), Math.abs(dy));
 
-      const candidateBox = point
-        ? { x: point.x, y: point.y, width: Math.max(box.width, 1), height: Math.max(box.height, 1) }
-        : box;
-      const candidates = collectAskCandidates(host, candidateBox);
-      const hit = point ? hitTestPoint(point.x, point.y, candidates) : hitTest(box, candidates);
+      const codeElements = Array.from(
+        host.querySelectorAll<HTMLElement>('[data-ask-target="code"]'),
+      ).filter((el) => el.closest("[data-ask-exclude]") === null);
 
-      const testBox =
+      const dragBox =
         box.width === 0 || box.height === 0
           ? { x: box.x, y: box.y, width: Math.max(box.width, 1), height: Math.max(box.height, 1) }
           : box;
-      let codeIntersected = false;
-      for (const codeEl of host.querySelectorAll<HTMLElement>('[data-ask-target="code"]')) {
-        if (codeEl.closest("[data-ask-exclude]") !== null) continue;
-        const codeRect = relativeRect(host, codeEl);
-        if (intersects(testBox, normalizeBBox(codeRect))) {
-          codeIntersected = true;
-          break;
-        }
+
+      const dragIntersectsCode = codeElements.some((codeEl) =>
+        intersects(dragBox, normalizeBBox(relativeRect(host, codeEl))),
+      );
+
+      const isPointInside = (pt: PointerSample, el: HTMLElement) => {
+        const r = normalizeBBox(relativeRect(host, el));
+        return pt.x >= r.x && pt.x <= r.x + r.width && pt.y >= r.y && pt.y <= r.y + r.height;
+      };
+
+      const isClick = motion < ASK_LIMITS.dragThresholdPx;
+      const clickCodeEl = isClick
+        ? codeElements.find((codeEl) => isPointInside(current, codeEl) || isPointInside(origin, codeEl))
+        : undefined;
+
+      let point: { x: number; y: number } | null;
+      let candidateBox: AskBBox;
+
+      if (motion >= ASK_LIMITS.dragThresholdPx && dragIntersectsCode) {
+        candidateBox = box;
+        point = null;
+      } else if (isClick && clickCodeEl) {
+        const pointerPos = isPointInside(current, clickCodeEl) ? current : origin;
+        candidateBox = { x: pointerPos.x, y: pointerPos.y, width: 1, height: 1 };
+        point = { x: pointerPos.x, y: pointerPos.y };
+      } else {
+        const pointLike =
+          motion < ASK_LIMITS.dragThresholdPx ||
+          box.width < MIN_REGION_SIDE ||
+          box.height < MIN_REGION_SIDE;
+        point = pointLike
+          ? { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+          : null;
+        candidateBox = point
+          ? { x: point.x, y: point.y, width: Math.max(box.width, 1), height: Math.max(box.height, 1) }
+          : box;
       }
+
+      const candidates = collectAskCandidates(host, candidateBox);
+      const hit = point ? hitTestPoint(point.x, point.y, candidates) : hitTest(box, candidates);
+
+      const codeIntersected = dragIntersectsCode || Boolean(clickCodeEl);
       const codeCollected = hit.targets.some((t) => t.kind === "code");
 
       if (hit.targets.length === 0) {
