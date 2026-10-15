@@ -88,39 +88,64 @@ export function collectAskCandidates(stage: HTMLElement, box?: AskBBox): AskCand
 
     if (kindRaw === "code") {
       const handle = getCodeEditorHandle(el);
-      let codeRange: { startLine: number; endLine: number } | undefined;
-      let text: string;
-
-      const normBox = box ? normalizeBBox(box) : undefined;
       const normRect = normalizeBBox(rect);
-      const effectiveBox = normBox
-        ? (normBox.width === 0 || normBox.height === 0
+
+      if (box) {
+        const normBox = normalizeBBox(box);
+        const effectiveBox =
+          normBox.width === 0 || normBox.height === 0
             ? { x: normBox.x, y: normBox.y, width: Math.max(normBox.width, 1), height: Math.max(normBox.height, 1) }
-            : normBox)
-        : undefined;
+            : normBox;
 
-      const isIntersecting = effectiveBox ? intersects(effectiveBox, normRect) : false;
-
-      if (effectiveBox && isIntersecting && handle) {
-        const sr = stage.getBoundingClientRect();
-        const intersectTop = Math.max(effectiveBox.y, normRect.y);
-        const intersectBottom = Math.min(effectiveBox.y + effectiveBox.height, normRect.y + normRect.height);
-        const clientTop = intersectTop + sr.top - stage.scrollTop;
-        const clientBottom = intersectBottom + sr.top - stage.scrollTop;
-
-        const range = handle.getLineRangeForClientBox(clientTop, clientBottom);
-        if (range) {
-          codeRange = { startLine: range.startLine, endLine: range.endLine };
-          text = handle.getLinesText(range.startLine, range.endLine).slice(0, ASK_LIMITS.targetTextMax);
-        } else {
-          const full = handle.getFullText();
-          text = (full || (el.textContent ?? "")).slice(0, ASK_LIMITS.targetTextMax);
+        const isIntersecting = intersects(effectiveBox, normRect);
+        if (!isIntersecting) {
+          // (4) box does not intersect the code element -> no code target at all
+          continue;
         }
-      } else {
-        const full = handle ? handle.getFullText() : (el.textContent ?? "");
-        text = full.slice(0, ASK_LIMITS.targetTextMax);
+
+        let codeRange: { startLine: number; endLine: number } | undefined;
+        let text = "";
+
+        if (handle) {
+          const sr = stage.getBoundingClientRect();
+          const intersectTop = Math.max(effectiveBox.y, normRect.y);
+          const intersectBottom = Math.min(effectiveBox.y + effectiveBox.height, normRect.y + normRect.height);
+          const clientTop = intersectTop + sr.top - stage.scrollTop;
+          const clientBottom = intersectBottom + sr.top - stage.scrollTop;
+
+          const range = handle.getLineRangeForClientBox(clientTop, clientBottom);
+          if (range) {
+            // (1) intersects and handle returns a range
+            codeRange = { startLine: range.startLine, endLine: range.endLine };
+            text = handle.getLinesText(range.startLine, range.endLine).slice(0, ASK_LIMITS.targetTextMax);
+          } else {
+            // (2) intersects but range is null
+            const full = handle.getFullText();
+            text = (full || (el.textContent ?? "")).slice(0, ASK_LIMITS.targetTextMax);
+          }
+        } else {
+          text = (el.textContent ?? "").slice(0, ASK_LIMITS.targetTextMax);
+        }
+
+        // (3) intersects but can't get any code text (empty) -> no code target
+        if (!text || text.length === 0) {
+          continue;
+        }
+
+        const target: AskTarget = {
+          kind: "code",
+          id,
+          ...(stepId !== undefined ? { stepId } : {}),
+          ...(codeRange !== undefined ? { codeRange } : {}),
+          text,
+        };
+        out.push({ target, rect });
+        continue;
       }
 
+      // No box specified (shortcuts, roving focus, outlines)
+      const full = handle ? handle.getFullText() : (el.textContent ?? "");
+      const text = full.slice(0, ASK_LIMITS.targetTextMax);
       if (!text || text.length === 0) {
         continue;
       }
@@ -129,7 +154,6 @@ export function collectAskCandidates(stage: HTMLElement, box?: AskBBox): AskCand
         kind: "code",
         id,
         ...(stepId !== undefined ? { stepId } : {}),
-        ...(codeRange !== undefined ? { codeRange } : {}),
         text,
       };
       out.push({ target, rect });
