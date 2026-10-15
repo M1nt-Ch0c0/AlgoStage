@@ -165,8 +165,14 @@ export default function CodeEditor({
 
       const handle: CodeEditorHandle = {
         getLineRangeForClientBox(top: number, bottom: number): { startLine: number; endLine: number } | null {
+          let lineHeight: number | undefined;
+          try {
+            lineHeight = editor.getOption(monaco.editor.EditorOption.lineHeight);
+          } catch {
+            // fallback if unavailable
+          }
           return computeLineRange(editor, top, bottom, {
-            lineHeight: editor.getOption(monaco.editor.EditorOption.lineHeight),
+            lineHeight: typeof lineHeight === "number" && lineHeight > 0 ? lineHeight : 22,
           });
         },
         getLinesText(startLine: number, endLine: number): string {

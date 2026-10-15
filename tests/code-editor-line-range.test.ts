@@ -32,7 +32,7 @@ function createMockEditor(overrides?: Partial<CodeLineRangeEditor>): CodeLineRan
 }
 
 describe("computeLineRange / getLineRangeForClientBox", () => {
-  it("box exactly on line boundaries: y1 = top of line 8, y2 = bottom of line 9 -> 8–9", () => {
+  it("box exactly on line boundaries -> exact lines", () => {
     const editor = createMockEditor();
     // Line 8: [140, 160), Line 9: [160, 180)
     // clientTop = 100 + 140 = 240; clientBottom = 100 + 180 = 280
@@ -40,23 +40,27 @@ describe("computeLineRange / getLineRangeForClientBox", () => {
     expect(range).toEqual({ startLine: 8, endLine: 9 });
   });
 
-  it("box grazing within 2px into neighbour lines above and below is not counted", () => {
+  it("box grazing <2px into the neighbour line above and below -> neighbours excluded", () => {
     const editor = createMockEditor();
     // Line 8 spans [140, 160), Line 9 spans [160, 180)
     // Neighbor above: line 7 [120, 140). Neighbor below: line 10 [180, 200).
-    // Grazing 1px above line 8 (y1 = 139) and 1px below line 9 (y2 = 181):
+    // Grazing 1px (<2px) above line 8 (y1 = 139) and 1px below line 9 (y2 = 181):
     const range1 = computeLineRange(editor, 100 + 139, 100 + 181);
     expect(range1).toEqual({ startLine: 8, endLine: 9 });
 
-    // Grazing exactly 2px above line 8 (y1 = 138) and 2px below line 9 (y2 = 182):
-    // y1+2 = 140 (line 7 top+lh = 140, not > 140 -> line 7 not counted)
-    // y2-2 = 180 (line 10 top = 180, not < 180 -> line 10 not counted)
-    const range2 = computeLineRange(editor, 100 + 138, 100 + 182);
+    // Grazing 1.5px (<2px) above line 8 and below line 9:
+    const range2 = computeLineRange(editor, 100 + 138.5, 100 + 181.5);
     expect(range2).toEqual({ startLine: 8, endLine: 9 });
 
+    // Grazing exactly 2px above line 8 (y1 = 138) and 2px below line 9 (y2 = 182):
+    // y1+2 = 140 (line 7 top+lh = 140, not > 140 -> line 7 excluded)
+    // y2-2 = 180 (line 10 top = 180, not < 180 -> line 10 excluded)
+    const range3 = computeLineRange(editor, 100 + 138, 100 + 182);
+    expect(range3).toEqual({ startLine: 8, endLine: 9 });
+
     // Grazing >2px (3px above and below) intersects neighbor lines:
-    const range3 = computeLineRange(editor, 100 + 137, 100 + 183);
-    expect(range3).toEqual({ startLine: 7, endLine: 10 });
+    const range4 = computeLineRange(editor, 100 + 137, 100 + 183);
+    expect(range4).toEqual({ startLine: 7, endLine: 10 });
   });
 
   it("handles nonzero contentTop correctly", () => {
@@ -82,7 +86,22 @@ describe("computeLineRange / getLineRangeForClientBox", () => {
     expect(range).toEqual({ startLine: 5, endLine: 7 });
   });
 
-  it("reproduces the e2e 8–9 shape (start at center of line 8, end at center of line 9 -> 8–9)", () => {
+  it("nonzero contentTop and scrolled", () => {
+    const editor = createMockEditor({
+      getLayoutInfo: () => ({ contentTop: 15 }),
+      getScrollTop: () => 60,
+      getVisibleRanges: () => [{ startLineNumber: 4, endLineNumber: 13 }],
+      getModel: () => ({ getLineCount: () => 20 }),
+    });
+    // editorRect.top = 100, contentTop = 15, scrollTop = 60
+    // y = clientY - 100 - 15 + 60 = clientY - 55
+    // For lines 5..7: line 5 top = 80; line 7 bottom = 140
+    // clientTop = 80 + 55 = 135; clientBottom = 140 + 55 = 195
+    const range = computeLineRange(editor, 135, 195);
+    expect(range).toEqual({ startLine: 5, endLine: 7 });
+  });
+
+  it("the e2e shape top-of-8+4 .. bottom-of-9-4 -> 8–9", () => {
     const lineHeight = 22;
     const contentTop = 12;
     const editorRectTop = 50;
@@ -98,11 +117,14 @@ describe("computeLineRange / getLineRangeForClientBox", () => {
       getModel: () => ({ getLineCount: () => 15 }),
     });
 
-    // In Monaco, line 8 top = 7 * 22 = 154, center = 154 + 11 = 165
-    // Line 9 top = 8 * 22 = 176, center = 176 + 11 = 187
-    // Rendered client Y (e2e getMonacoLineY):
-    const startClientY = editorRectTop + contentTop + 165; // 227
-    const endClientY = editorRectTop + contentTop + 187;   // 249
+    // Monaco line 8 top = 7 * 22 = 154
+    // Monaco line 9 bottom = 9 * 22 = 198
+    // In client coordinates:
+    const line8Top = editorRectTop + contentTop + (8 - 1) * lineHeight;
+    const line9Bottom = editorRectTop + contentTop + 9 * lineHeight;
+
+    const startClientY = line8Top + 4;
+    const endClientY = line9Bottom - 4;
 
     const range = computeLineRange(editor, startClientY, endClientY, { lineHeight });
     expect(range).toEqual({ startLine: 8, endLine: 9 });
