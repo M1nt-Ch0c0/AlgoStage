@@ -6,6 +6,7 @@ import { scrollHeight, clientHeight, scrollWidth, clientWidth } from "happy-dom/
 import AskSelectionLayer, { resolveAskEscape } from "../components/board/ask-selection-layer";
 import { ASK_CODE_MISS_HINT, ASK_EMPTY_HIT, ASK_ENTERED_STATUS, ASK_RESIZE_HINT } from "../lib/ask/ask-ui-text";
 import { type CodeEditorHandle, getAskCodeMissNotice, registerCodeEditor, resetCodeEditorRegistry } from "../lib/ask/code-editor-registry";
+import { summarizeSelection } from "../lib/ask/collect-candidates";
 import * as hitTest from "../lib/ask/hit-test";
 import { usePlayerStore } from "../lib/player/store";
 import type { TeachingScript } from "../lib/teaching/types";
@@ -884,6 +885,44 @@ describe("resolveAskEscape", () => {
     expect(setSpy).toHaveBeenCalledTimes(1);
     const sel = usePlayerStore.getState().selection;
     expect(sel?.targets.some((t) => t.kind === "code")).toBe(true);
+    expect(layer().textContent).not.toContain(ASK_CODE_MISS_HINT);
+    expect(getAskCodeMissNotice()).toBeNull();
+  });
+
+  test("whole-block fallback to 当前代码 shows no hint", async () => {
+    const codeEl = document.createElement("div");
+    codeEl.setAttribute("data-ask-target", "code");
+    codeEl.setAttribute("data-ask-id", "code:main");
+    codeEl.setAttribute("data-ask-step-id", "s1");
+    codeEl.getBoundingClientRect = () => domRect(250, 10, 80, 50);
+    stage.append(codeEl);
+
+    // In collectAskCandidates, when an editor handle is registered but line-range
+    // lookup returns null (e.g. coordinates cannot resolve to lines), it falls back
+    // to handle.getFullText() (or el.textContent). Because full text is non-empty,
+    // a code target is created without codeRange. When fully boxed, hitTest collects
+    // this code target, summarizeSelection yields "已选：当前代码", and neither hint
+    // nor notice is produced.
+    const mockHandle: CodeEditorHandle = {
+      getLineRangeForClientBox: vi.fn(() => null),
+      getLinesText: vi.fn(() => ""),
+      getFullText: vi.fn(() => "const x = 1;\nconst y = 2;"),
+    };
+    registerCodeEditor(codeEl, mockHandle);
+
+    const setSpy = vi.spyOn(usePlayerStore.getState(), "setAskSelection");
+    await render();
+
+    // Box code element (code element is fully boxed: 250..330, 10..60)
+    await gesture(240, 5, 340, 65);
+
+    expect(setSpy).toHaveBeenCalledTimes(1);
+    const sel = usePlayerStore.getState().selection;
+    expect(sel).not.toBeNull();
+    expect(sel?.targets).toHaveLength(1);
+    expect(sel?.targets[0].kind).toBe("code");
+    expect(sel?.targets[0].codeRange).toBeUndefined();
+    expect(summarizeSelection(sel!)).toBe("已选：当前代码");
     expect(layer().textContent).not.toContain(ASK_CODE_MISS_HINT);
     expect(getAskCodeMissNotice()).toBeNull();
   });
