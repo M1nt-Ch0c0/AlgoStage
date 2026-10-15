@@ -18,6 +18,7 @@ import {
   ASK_CODE_MISS_HINT,
   ASK_EMPTY_HIT,
   ASK_ENTERED_STATUS,
+  ASK_EXIT_LABEL,
   ASK_LAYER_HINT,
   ASK_RESIZE_HINT,
   ASK_SHORTCUT_STEP,
@@ -27,6 +28,7 @@ import {
 import { ASK_LIMITS, type AskBBox, type AskSelectionSummary, type AskTarget } from "@/lib/ask/types";
 import { setAskCodeMissNotice } from "@/lib/ask/code-editor-registry";
 import { usePlayerStore } from "@/lib/player/store";
+import { useIsMobile } from "./use-is-mobile";
 
 /** 规范化后任一边短于这个值，按点选（中心点）处理。 */
 const MIN_REGION_SIDE = 24;
@@ -377,6 +379,7 @@ function AskSelectionLayerActive({
   const [rovingIndex, setRovingIndex] = useState(0);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
+  const isMobile = useIsMobile();
 
   const getStage = useCallback(() => resolveStage(stage, stageRef), [stage, stageRef]);
 
@@ -988,68 +991,96 @@ function AskSelectionLayerActive({
             data-keyboard-open={keyboardOpen ? "" : undefined}
             role="group"
             aria-label="点选捷径"
-            className={`pointer-events-auto flex flex-wrap gap-2 max-sm:fixed max-sm:inset-x-2 max-sm:top-auto max-sm:bottom-[calc(var(--ask-player-bar-h)+env(safe-area-inset-bottom)+8px)] max-sm:z-40 max-sm:rounded-xl max-sm:border max-sm:border-board-600 max-sm:bg-board-900/95 max-sm:p-2 max-sm:shadow-lg sm:relative sm:inset-auto sm:bottom-auto sm:z-auto sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none sm:gap-1 ${keyboardOpen ? "max-sm:hidden" : ""}`}
+            className={`pointer-events-auto flex items-center max-sm:flex-nowrap gap-2 max-sm:fixed max-sm:inset-x-2 max-sm:top-auto max-sm:bottom-[calc(var(--ask-player-bar-h)+env(safe-area-inset-bottom)+8px)] max-sm:z-40 max-sm:rounded-xl max-sm:border max-sm:border-board-600 max-sm:bg-board-900/95 max-sm:p-2 max-sm:shadow-lg sm:relative sm:inset-auto sm:bottom-auto sm:z-auto sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none sm:gap-1 sm:flex-wrap ${keyboardOpen ? "max-sm:hidden" : ""}`}
             onPointerDown={(event) => {
               event.stopPropagation();
             }}
           >
-            {visibleShortcuts.map((item, index) => (
+            <div
+              role="group"
+              aria-label="快捷选项"
+              className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto py-0.5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden sm:contents"
+            >
+              {visibleShortcuts.map((item, index) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  data-ask-shortcut={item.key}
+                  tabIndex={index === activeShortcut ? 0 : -1}
+                  className="min-h-11 min-w-11 pointer-coarse:min-h-11 pointer-coarse:min-w-11 inline-flex shrink-0 items-center justify-center rounded-full border border-board-600 bg-board-900/80 px-3 py-1 text-xs sm:px-2 sm:py-0.5 sm:text-[10px] sm:min-h-0 sm:min-w-0 sm:pointer-coarse:min-h-11 sm:pointer-coarse:min-w-11 text-chalk-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beam-gold focus-visible:ring-inset"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    // 拖过阈值后的 click 只留下框选，不再把捷径当成点选。
+                    if (dragStartedRef.current) {
+                      dragStartedRef.current = false;
+                      return;
+                    }
+                    setActiveShortcut(index);
+                    pickShortcut(item.key);
+                  }}
+                  onPointerDown={(event) => {
+                    // 点按仍选中捷径。拖过阈值就从起点起框，捷径不能挡住代码区起拖。
+                    if (event.button !== 0 && event.pointerType === "mouse") return;
+                    const startX = event.clientX;
+                    const startY = event.clientY;
+                    const pointerId = event.pointerId;
+                    const host = event.currentTarget.closest<HTMLElement>("[data-ask-layer]");
+                    if (!host) return;
+                    chipDragCleanupRef.current?.();
+                    dragStartedRef.current = false;
+                    const detach = () => {
+                      window.removeEventListener("pointermove", onMove);
+                      window.removeEventListener("pointerup", onUp);
+                      window.removeEventListener("pointercancel", onCancel);
+                      if (chipDragCleanupRef.current === detach) chipDragCleanupRef.current = null;
+                    };
+                    const onMove = (move: globalThis.PointerEvent) => {
+                      if (move.pointerId !== pointerId) return;
+                      if (Math.hypot(move.clientX - startX, move.clientY - startY) < ASK_LIMITS.dragThresholdPx) return;
+                      dragStartedRef.current = true;
+                      detach();
+                      beginPointer(host, pointerId, event.pointerType, 0, startX, startY);
+                    };
+                    const onUp = (up: globalThis.PointerEvent) => {
+                      if (up.pointerId !== pointerId) return;
+                      detach();
+                    };
+                    const onCancel = (cancel: globalThis.PointerEvent) => {
+                      if (cancel.pointerId !== pointerId) return;
+                      detach();
+                    };
+                    chipDragCleanupRef.current = detach;
+                    window.addEventListener("pointermove", onMove);
+                    window.addEventListener("pointerup", onUp);
+                    window.addEventListener("pointercancel", onCancel);
+                  }}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            {isMobile ? (
               <button
-                key={item.key}
                 type="button"
-                data-ask-shortcut={item.key}
-                tabIndex={index === activeShortcut ? 0 : -1}
-                className="min-h-11 min-w-11 pointer-coarse:min-h-11 pointer-coarse:min-w-11 inline-flex items-center justify-center rounded-full border border-board-600 bg-board-900/80 px-3 py-1 text-xs sm:px-2 sm:py-0.5 sm:text-[10px] sm:min-h-0 sm:min-w-0 sm:pointer-coarse:min-h-11 sm:pointer-coarse:min-w-11 text-chalk-100"
+                data-ask-entry
+                aria-pressed="true"
+                aria-keyshortcuts="Escape"
+                className="shrink-0 min-h-11 min-w-11 pointer-coarse:min-h-11 pointer-coarse:min-w-11 inline-flex items-center justify-center gap-1 rounded-full border border-board-600 bg-board-900/80 px-3 py-1 font-mono text-xs text-chalk-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beam-gold focus-visible:ring-inset sm:hidden whitespace-nowrap"
                 onClick={(event) => {
                   event.stopPropagation();
-                  // 拖过阈值后的 click 只留下框选，不再把捷径当成点选。
-                  if (dragStartedRef.current) {
-                    dragStartedRef.current = false;
-                    return;
-                  }
-                  setActiveShortcut(index);
-                  pickShortcut(item.key);
-                }}
-                onPointerDown={(event) => {
-                  // 点按仍选中捷径。拖过阈值就从起点起框，捷径不能挡住代码区起拖。
-                  if (event.button !== 0 && event.pointerType === "mouse") return;
-                  const startX = event.clientX;
-                  const startY = event.clientY;
-                  const pointerId = event.pointerId;
-                  const host = event.currentTarget.closest<HTMLElement>("[data-ask-layer]");
-                  if (!host) return;
-                  chipDragCleanupRef.current?.();
-                  dragStartedRef.current = false;
-                  const detach = () => {
-                    window.removeEventListener("pointermove", onMove);
-                    window.removeEventListener("pointerup", onUp);
-                    window.removeEventListener("pointercancel", onCancel);
-                    if (chipDragCleanupRef.current === detach) chipDragCleanupRef.current = null;
-                  };
-                  const onMove = (move: globalThis.PointerEvent) => {
-                    if (move.pointerId !== pointerId) return;
-                    if (Math.hypot(move.clientX - startX, move.clientY - startY) < ASK_LIMITS.dragThresholdPx) return;
-                    dragStartedRef.current = true;
-                    detach();
-                    beginPointer(host, pointerId, event.pointerType, 0, startX, startY);
-                  };
-                  const onUp = (up: globalThis.PointerEvent) => {
-                    if (up.pointerId !== pointerId) return;
-                    detach();
-                  };
-                  const onCancel = (cancel: globalThis.PointerEvent) => {
-                    if (cancel.pointerId !== pointerId) return;
-                    detach();
-                  };
-                  chipDragCleanupRef.current = detach;
-                  window.addEventListener("pointermove", onMove);
-                  window.addEventListener("pointerup", onUp);
-                  window.addEventListener("pointercancel", onCancel);
+                  exitAskAndFocusEntry();
                 }}
               >
-                {item.label}
+                <span>{ASK_EXIT_LABEL}</span>
+                <kbd
+                  data-ask-kbd
+                  className="max-[391px]:hidden rounded border border-board-600 px-1 font-mono text-[9px] leading-none text-chalk-500"
+                  aria-hidden
+                >
+                  Esc
+                </kbd>
               </button>
-            ))}
+            ) : null}
           </div>
         ) : null}
       </div>

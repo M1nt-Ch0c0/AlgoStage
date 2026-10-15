@@ -1210,7 +1210,7 @@ test.describe("390 selection flow", () => {
     test("S2. 390: kbd hidden, exit >=44, title row single line", async ({ page }) => {
       await startGenerated(page);
       await pauseLecture(page);
-      const titleRow = entry(page).locator("xpath=ancestor::div[1]");
+      const titleRow = page.locator('[data-ask-target="subtitle"] > div').first();
       const rowBoxBefore = await titleRow.boundingBox();
       expect(rowBoxBefore).not.toBeNull();
 

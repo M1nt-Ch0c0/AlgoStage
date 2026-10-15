@@ -267,6 +267,27 @@ test.each(["selecting", "drafting", "error"] as const)("%s 为按下态，文案
   expect(usePlayerStore.getState().askPhase).toBe("idle");
 });
 
+test("on mobile when in ask mode, entry button in player area is hidden and has no data-ask-entry", async () => {
+  const original = window.matchMedia;
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: query === "(max-width: 639px)",
+    media: query,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  }));
+
+  loadReady();
+  usePlayerStore.setState({ askPhase: "selecting", status: "interrupted" });
+  await render();
+
+  const button = container.querySelector<HTMLButtonElement>("button");
+  expect(button).not.toBeNull();
+  expect(button?.getAttribute("data-ask-entry")).toBeNull();
+  expect(button?.className).toContain("max-sm:hidden");
+
+  window.matchMedia = original;
+});
+
 test("pending 不置灰无提示；点击后转圈，落定可问进入 selecting", async () => {
   loadReady({ ...serverMeta, storageMode: "pending", cacheKey: "", scriptVersion: "" });
   await render();

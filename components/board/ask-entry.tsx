@@ -23,6 +23,7 @@ import {
 } from "@/lib/player/store";
 import { usePrefersReducedMotion } from "@/components/effects/fx-context";
 import { exitAskAndFocusEntry } from "./ask-selection-layer";
+import { useIsMobile } from "./use-is-mobile";
 
 const PENDING_TIMEOUT_MS = 3000;
 const REASON_ID = "ask-entry-reason";
@@ -41,11 +42,13 @@ export default function AskEntry() {
   const requestEnterAsk = usePlayerStore((s) => s.requestEnterAsk);
   const enterAsk = usePlayerStore((s) => s.enterAsk);
   const reduced = usePrefersReducedMotion();
+  const isMobile = useIsMobile();
 
   const [awaitingPending, setAwaitingPending] = useState(false);
   const [pendingTimedOut, setPendingTimedOut] = useState(false);
 
   const inAsk = IN_ASK.has(askPhase);
+  const hideAtMobileAsk = inAsk && isMobile;
   const pendingIdle = storageMode === "pending" && !inAsk;
 
   // 意图被换步 / 落定 / 取消清掉后，停掉本地等待。成功进圈选则不显示原因。
@@ -135,10 +138,12 @@ export default function AskEntry() {
   }
 
   return (
-    <span className="inline-flex flex-col items-end gap-0.5">
+    <span className={`inline-flex flex-col items-end gap-0.5 ${inAsk ? "max-sm:hidden" : ""}`}>
       <button
         type="button"
-        data-ask-entry
+        data-ask-entry={hideAtMobileAsk ? undefined : ""}
+        aria-hidden={hideAtMobileAsk ? true : undefined}
+        tabIndex={hideAtMobileAsk ? -1 : undefined}
         aria-disabled={grey ? true : undefined}
         aria-pressed={inAsk ? true : undefined}
         aria-busy={awaitingPending ? true : undefined}
@@ -147,7 +152,7 @@ export default function AskEntry() {
         data-ask-disabled-reason={reason ?? (showTimeout ? "pendingTimeout" : undefined)}
         className={`relative z-40 inline-flex items-center justify-center gap-1 rounded-full border border-board-600 px-2 py-0.5 font-mono text-[10px] tracking-wide text-chalk-300 pointer-coarse:min-h-11 pointer-coarse:min-w-11 whitespace-nowrap ${
           grey ? GREY_CLASS : ""
-        }${inAsk ? " min-h-11 min-w-11 pointer-fine:-my-3" : ""}`}
+        }${inAsk ? " min-h-11 min-w-11 pointer-fine:-my-3 max-sm:hidden" : ""}`}
         onClick={onClick}
       >
         <span className="inline-flex h-3 w-3 shrink-0 items-center justify-center" aria-hidden>

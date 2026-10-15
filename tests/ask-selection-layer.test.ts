@@ -1397,5 +1397,31 @@ describe("resolveAskEscape", () => {
 
       window.matchMedia = originalMatchMedia;
     });
+
+    test("renders exit button inside bottom bar on mobile with data-ask-entry and clicking it exits ask", async () => {
+      const originalMatchMedia = window.matchMedia;
+      window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+        matches: query === "(max-width: 639px)",
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }));
+
+      await render();
+      const bar = layer().querySelector<HTMLElement>("[data-ask-bottom-bar]");
+      expect(bar).not.toBeNull();
+
+      const exitBtn = bar!.querySelector<HTMLButtonElement>("[data-ask-entry]");
+      expect(exitBtn).not.toBeNull();
+      expect(exitBtn!.textContent).toContain("退出圈选");
+
+      await act(async () => {
+        exitBtn!.click();
+      });
+
+      expect(usePlayerStore.getState().askPhase).toBe("idle");
+
+      window.matchMedia = originalMatchMedia;
+    });
   });
 });
