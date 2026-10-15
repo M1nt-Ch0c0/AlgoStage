@@ -2167,6 +2167,160 @@ test.describe("390 selection flow", () => {
       expect(varsAfterSwitch.player === "0px" || varsAfterSwitch.player === "").toBe(true);
       expect(varsAfterSwitch.occlusion === "0px" || varsAfterSwitch.occlusion === "").toBe(true);
     });
+
+    test("o. scroll to code area, tap line 9 -> panel label 已选：代码第 9 行", async ({ page }) => {
+      await startGenerated(page);
+      await pauseLecture(page);
+      await enterSelection(page);
+
+      const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+      await code.scrollIntoViewIfNeeded();
+      await expect(code).toBeVisible();
+
+      const line9 = await getMonacoLineBox(page, 9);
+      const codeBox = (await code.boundingBox())!;
+      const clickX = codeBox.x + 80;
+      const clickY = (line9.top + line9.bottom) / 2;
+
+      await page.touchscreen.tap(clickX, clickY);
+
+      const panel = page.locator("[data-ask-panel]");
+      await expect(panel).toBeVisible();
+      await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：代码第 9 行");
+    });
+
+    test("p. tap line 9, then within 100ms tap a bar chip -> chip tap took effect", async ({ page }) => {
+      await startGenerated(page);
+      await pauseLecture(page);
+      await enterSelection(page);
+
+      const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+      await code.scrollIntoViewIfNeeded();
+      await expect(code).toBeVisible();
+
+      const line9 = await getMonacoLineBox(page, 9);
+      const codeBox = (await code.boundingBox())!;
+      const clickX = codeBox.x + 80;
+      const clickY = (line9.top + line9.bottom) / 2;
+
+      const chip = page.locator('[data-ask-shortcut="subtitle"]');
+      await expect(chip).toBeVisible();
+      const chipBox = (await chip.boundingBox())!;
+      const chipCx = chipBox.x + chipBox.width / 2;
+      const chipCy = chipBox.y + chipBox.height / 2;
+
+      await page.touchscreen.tap(clickX, clickY);
+      await page.touchscreen.tap(chipCx, chipCy);
+
+      const panel = page.locator("[data-ask-panel]");
+      await expect(panel).toBeVisible();
+      await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：当前字幕");
+    });
+
+    test("q. tap in the gap between two chips in the bar -> selection unchanged and ask mode active", async ({ page }) => {
+      await startGenerated(page);
+      await pauseLecture(page);
+      await enterSelection(page);
+
+      const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+      await code.scrollIntoViewIfNeeded();
+      await expect(code).toBeVisible();
+
+      const line9 = await getMonacoLineBox(page, 9);
+      const codeBox = (await code.boundingBox())!;
+      const clickX = codeBox.x + 80;
+      const clickY = (line9.top + line9.bottom) / 2;
+
+      await page.touchscreen.tap(clickX, clickY);
+
+      const panel = page.locator("[data-ask-panel]");
+      await expect(panel).toBeVisible();
+      await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：代码第 9 行");
+
+      const bar = page.locator("[data-ask-bottom-bar]");
+      await expect(bar).toBeVisible();
+      const chip0 = bar.locator("[data-ask-shortcut]").nth(0);
+      const chip1 = bar.locator("[data-ask-shortcut]").nth(1);
+      const box0 = (await chip0.boundingBox())!;
+      const box1 = (await chip1.boundingBox())!;
+
+      const gapX = (box0.x + box0.width + box1.x) / 2;
+      const gapY = box0.y + box0.height / 2;
+
+      await page.touchscreen.tap(gapX, gapY);
+
+      await expect(panel).toBeVisible();
+      await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：代码第 9 行");
+      await expect(page.locator("[data-ask-layer]")).toBeVisible();
+    });
+
+    test("r. exit button inside [data-ask-bottom-bar], row layout, gaps, Tab order, ArrowRight", async ({ page }) => {
+      await startGenerated(page);
+      await pauseLecture(page);
+      await enterSelection(page);
+
+      const bar = page.locator("[data-ask-bottom-bar]");
+      await expect(bar).toBeVisible();
+      const barBoxBefore = (await bar.boundingBox())!;
+
+      const exitBtn = bar.locator("[data-ask-entry]");
+      await expect(exitBtn).toBeVisible();
+
+      const firstChip = bar.locator("[data-ask-shortcut]").first();
+      const firstChipBox = (await firstChip.boundingBox())!;
+      const exitBox = (await exitBtn.boundingBox())!;
+
+      // Same row as chips (|centerY diff| < 2)
+      const chipCenterY = firstChipBox.y + firstChipBox.height / 2;
+      const exitCenterY = exitBox.y + exitBox.height / 2;
+      expect(Math.abs(chipCenterY - exitCenterY)).toBeLessThan(2);
+
+      // Exit button is after the chips in DOM order
+      const order = await page.evaluate(() => {
+        const barEl = document.querySelector("[data-ask-bottom-bar]");
+        if (!barEl) return [];
+        return Array.from(barEl.querySelectorAll("[data-ask-shortcut], [data-ask-entry]")).map((el) =>
+          el.hasAttribute("data-ask-entry") ? "exit" : "chip",
+        );
+      });
+      expect(order[order.length - 1]).toBe("exit");
+
+      // 44x44 min targets
+      expect(exitBox.width).toBeGreaterThanOrEqual(44);
+      expect(exitBox.height).toBeGreaterThanOrEqual(44);
+
+      // gaps >= 8
+      const chips = bar.locator("[data-ask-shortcut]");
+      const chipsCount = await chips.count();
+      const chipBoxes: Array<{ x: number; y: number; width: number; height: number }> = [];
+      for (let i = 0; i < chipsCount; i++) {
+        chipBoxes.push((await chips.nth(i).boundingBox())!);
+      }
+      for (let i = 0; i < chipBoxes.length - 1; i++) {
+        const gap = chipBoxes[i + 1].x - (chipBoxes[i].x + chipBoxes[i].width);
+        expect(gap).toBeGreaterThanOrEqual(7.9);
+      }
+      const lastChipBox = chipBoxes[chipBoxes.length - 1];
+      const exitGap = exitBox.x - (lastChipBox.x + lastChipBox.width);
+      expect(exitGap).toBeGreaterThanOrEqual(7.9);
+
+      // bar height unchanged vs before (still 60px)
+      expect(barBoxBefore.height).toBeLessThanOrEqual(60);
+
+      // Tab order: chip group (one tabbable) -> exit button
+      const tabbableCount = await bar.locator('[data-ask-shortcut][tabindex="0"]').count();
+      expect(tabbableCount).toBe(1);
+
+      await bar.locator('[data-ask-shortcut][tabindex="0"]').focus();
+      await page.keyboard.press("Tab");
+      await expect(exitBtn).toBeFocused();
+
+      // ArrowRight moves among chips
+      const secondChip = bar.locator("[data-ask-shortcut]").nth(1);
+      await firstChip.focus();
+      await page.keyboard.press("ArrowRight");
+      await expect(secondChip).toBeFocused();
+    });
   });
 
   test.describe("S5-chip390 reduced motion", () => {
