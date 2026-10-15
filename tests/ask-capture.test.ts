@@ -790,48 +790,78 @@ describe("lib/ask/capture", () => {
       expect(options.filter(text)).toBe(true);
     });
 
-    it("drops data-ask-capture-exclude subtrees even when they intersect the selection", async () => {
+    it("excludes only explicitly marked nodes; keeps the selection highlight, selection box, and the rest of the panel and layer", async () => {
       const hitRect = () =>
         ({ left: 20, top: 30, width: 10, height: 10, right: 30, bottom: 40, x: 20, y: 30, toJSON() {} }) as DOMRect;
 
-      const busy = document.createElement("div");
-      busy.setAttribute("data-ask-capture-exclude", "");
+      const panel = document.createElement("div");
+      panel.setAttribute("data-ask-panel", "");
       const preparing = document.createElement("p");
       preparing.setAttribute("data-ask-capture-preparing", "");
+      preparing.setAttribute("data-ask-capture-exclude", "");
       preparing.textContent = "正在准备截图…";
+      const preparingText = preparing.firstChild as Text;
       const cancel = document.createElement("button");
       cancel.setAttribute("data-ask-cancel", "");
+      cancel.setAttribute("data-ask-capture-exclude", "");
       cancel.textContent = "取消";
       const waiting = document.createElement("p");
       waiting.setAttribute("data-ask-waiting", "");
+      waiting.setAttribute("data-ask-capture-exclude", "");
       waiting.textContent = "正在想…";
-      busy.append(preparing, cancel, waiting);
+      const chip = document.createElement("button");
+      chip.setAttribute("data-ask-chip", "");
+      chip.textContent = "这行在做什么？";
+      const question = document.createElement("textarea");
+      question.setAttribute("data-ask-question", "");
+      panel.append(preparing, cancel, waiting, chip, question);
 
-      const kept = document.createElement("div");
-      kept.textContent = "scene";
-      busy.getBoundingClientRect = hitRect;
-      preparing.getBoundingClientRect = hitRect;
-      cancel.getBoundingClientRect = hitRect;
-      waiting.getBoundingClientRect = hitRect;
-      kept.getBoundingClientRect = hitRect;
-      container.append(busy, kept);
+      const layer = document.createElement("div");
+      layer.setAttribute("data-ask-layer", "");
+      const highlight = document.createElement("div");
+      highlight.setAttribute("data-ask-highlight", "line:1");
+      const selectionBox = document.createElement("div");
+      selectionBox.setAttribute("data-ask-selection", "");
+      const hint = document.createElement("p");
+      hint.textContent = "拖拽圈选";
+      layer.append(highlight, selectionBox, hint);
+
+      for (const node of [panel, preparing, cancel, waiting, chip, question, layer, highlight, selectionBox, hint]) {
+        node.getBoundingClientRect = hitRect;
+      }
+      container.append(panel, layer);
 
       expect(CAPTURE_EXCLUDE_SELECTOR).toBe("[data-ask-capture-exclude]");
-      expect(isCaptureExcluded(busy)).toBe(true);
       expect(isCaptureExcluded(preparing)).toBe(true);
+      expect(isCaptureExcluded(preparingText)).toBe(false);
       expect(isCaptureExcluded(cancel)).toBe(true);
       expect(isCaptureExcluded(waiting)).toBe(true);
-      expect(isCaptureExcluded(kept)).toBe(false);
-      expect(isCaptureExcluded(document.createTextNode("kept"))).toBe(false);
+      expect(isCaptureExcluded(panel)).toBe(false);
+      expect(isCaptureExcluded(chip)).toBe(false);
+      expect(isCaptureExcluded(question)).toBe(false);
+      expect(isCaptureExcluded(layer)).toBe(false);
+      expect(isCaptureExcluded(highlight)).toBe(false);
+      expect(isCaptureExcluded(selectionBox)).toBe(false);
+      expect(isCaptureExcluded(hint)).toBe(false);
 
       const res = await captureStage(container, baseSel);
       expect(res.ok).toBe(true);
       const filter = (domToCanvasMock.mock.calls[0]?.[1] as { filter: (node: Node) => boolean }).filter;
-      expect(filter(busy)).toBe(false);
       expect(filter(preparing)).toBe(false);
       expect(filter(cancel)).toBe(false);
       expect(filter(waiting)).toBe(false);
-      expect(filter(kept)).toBe(true);
+      // Subtree of a marked node is excluded with it.
+      const preparingChild = document.createElement("span");
+      preparing.appendChild(preparingChild);
+      preparingChild.getBoundingClientRect = hitRect;
+      expect(filter(preparingChild)).toBe(false);
+      expect(filter(panel)).toBe(true);
+      expect(filter(chip)).toBe(true);
+      expect(filter(question)).toBe(true);
+      expect(filter(layer)).toBe(true);
+      expect(filter(highlight)).toBe(true);
+      expect(filter(selectionBox)).toBe(true);
+      expect(filter(hint)).toBe(true);
     });
 
     it("returns TOO_MANY_NODES when more than maxNodes kept elements intersect the selection", async () => {

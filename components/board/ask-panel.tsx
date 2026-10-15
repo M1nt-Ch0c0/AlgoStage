@@ -182,7 +182,6 @@ function CaptureFallbackNotice() {
   return (
     <p
       data-ask-capture-fallback
-      data-ask-capture-exclude
       className="pointer-events-none absolute top-2 right-2 z-40 max-w-xs rounded-md border border-board-600 bg-board-900/95 px-2 py-1 text-[11px] text-chalk-500 shadow-lg"
     >
       {ASK_CAPTURE_FALLBACK}
@@ -641,7 +640,6 @@ function AskPanelActive({ stage }: AskPanelProps) {
     <div
       ref={panelRef}
       data-ask-panel
-      data-ask-capture-exclude
       role="dialog"
       aria-modal="false"
       aria-labelledby={labelId}
@@ -678,7 +676,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
       />
 
       {captureFailed ? (
-        <p data-ask-capture-fallback data-ask-capture-exclude className="text-[11px] text-chalk-500">
+        <p data-ask-capture-fallback className="text-[11px] text-chalk-500">
           {ASK_CAPTURE_FALLBACK}
         </p>
       ) : null}
@@ -725,6 +723,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
           <button
             type="button"
             data-ask-cancel
+            data-ask-capture-exclude
             data-pressed={cancelPressed ? "" : undefined}
             className={cancelClassName}
             onPointerDown={cancelWaitingHold.onPointerDown}
@@ -739,6 +738,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
           <button
             type="button"
             data-ask-cancel
+            data-ask-capture-exclude
             data-pressed={cancelPressed ? "" : undefined}
             className={cancelClassName}
             onPointerDown={cancelDraftHold.onPointerDown}

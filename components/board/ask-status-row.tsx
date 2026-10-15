@@ -21,14 +21,24 @@ export function AskStatusRow({
 }) {
   if (state === "preparing") {
     return (
-      <p data-ask-status-row data-ask-capture-preparing className={ROW_CLASS}>
+      <p
+        data-ask-status-row
+        data-ask-capture-preparing
+        data-ask-capture-exclude
+        className={ROW_CLASS}
+      >
         {ASK_CAPTURE_PREPARING}
       </p>
     );
   }
   if (state === "waiting") {
     return (
-      <p data-ask-status-row data-ask-waiting className={ROW_CLASS}>
+      <p
+        data-ask-status-row
+        data-ask-waiting
+        data-ask-capture-exclude
+        className={ROW_CLASS}
+      >
         {ASK_WAITING_STATUS(seconds)}
       </p>
     );

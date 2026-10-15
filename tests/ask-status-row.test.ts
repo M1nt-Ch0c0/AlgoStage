@@ -65,6 +65,7 @@ describe("AskStatusRow", () => {
     expect(idle.getAttribute("aria-hidden")).toBe("true");
     expect(idle.hasAttribute("data-ask-capture-preparing")).toBe(false);
     expect(idle.hasAttribute("data-ask-waiting")).toBe(false);
+    expect(idle.hasAttribute("data-ask-capture-exclude")).toBe(false);
     expect(idle.textContent).toBe("\u00a0");
 
     await render("preparing");
@@ -75,6 +76,7 @@ describe("AskStatusRow", () => {
     expectMinHeight(preparing);
     expect(preparing.hasAttribute("aria-hidden")).toBe(false);
     expect(preparing.hasAttribute("data-ask-capture-preparing")).toBe(true);
+    expect(preparing.hasAttribute("data-ask-capture-exclude")).toBe(true);
     expect(preparing.hasAttribute("data-ask-waiting")).toBe(false);
     expect(preparing.textContent).toBe(ASK_CAPTURE_PREPARING);
 
@@ -86,6 +88,7 @@ describe("AskStatusRow", () => {
     expectMinHeight(waiting);
     expect(waiting.hasAttribute("aria-hidden")).toBe(false);
     expect(waiting.hasAttribute("data-ask-waiting")).toBe(true);
+    expect(waiting.hasAttribute("data-ask-capture-exclude")).toBe(true);
     expect(waiting.hasAttribute("data-ask-capture-preparing")).toBe(false);
     expect(waiting.textContent).toBe(ASK_WAITING_STATUS(7));
   });

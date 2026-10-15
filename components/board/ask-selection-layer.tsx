@@ -1110,7 +1110,6 @@ function AskSelectionLayerActive({
     <div
       ref={rootRef}
       data-ask-layer
-      data-ask-capture-exclude
       role="application"
       aria-label="圈选区域"
       tabIndex={-1}

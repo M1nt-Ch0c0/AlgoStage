@@ -169,7 +169,12 @@ function yieldEncodeTurn(): Promise<void> {
   });
 }
 
-/** Busy ask UI (preparing row, 取消, waiting copy) opts out of the screenshot. */
+/**
+ * Only nodes that carry this attribute (and their subtree) leave the screenshot.
+ * The ask panel root and the selection layer root do not carry it: the highlight
+ * and the selection box stay. The preparing row, the 取消 button, and the
+ * waiting text opt out explicitly.
+ */
 export const CAPTURE_EXCLUDE_SELECTOR = "[data-ask-capture-exclude]";
 
 /**
@@ -490,6 +495,9 @@ export async function captureStage(
           font: false,
           scale: 1,
           features: { restoreScrollPosition: false },
+          // Exclude only an explicitly marked node and the subtree under it.
+          // The pre-walk already drops those roots; this second check covers
+          // a node modern-screenshot still visits (the marked node itself).
           filter: (node) => !dropped.has(node) && !isCaptureExcluded(node),
           timeout: remaining,
           width: rect.width,
