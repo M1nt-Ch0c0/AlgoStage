@@ -2227,6 +2227,10 @@ test.describe("390 selection flow", () => {
       await expect(panel).toBeVisible();
       await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：代码第 9 行");
 
+      // Close panel so bar is visible again
+      await page.keyboard.press("Escape");
+      await expect(panel).toHaveCount(0);
+
       const bar = page.locator("[data-ask-bottom-bar]");
       await expect(bar).toBeVisible();
       const chip0 = bar.locator("[data-ask-shortcut]").nth(0);
@@ -2239,9 +2243,9 @@ test.describe("390 selection flow", () => {
 
       await page.touchscreen.tap(gapX, gapY);
 
-      await expect(panel).toBeVisible();
-      await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：代码第 9 行");
       await expect(page.locator("[data-ask-layer]")).toBeVisible();
+      await expect(bar).toBeVisible();
+      await expect(page.locator("[data-ask-layer] [data-ask-selection]")).toBeVisible();
     });
 
     test("r. exit button inside [data-ask-bottom-bar], row layout, gaps, Tab order, ArrowRight", async ({ page }) => {
