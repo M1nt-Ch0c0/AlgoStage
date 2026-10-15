@@ -2,16 +2,10 @@
 
 import { useRef, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 
-const MOVE_THRESHOLD_PX = 10;
-
-type Point = { pointerId: number; x: number; y: number };
+type Point = { pointerId: number };
 
 function primaryButton(event: ReactPointerEvent<HTMLButtonElement>): boolean {
   return event.button === 0 && event.isPrimary !== false;
-}
-
-function movedPast(from: Point, x: number, y: number): boolean {
-  return Math.hypot(x - from.x, y - from.y) > MOVE_THRESHOLD_PX;
 }
 
 function pointInside(target: HTMLButtonElement, x: number, y: number): boolean {
@@ -20,10 +14,10 @@ function pointInside(target: HTMLButtonElement, x: number, y: number): boolean {
 }
 
 /**
- * Activate a button on pointer release inside the control, not on click.
- * A following click from the same gesture is ignored. Keyboard activation
- * (click with detail 0) still runs. Touch scroll that fires pointercancel,
- * or a move past 10px, drops the gesture.
+ * Activate a button on pointer release only when the release point is still
+ * inside the button. A move that leaves the button, or pointercancel, kills
+ * the gesture. The click that follows a pointer activation is swallowed.
+ * Keyboard activation (click with detail 0 from Enter or Space) runs once.
  */
 export function usePointerActivate(action: () => void) {
   const origin = useRef<Point | null>(null);
@@ -39,7 +33,7 @@ export function usePointerActivate(action: () => void) {
 
   const onPointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
     if (!primaryButton(event)) return;
-    origin.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+    origin.current = { pointerId: event.pointerId };
     armed.current = true;
     suppressClick.current = false;
   };
@@ -47,16 +41,15 @@ export function usePointerActivate(action: () => void) {
   const onPointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
     const start = origin.current;
     if (!start || !armed.current || event.pointerId !== start.pointerId) return;
-    if (movedPast(start, event.clientX, event.clientY)) clear();
+    if (!pointInside(event.currentTarget, event.clientX, event.clientY)) clear();
   };
 
   const onPointerUp = (event: ReactPointerEvent<HTMLButtonElement>) => {
     const start = origin.current;
     if (!start || !armed.current || event.pointerId !== start.pointerId) return;
     const inside = pointInside(event.currentTarget, event.clientX, event.clientY);
-    const stayed = !movedPast(start, event.clientX, event.clientY);
     clear();
-    if (!inside || !stayed) return;
+    if (!inside) return;
     suppressClick.current = true;
     actionRef.current();
   };

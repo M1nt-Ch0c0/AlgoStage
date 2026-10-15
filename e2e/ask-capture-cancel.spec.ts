@@ -309,6 +309,123 @@ function installStatusStability(width: number, touch: boolean) {
         await expect(page.locator("[data-ask-waiting]")).toBeVisible();
       });
     }
+
+    if (!touch) {
+      test("mouse down on 取消, drag out, release does not cancel", async ({ page }) => {
+        const held = await routeHeldAsk(page);
+        try {
+          await openAskPanel(page);
+          const submitAt = await boxCenter(page, "[data-ask-submit]");
+          await page.mouse.click(submitAt.x, submitAt.y);
+          await expect(page.locator("[data-ask-capture-preparing]")).toBeVisible();
+
+          const cancelAt = await boxCenter(page, "[data-ask-cancel]");
+          await page.mouse.move(cancelAt.x, cancelAt.y);
+          await page.mouse.down();
+          await page.mouse.move(cancelAt.x + 80, cancelAt.y, { steps: 6 });
+          await page.mouse.up();
+
+          await expect(page.locator("[data-ask-waiting]")).toBeVisible();
+          await expect(page.locator("[data-ask-panel]")).toBeVisible();
+        } finally {
+          held.release();
+        }
+      });
+
+      test("keyboard Enter cancels once", async ({ page }) => {
+        const held = await routeHeldAsk(page);
+        try {
+          await openAskPanel(page);
+          const submit = page.locator("[data-ask-submit]");
+          await submit.click();
+          await expect(page.locator("[data-ask-waiting]")).toBeVisible();
+
+          const cancel = page.locator("[data-ask-cancel]");
+          await cancel.focus();
+          await page.keyboard.press("Enter");
+
+          await expect(page.locator("[data-ask-waiting]")).toHaveCount(0);
+          await expect(page.locator("[data-ask-panel]")).toBeVisible();
+          await expect(page.locator("[data-ask-panel] [data-ask-question]")).toHaveValue(QUESTION);
+          await expect(page.locator("[data-ask-submit]")).toBeEnabled();
+          await expect(page.locator("[data-ask-submit]")).not.toHaveAttribute("aria-disabled", "true");
+          await expect(page.locator("[data-ask-layer]")).toBeVisible();
+          await expect(page.locator("[data-ask-entry]")).toHaveAttribute("aria-pressed", "true");
+          await page.waitForTimeout(400);
+          await expect(page.locator("[data-ask-waiting]")).toHaveCount(0);
+          await expect(page.locator("[data-ask-panel]")).toBeVisible();
+          await expect(page.locator("[data-ask-layer]")).toBeVisible();
+        } finally {
+          held.release();
+        }
+      });
+
+      test("keyboard Space cancels once", async ({ page }) => {
+        const held = await routeHeldAsk(page);
+        try {
+          await openAskPanel(page);
+          const submit = page.locator("[data-ask-submit]");
+          await submit.click();
+          await expect(page.locator("[data-ask-waiting]")).toBeVisible();
+
+          const cancel = page.locator("[data-ask-cancel]");
+          await cancel.focus();
+          await page.keyboard.press("Space");
+
+          await expect(page.locator("[data-ask-waiting]")).toHaveCount(0);
+          await expect(page.locator("[data-ask-panel]")).toBeVisible();
+          await expect(page.locator("[data-ask-panel] [data-ask-question]")).toHaveValue(QUESTION);
+          await expect(page.locator("[data-ask-submit]")).toBeEnabled();
+          await expect(page.locator("[data-ask-submit]")).not.toHaveAttribute("aria-disabled", "true");
+          await expect(page.locator("[data-ask-layer]")).toBeVisible();
+          await expect(page.locator("[data-ask-entry]")).toHaveAttribute("aria-pressed", "true");
+          await page.waitForTimeout(400);
+          await expect(page.locator("[data-ask-waiting]")).toHaveCount(0);
+          await expect(page.locator("[data-ask-panel]")).toBeVisible();
+          await expect(page.locator("[data-ask-layer]")).toBeVisible();
+        } finally {
+          held.release();
+        }
+      });
+    }
+
+    if (touch) {
+      test("press then drag off 取消 does not cancel", async ({ page }) => {
+        const held = await routeHeldAsk(page);
+        try {
+          await openAskPanel(page);
+          const submitAt = await boxCenter(page, "[data-ask-submit]");
+          await page.touchscreen.tap(submitAt.x, submitAt.y);
+          await expect(page.locator("[data-ask-capture-preparing]")).toBeVisible();
+
+          const cancel = page.locator("[data-ask-cancel]");
+          const box = await cancel.boundingBox();
+          if (!box) throw new Error("取消 has no box");
+          const centerX = box.x + box.width / 2;
+          const centerY = box.y + box.height / 2;
+          const outsideX = box.x + box.width + 80;
+          const client = await page.context().newCDPSession(page);
+          const touchPoint = (x: number, y: number) => [{ x: Math.round(x), y: Math.round(y), id: 0 }];
+          await client.send("Input.dispatchTouchEvent", {
+            type: "touchStart",
+            touchPoints: touchPoint(centerX, centerY),
+          });
+          await client.send("Input.dispatchTouchEvent", {
+            type: "touchMove",
+            touchPoints: touchPoint(outsideX, centerY),
+          });
+          await client.send("Input.dispatchTouchEvent", {
+            type: "touchEnd",
+            touchPoints: touchPoint(outsideX, centerY),
+          });
+
+          await expect(page.locator("[data-ask-waiting]")).toBeVisible();
+          await expect(page.locator("[data-ask-panel]")).toBeVisible();
+        } finally {
+          held.release();
+        }
+      });
+    }
   });
 }
 
