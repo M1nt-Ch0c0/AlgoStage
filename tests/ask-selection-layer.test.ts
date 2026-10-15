@@ -465,6 +465,58 @@ describe("AskSelectionLayer", () => {
     panel.remove();
   });
 
+  async function openDraftOnStep() {
+    await render();
+    const target = stage.querySelector<HTMLElement>('[data-ask-id="step:s1"]')!;
+    usePlayerStore.setState({
+      askPhase: "drafting",
+      status: "interrupted",
+      selection: {
+        mode: "single",
+        bbox: { x: 80, y: 10, width: 60, height: 30 },
+        targets: [{ kind: "step", id: "step:s1", stepId: "s1", text: "步骤内容" }],
+      },
+      draftQuestion: "还在的草稿",
+    });
+    await render();
+    return target;
+  }
+
+  test("点击取消关面板后焦点回到选区原目标", async () => {
+    const target = await openDraftOnStep();
+    const panel = document.createElement("div");
+    panel.setAttribute("data-ask-panel", "");
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.textContent = "取消";
+    cancel.addEventListener("click", () => {
+      usePlayerStore.getState().closeAskPanel();
+    });
+    panel.append(cancel);
+    document.body.append(panel);
+    cancel.focus();
+    expect(document.activeElement).toBe(cancel);
+
+    await act(async () => {
+      cancel.click();
+    });
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
+    expect(document.activeElement).toBe(target);
+    panel.remove();
+  });
+
+  test("Esc 关面板后焦点回到选区原目标", async () => {
+    const target = await openDraftOnStep();
+    document.body.tabIndex = -1;
+    document.body.focus();
+    expect(document.activeElement).toBe(document.body);
+
+    const close = await act(async () => pressEscape(document.body));
+    expect(close.defaultPrevented).toBe(true);
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
+    expect(document.activeElement).toBe(target);
+  });
+
   test("关面板后目标已不在文档里，焦点落到画选层", async () => {
     await render();
     const target = stage.querySelector<HTMLElement>('[data-ask-id="step:s1"]')!;

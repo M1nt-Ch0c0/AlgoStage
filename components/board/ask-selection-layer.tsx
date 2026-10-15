@@ -237,13 +237,12 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
     return () => window.removeEventListener("keydown", onKey, true);
   }, [askPhase, closeAskPanel, exitAsk]);
 
-  if (!ACTIVE_PHASES.has(askPhase)) return null;
-
   return (
     <AskSelectionLayerActive
       stageRef={stageRef}
       stage={stage}
       askPhase={askPhase}
+      active={ACTIVE_PHASES.has(askPhase)}
       selection={selection}
       stepId={steps[currentIndex]?.id ?? ""}
       setAskSelection={setAskSelection}
@@ -256,12 +255,14 @@ function AskSelectionLayerActive({
   stageRef,
   stage,
   askPhase,
+  active,
   selection,
   stepId,
   setAskSelection,
   clearAskSelection,
 }: AskSelectionLayerProps & {
   askPhase: string;
+  active: boolean;
   selection: AskSelectionSummary | null;
   stepId: string;
   setAskSelection: (selection: AskSelectionSummary) => void;
@@ -333,17 +334,27 @@ function AskSelectionLayerActive({
     };
   }, [clearAskSelection]);
 
-  // 进入 selecting 时：有选区就把焦点还给原目标；目标已不在文档里，
-  // 或 focus() 之后 activeElement 不是它，才落到画选层。
+  // 关面板回到 selecting：焦点还给选区原目标。
+  // 这层在面板打开时也留着，drafting → selecting 才跑得到这次恢复。
+  // 画选层节点要等这次提交才进文档，所以放到微任务里：取消按钮卸掉之后再还焦点。
+  // 目标已不在文档里，或 focus() 之后 activeElement 不是它，才落到画选层。
   useEffect(() => {
     if (askPhase !== "selecting") return;
-    const target = focusTargetFor(usePlayerStore.getState().selection);
-    if (target) {
-      if (!target.hasAttribute("tabindex")) target.tabIndex = -1;
-      target.focus();
-      if (document.activeElement === target) return;
-    }
-    rootRef.current?.focus();
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      if (usePlayerStore.getState().askPhase !== "selecting") return;
+      const target = focusTargetFor(usePlayerStore.getState().selection);
+      if (target) {
+        if (!target.hasAttribute("tabindex")) target.tabIndex = -1;
+        target.focus();
+        if (document.activeElement === target) return;
+      }
+      rootRef.current?.focus();
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [askPhase]);
 
   useEffect(() => {
@@ -606,6 +617,8 @@ function AskSelectionLayerActive({
   const selectedBox = selection && selection.targets.length > 0 ? normalizeBBox(selection.bbox) : null;
   const label = selection && selection.targets.length > 0 ? summarizeSelection(selection) : null;
   const labelBelow = selectedBox != null && selectedBox.y < 28;
+
+  if (!active) return null;
 
   return (
     <div

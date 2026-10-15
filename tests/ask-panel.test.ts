@@ -526,7 +526,7 @@ describe("ask panel", () => {
     Object.defineProperty(window, "location", { configurable: true, value: original });
   });
 
-  test("28. 取消离开后 store 仍留着草稿和选区", async () => {
+  test("28. 取消关面板后 store 仍留着草稿和选区，回到 selecting", async () => {
     const kept = selection();
     draft("drafting", { draftQuestion: "下次还在", selection: kept });
     await render();
@@ -534,7 +534,7 @@ describe("ask panel", () => {
       container.querySelector<HTMLButtonElement>("[data-ask-cancel]")?.click();
     });
     const state = usePlayerStore.getState();
-    expect(state.askPhase).toBe("idle");
+    expect(state.askPhase).toBe("selecting");
     expect(state.draftQuestion).toBe("下次还在");
     expect(state.selection).toBe(kept);
     expect(container.querySelector("[data-ask-panel]")).toBeNull();

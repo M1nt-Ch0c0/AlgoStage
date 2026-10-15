@@ -4,7 +4,7 @@
  * 提问先 captureStage；stepId 或 selection 引用变了就丢弃。截图失败仍 sendAsk(null)，
  * 并把「没截到图」记在 store。回答开始流出或落到 playing 时提问面板卸掉（选区已被清空，
  * 不能留着「已选：无」的草稿框）；截图失败提示留到下一次提问，或仍在圈选时退出。
- * Esc 由画选层的窗口监听处理。关面板（关闭按钮）后焦点回到画选层。
+ * Esc 由画选层的窗口监听处理。关面板（取消按钮或 Esc）后焦点回到选区原目标。
  */
 "use client";
 
@@ -144,7 +144,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
   const steps = usePlayerStore((s) => s.steps);
   const setAskQuestion = usePlayerStore((s) => s.setAskQuestion);
   const setAskSelection = usePlayerStore((s) => s.setAskSelection);
-  const exitAsk = usePlayerStore((s) => s.exitAsk);
+  const closeAskPanel = usePlayerStore((s) => s.closeAskPanel);
 
   const labelId = useId();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -395,7 +395,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
             type="button"
             data-ask-cancel
             className="pointer-coarse:min-h-11 pointer-coarse:min-w-11 rounded-md border border-board-600 px-3 py-1"
-            onClick={() => exitAsk()}
+            onClick={() => closeAskPanel()}
           >
             取消
           </button>
