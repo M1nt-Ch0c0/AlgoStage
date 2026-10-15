@@ -433,8 +433,8 @@ function AskSelectionLayerActive({
         ? { x: box.x + box.width / 2, y: box.y + box.height / 2 }
         : null;
 
-      const candidateBox = pointLike
-        ? { x: point!.x, y: point!.y, width: Math.max(box.width, 1), height: Math.max(box.height, 1) }
+      const candidateBox = point
+        ? { x: point.x, y: point.y, width: Math.max(box.width, 1), height: Math.max(box.height, 1) }
         : box;
       const candidates = collectAskCandidates(host, candidateBox);
       const hit = point ? hitTestPoint(point.x, point.y, candidates) : hitTest(box, candidates);
