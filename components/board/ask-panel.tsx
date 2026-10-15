@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import Link from "next/link";
 import { cancelAsk, sendAsk } from "@/lib/ask/ask-client";
+import { chooseAskScrollBlock } from "@/lib/ask/ask-scroll";
 import { ASK_ERROR_SPECS, resolveAskError, type AskErrorAction } from "@/lib/ask/ask-errors";
 import { captureStage, type CaptureResult } from "@/lib/ask/capture";
 import { yieldMacrotask } from "@/lib/ask/yield-macrotask";
@@ -152,6 +153,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
 
   const labelId = useId();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const [preparing, setPreparing] = useState(false);
   const [desktop, setDesktop] = useState(false);
   const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
@@ -186,13 +188,20 @@ function AskPanelActive({ stage }: AskPanelProps) {
     const hostEl = resolveStage(stage);
     if (!wide) {
       const viewport = window.visualViewport;
-      const offset = viewport ? Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop) : 0;
-      setDrawerBottom(offset);
+      const drawerBottomOffset = viewport
+        ? Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)
+        : 0;
+      setDrawerBottom(drawerBottomOffset);
       setAnchor(null);
       const box = selection?.bbox;
       if (hostEl && box && box.width > 0 && box.height > 0) {
         const marker = hostEl.querySelector<HTMLElement>("[data-ask-selection]") ?? hostEl;
-        marker.scrollIntoView?.({ block: "start" });
+        const panelHeight = panelRef.current?.getBoundingClientRect().height ?? 0;
+        const availableHeight = window.innerHeight - panelHeight - drawerBottomOffset;
+        const markerHeight = marker.getBoundingClientRect().height;
+        const block = chooseAskScrollBlock(markerHeight, availableHeight);
+        const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        marker.scrollIntoView?.(reduced ? { block, behavior: "auto" } : { block });
       }
       return;
     }
@@ -335,6 +344,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
 
   return (
     <div
+      ref={panelRef}
       data-ask-panel
       role="dialog"
       aria-modal="false"
