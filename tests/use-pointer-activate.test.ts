@@ -92,7 +92,7 @@ describe("usePointerActivate", () => {
     expect(action).toHaveBeenCalledTimes(1);
   });
 
-  test("a drag past 10px does not activate", async () => {
+  test("a move that stays inside the button still activates on release", async () => {
     const action = vi.fn();
     await mount(action);
     const el = button();
@@ -114,6 +114,37 @@ describe("usePointerActivate", () => {
       el.dispatchEvent(pointer("pointerdown", { pointerId: 1, clientX: 10, clientY: 10 }));
       el.dispatchEvent(pointer("pointermove", { pointerId: 1, clientX: 10, clientY: 22 }));
       el.dispatchEvent(pointer("pointerup", { pointerId: 1, clientX: 10, clientY: 22 }));
+    });
+    expect(action).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 }));
+    });
+    expect(action).toHaveBeenCalledTimes(1);
+  });
+
+  test("a move that leaves the button kills the gesture", async () => {
+    const action = vi.fn();
+    await mount(action);
+    const el = button();
+    vi.spyOn(el, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 40,
+      bottom: 20,
+      width: 40,
+      height: 20,
+      toJSON() {
+        return {};
+      },
+    });
+
+    await act(async () => {
+      el.dispatchEvent(pointer("pointerdown", { pointerId: 1, clientX: 10, clientY: 10 }));
+      el.dispatchEvent(pointer("pointermove", { pointerId: 1, clientX: 10, clientY: 30 }));
+      el.dispatchEvent(pointer("pointerup", { pointerId: 1, clientX: 12, clientY: 8 }));
     });
     expect(action).toHaveBeenCalledTimes(0);
   });
@@ -162,6 +193,31 @@ describe("usePointerActivate", () => {
     const el = button();
 
     await act(async () => {
+      el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 0 }));
+    });
+    expect(action).toHaveBeenCalledTimes(1);
+  });
+
+  test("Enter activates exactly once", async () => {
+    const action = vi.fn();
+    await mount(action);
+    const el = button();
+
+    await act(async () => {
+      el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+      el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 0 }));
+    });
+    expect(action).toHaveBeenCalledTimes(1);
+  });
+
+  test("Space activates exactly once", async () => {
+    const action = vi.fn();
+    await mount(action);
+    const el = button();
+
+    await act(async () => {
+      el.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true }));
+      el.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true, cancelable: true }));
       el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 0 }));
     });
     expect(action).toHaveBeenCalledTimes(1);
