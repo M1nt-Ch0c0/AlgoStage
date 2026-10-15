@@ -45,3 +45,5 @@ export const ASK_CAPTURE_FALLBACK = CAPTURE_FALLBACK_NOTICE;
 
 export { formatCodeRangeLabel } from "@/lib/ask/code-line-range";
 
+/** Shown the moment submit starts, before captureStage paints a frame. */
+export const ASK_CAPTURE_PREPARING = "正在准备截图…";
