@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.2] - 2026-10-15
+
+### 安全修复
+- Next.js 从 16.4.0 升级到 16.4.1，修复以下漏洞（均影响 16.4.0）：
+  - [GHSA-673q-mjm6-r5xr](https://github.com/advisories/GHSA-673q-mjm6-r5xr)（严重）：未登录即可远程执行代码（`use cache` 返回 typed array）。
+  - [GHSA-2464-fhr4-w9xw](https://github.com/advisories/GHSA-2464-fhr4-w9xw) / CVE-2026-96889（严重）：未登录即可远程执行代码（图片优化处理 SVG）。
+  - [GHSA-p3m5-59mp-jv5r](https://github.com/advisories/GHSA-p3m5-59mp-jv5r)（高危）：Server Actions 拒绝服务。
+- 本版只包含这项安全升级，没有功能变化。
+
 ## [0.3.1] - 2026-10-14
 
 ### 新增

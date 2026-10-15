@@ -112,9 +112,9 @@ v0.2.0 给 `Submission` 加了 `judgedBy`。保留旧库却不跑 `db:push` 时�
 ## Docker 自托管
 
 ```bash
-docker buildx build --build-arg BASE_PATH=/algostage -t algostage:0.3.1 --load .
+docker buildx build --build-arg BASE_PATH=/algostage -t algostage:0.3.2 --load .
 # 或
-ALGOSTAGE_IMAGE_TAG=0.3.1 docker compose -f deploy/compose.yaml up -d --no-build --wait
+ALGOSTAGE_IMAGE_TAG=0.3.2 docker compose -f deploy/compose.yaml up -d --no-build --wait
 ```
 
 需自备 API Key。镜像内 `DATA_DIR=/data`，数据库为 `/data/algostage.db`（挂载数据卷 `algostage-data`）；本地非 Docker 运行时默认用 `.env` 里的 `DATABASE_URL`（`file:./algostage.db`）。详见 [deploy/README.md](deploy/README.md)。
@@ -133,7 +133,7 @@ docker run --rm -v algostage-data:/data alpine chown -R 1001:1001 /data
 
 - `v0.2.0-alpha.2` 指向 `7fd9024`。
 - `v0.2.0-alpha.3`（Pre-release）指向 `32ad289`，在 alpha.2 基础上只修了 Docker 入口（Prisma 7 的 `db push` 去掉 `--skip-generate`）；该 tag 中 `package.json` 仍写 `0.2.0-alpha.1`。
-- 当前版本为 v0.3.1：`package.json`、`deploy/compose.yaml` 镜像标签和 CHANGELOG 均为 `0.3.1`。
+- 当前版本为 v0.3.2：`package.json`、`deploy/compose.yaml` 镜像标签和 CHANGELOG 均为 `0.3.2`。
 
 ## 子路径 + nginx
 
