@@ -7,6 +7,7 @@
 import { ASK_LIMITS } from "@/lib/ask/types";
 import type { AskBBox, AskSelection, AskTarget } from "@/lib/ask/types";
 import { intersects, normalizeBBox } from "./hit-test";
+import type { EncodeRequest, EncodeResponse } from "./capture-encode.worker";
 
 export const CAPTURE_FALLBACK_NOTICE = "没截到图，这次只发送选中的文字。";
 
@@ -17,6 +18,7 @@ export type CaptureFailReason =
   | "RENDER_FAILED"
   | "NO_CONTEXT"
   | "TOO_LARGE"
+  | "TOO_MANY_NODES"
   | "TIMEOUT";
 
 export type CaptureResult =
@@ -38,6 +40,8 @@ export const CAPTURE_DEFAULTS = {
   qualities: [0.85, 0.7, 0.55],
   downscaleFactor: 0.75,
   maxDownscales: 2,
+  /** Kept elements above this skip rasterization and use the text fallback. */
+  maxNodes: 1500,
 } as const;
 
 export function buildFallbackText(targets: AskTarget[]): string {
@@ -130,16 +134,237 @@ function yieldEncodeTurn(): Promise<void> {
   });
 }
 
-/** Text nodes stay. iframe/video are always dropped. Other elements must hit the selection. */
-function keepCaptureNode(
+/**
+ * Text nodes stay. iframe/video and the whole .monaco-editor subtree are dropped.
+ * Other elements must hit the selection. Layout is read only when not already decided.
+ */
+function shouldDropCaptureNode(
   node: Node,
   containerRect: ClientRectLike,
   bbox: AskBBox,
 ): boolean {
-  if (!(node instanceof Element)) return true;
+  if (!(node instanceof Element)) return false;
+  if (node.closest(".monaco-editor") !== null) return true;
   const tag = node.tagName.toUpperCase();
-  if (tag === "IFRAME" || tag === "VIDEO") return false;
-  return intersectsBBox(node.getBoundingClientRect(), containerRect, bbox);
+  if (tag === "IFRAME" || tag === "VIDEO") return true;
+  return !intersectsBBox(node.getBoundingClientRect(), containerRect, bbox);
+}
+
+const FILTER_REJECT = 2;
+const FILTER_ACCEPT = 1;
+
+/**
+ * Count elements modern-screenshot would keep. Subtrees whose root is dropped
+ * are not entered. Stops once the count passes maxNodes.
+ * Returns the dropped roots so the render filter can skip a second layout pass.
+ */
+function collectDroppedRoots(
+  container: HTMLElement,
+  containerRect: ClientRectLike,
+  bbox: AskBBox,
+): { tooMany: boolean; dropped: Set<Node> } {
+  const dropped = new Set<Node>();
+  const limit = CAPTURE_DEFAULTS.maxNodes;
+  let kept = 0;
+  const doc = container.ownerDocument;
+  if (!doc || typeof doc.createTreeWalker !== "function") {
+    return { tooMany: false, dropped };
+  }
+  const walker = doc.createTreeWalker(container, NodeFilter.SHOW_ELEMENT, {
+    acceptNode(node: Node) {
+      if (shouldDropCaptureNode(node, containerRect, bbox)) {
+        dropped.add(node);
+        return FILTER_REJECT;
+      }
+      kept += 1;
+      if (kept > limit) return FILTER_REJECT;
+      return FILTER_ACCEPT;
+    },
+  });
+  // Walk only to populate `dropped` and `kept`. The root itself is not visited.
+  while (walker.nextNode()) {
+    if (kept > limit) break;
+  }
+  return { tooMany: kept > limit, dropped };
+}
+
+type EncodeOk = {
+  ok: true;
+  mime: "image/webp" | "image/jpeg";
+  dataBase64: string;
+  bytes: number;
+};
+
+function canEncodeOffThread(): boolean {
+  return (
+    typeof Worker === "function" &&
+    typeof OffscreenCanvas === "function" &&
+    typeof createImageBitmap === "function"
+  );
+}
+
+
+/**
+ * Crop + scale on the main thread via createImageBitmap, then encode in a
+ * module worker. The main thread asks again with a smaller size when the
+ * worker reports the blob is still over maxBytes.
+ */
+async function encodeOffThread(
+  canvas: HTMLCanvasElement,
+  crop: { x: number; y: number; w: number; h: number },
+  maxBytes: number,
+  timedOut: () => boolean,
+): Promise<EncodeOk | "TOO_LARGE" | "FALLBACK"> {
+  if (!canEncodeOffThread()) return "FALLBACK";
+
+  let worker: Worker;
+  try {
+    worker = new Worker(new URL("./capture-encode.worker.ts", import.meta.url), {
+      type: "module",
+    });
+  } catch {
+    return "FALLBACK";
+  }
+
+  let webp = true;
+  let outW = Math.max(
+    1,
+    Math.round(crop.w * Math.min(1, CAPTURE_DEFAULTS.maxLongSide / Math.max(crop.w, crop.h))),
+  );
+  let outH = Math.max(
+    1,
+    Math.round(crop.h * Math.min(1, CAPTURE_DEFAULTS.maxLongSide / Math.max(crop.w, crop.h))),
+  );
+
+  const finish = () => {
+    worker.terminate();
+  };
+
+  try {
+    for (let attempt = 0; attempt <= CAPTURE_DEFAULTS.maxDownscales; attempt++) {
+      if (timedOut()) return "FALLBACK";
+      if (attempt > 0) {
+        outW = Math.max(1, Math.round(outW * CAPTURE_DEFAULTS.downscaleFactor));
+        outH = Math.max(1, Math.round(outH * CAPTURE_DEFAULTS.downscaleFactor));
+      }
+
+      const bitmap = await createImageBitmap(canvas, crop.x, crop.y, crop.w, crop.h, {
+        resizeWidth: outW,
+        resizeHeight: outH,
+      });
+      if (timedOut()) {
+        bitmap.close?.();
+        return "FALLBACK";
+      }
+
+      const request: EncodeRequest = {
+        bitmap,
+        qualities: CAPTURE_DEFAULTS.qualities,
+        maxBytes,
+        webp,
+      };
+      const response = await new Promise<EncodeResponse>((resolve, reject) => {
+        const onMessage = (event: MessageEvent<EncodeResponse>) => {
+          cleanup();
+          resolve(event.data);
+        };
+        const onError = (event: ErrorEvent) => {
+          cleanup();
+          reject(event.error ?? new Error(event.message || "worker error"));
+        };
+        const poll = setInterval(() => {
+          if (timedOut()) {
+            cleanup();
+            reject(new Error("timeout"));
+          }
+        }, 50);
+        const cleanup = () => {
+          clearInterval(poll);
+          worker.removeEventListener("message", onMessage);
+          worker.removeEventListener("error", onError);
+        };
+        worker.addEventListener("message", onMessage);
+        worker.addEventListener("error", onError);
+        worker.postMessage(request, [bitmap]);
+      });
+
+      if (response.ok) {
+        return {
+          ok: true,
+          mime: response.mime,
+          dataBase64: response.base64,
+          bytes: response.bytes,
+        };
+      }
+      if ("tooLarge" in response && response.tooLarge) {
+        webp = false;
+        continue;
+      }
+      return "FALLBACK";
+    }
+    return "TOO_LARGE";
+  } catch {
+    return "FALLBACK";
+  } finally {
+    finish();
+  }
+}
+
+async function encodeOnMainThread(
+  canvas: HTMLCanvasElement,
+  crop: { x: number; y: number; w: number; h: number },
+  maxBytes: number,
+  timedOut: () => boolean,
+): Promise<CaptureResult | null> {
+  const longSide = Math.max(crop.w, crop.h);
+  const initialScale = Math.min(1, CAPTURE_DEFAULTS.maxLongSide / longSide);
+  let outW = Math.max(1, Math.round(crop.w * initialScale));
+  let outH = Math.max(1, Math.round(crop.h * initialScale));
+  let webpSupported = true;
+
+  for (let attempt = 0; attempt <= CAPTURE_DEFAULTS.maxDownscales; attempt++) {
+    if (timedOut()) return null;
+    if (attempt > 0) {
+      await yieldEncodeTurn();
+      if (timedOut()) return null;
+      outW = Math.max(1, Math.round(outW * CAPTURE_DEFAULTS.downscaleFactor));
+      outH = Math.max(1, Math.round(outH * CAPTURE_DEFAULTS.downscaleFactor));
+    }
+
+    const outCanvas = document.createElement("canvas");
+    outCanvas.width = outW;
+    outCanvas.height = outH;
+    const ctx = outCanvas.getContext("2d");
+    if (!ctx) return { ok: false, reason: "NO_CONTEXT", fallbackText: "" };
+    ctx.drawImage(canvas, crop.x, crop.y, crop.w, crop.h, 0, 0, outW, outH);
+
+    for (let qi = 0; qi < CAPTURE_DEFAULTS.qualities.length; qi++) {
+      if (qi > 0) {
+        await yieldEncodeTurn();
+        if (timedOut()) return null;
+      }
+      const q = CAPTURE_DEFAULTS.qualities[qi]!;
+      let mime: "image/webp" | "image/jpeg" = "image/webp";
+      let url: string;
+      if (webpSupported) {
+        url = outCanvas.toDataURL("image/webp", q);
+        if (!url.startsWith("data:image/webp")) {
+          webpSupported = false;
+          mime = "image/jpeg";
+          url = outCanvas.toDataURL("image/jpeg", q);
+        }
+      } else {
+        mime = "image/jpeg";
+        url = outCanvas.toDataURL("image/jpeg", q);
+      }
+      const base64 = url.slice(url.indexOf(",") + 1);
+      const bytes = decodedBase64Bytes(base64);
+      if (bytes <= maxBytes) {
+        return { ok: true, image: { mime, dataBase64: base64 }, bytes };
+      }
+    }
+  }
+  return { ok: false, reason: "TOO_LARGE", fallbackText: "" };
 }
 
 export async function captureStage(
@@ -193,14 +418,21 @@ export async function captureStage(
       if (timedOut) return timeoutResult();
 
       const rect = container.getBoundingClientRect();
+      const walk = collectDroppedRoots(container, rect, normBox);
+      if (walk.tooMany) {
+        return { ok: false, reason: "TOO_MANY_NODES", fallbackText };
+      }
       const remaining = timeoutMs - (Date.now() - startedAt);
       if (remaining <= 0) return timeoutResult();
 
+      const dropped = walk.dropped;
       let canvas: HTMLCanvasElement;
       try {
         const rendered = await mod.domToCanvas(container, {
           font: false,
-          filter: (node) => keepCaptureNode(node, rect, normBox),
+          scale: 1,
+          features: { restoreScrollPosition: false },
+          filter: (node) => !dropped.has(node),
           timeout: remaining,
           width: rect.width,
           height: rect.height,
@@ -235,74 +467,25 @@ export async function captureStage(
         return { ok: false, reason: "EMPTY_BBOX", fallbackText };
       }
 
-      const longSide = Math.max(cropW, cropH);
-      const initialScale = Math.min(1, CAPTURE_DEFAULTS.maxLongSide / longSide);
-      let outW = Math.max(1, Math.round(cropW * initialScale));
-      let outH = Math.max(1, Math.round(cropH * initialScale));
+      const cropRect = { x: cropX, y: cropY, w: cropW, h: cropH };
+      const isTimedOut = () => timedOut;
 
-      let webpSupported = true;
-      for (
-        let attempt = 0;
-        attempt <= CAPTURE_DEFAULTS.maxDownscales;
-        attempt++
-      ) {
+      if (canEncodeOffThread()) {
+        const off = await encodeOffThread(canvas, cropRect, maxBytes, isTimedOut);
         if (timedOut) return timeoutResult();
-        if (attempt > 0) {
-          await yieldEncodeTurn();
-          if (timedOut) return timeoutResult();
-          outW = Math.max(
-            1,
-            Math.round(outW * CAPTURE_DEFAULTS.downscaleFactor),
-          );
-          outH = Math.max(
-            1,
-            Math.round(outH * CAPTURE_DEFAULTS.downscaleFactor),
-          );
+        if (off === "TOO_LARGE") {
+          return { ok: false, reason: "TOO_LARGE", fallbackText };
         }
-
-        const outCanvas = document.createElement("canvas");
-        outCanvas.width = outW;
-        outCanvas.height = outH;
-        const ctx = outCanvas.getContext("2d");
-        if (!ctx) {
-          return { ok: false, reason: "NO_CONTEXT", fallbackText };
-        }
-
-        ctx.drawImage(canvas, cropX, cropY, cropW, cropH, 0, 0, outW, outH);
-
-        for (let qi = 0; qi < CAPTURE_DEFAULTS.qualities.length; qi++) {
-          if (qi > 0) {
-            await yieldEncodeTurn();
-            if (timedOut) return timeoutResult();
-          }
-          const q = CAPTURE_DEFAULTS.qualities[qi]!;
-          let mime: "image/webp" | "image/jpeg" = "image/webp";
-          let url: string;
-          if (webpSupported) {
-            url = outCanvas.toDataURL("image/webp", q);
-            if (!url.startsWith("data:image/webp")) {
-              webpSupported = false;
-              mime = "image/jpeg";
-              url = outCanvas.toDataURL("image/jpeg", q);
-            }
-          } else {
-            mime = "image/jpeg";
-            url = outCanvas.toDataURL("image/jpeg", q);
-          }
-
-          const base64 = url.slice(url.indexOf(",") + 1);
-          const bytes = decodedBase64Bytes(base64);
-          if (bytes <= maxBytes) {
-            return {
-              ok: true,
-              image: { mime, dataBase64: base64 },
-              bytes,
-            };
-          }
+        if (off !== "FALLBACK") {
+          return { ok: true, image: { mime: off.mime, dataBase64: off.dataBase64 }, bytes: off.bytes };
         }
       }
 
-      return { ok: false, reason: "TOO_LARGE", fallbackText };
+      const main = await encodeOnMainThread(canvas, cropRect, maxBytes, isTimedOut);
+      if (timedOut) return timeoutResult();
+      if (!main) return timeoutResult();
+      if (!main.ok) return { ...main, fallbackText };
+      return main;
     };
 
     return await Promise.race([doCapture(), timeoutPromise]);
@@ -314,3 +497,4 @@ export async function captureStage(
     }
   }
 }
+
