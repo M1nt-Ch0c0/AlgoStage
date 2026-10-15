@@ -325,7 +325,6 @@ function AskSelectionLayerActive({
   const lastMidRef = useRef<PointerSample | null>(null);
   const scrollDeltaRef = useRef({ x: 0, y: 0 });
   const scrollRafRef = useRef<number | null>(null);
-  const announcedRef = useRef(false);
   const chipDragCleanupRef = useRef<(() => void) | null>(null);
   const dragStartedRef = useRef(false);
 
@@ -354,13 +353,13 @@ function AskSelectionLayerActive({
     return () => mq.removeEventListener("change", onChange);
   }, []);
 
-  // 进入圈选播报一次。优先写入页面已有的 role=status。
+  // 处于 selecting 且无选区时播报（含首次进入与再次进入）。优先写入页面已有的 role=status。
   useEffect(() => {
-    if (announcedRef.current) return;
-    announcedRef.current = true;
+    if (askPhase !== "selecting") return;
+    if (selection && selection.targets.length > 0) return;
     const status = document.querySelector("[role=status]");
     if (status) status.textContent = ASK_ENTERED_STATUS;
-  }, []);
+  }, [askPhase, selection]);
 
   // 选中后把摘要写进同一个 status。
   useEffect(() => {

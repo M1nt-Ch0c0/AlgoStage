@@ -360,13 +360,35 @@ describe("AskSelectionLayer", () => {
     expect(usePlayerStore.getState().status).toBe(beforeStatus);
   });
 
-  test("进入圈选把 ASK_ENTERED_STATUS 写入已有 role=status", async () => {
+  test("进入圈选把 ASK_ENTERED_STATUS 写入已有 role=status，选区后 exitAsk 再重新进入仍为 ASK_ENTERED_STATUS", async () => {
+    usePlayerStore.getState().setLectureAnswerMeta({
+      cacheKey: "ck-1",
+      scriptVersion: "v1",
+      askDisabledStepIds: [],
+      storageMode: "server",
+    });
     const status = document.createElement("p");
     status.setAttribute("role", "status");
     status.textContent = "旧播报";
     document.body.append(status);
     await render();
     expect(status.textContent).toBe(ASK_ENTERED_STATUS);
+
+    await gesture(20, 12, 120, 36);
+    expect(usePlayerStore.getState().selection).not.toBeNull();
+    expect(status.textContent).toBe(summarizeSelection(usePlayerStore.getState().selection!));
+
+    await act(async () => {
+      usePlayerStore.getState().exitAsk();
+    });
+    expect(usePlayerStore.getState().askPhase).toBe("idle");
+
+    await act(async () => {
+      usePlayerStore.getState().enterAsk();
+    });
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
+    expect(status.textContent).toBe(ASK_ENTERED_STATUS);
+
     status.remove();
   });
 
