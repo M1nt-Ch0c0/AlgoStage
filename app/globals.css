@@ -155,6 +155,15 @@ h3 {
   background-color: var(--color-board-900);
 }
 
+/* 窄屏顶栏 sticky z-50 高 3.5rem，盖住舞台。滚到代码区时留出这段，起拖点不会落在顶栏下。 */
+html {
+  scroll-padding-top: 3.5rem;
+}
+
+.monaco-editor {
+  scroll-margin-top: 3.5rem;
+}
+
 .board-frame {
   border: 1px solid var(--color-frame-edge);
   box-shadow:
