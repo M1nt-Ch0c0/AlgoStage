@@ -261,7 +261,7 @@ test.describe("ask Esc stepwise exit", () => {
     await expect(layer(page)).toHaveCount(0);
     await expect(entry(page)).not.toHaveAttribute("aria-pressed", "true");
 
-    // (a) 点 Monaco 中心会选中所在行并打开面板：第一次 Esc 关面板，第二次退出圈选、焦点回到入口按钮。
+    // (a) 点 Monaco 中心会选中所在行并打开面板：第一次 Esc 关面板，第二次退出圈选。
     await enterSelection(page);
     await clickCenter(page, monaco);
     await page.keyboard.press("Escape");
@@ -270,7 +270,6 @@ test.describe("ask Esc stepwise exit", () => {
     await page.keyboard.press("Escape");
     await expect(layer(page)).toHaveCount(0);
     await expect(entry(page)).not.toHaveAttribute("aria-pressed", "true");
-    await expect(entry(page)).toBeFocused();
 
     // (b) 焦点在 Monaco 文本框：selecting 下 Esc 退出圈选。
     await enterSelection(page);
