@@ -741,14 +741,7 @@ test.describe("390 selection flow", () => {
     await enterSelection(page);
 
     const codeArea = page.locator(".monaco-editor").first();
-    // 编辑器已经和视口相交时，scrollIntoView 不会再动。窄屏顶栏 sticky 盖住上沿，
-    // 这里按顶栏下沿把代码区滚到完全露出来。
-    await codeArea.evaluate((el) => {
-      // 页面上还有题目自己的 header。挡住代码的是站点顶栏 header.sticky。
-      const nav = document.querySelector("header.sticky");
-      const navBottom = Math.max(0, nav?.getBoundingClientRect().bottom ?? 0);
-      window.scrollBy(0, el.getBoundingClientRect().top - navBottom - 8);
-    });
+    await codeArea.evaluate((el) => el.scrollIntoView({ block: "center" }));
     await expect(codeArea).toBeVisible();
     const box = await codeArea.boundingBox();
     expect(box).not.toBeNull();
