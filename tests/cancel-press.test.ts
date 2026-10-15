@@ -86,25 +86,38 @@ describe("listenCancelPress", () => {
     document.body.replaceChildren();
   });
 
-  test("records pointerdown and pointerup on 取消 with event.timeStamp, and ignores other targets", () => {
+  test("records pointerdown on 取消 with event.timeStamp and pointerId, and ignores other targets", () => {
     const cancel = button();
     const other = document.createElement("button");
     document.body.append(other);
     const onDown = vi.fn();
-    const onUp = vi.fn();
-    const onCancel = vi.fn();
-    const stop = listenCancelPress(document, { onDown, onUp, onCancel });
+    const added: Array<{ type: string; capture: boolean; passive: boolean }> = [];
+    const realAdd = document.addEventListener.bind(document);
+    vi.spyOn(document, "addEventListener").mockImplementation((type, listener, options) => {
+      const opts = typeof options === "object" && options != null ? options : { capture: options === true };
+      if (type === "pointerdown" || type === "pointerup" || type === "pointercancel") {
+        added.push({
+          type,
+          capture: opts.capture === true,
+          passive: "passive" in opts && opts.passive === true,
+        });
+      }
+      realAdd(type, listener as EventListener, options);
+    });
+    const stop = listenCancelPress(document, { onDown });
+
+    expect(added).toEqual([{ type: "pointerdown", capture: true, passive: true }]);
 
     other.dispatchEvent(pointer("pointerdown", other, 10));
-    cancel.dispatchEvent(pointer("pointerdown", cancel, 40));
+    const down = pointer("pointerdown", cancel, 40);
+    cancel.dispatchEvent(down);
     cancel.dispatchEvent(pointer("pointerup", cancel, 90));
     cancel.dispatchEvent(pointer("pointercancel", cancel, 91));
 
     expect(onDown).toHaveBeenCalledTimes(1);
     expect(onDown.mock.calls[0]?.[0].timeStamp).toBe(40);
-    expect(onUp).toHaveBeenCalledTimes(1);
-    expect(onUp.mock.calls[0]?.[0].timeStamp).toBe(90);
-    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(onDown.mock.calls[0]?.[0].pointerId).toBe(1);
+    expect(down.defaultPrevented).toBe(false);
 
     stop();
     document.dispatchEvent(pointer("pointerdown", cancel, 120));

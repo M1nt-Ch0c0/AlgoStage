@@ -1,8 +1,11 @@
 /**
- * Capture-phase pointer listeners for 取消, attached before capture starts.
- * A press whose event.timeStamp falls anywhere in [captureStart, sentAt]
- * is recorded even when the event is delivered after the hold wait resolves.
- * The button's own handlers stay; this only feeds the hold and retro-cancel.
+ * Capture-phase pointerdown listener for 取消, attached before capture starts.
+ * It records event.timeStamp (and pointerId) for a press whose target is
+ * inside [data-ask-cancel]. It does not stop the event, prevent its default,
+ * or capture the pointer. The button's own pointerdown, pointer capture,
+ * data-pressed, pointerup, and slide-off handling run unchanged. The recorded
+ * timestamp feeds retro-cancel (pressTs <= sentAt and a final release on the
+ * button aborts) and the hold wait when the button's own handler fires late.
  */
 
 export const ASK_CANCEL_SELECTOR = "[data-ask-cancel]";
@@ -19,11 +22,12 @@ export type CancelPressEvent = {
 
 export type CancelPressHandlers = {
   onDown: (event: CancelPressEvent) => void;
-  onUp: (event: CancelPressEvent) => void;
-  onCancel: (event: CancelPressEvent) => void;
 };
 
 type Listened = Pick<Document, "addEventListener" | "removeEventListener">;
+
+/** Capture-phase, passive. Never stopPropagation, preventDefault, or setPointerCapture. */
+const LISTEN_OPTIONS: AddEventListenerOptions = { capture: true, passive: true };
 
 function pathOf(event: CancelPressEvent): EventTarget[] {
   const nodes: EventTarget[] = [];
@@ -57,9 +61,9 @@ export function eventHitsAskCancel(event: CancelPressEvent): boolean {
 }
 
 /**
- * Listen in the capture phase so a press is seen before React's bubble
- * handlers, and before a late listener on the button itself is attached.
- * Returns the remover. Calling it twice is safe.
+ * Listen for pointerdown in the capture phase so a press that lands before
+ * the button's own listener is attached still has a timeStamp for retro-cancel.
+ * Records only. Returns the remover. Calling it twice is safe.
  */
 export function listenCancelPress(doc: Listened, handlers: CancelPressHandlers): () => void {
   let removed = false;
@@ -69,26 +73,12 @@ export function listenCancelPress(doc: Listened, handlers: CancelPressHandlers):
     if (!eventHitsAskCancel(pointer)) return;
     handlers.onDown(pointer);
   };
-  const onUp = (event: Event) => {
-    const pointer = event as unknown as CancelPressEvent;
-    if (!eventHitsAskCancel(pointer)) return;
-    handlers.onUp(pointer);
-  };
-  const onCancel = (event: Event) => {
-    const pointer = event as unknown as CancelPressEvent;
-    if (!eventHitsAskCancel(pointer)) return;
-    handlers.onCancel(pointer);
-  };
 
-  doc.addEventListener("pointerdown", onDown, true);
-  doc.addEventListener("pointerup", onUp, true);
-  doc.addEventListener("pointercancel", onCancel, true);
+  doc.addEventListener("pointerdown", onDown, LISTEN_OPTIONS);
 
   return () => {
     if (removed) return;
     removed = true;
-    doc.removeEventListener("pointerdown", onDown, true);
-    doc.removeEventListener("pointerup", onUp, true);
-    doc.removeEventListener("pointercancel", onCancel, true);
+    doc.removeEventListener("pointerdown", onDown, LISTEN_OPTIONS);
   };
 }

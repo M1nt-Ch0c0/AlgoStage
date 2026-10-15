@@ -23,7 +23,7 @@ import { cancelAsk, retroCancelAsk, sendAsk } from "@/lib/ask/ask-client";
 import { chooseAskScrollBlock } from "@/lib/ask/ask-scroll";
 import { ASK_ERROR_SPECS, resolveAskError, type AskErrorAction } from "@/lib/ask/ask-errors";
 import { markAskPhase, markAskPointerDown, markAskTiming, msSinceLongTaskEnd } from "@/lib/ask/ask-timing";
-import { listenCancelPress, pointHitsAskCancel } from "@/lib/ask/cancel-press";
+import { listenCancelPress } from "@/lib/ask/cancel-press";
 import { captureStage, type CaptureResult } from "@/lib/ask/capture";
 import { createCancelHold } from "@/lib/ask/cancel-hold";
 import { shouldRetroCancel } from "@/lib/ask/retro-cancel";
@@ -204,8 +204,10 @@ function AskPanelActive({ stage }: AskPanelProps) {
   const sentAtBySessionRef = useRef(new Map<number, number>());
   /** pointerdown.timeStamp for a press that has not released yet. */
   const pointerDownTsRef = useRef<number | null>(null);
-  /** Sessions whose early document listener already called press(). */
-  const earlyPressSessionsRef = useRef(new Set<number>());
+  /** pointerId of that press, so a later press does not overwrite its timestamp. */
+  const pointerDownIdRef = useRef<number | null>(null);
+  /** Removes the early pointerdown listener once the press has released. */
+  const stopEarlyPressRef = useRef<(() => void) | null>(null);
   const heldAfterSendRef = useRef(false);
   const [holdPressed, setHoldPressed] = useState(false);
   const [heldAfterSend, setHeldAfterSend] = useState(false);
@@ -220,15 +222,22 @@ function AskPanelActive({ stage }: AskPanelProps) {
     markHeldAfterSend(false);
   }, [markHeldAfterSend]);
 
+  const stopEarlyPress = useCallback(() => {
+    stopEarlyPressRef.current?.();
+    stopEarlyPressRef.current = null;
+  }, []);
+
   const retroCancel = useCallback((releasedOnButton: boolean) => {
     const downTs = pointerDownTsRef.current;
     pointerDownTsRef.current = null;
+    pointerDownIdRef.current = null;
+    stopEarlyPress();
     if (downTs == null) return;
     const sentAt = sentAtBySessionRef.current.get(askSessionRef.current) ?? null;
     if (!shouldRetroCancel(downTs, sentAt, releasedOnButton)) return;
     sentAtBySessionRef.current.delete(askSessionRef.current);
     retroCancelAsk();
-  }, []);
+  }, [stopEarlyPress]);
 
   useEffect(() => {
     askSessionRef.current += 1;
@@ -348,51 +357,34 @@ function AskPanelActive({ stage }: AskPanelProps) {
     const session = askSessionRef.current;
     sendingRef.current = true;
     holdRef.current.reset();
-    earlyPressSessionsRef.current.delete(session);
+    pointerDownTsRef.current = null;
+    pointerDownIdRef.current = null;
     // 新的一次截图开始：上一轮「没截到图」先清掉，这次失败再写回。
     usePlayerStore.setState({ askCaptureFallback: false });
     setPreparing(true);
     // Record a 取消 press from before capture (and the double rAF) starts.
     // The button's own listener is attached on the next commit, which is
-    // after a press that lands as the stall ends. This one is already live.
+    // after a press that lands as the stall ends. This listener only stores
+    // the press timeStamp. It never presses the hold, captures the pointer,
+    // or releases. The button's own handlers still do that.
+    // It stays up through the fetch: a press whose timeStamp is inside the
+    // settle window can be delivered after hold.wait already resolved to send,
+    // and the release on the button still has to retro-cancel.
+    stopEarlyPress();
     const stopCancelPress = listenCancelPress(document, {
       onDown: (event) => {
         if (event.button !== 0) return;
         if (askSessionRef.current !== session) return;
         if (!sendingRef.current) return;
+        // Keep the first press of this gesture. A later pointerdown must not
+        // replace the timestamp the retro-cancel decision uses.
+        if (pointerDownIdRef.current != null) return;
+        pointerDownIdRef.current = event.pointerId;
         pointerDownTsRef.current = event.timeStamp;
         markAskPointerDown(event.timeStamp);
-        if (earlyPressSessionsRef.current.has(session)) return;
-        earlyPressSessionsRef.current.add(session);
-        // press() is synchronous. The visual pressed state is set on the
-        // button's own pointerdown, which runs in the same turn when the
-        // button is already mounted. Setting it here would schedule a render
-        // before the two paint frames and delay capture by an extra frame.
-        holdRef.current.press(session);
-      },
-      onUp: (event) => {
-        if (askSessionRef.current !== session) return;
-        if (!earlyPressSessionsRef.current.has(session)) return;
-        const inside = pointHitsAskCancel(document, event.clientX, event.clientY);
-        const held = holdRef.current.isPending(session);
-        holdRef.current.release(inside);
-        setHoldPressed(false);
-        if (!inside) clearHeldAfterSendOffButton();
-        retroCancel(inside);
-        if (held && inside) {
-          // The button action would unmount the panel. The hold already decided.
-          return;
-        }
-      },
-      onCancel: () => {
-        if (askSessionRef.current !== session) return;
-        pointerDownTsRef.current = null;
-        earlyPressSessionsRef.current.delete(session);
-        holdRef.current.pointerCancel();
-        setHoldPressed(false);
-        clearHeldAfterSendOffButton();
       },
     });
+    stopEarlyPressRef.current = stopCancelPress;
     try {
       // Paint the busy 取消 row before captureStage stalls the main thread,
       // so a press during the stall has a live button to hit.
@@ -424,9 +416,13 @@ function AskPanelActive({ stage }: AskPanelProps) {
       }
       if (holdResult === "send-held") {
         markHeldAfterSend(true);
+        // The 2s timeout already sent. Releasing on the button aborts that
+        // ask: drop the request, the streamed text, and the panel. A slide
+        // off does not (leave() clears the hold without onLateCancel).
         holdRef.current.onLateCancel(() => {
-          cancelAsk();
-          usePlayerStore.getState().closeAskPanel();
+          markHeldAfterSend(false);
+          setHoldPressed(false);
+          retroCancelAsk();
         });
       }
       setPreparing(false);
@@ -448,11 +444,15 @@ function AskPanelActive({ stage }: AskPanelProps) {
         });
       } finally {
         sendingRef.current = false;
+        // A press is still down. Leave the listener until that pointer releases
+        // so its timeStamp can still abort the ask that just went out.
+        if (pointerDownIdRef.current == null) stopEarlyPress();
       }
     } finally {
-      stopCancelPress();
+      // Capture or settle threw before the fetch. Nothing is in flight.
+      if (sendingRef.current) stopEarlyPress();
     }
-  }, [stage, markHeldAfterSend, clearHeldAfterSendOffButton, retroCancel]);
+  }, [stage, markHeldAfterSend, stopEarlyPress]);
 
   const onQuestionChange = (value: string) => {
     setAskQuestion(clampQuestion(value));
@@ -506,11 +506,19 @@ function AskPanelActive({ stage }: AskPanelProps) {
     },
   ) => ({
     onPointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => {
-      if (event.button === 0) pointerDownTsRef.current = event.timeStamp;
-      const session = askSessionRef.current;
-      if (event.button === 0 && sendingRef.current && !earlyPressSessionsRef.current.has(session)) {
-        earlyPressSessionsRef.current.add(session);
-        holdRef.current.press(session);
+      if (event.button === 0) {
+        // The early document listener may already have stored this press.
+        // Keep that timeStamp: it is the one retro-cancel compares to sentAt.
+        // A press the early listener missed (target outside the button) still
+        // records here, which is the pre-aa122ae path.
+        if (pointerDownIdRef.current !== event.pointerId) {
+          pointerDownTsRef.current = event.timeStamp;
+          pointerDownIdRef.current = event.pointerId;
+        }
+        markAskPointerDown(event.timeStamp);
+      }
+      if (event.button === 0 && sendingRef.current) {
+        holdRef.current.press(askSessionRef.current);
         try {
           event.currentTarget.setPointerCapture(event.pointerId);
         } catch {
@@ -531,6 +539,9 @@ function AskPanelActive({ stage }: AskPanelProps) {
         holdRef.current.leave();
         setHoldPressed(false);
         clearHeldAfterSendOffButton();
+        // The gesture left the button. A later release is not a retro-cancel,
+        // and the early listener no longer has a press to remember.
+        if (!holdRef.current.isPending(askSessionRef.current)) stopEarlyPress();
       }
       activate.onPointerMove(event);
     },
@@ -543,20 +554,21 @@ function AskPanelActive({ stage }: AskPanelProps) {
         event.clientY <= box.bottom;
       // An in-submit hold owns the release. The button action would unmount
       // the panel and reset the hold before wait() can see the cancel.
-      const session = askSessionRef.current;
-      const held = holdRef.current.isPending(session);
-      const ownedByEarly = earlyPressSessionsRef.current.has(session);
-      if (!ownedByEarly) {
-        holdRef.current.release(inside);
-        setHoldPressed(false);
-        if (!inside) clearHeldAfterSendOffButton();
-        retroCancel(inside);
-      }
-      if (held && inside) return;
+      // send-held is the 2s timeout: release on the button aborts once, in
+      // onLateCancel. Calling retroCancel here as well would abort twice.
+      const held = holdRef.current.isPending(askSessionRef.current);
+      const sentWhileHeld = heldAfterSendRef.current;
+      holdRef.current.release(inside);
+      setHoldPressed(false);
+      if (!inside) clearHeldAfterSendOffButton();
+      if (!sentWhileHeld) retroCancel(inside);
+      if ((held || sentWhileHeld) && inside) return;
       activate.onPointerUp(event);
     },
     onPointerCancel: (event: ReactPointerEvent<HTMLButtonElement>) => {
       pointerDownTsRef.current = null;
+      pointerDownIdRef.current = null;
+      stopEarlyPress();
       holdRef.current.pointerCancel();
       setHoldPressed(false);
       clearHeldAfterSendOffButton();
