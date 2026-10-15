@@ -16,6 +16,7 @@ import { selectAskPresentation, usePlayerStore } from "@/lib/player/store";
 import { ANCHOR_REFRESH_EVENT } from "@/components/effects/use-anchor-rect";
 import type { EffectCall, EffectTarget, TeachingStep } from "@/lib/teaching/types";
 import { registerCodeEditor, type CodeEditorHandle } from "@/lib/ask/code-editor-registry";
+import { computeLineRange } from "@/lib/ask/code-line-range";
 
 const EMPTY_TARGETS: EffectTarget[] = [];
 const EMPTY_EFFECTS: EffectCall[] = [];
@@ -164,33 +165,9 @@ export default function CodeEditor({
 
       const handle: CodeEditorHandle = {
         getLineRangeForClientBox(top: number, bottom: number): { startLine: number; endLine: number } | null {
-          const model = editor.getModel();
-          if (!model) return null;
-          const visibleRanges = editor.getVisibleRanges?.();
-          if (!visibleRanges || visibleRanges.length === 0) return null;
-
-          const firstVisible = visibleRanges[0].startLineNumber;
-          const lastVisible = visibleRanges[visibleRanges.length - 1].endLineNumber;
-
-          const dom = editor.getDomNode() ?? containerRef.current;
-          const domRect = dom?.getBoundingClientRect?.() ?? { left: 0 };
-          const layoutInfo = editor.getLayoutInfo?.();
-          const contentLeft = layoutInfo?.contentLeft ?? 0;
-          const x = domRect.left + contentLeft + 4;
-
-          const targetTop = editor.getTargetAtClientPoint?.(x, top);
-          const targetBottom = editor.getTargetAtClientPoint?.(x, bottom);
-
-          const rawTop = targetTop?.position?.lineNumber ?? firstVisible;
-          const rawBottom = targetBottom?.position?.lineNumber ?? lastVisible;
-
-          const clampedTop = Math.max(firstVisible, Math.min(lastVisible, rawTop));
-          const clampedBottom = Math.max(firstVisible, Math.min(lastVisible, rawBottom));
-
-          const startLine = Math.min(clampedTop, clampedBottom);
-          const endLine = Math.max(clampedTop, clampedBottom);
-
-          return { startLine, endLine };
+          return computeLineRange(editor, top, bottom, {
+            lineHeight: editor.getOption(monaco.editor.EditorOption.lineHeight),
+          });
         },
         getLinesText(startLine: number, endLine: number): string {
           const model = editor.getModel();
