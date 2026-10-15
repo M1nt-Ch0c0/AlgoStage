@@ -8,13 +8,23 @@
  */
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type KeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import Link from "next/link";
 import { cancelAsk, sendAsk } from "@/lib/ask/ask-client";
 import { chooseAskScrollBlock } from "@/lib/ask/ask-scroll";
 import { ASK_ERROR_SPECS, resolveAskError, type AskErrorAction } from "@/lib/ask/ask-errors";
 import { captureStage, type CaptureResult } from "@/lib/ask/capture";
-import { yieldMacrotask } from "@/lib/ask/yield-macrotask";
+import { createCancelHold } from "@/lib/ask/cancel-hold";
+import { yieldToInput } from "@/lib/ask/yield-macrotask";
 import { usePointerActivate } from "@/lib/ask/use-pointer-activate";
 import { collectAskCandidates, summarizeSelection } from "@/lib/ask/collect-candidates";
 import { getAskCodeMissNotice, subscribeAskCodeMissNotice } from "@/lib/ask/code-editor-registry";
@@ -164,6 +174,16 @@ function AskPanelActive({ stage }: AskPanelProps) {
   const notice = useSyncExternalStore(subscribeAskCodeMissNotice, getAskCodeMissNotice, () => null);
   /** Bumps on panel open and close. A submit that outlives the panel must not send. */
   const askSessionRef = useRef(0);
+  const holdRef = useRef(createCancelHold());
+  const holdWaitingRef = useRef(false);
+  const heldAfterSendRef = useRef(false);
+  const [holdPressed, setHoldPressed] = useState(false);
+  const [heldAfterSend, setHeldAfterSend] = useState(false);
+
+  const markHeldAfterSend = useCallback((value: boolean) => {
+    heldAfterSendRef.current = value;
+    setHeldAfterSend(value);
+  }, []);
 
   useEffect(() => {
     askSessionRef.current += 1;
@@ -172,8 +192,16 @@ function AskPanelActive({ stage }: AskPanelProps) {
     };
   }, []);
 
+  useEffect(() => {
+    const hold = holdRef.current;
+    return () => {
+      hold.reset();
+    };
+  }, []);
+
   const stepId = steps[currentIndex]?.id ?? "";
   const waiting = askPhase === "sending" || askPhase === "streaming";
+  const showWaiting = waiting && !heldAfterSend;
   const errored = askPhase === "error";
   const drafting = askPhase === "drafting";
   const trimmedEmpty = draftQuestion.trim().length === 0;
@@ -243,15 +271,15 @@ function AskPanelActive({ stage }: AskPanelProps) {
   }, [drafting]);
 
   useEffect(() => {
-    if (!waiting) return;
+    if (!showWaiting) return;
     setNow(Date.now());
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [waiting, askStartedAt]);
+  }, [showWaiting, askStartedAt]);
 
   // 等待文案每 10 秒写入页面已有的唯一 role=status，不新建第二个。
   useEffect(() => {
-    if (!waiting) return;
+    if (!showWaiting) return;
     const write = () => {
       const status = document.querySelector("[role=status]");
       if (!status) return;
@@ -261,7 +289,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
     write();
     const timer = window.setInterval(write, STATUS_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [waiting, askStartedAt]);
+  }, [showWaiting, askStartedAt]);
 
   const submit = useCallback(async () => {
     if (sendingRef.current) return;
@@ -273,6 +301,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
     if (!startSelection) return;
     const session = askSessionRef.current;
     sendingRef.current = true;
+    holdRef.current.reset();
     // 新的一次截图开始：上一轮「没截到图」先清掉，这次失败再写回。
     usePlayerStore.setState({ askCaptureFallback: false });
     setPreparing(true);
@@ -282,10 +311,26 @@ function AskPanelActive({ stage }: AskPanelProps) {
     } catch {
       capture = null;
     }
-    // Capture can stall the main thread. Yield twice so a 取消 pointerup
-    // queued during that stall runs before we decide to send.
-    await yieldMacrotask();
-    await yieldMacrotask();
+    // Capture can stall the main thread. Let a frame and queued input run
+    // before deciding to send, so a 取消 press during that stall is visible.
+    await yieldToInput();
+    await yieldToInput();
+    holdWaitingRef.current = true;
+    const holdResult = await holdRef.current.wait(session, 2000);
+    holdWaitingRef.current = false;
+    if (holdResult === "cancel") {
+      setPreparing(false);
+      usePlayerStore.getState().closeAskPanel();
+      sendingRef.current = false;
+      return;
+    }
+    if (holdResult === "send-held") {
+      markHeldAfterSend(true);
+      holdRef.current.onLateCancel(() => {
+        cancelAsk();
+        usePlayerStore.getState().closeAskPanel();
+      });
+    }
     setPreparing(false);
     const latest = usePlayerStore.getState();
     const latestStepId = latest.steps[latest.currentIndex]?.id ?? "";
@@ -303,7 +348,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
     } finally {
       sendingRef.current = false;
     }
-  }, [stage]);
+  }, [stage, markHeldAfterSend]);
 
   const onQuestionChange = (value: string) => {
     setAskQuestion(clampQuestion(value));
@@ -339,9 +384,89 @@ function AskPanelActive({ stage }: AskPanelProps) {
     }
   };
 
-  const cancelWaiting = usePointerActivate(() => cancelAsk());
-  const cancelDraft = usePointerActivate(() => closeAskPanel());
+  const cancelWaiting = usePointerActivate(() => {
+    if (holdWaitingRef.current || heldAfterSendRef.current) return;
+    cancelAsk();
+  });
+  const cancelDraft = usePointerActivate(() => {
+    if (holdWaitingRef.current || heldAfterSendRef.current) return;
+    closeAskPanel();
+  });
+
+  const clearHeldAfterSendOffButton = () => {
+    if (!heldAfterSendRef.current) return;
+    markHeldAfterSend(false);
+  };
+
+  const bindCancelHold = (
+    activate: {
+      onPointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+      onPointerMove: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+      onPointerUp: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+      onPointerCancel: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+    },
+  ) => ({
+    onPointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => {
+      if (event.button === 0 && sendingRef.current) {
+        holdRef.current.press(askSessionRef.current);
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        } catch {
+          // Capture can fail if the pointer is already gone.
+        }
+        setHoldPressed(true);
+      }
+      activate.onPointerDown(event);
+    },
+    onPointerMove: (event: ReactPointerEvent<HTMLButtonElement>) => {
+      const box = event.currentTarget.getBoundingClientRect();
+      const inside =
+        event.clientX >= box.left &&
+        event.clientX <= box.right &&
+        event.clientY >= box.top &&
+        event.clientY <= box.bottom;
+      if (!inside) {
+        holdRef.current.leave();
+        setHoldPressed(false);
+        clearHeldAfterSendOffButton();
+      }
+      activate.onPointerMove(event);
+    },
+    onPointerUp: (event: ReactPointerEvent<HTMLButtonElement>) => {
+      const box = event.currentTarget.getBoundingClientRect();
+      const inside =
+        event.clientX >= box.left &&
+        event.clientX <= box.right &&
+        event.clientY >= box.top &&
+        event.clientY <= box.bottom;
+      holdRef.current.release(inside);
+      setHoldPressed(false);
+      if (!inside) clearHeldAfterSendOffButton();
+      activate.onPointerUp(event);
+    },
+    onPointerCancel: (event: ReactPointerEvent<HTMLButtonElement>) => {
+      holdRef.current.pointerCancel();
+      setHoldPressed(false);
+      clearHeldAfterSendOffButton();
+      activate.onPointerCancel(event);
+    },
+  });
+
+  const cancelWaitingHold = bindCancelHold(cancelWaiting);
+  const cancelDraftHold = bindCancelHold(cancelDraft);
+
+  useEffect(() => {
+    if (!heldAfterSend) return;
+    if (askPhase === "sending" || askPhase === "streaming") return;
+    if (holdRef.current.isPending(askSessionRef.current)) return;
+    markHeldAfterSend(false);
+  }, [heldAfterSend, askPhase, markHeldAfterSend]);
+
   const seconds = elapsedSeconds(askStartedAt, now);
+  const cancelPressed = holdPressed || heldAfterSend;
+  const cancelClassName = `pointer-coarse:min-h-11 pointer-coarse:min-w-11 rounded-md border border-board-600 px-3 py-1${
+    cancelPressed ? " bg-board-700" : ""
+  }`;
   const positionClass = desktop ? "absolute z-40 w-80" : "fixed inset-x-0 z-40 max-h-[50vh] overflow-y-auto";
 
   return (
@@ -379,7 +504,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
       </p>
 
       <AskStatusRow
-        state={preparing ? "preparing" : waiting ? "waiting" : "idle"}
+        state={preparing || heldAfterSend ? "preparing" : showWaiting ? "waiting" : "idle"}
         seconds={seconds}
       />
 
@@ -431,11 +556,12 @@ function AskPanelActive({ stage }: AskPanelProps) {
           <button
             type="button"
             data-ask-cancel
-            className="pointer-coarse:min-h-11 pointer-coarse:min-w-11 rounded-md border border-board-600 px-3 py-1"
-            onPointerDown={cancelWaiting.onPointerDown}
-            onPointerMove={cancelWaiting.onPointerMove}
-            onPointerUp={cancelWaiting.onPointerUp}
-            onPointerCancel={cancelWaiting.onPointerCancel}
+            data-pressed={cancelPressed ? "" : undefined}
+            className={cancelClassName}
+            onPointerDown={cancelWaitingHold.onPointerDown}
+            onPointerMove={cancelWaitingHold.onPointerMove}
+            onPointerUp={cancelWaitingHold.onPointerUp}
+            onPointerCancel={cancelWaitingHold.onPointerCancel}
             onClick={cancelWaiting.onClick}
           >
             取消
@@ -444,11 +570,12 @@ function AskPanelActive({ stage }: AskPanelProps) {
           <button
             type="button"
             data-ask-cancel
-            className="pointer-coarse:min-h-11 pointer-coarse:min-w-11 rounded-md border border-board-600 px-3 py-1"
-            onPointerDown={cancelDraft.onPointerDown}
-            onPointerMove={cancelDraft.onPointerMove}
-            onPointerUp={cancelDraft.onPointerUp}
-            onPointerCancel={cancelDraft.onPointerCancel}
+            data-pressed={cancelPressed ? "" : undefined}
+            className={cancelClassName}
+            onPointerDown={cancelDraftHold.onPointerDown}
+            onPointerMove={cancelDraftHold.onPointerMove}
+            onPointerUp={cancelDraftHold.onPointerUp}
+            onPointerCancel={cancelDraftHold.onPointerCancel}
             onClick={cancelDraft.onClick}
           >
             取消

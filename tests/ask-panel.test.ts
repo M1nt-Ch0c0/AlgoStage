@@ -177,15 +177,17 @@ function activateButton(button: HTMLButtonElement) {
   button.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 0 }));
 }
 
-/** Run both post-capture yieldMacrotask turns before the act callback ends. */
+/** Drain both post-capture yieldToInput turns (rAF + macrotask, twice). */
 async function finishCaptureTurn() {
   await Promise.resolve();
-  await new Promise<void>((resolve) => {
-    setTimeout(resolve, 0);
-  });
-  await new Promise<void>((resolve) => {
-    setTimeout(resolve, 0);
-  });
+  for (let turn = 0; turn < 2; turn += 1) {
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => resolve());
+    });
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+  }
 }
 
 function statusRow(): HTMLElement {
@@ -627,26 +629,27 @@ describe("ask panel", () => {
     draft("drafting", { draftQuestion: "为什么这样写？" });
     await render();
 
+    const realRaf = window.requestAnimationFrame.bind(window);
     let releaseSecond: (() => void) | undefined;
     let calls = 0;
-    const yieldFn = vi.fn(
-      () =>
-        new Promise<void>((resolve) => {
-          calls += 1;
-          if (calls === 1) resolve();
-          else releaseSecond = resolve;
-        }),
-    );
-    vi.stubGlobal("scheduler", { yield: yieldFn });
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      calls += 1;
+      if (calls === 2) {
+        releaseSecond = () => {
+          realRaf(callback);
+        };
+        return 2;
+      }
+      return realRaf(callback);
+    });
 
-    await act(async () => {
+    const pendingSubmit = act(async () => {
       submitButton().click();
-      await Promise.resolve();
-      await Promise.resolve();
-      await Promise.resolve();
+    });
+    await vi.waitFor(() => {
+      expect(releaseSecond).toBeTypeOf("function");
     });
     expect(captureStage).toHaveBeenCalledTimes(1);
-    expect(yieldFn).toHaveBeenCalledTimes(2);
     expect(sendAsk).not.toHaveBeenCalled();
     expect(statusRow().textContent).toBe(ASK_CAPTURE_PREPARING);
 
@@ -658,8 +661,11 @@ describe("ask panel", () => {
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
 
     releaseSecond?.();
+    await pendingSubmit;
     await act(async () => {
-      await Promise.resolve();
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 0);
+      });
     });
     expect(sendAsk).toHaveBeenCalledTimes(1);
     expect(vi.mocked(sendAsk).mock.calls[0]?.[1]?.isCurrent?.()).toBe(false);
@@ -849,5 +855,83 @@ describe("ask panel", () => {
       setAskCodeMissNotice(null);
     });
     expect(container.querySelector('[data-testid="ask-code-miss-hint"]')).toBeNull();
+  });
+
+  test("pointerdown on 取消 while not submitting does not set data-pressed", async () => {
+    draft("drafting", { draftQuestion: "按住取消" });
+    await render();
+    const cancel = container.querySelector<HTMLButtonElement>("[data-ask-cancel]");
+    expect(cancel).not.toBeNull();
+    expect(cancel?.hasAttribute("data-pressed")).toBe(false);
+    expect(cancel?.className).not.toContain("bg-board-700");
+
+    await act(async () => {
+      cancel?.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          bubbles: true,
+          cancelable: true,
+          button: 0,
+          pointerId: 1,
+          isPrimary: true,
+        }),
+      );
+    });
+    expect(cancel?.hasAttribute("data-pressed")).toBe(false);
+    expect(cancel?.className).not.toContain("bg-board-700");
+  });
+
+  test("pointerdown+pointerup on 取消 while NOT submitting does not make the next submit skip sending", async () => {
+    draft("drafting", { draftQuestion: "为什么这样写？" });
+    await render();
+    const cancel = container.querySelector<HTMLButtonElement>("[data-ask-cancel]");
+    if (!cancel) throw new Error("cancel missing");
+    vi.spyOn(cancel, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 40,
+      bottom: 20,
+      width: 40,
+      height: 20,
+      toJSON() {
+        return {};
+      },
+    });
+
+    await act(async () => {
+      cancel.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          bubbles: true,
+          cancelable: true,
+          button: 0,
+          pointerId: 1,
+          isPrimary: false,
+          clientX: 10,
+          clientY: 8,
+        }),
+      );
+      cancel.dispatchEvent(
+        new PointerEvent("pointerup", {
+          bubbles: true,
+          cancelable: true,
+          button: 0,
+          pointerId: 1,
+          isPrimary: false,
+          clientX: 12,
+          clientY: 9,
+        }),
+      );
+    });
+    expect(container.querySelector("[data-ask-panel]")).not.toBeNull();
+    expect(usePlayerStore.getState().askPhase).toBe("drafting");
+
+    await act(async () => {
+      submitButton().click();
+      await finishCaptureTurn();
+    });
+    expect(captureStage).toHaveBeenCalledTimes(1);
+    expect(sendAsk).toHaveBeenCalledTimes(1);
+    expect(sendAsk).toHaveBeenCalledWith(OK_CAPTURE, expect.objectContaining({ isCurrent: expect.any(Function) }));
   });
 });
