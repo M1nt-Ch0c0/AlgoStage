@@ -837,6 +837,8 @@ test.describe("1280 selection flow", () => {
   });
 
   test("S5. code + viz collects both", async ({ page }) => {
+    // S5-b (Gavin): drag starting in code collects only code units, never viz. Remove test.fail() when drag-origin filtering lands.
+    test.fail();
     let capturedTargets: Array<{ kind?: string }> = [];
     await mockAsk(page, async (route) => {
       const body = route.request().postDataJSON() as {
@@ -878,8 +880,8 @@ test.describe("1280 selection flow", () => {
     await askQuestion(page);
     await expect(page.getByText(ANSWER_NARRATION)).toBeVisible();
 
-    expect(capturedTargets.some((t) => t.kind === "code")).toBe(true);
-    expect(capturedTargets.some((t) => t.kind === "viz")).toBe(true);
+    expect(capturedTargets.some((t) => t.kind === 'code')).toBe(true);
+    expect(capturedTargets.some((t) => t.kind === 'viz')).toBe(false);
   });
 
   test("S5. empty area shows 没选中 only when nothing hit", async ({ page }) => {
