@@ -945,6 +945,113 @@ test.describe("1280 selection flow", () => {
     expect(codeTarget!.codeRange).toEqual({ startLine: 9, endLine: 9 });
   });
 
+  test("S5-a 1280: short drag inside line 7", async ({ page }) => {
+    let capturedTargets: Array<{
+      kind?: string;
+      codeRange?: { startLine: number; endLine: number };
+      text?: string;
+    }> = [];
+    await mockAsk(page, async (route) => {
+      const body = route.request().postDataJSON() as {
+        selection?: {
+          targets?: Array<{
+            kind?: string;
+            codeRange?: { startLine: number; endLine: number };
+            text?: string;
+          }>;
+        };
+      };
+      capturedTargets = body?.selection?.targets ?? [];
+      await route.fulfill({
+        status: 200,
+        contentType: "application/x-ndjson",
+        body: askStream("s1"),
+      });
+    });
+    await startGenerated(page);
+    await pauseLecture(page);
+    await enterSelection(page);
+
+    const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+    await expect(code).toBeVisible();
+
+    const box = await code.boundingBox();
+    if (!box) throw new Error("code target has no box");
+
+    const line7 = await getMonacoLineBox(page, 7);
+    const startX = box.x + 80;
+    const endX = startX + 120;
+    const startY = line7.top + 5;
+    const endY = line7.bottom - 5;
+
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(endX, endY, { steps: 8 });
+    await page.mouse.up();
+
+    const panel = page.locator("[data-ask-panel]");
+    await expect(panel).toBeVisible();
+    await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：代码第 7 行");
+
+    await askQuestion(page);
+    await expect(page.getByText(ANSWER_NARRATION)).toBeVisible({ timeout: ANSWER_TIMEOUT_MS });
+
+    const codeTarget = capturedTargets.find((t) => t.kind === "code");
+    expect(codeTarget).toBeDefined();
+    expect(codeTarget!.codeRange).toEqual({ startLine: 7, endLine: 7 });
+  });
+
+  test("S5-a 1280: click on line 5", async ({ page }) => {
+    let capturedTargets: Array<{
+      kind?: string;
+      codeRange?: { startLine: number; endLine: number };
+      text?: string;
+    }> = [];
+    await mockAsk(page, async (route) => {
+      const body = route.request().postDataJSON() as {
+        selection?: {
+          targets?: Array<{
+            kind?: string;
+            codeRange?: { startLine: number; endLine: number };
+            text?: string;
+          }>;
+        };
+      };
+      capturedTargets = body?.selection?.targets ?? [];
+      await route.fulfill({
+        status: 200,
+        contentType: "application/x-ndjson",
+        body: askStream("s1"),
+      });
+    });
+    await startGenerated(page);
+    await pauseLecture(page);
+    await enterSelection(page);
+
+    const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+    await expect(code).toBeVisible();
+
+    const box = await code.boundingBox();
+    if (!box) throw new Error("code target has no box");
+
+    const line5 = await getMonacoLineBox(page, 5);
+    const clickX = box.x + 80;
+    const clickY = (line5.top + line5.bottom) / 2;
+
+    await page.mouse.click(clickX, clickY);
+
+    const panel = page.locator("[data-ask-panel]");
+    await expect(panel).toBeVisible();
+    await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：代码第 5 行");
+
+    await askQuestion(page);
+    await expect(page.getByText(ANSWER_NARRATION)).toBeVisible({ timeout: ANSWER_TIMEOUT_MS });
+
+    const codeTarget = capturedTargets.find((t) => t.kind === "code");
+    expect(codeTarget).toBeDefined();
+    expect(codeTarget!.codeRange).toEqual({ startLine: 5, endLine: 5 });
+  });
+
   test("S5. code box selection shows no 代码部分没选上 hint", async ({ page }) => {
     await startGenerated(page);
     await pauseLecture(page);
