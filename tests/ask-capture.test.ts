@@ -228,6 +228,10 @@ describe("lib/ask/capture", () => {
         encoder: "main",
         mime: "image/webp",
         bytes: 3,
+        devicePixelRatio: 1,
+        scale: 1,
+        crop: { x: 20, y: 40, w: 80, h: 60 },
+        canvas: { width: 400, height: 400 },
       });
 
       // Normalized bbox: x=10, y=20, w=40, h=30 -> scale 2 -> x=20, y=40, w=80, h=60
@@ -884,6 +888,10 @@ describe("lib/ask/capture", () => {
         encoder: "main",
         mime: "image/webp",
         bytes: 3,
+        devicePixelRatio: 1,
+        scale: 1,
+        crop: { x: 20, y: 40, w: 60, h: 80 },
+        canvas: { width: 400, height: 400 },
       });
 
       vi.unstubAllGlobals();
@@ -933,6 +941,10 @@ describe("lib/ask/capture", () => {
         encoder: "worker",
         mime: "image/webp",
         bytes: 3,
+        devicePixelRatio: 1,
+        scale: 1,
+        crop: { x: 20, y: 40, w: 60, h: 80 },
+        canvas: { width: 400, height: 400 },
       });
       expect(createdCanvases).toHaveLength(0);
 

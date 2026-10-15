@@ -5,6 +5,7 @@ import {
   markAskPointerDown,
   markAskTiming,
   msSinceLongTaskEnd,
+  noteCancelPaint,
   noteLongTaskEnded,
   notePreCapture,
   resetLongTaskEndForTests,
@@ -56,6 +57,9 @@ describe("ask timing probe", () => {
     markAskTiming("cancelUnmountAt", 990);
     markAskTiming("workerInitAt", 12);
     markAskTiming("workerReadyAt", 18);
+    markAskTiming("cancelPointerUpAt", 1000);
+    markAskTiming("cancelPaintAt", 1016);
+    noteCancelPaint();
     markAskPhase("domToCanvasMs", 800);
     markAskPhase("postToWorkerMs", 4);
     markAskPhase("encodeMs", 30);
@@ -72,6 +76,9 @@ describe("ask timing probe", () => {
       cancelUnmountAt: 990,
       workerInitAt: 12,
       workerReadyAt: 18,
+      cancelPointerUpAt: 1000,
+      cancelPaintAt: 1016,
+      cancelPaintAfterReleaseMs: 16,
       domToCanvasMs: 800,
       postToWorkerMs: 4,
       encodeMs: 30,
@@ -93,6 +100,20 @@ describe("ask timing probe", () => {
     notePreCapture();
     notePreCapture();
     expect(probe.preCaptureMs).toBe(15);
+  });
+
+  test("cancelPaintAfterReleaseMs waits for both marks and keeps the first value", () => {
+    const probe: AskTimingProbe = {};
+    install(probe);
+    noteCancelPaint();
+    expect(probe.cancelPaintAfterReleaseMs).toBeUndefined();
+    markAskTiming("cancelPointerUpAt", 10);
+    noteCancelPaint();
+    expect(probe.cancelPaintAfterReleaseMs).toBeUndefined();
+    markAskTiming("cancelPaintAt", 28);
+    noteCancelPaint();
+    noteCancelPaint();
+    expect(probe.cancelPaintAfterReleaseMs).toBe(18);
   });
 
   test("keeps the first value of each mark", () => {

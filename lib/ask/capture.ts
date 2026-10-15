@@ -29,6 +29,14 @@ export type CapturePerfInfo = {
   encoder: CaptureEncoder;
   mime: "image/webp" | "image/jpeg";
   bytes: number;
+  /** window.devicePixelRatio at capture time. */
+  devicePixelRatio: number;
+  /** The scale option passed to domToCanvas. */
+  scale: number;
+  /** Crop rect in canvas pixels. */
+  crop: { x: number; y: number; w: number; h: number };
+  /** domToCanvas output size, in pixels. */
+  canvas: { width: number; height: number };
 };
 
 declare global {
@@ -55,6 +63,26 @@ export type CaptureResult =
 export function noteCapturePerf(info: CapturePerfInfo): void {
   if (typeof window === "undefined") return;
   window.__s4Capture = info;
+}
+
+/** Geometry the perf probe prints next to the encoder. Scale is the domToCanvas option. */
+function capturePerf(
+  encoder: CaptureEncoder,
+  mime: "image/webp" | "image/jpeg",
+  bytes: number,
+  crop: { x: number; y: number; w: number; h: number },
+  canvas: { width: number; height: number },
+): CapturePerfInfo {
+  const ratio = typeof window !== "undefined" ? window.devicePixelRatio : 1;
+  return {
+    encoder,
+    mime,
+    bytes,
+    devicePixelRatio: Number.isFinite(ratio) && ratio > 0 ? ratio : 1,
+    scale: 1,
+    crop: { x: crop.x, y: crop.y, w: crop.w, h: crop.h },
+    canvas: { width: canvas.width, height: canvas.height },
+  };
 }
 
 export const CAPTURE_DEFAULTS = {
@@ -504,7 +532,7 @@ export async function captureStage(
             image: { mime: off.mime, dataBase64: off.dataBase64 },
             bytes: off.bytes,
           };
-          noteCapturePerf({ encoder: "worker", mime: off.mime, bytes: off.bytes });
+          noteCapturePerf(capturePerf("worker", off.mime, off.bytes, cropRect, canvas));
           return encoded;
         }
       }
@@ -513,7 +541,7 @@ export async function captureStage(
       if (timedOut) return timeoutResult();
       if (!main) return timeoutResult();
       if (!main.ok) return { ...main, fallbackText };
-      noteCapturePerf({ encoder: "main", mime: main.image.mime, bytes: main.bytes });
+      noteCapturePerf(capturePerf("main", main.image.mime, main.bytes, cropRect, canvas));
       return main;
     };
 

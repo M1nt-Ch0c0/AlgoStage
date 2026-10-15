@@ -8,6 +8,7 @@
  * main-thread encode.
  */
 
+import { askAb } from "./ask-ab";
 import { markAskTiming } from "./ask-timing";
 
 let singleton: Worker | null = null;
@@ -46,6 +47,8 @@ function createEncodeWorker(): Worker {
  */
 export function scheduleEncodeWorkerPrewarm(): Worker | null {
   if (singleton) return singleton;
+  // A/B: noPrewarm leaves the singleton empty so acquire creates it on demand.
+  if (askAb("noPrewarm")) return null;
   if (failed || prewarmQueued) return null;
   if (typeof Worker !== "function") return null;
   prewarmQueued = true;

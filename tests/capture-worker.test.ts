@@ -61,6 +61,18 @@ describe("encode worker singleton", () => {
     expect(scheduleEncodeWorkerPrewarm()).toBe(FakeWorker.made[0]);
   });
 
+  test("noPrewarm skips the idle queue and acquire still creates the worker", () => {
+    vi.stubGlobal("Worker", FakeWorker);
+    const idle = vi.fn();
+    vi.stubGlobal("requestIdleCallback", idle);
+    vi.stubGlobal("window", { __ASK_AB__: { noPrewarm: true } });
+    expect(scheduleEncodeWorkerPrewarm()).toBeNull();
+    expect(idle).not.toHaveBeenCalled();
+    expect(FakeWorker.made).toHaveLength(0);
+    expect(acquireEncodeWorker()).toBeInstanceOf(FakeWorker);
+    expect(FakeWorker.made).toHaveLength(1);
+  });
+
   test("scheduleEncodeWorkerPrewarm uses a timeout when requestIdleCallback is missing", async () => {
     vi.stubGlobal("Worker", FakeWorker);
     vi.stubGlobal("requestIdleCallback", undefined);

@@ -22,7 +22,14 @@ import Link from "next/link";
 import { cancelAsk, retroCancelAsk, sendAsk } from "@/lib/ask/ask-client";
 import { chooseAskScrollBlock } from "@/lib/ask/ask-scroll";
 import { ASK_ERROR_SPECS, resolveAskError, type AskErrorAction } from "@/lib/ask/ask-errors";
-import { markAskPhase, markAskPointerDown, markAskTiming, msSinceLongTaskEnd } from "@/lib/ask/ask-timing";
+import { askAb } from "@/lib/ask/ask-ab";
+import {
+  markAskPhase,
+  markAskPointerDown,
+  markAskTiming,
+  msSinceLongTaskEnd,
+  noteCancelPaint,
+} from "@/lib/ask/ask-timing";
 import { listenCancelPress } from "@/lib/ask/cancel-press";
 import { captureStage, type CaptureResult } from "@/lib/ask/capture";
 import { createCancelHold } from "@/lib/ask/cancel-hold";
@@ -121,6 +128,29 @@ function clampQuestion(value: string): string {
  * the button is pressable before captureStage stalls the main thread.
  * When requestAnimationFrame is missing, one macrotask stands in for both.
  */
+/**
+ * Probe mark. Call after the cancelled or idle state is committed.
+ * The next animation frame is when that paint is on screen, and that
+ * frame's time minus the 取消 pointerup is cancelPaintAfterReleaseMs.
+ * No-op unless the timing probe is installed.
+ */
+export function noteCancelPaintAfterRelease(): void {
+  if (typeof window === "undefined") return;
+  if (window.__ASK_TIMING__ == null || typeof window.__ASK_TIMING__ !== "object") return;
+  const raf = window.requestAnimationFrame;
+  const stamp = () => {
+    markAskTiming("cancelPaintAt");
+    noteCancelPaint();
+  };
+  if (typeof raf !== "function") {
+    stamp();
+    return;
+  }
+  raf(() => {
+    stamp();
+  });
+}
+
 export function yieldPaintFrames(): Promise<void> {
   const raf = globalThis.requestAnimationFrame;
   if (typeof raf !== "function") {
@@ -389,7 +419,8 @@ function AskPanelActive({ stage }: AskPanelProps) {
     try {
       // Paint the busy 取消 row before captureStage stalls the main thread,
       // so a press during the stall has a live button to hit.
-      await yieldPaintFrames();
+      // A/B noDoubleRaf skips the two frames and captures in this turn.
+      if (!askAb("noDoubleRaf")) await yieldPaintFrames();
       let capture: CaptureResult | null;
       try {
         capture = await captureStage(resolveStage(stage), startSelection);
@@ -401,17 +432,25 @@ function AskPanelActive({ stage }: AskPanelProps) {
       // on top of encode), lets a press that landed as the stall ended reach it.
       const elapsedSinceLongTask = msSinceLongTaskEnd();
       const settleStarted = performance.now();
-      await settleInput(elapsedSinceLongTask);
-      markAskPhase(
-        "settleMs",
-        Math.min(ASK_INPUT_SETTLE_MS, performance.now() - settleStarted),
-      );
+      // A/B noSettle records a zero wait and continues straight to the hold.
+      if (askAb("noSettle")) {
+        markAskPhase("settleMs", 0);
+      } else {
+        await settleInput(elapsedSinceLongTask);
+        markAskPhase(
+          "settleMs",
+          Math.min(ASK_INPUT_SETTLE_MS, performance.now() - settleStarted),
+        );
+      }
       holdWaitingRef.current = true;
       const holdResult = await holdRef.current.wait(session, 2000);
       holdWaitingRef.current = false;
       if (holdResult === "cancel") {
         setPreparing(false);
         usePlayerStore.getState().closeAskPanel();
+        // The panel unmounts on this path, so the paint mark cannot wait
+        // for an effect. The next frame after the idle commit is the mark.
+        noteCancelPaintAfterRelease();
         sendingRef.current = false;
         return;
       }
@@ -559,6 +598,9 @@ function AskPanelActive({ stage }: AskPanelProps) {
       // onLateCancel. Calling retroCancel here as well would abort twice.
       const held = holdRef.current.isPending(askSessionRef.current);
       const sentWhileHeld = heldAfterSendRef.current;
+      // performance.now(), same clock as the paint frame. event.timeStamp
+      // is not that clock, so the delta would not be a paint delay.
+      if (inside && sendingRef.current) markAskTiming("cancelPointerUpAt");
       holdRef.current.release(inside);
       setHoldPressed(false);
       if (!inside) clearHeldAfterSendOffButton();

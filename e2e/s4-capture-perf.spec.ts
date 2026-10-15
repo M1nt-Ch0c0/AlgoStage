@@ -177,14 +177,30 @@ async function dragOnSubtitle(page: Page) {
 
 type LongTask = { start: number; duration: number };
 
+type CaptureGeometry = {
+  devicePixelRatio: number;
+  scale: number;
+  crop: { x: number; y: number; w: number; h: number };
+  canvas: { width: number; height: number };
+};
+
 type PerfSummary = {
   width: number;
+  ab: string[];
   longestTaskMs: number;
   longTaskCount: number;
   longTasks: LongTask[];
+  /** Long tasks whose interval overlaps [captureStart, longTaskEnd]. */
+  domToCanvasLongTaskCount: number;
+  domToCanvasLongTaskMaxMs: number;
+  domToCanvasSingleLongTask: boolean;
   requestElapsedMs: number;
   imageAttached: boolean;
   encoder: "worker" | "main" | null;
+  devicePixelRatio: number | null;
+  scale: number | null;
+  crop: { x: number; y: number; w: number; h: number } | null;
+  canvas: { width: number; height: number } | null;
   phases: AskTimingProbe | null;
 };
 
@@ -196,14 +212,34 @@ declare global {
       encoder: "worker" | "main";
       mime: "image/webp" | "image/jpeg";
       bytes: number;
+      devicePixelRatio: number;
+      scale: number;
+      crop: { x: number; y: number; w: number; h: number };
+      canvas: { width: number; height: number };
     };
   }
+}
+
+/** Comma list from S4_AB, for example "noPrewarm,noSettle". Empty when unset. */
+const AB_FLAGS = (process.env.S4_AB ?? "")
+  .split(",")
+  .map((flag) => flag.trim())
+  .filter((flag) => flag.length > 0);
+
+function abScript(): string {
+  const flags = {
+    noPrewarm: AB_FLAGS.includes("noPrewarm"),
+    noDoubleRaf: AB_FLAGS.includes("noDoubleRaf"),
+    noSettle: AB_FLAGS.includes("noSettle"),
+  };
+  return `window.__ASK_AB__ = ${JSON.stringify(flags)};`;
 }
 
 const OUT_DIR = process.env.S4_OUT_DIR ?? "/workspace/logs/gavin-s4-capture";
 const LABEL = process.env.S4_LABEL ?? "run";
 
 async function installLongTaskObserver(page: Page) {
+  if (AB_FLAGS.length > 0) await page.addInitScript(abScript());
   await page.addInitScript(() => {
     window.__ASK_TIMING__ = {};
     window.__s4LongTasks = [];
@@ -286,20 +322,44 @@ async function measureCapture(page: Page, width: number) {
       const t0 = window.__s4Marks?.t0 ?? 0;
       return (window.__s4LongTasks ?? []).filter((task) => task.start >= t0);
     });
-    const encoder = await page.evaluate(() => window.__s4Capture?.encoder ?? null);
+    const capture = await page.evaluate(() => window.__s4Capture ?? null);
+    const encoder = capture?.encoder ?? null;
+    const geometry: CaptureGeometry | null = capture
+      ? {
+          devicePixelRatio: capture.devicePixelRatio,
+          scale: capture.scale,
+          crop: capture.crop,
+          canvas: capture.canvas,
+        }
+      : null;
     const phases = await page.evaluate(() => window.__ASK_TIMING__ ?? null);
-    if (test.info().project.name === "chromium") {
+    if (test.info().project.name === "chromium" && !AB_FLAGS.includes("noPrewarm")) {
       expect(encoder).toBe("worker");
     }
     const longestTaskMs = longTasks.reduce((max, task) => Math.max(max, task.duration), 0);
+    const captureStart = phases?.captureStart ?? null;
+    const longTaskEnd = phases?.longTaskEnd ?? null;
+    const overlapping =
+      captureStart == null || longTaskEnd == null
+        ? []
+        : longTasks.filter((task) => task.start < longTaskEnd && task.start + task.duration > captureStart);
+    const domToCanvasLongTaskMaxMs = overlapping.reduce((max, task) => Math.max(max, task.duration), 0);
     const summary: PerfSummary = {
       width,
+      ab: AB_FLAGS,
       longestTaskMs,
       longTaskCount: longTasks.length,
       longTasks,
+      domToCanvasLongTaskCount: overlapping.length,
+      domToCanvasLongTaskMaxMs,
+      domToCanvasSingleLongTask: overlapping.length === 1,
       requestElapsedMs,
       imageAttached,
       encoder,
+      devicePixelRatio: geometry?.devicePixelRatio ?? null,
+      scale: geometry?.scale ?? null,
+      crop: geometry?.crop ?? null,
+      canvas: geometry?.canvas ?? null,
       phases,
     };
 
@@ -307,17 +367,27 @@ async function measureCapture(page: Page, width: number) {
     console.log(
       JSON.stringify({
         label: LABEL,
+        ab: AB_FLAGS,
         width,
         longestTaskMs,
+        domToCanvasMs: phases?.domToCanvasMs ?? null,
+        domToCanvasLongTaskCount: overlapping.length,
+        domToCanvasLongTaskMaxMs,
+        domToCanvasSingleLongTask: overlapping.length === 1,
         requestElapsedMs,
         longTaskCount: longTasks.length,
         imageAttached,
         encoder,
+        devicePixelRatio: geometry?.devicePixelRatio ?? null,
+        scale: geometry?.scale ?? null,
+        crop: geometry?.crop ?? null,
+        canvas: geometry?.canvas ?? null,
         phases,
         submitAt: phases?.submitAt ?? null,
         preCaptureMs: phases?.preCaptureMs ?? null,
         workerInitAt: phases?.workerInitAt ?? null,
         workerReadyAt: phases?.workerReadyAt ?? null,
+        cancelPaintAfterReleaseMs: phases?.cancelPaintAfterReleaseMs ?? null,
       }),
     );
     console.log(
@@ -333,6 +403,72 @@ async function measureCapture(page: Page, width: number) {
   }
 }
 
+/**
+ * Press and release 取消 while the preparing row is up. The panel stamps
+ * cancelPointerUpAt on that pointerup and cancelPaintAt on the next frame
+ * after the cancelled state renders.
+ */
+async function measureCancelPaint(page: Page, width: number) {
+  test.setTimeout(120_000);
+  await installLongTaskObserver(page);
+
+  await mockAsk(page, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/x-ndjson",
+      body: askStream("s1"),
+    });
+  });
+
+  await startGenerated(page);
+  await pauseLecture(page);
+  await enterSelection(page);
+  if (width === 390) await dragOnSubtitle(page);
+  else await dragOnStage(page);
+
+  const panel = page.locator("[data-ask-panel]");
+  await panel.locator("[data-ask-question]").fill(QUESTION);
+  await panel.locator("[data-ask-submit]").click();
+  const preparing = page.locator("[data-ask-capture-preparing]");
+  await expect(preparing).toBeAttached({ timeout: 15_000 });
+
+  const cancel = page.locator("[data-ask-cancel]");
+  const box = await cancel.boundingBox();
+  if (!box) throw new Error("取消 has no box while preparing");
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.up();
+
+  await expect(page.locator("[data-ask-panel]")).toHaveCount(0, { timeout: 15_000 });
+  await page.waitForTimeout(50);
+  const phases = await page.evaluate(() => window.__ASK_TIMING__ ?? null);
+  const summary = {
+    width,
+    ab: AB_FLAGS,
+    kind: "cancel-paint",
+    cancelPointerUpAt: phases?.cancelPointerUpAt ?? null,
+    cancelPaintAt: phases?.cancelPaintAt ?? null,
+    cancelPaintAfterReleaseMs: phases?.cancelPaintAfterReleaseMs ?? null,
+    phases,
+  };
+  mkdirSync(OUT_DIR, { recursive: true });
+  writeFileSync(
+    path.join(OUT_DIR, `${LABEL}-${width}-cancel.json`),
+    `${JSON.stringify(summary, null, 2)}\n`,
+  );
+  console.log(
+    JSON.stringify({
+      label: LABEL,
+      ab: AB_FLAGS,
+      width,
+      kind: "cancel-paint",
+      cancelPaintAfterReleaseMs: phases?.cancelPaintAfterReleaseMs ?? null,
+    }),
+  );
+}
+
 test.describe("S4-a capture perf", () => {
   test.skip(process.env.S4_PERF !== "1", "set S4_PERF=1 to measure ask-submit capture");
 
@@ -342,6 +478,10 @@ test.describe("S4-a capture perf", () => {
     test("submit capture long tasks at 1280x800", async ({ page }) => {
       await measureCapture(page, 1280);
     });
+
+    test("cancel during preparing paints at 1280x800", async ({ page }) => {
+      await measureCancelPaint(page, 1280);
+    });
   });
 
   test.describe("390x844", () => {
@@ -349,6 +489,10 @@ test.describe("S4-a capture perf", () => {
 
     test("submit capture long tasks at 390x844", async ({ page }) => {
       await measureCapture(page, 390);
+    });
+
+    test("cancel during preparing paints at 390x844", async ({ page }) => {
+      await measureCancelPaint(page, 390);
     });
   });
 });

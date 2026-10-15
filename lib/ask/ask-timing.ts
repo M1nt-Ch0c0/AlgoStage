@@ -11,7 +11,9 @@ export type AskTimingMark =
   | "sentAt"
   | "cancelUnmountAt"
   | "workerInitAt"
-  | "workerReadyAt";
+  | "workerReadyAt"
+  | "cancelPointerUpAt"
+  | "cancelPaintAt";
 
 export type AskTimingPhase =
   | "preCaptureMs"
@@ -32,6 +34,15 @@ export type AskTimingProbe = {
   workerInitAt?: number;
   /** performance.now() just after new Worker() returns. */
   workerReadyAt?: number;
+  /** performance.now() at the 取消 pointerup that cancelled a preparing submit. */
+  cancelPointerUpAt?: number;
+  /**
+   * performance.now() at the animation frame after the cancelled or idle
+   * state has rendered. cancelPaintAfterReleaseMs is this minus cancelPointerUpAt.
+   */
+  cancelPaintAt?: number;
+  /** cancelPointerUpAt → cancelPaintAt. */
+  cancelPaintAfterReleaseMs?: number;
   firstPointerDownTs?: number;
   /** submitAt → captureStart, which includes the pre-capture double rAF. */
   preCaptureMs?: number;
@@ -129,4 +140,21 @@ export function notePreCapture(): void {
   const duration = captureStart - submitAt;
   if (!Number.isFinite(duration)) return;
   probe.preCaptureMs = duration;
+}
+
+/**
+ * The panel calls this after the cancelled or idle state has committed.
+ * The duration is the next animation frame after that paint, minus the
+ * pointerup that released 取消. No-op until both marks exist.
+ */
+export function noteCancelPaint(): void {
+  const probe = askTimingProbe();
+  if (!probe) return;
+  if (probe.cancelPaintAfterReleaseMs != null) return;
+  const up = probe.cancelPointerUpAt;
+  const paint = probe.cancelPaintAt;
+  if (up == null || paint == null) return;
+  const duration = paint - up;
+  if (!Number.isFinite(duration)) return;
+  probe.cancelPaintAfterReleaseMs = duration;
 }
