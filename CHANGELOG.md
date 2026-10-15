@@ -2,6 +2,15 @@
 
 ## [0.3.2] - 未发布
 
+### 安全修复
+- 【待合入 sec-next-1641】Next.js 从 16.4.0 升级到 16.4.1，修复以下漏洞（均影响 16.4.0）：
+  - [GHSA-673q-mjm6-r5xr](https://github.com/advisories/GHSA-673q-mjm6-r5xr)（严重）：未登录即可远程执行代码（`use cache` 返回 typed array）。
+  - [GHSA-2464-fhr4-w9xw](https://github.com/advisories/GHSA-2464-fhr4-w9xw) / CVE-2026-96889（严重）：未登录即可远程执行代码（图片优化处理 SVG）。
+  - [GHSA-p3m5-59mp-jv5r](https://github.com/advisories/GHSA-p3m5-59mp-jv5r)（高危）：Server Actions 拒绝服务。
+- 本版只包含这项安全升级，没有功能变化。
+
+## [0.3.3] - 未发布
+
 ### 新增
 - 【待合入 ask-v032-code-select】可以从代码区拖框圈选提问：面板显示「已选：代码第 a–b 行」；拿不到行号时显示「已选：当前代码」，照常发送。拖框碰到代码区却一行代码都没选上时，提示「代码部分没选上，换个地方再框一次」：只框了代码时替换「没选中内容」，面板不打开；同时选中了别的内容时，提示显示在卡片上方一行，不弹窗。退出提问后提示清掉。
 - 【待合入 ask-v032-code-select】从代码区起拖只收代码，不会带上字幕、步骤卡或黑板上的可视化；只有从黑板起拖才收可视化内容。
