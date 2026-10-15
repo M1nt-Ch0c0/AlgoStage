@@ -183,12 +183,18 @@ type PerfSummary = {
   longTasks: LongTask[];
   requestElapsedMs: number;
   imageAttached: boolean;
+  encoder: "worker" | "main" | null;
 };
 
 declare global {
   interface Window {
     __s4LongTasks?: LongTask[];
     __s4Marks?: { t0?: number };
+    __s4Capture?: {
+      encoder: "worker" | "main";
+      mime: "image/webp" | "image/jpeg";
+      bytes: number;
+    };
   }
 }
 
@@ -277,6 +283,10 @@ async function measureCapture(page: Page, width: number) {
       const t0 = window.__s4Marks?.t0 ?? 0;
       return (window.__s4LongTasks ?? []).filter((task) => task.start >= t0);
     });
+    const encoder = await page.evaluate(() => window.__s4Capture?.encoder ?? null);
+    if (test.info().project.name === "chromium") {
+      expect(encoder).toBe("worker");
+    }
     const longestTaskMs = longTasks.reduce((max, task) => Math.max(max, task.duration), 0);
     const summary: PerfSummary = {
       width,
@@ -285,11 +295,12 @@ async function measureCapture(page: Page, width: number) {
       longTasks,
       requestElapsedMs,
       imageAttached,
+      encoder,
     };
 
     writeFileSync(path.join(OUT_DIR, `${LABEL}-${width}.json`), `${JSON.stringify(summary, null, 2)}\n`);
     console.log(
-      `[s4-capture] ${LABEL} ${width}px longest=${longestTaskMs.toFixed(1)}ms count=${longTasks.length} elapsed=${requestElapsedMs.toFixed(1)}ms image=${imageAttached}`,
+      `[s4-capture] ${LABEL} ${width}px longest=${longestTaskMs.toFixed(1)}ms count=${longTasks.length} elapsed=${requestElapsedMs.toFixed(1)}ms image=${imageAttached} encoder=${encoder}`,
     );
 
     await page.screenshot({
