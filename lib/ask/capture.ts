@@ -135,23 +135,6 @@ export function intersectsBBox(
   );
 }
 
-/** Let the preparing line paint before import and domToCanvas. */
-export function yieldTwoFrames(): Promise<void> {
-  const raf = globalThis.requestAnimationFrame;
-  if (typeof raf !== "function") {
-    return new Promise((resolve) => {
-      setTimeout(resolve, 0);
-    });
-  }
-  return new Promise((resolve) => {
-    raf(() => {
-      raf(() => {
-        resolve();
-      });
-    });
-  });
-}
-
 function yieldEncodeTurn(): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, 0);
@@ -436,7 +419,11 @@ export async function captureStage(
     const doCapture = async (): Promise<CaptureResult> => {
       markAskTiming("captureStart");
       notePreCapture();
-      await yieldTwoFrames();
+      // The busy 取消 row is painted by yieldPaintFrames() in the submit
+      // handler: exactly two animation frames, and then capture starts.
+      // A second pair here would run in the same turn as domToCanvas when
+      // the outer frames have already flushed, which folds worker setup and
+      // this listener turn into the long task the probe attributes to render.
       if (timedOut) return timeoutResult();
 
       let mod: typeof import("modern-screenshot");

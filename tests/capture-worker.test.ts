@@ -4,6 +4,7 @@ import {
   prewarmEncodeWorker,
   resetEncodeWorkerForTests,
   retireEncodeWorker,
+  scheduleEncodeWorkerPrewarm,
 } from "../lib/ask/capture-worker";
 
 class FakeWorker {
@@ -41,6 +42,36 @@ afterEach(() => {
 });
 
 describe("encode worker singleton", () => {
+  test("scheduleEncodeWorkerPrewarm queues new Worker off the calling turn", async () => {
+    vi.stubGlobal("Worker", FakeWorker);
+    const idle = vi.fn((callback: () => void) => {
+      setTimeout(callback, 0);
+      return 7;
+    });
+    vi.stubGlobal("requestIdleCallback", idle);
+    expect(scheduleEncodeWorkerPrewarm()).toBeNull();
+    expect(FakeWorker.made).toHaveLength(0);
+    expect(idle).toHaveBeenCalledTimes(1);
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+    expect(FakeWorker.made).toHaveLength(1);
+    expect(acquireEncodeWorker()).toBeInstanceOf(FakeWorker);
+    expect(FakeWorker.made).toHaveLength(1);
+    expect(scheduleEncodeWorkerPrewarm()).toBe(FakeWorker.made[0]);
+  });
+
+  test("scheduleEncodeWorkerPrewarm uses a timeout when requestIdleCallback is missing", async () => {
+    vi.stubGlobal("Worker", FakeWorker);
+    vi.stubGlobal("requestIdleCallback", undefined);
+    scheduleEncodeWorkerPrewarm();
+    expect(FakeWorker.made).toHaveLength(0);
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+    expect(FakeWorker.made).toHaveLength(1);
+  });
+
   test("prewarm creates one module worker and acquire reuses it", () => {
     vi.stubGlobal("Worker", FakeWorker);
     const first = prewarmEncodeWorker();

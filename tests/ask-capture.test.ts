@@ -10,7 +10,6 @@ import {
   encodeOffThread,
   intersectsBBox,
   toCropRect,
-  yieldTwoFrames,
 } from "@/lib/ask/capture";
 import { resetLongTaskEndForTests } from "@/lib/ask/ask-timing";
 import { resetEncodeWorkerForTests } from "@/lib/ask/capture-worker";
@@ -1006,7 +1005,7 @@ describe("lib/ask/capture", () => {
       vi.unstubAllGlobals();
     });
 
-    it("yields two animation frames before calling domToCanvas", async () => {
+    it("calls domToCanvas without a second animation-frame pair", async () => {
       const order: string[] = [];
       const raf = vi.fn((cb: FrameRequestCallback) => {
         order.push("raf");
@@ -1021,23 +1020,8 @@ describe("lib/ask/capture", () => {
 
       const res = await captureStage(container, baseSel);
       expect(res.ok).toBe(true);
-      expect(raf).toHaveBeenCalledTimes(2);
-      expect(order).toEqual(["raf", "raf", "dom"]);
-      vi.unstubAllGlobals();
-    });
-
-    it("uses setTimeout(0) when requestAnimationFrame is missing", async () => {
-      vi.useFakeTimers();
-      vi.stubGlobal("requestAnimationFrame", undefined);
-      const pending = yieldTwoFrames();
-      await vi.advanceTimersByTimeAsync(0);
-      await pending;
-
-      const promise = captureStage(container, baseSel);
-      await vi.advanceTimersByTimeAsync(0);
-      const res = await promise;
-      expect(res.ok).toBe(true);
-      expect(domToCanvasMock).toHaveBeenCalledTimes(1);
+      expect(raf).not.toHaveBeenCalled();
+      expect(order).toEqual(["dom"]);
       vi.unstubAllGlobals();
     });
 
