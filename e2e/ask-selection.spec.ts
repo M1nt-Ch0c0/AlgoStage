@@ -199,17 +199,22 @@ async function askQuestion(page: Page) {
   await panel.locator("[data-ask-submit]").click();
 }
 
-async function getMonacoLineY(page: Page, lineNumber: number): Promise<number> {
+async function getMonacoLineBox(page: Page, lineNumber: number): Promise<{ top: number; bottom: number }> {
   return page.evaluate((line) => {
     const lineNumbers = Array.from(document.querySelectorAll<HTMLElement>(".monaco-editor .line-numbers"));
     for (const ln of lineNumbers) {
       if (ln.textContent?.trim() === String(line)) {
         const r = ln.getBoundingClientRect();
-        return r.top + r.height / 2;
+        return { top: r.top, bottom: r.bottom };
       }
     }
     throw new Error(`monaco line ${line} not rendered`);
   }, lineNumber);
+}
+
+async function getMonacoLineY(page: Page, lineNumber: number): Promise<number> {
+  const box = await getMonacoLineBox(page, lineNumber);
+  return (box.top + box.bottom) / 2;
 }
 
 /** 直接子项按中心线合并成行。播放中基线 4，讲完 3。 */
@@ -854,8 +859,10 @@ test.describe("1280 selection flow", () => {
       const box = await code.boundingBox();
       if (!box) throw new Error("code target has no box");
 
-      const startY = await getMonacoLineY(page, startLine);
-      const endY = await getMonacoLineY(page, endLine);
+      const startBox = await getMonacoLineBox(page, startLine);
+      const endBox = await getMonacoLineBox(page, endLine);
+      const startY = startBox.top + 4;
+      const endY = endBox.bottom - 4;
       const startX = box.x + 80;
       const endX = box.x + 180;
 
@@ -876,6 +883,65 @@ test.describe("1280 selection flow", () => {
       expect(codeTarget!.codeRange).toEqual({ startLine, endLine });
     });
   }
+
+  test("S5-a 1280: drag over Monaco single line 9", async ({ page }) => {
+    let capturedTargets: Array<{
+      kind?: string;
+      codeRange?: { startLine: number; endLine: number };
+      text?: string;
+    }> = [];
+    await mockAsk(page, async (route) => {
+      const body = route.request().postDataJSON() as {
+        selection?: {
+          targets?: Array<{
+            kind?: string;
+            codeRange?: { startLine: number; endLine: number };
+            text?: string;
+          }>;
+        };
+      };
+      capturedTargets = body?.selection?.targets ?? [];
+      await route.fulfill({
+        status: 200,
+        contentType: "application/x-ndjson",
+        body: askStream("s1"),
+      });
+    });
+    await startGenerated(page);
+    await pauseLecture(page);
+    await enterSelection(page);
+
+    const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+    await expect(code).toBeVisible();
+
+    const box = await code.boundingBox();
+    if (!box) throw new Error("code target has no box");
+
+    const line9Y = await getMonacoLineY(page, 9);
+    const startX = box.x + 80;
+    const endX = box.x + 180;
+    // Box height of 24 (line9Y - 12 to line9Y + 12) satisfies MIN_REGION_SIDE (24),
+    // while grazing into neighbor lines 8 and 10 by at most 1px (<= 2px dead-zone),
+    // so only line 9 is selected.
+    const startY = line9Y - 12;
+    const endY = line9Y + 12;
+
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(endX, endY, { steps: 8 });
+    await page.mouse.up();
+
+    const panel = page.locator("[data-ask-panel]");
+    await expect(panel).toBeVisible();
+    await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：代码第 9 行");
+
+    await askQuestion(page);
+    await expect(page.getByText(ANSWER_NARRATION)).toBeVisible();
+
+    const codeTarget = capturedTargets.find((t) => t.kind === "code");
+    expect(codeTarget).toBeDefined();
+    expect(codeTarget!.codeRange).toEqual({ startLine: 9, endLine: 9 });
+  });
 
   test("S5. code box selection shows no 代码部分没选上 hint", async ({ page }) => {
     await startGenerated(page);
@@ -1122,8 +1188,10 @@ test.describe("390 selection flow", () => {
         const box = await code.boundingBox();
         if (!box) throw new Error("code target has no box");
 
-        const startY = await getMonacoLineY(page, startLine);
-        const endY = await getMonacoLineY(page, endLine);
+        const startBox = await getMonacoLineBox(page, startLine);
+        const endBox = await getMonacoLineBox(page, endLine);
+        const startY = startBox.top + 4;
+        const endY = endBox.bottom - 4;
         const startX = box.x + 60;
         const endX = box.x + 160;
 
