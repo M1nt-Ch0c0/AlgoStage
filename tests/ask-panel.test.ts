@@ -1034,6 +1034,5 @@ describe("ask panel", () => {
     expect(sendAsk).toHaveBeenCalledTimes(1);
     expect(vi.mocked(sendAsk).mock.calls[0]?.[1]?.isCurrent?.()).toBe(false);
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
-    vi.unstubAllGlobals();
   });
 });
