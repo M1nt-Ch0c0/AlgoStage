@@ -2179,7 +2179,7 @@ test.describe("390 selection flow", () => {
       await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：代码第 9 行");
     });
 
-    test("p. tap line 9, then within 100ms tap a bar chip -> chip tap took effect", async ({ page }) => {
+    test("p. tap line 9 (panel opens, bar hidden), tap 取消 -> bar visible, exit clickable, tap subtitle chip", async ({ page }) => {
       await startGenerated(page);
       await pauseLecture(page);
       await enterSelection(page);
@@ -2193,18 +2193,139 @@ test.describe("390 selection flow", () => {
       const clickX = codeBox.x + 80;
       const clickY = (line9.top + line9.bottom) / 2;
 
-      const chip = page.locator('[data-ask-shortcut="subtitle"]');
-      await expect(chip).toBeVisible();
-      const chipBox = (await chip.boundingBox())!;
-      const chipCx = chipBox.x + chipBox.width / 2;
-      const chipCy = chipBox.y + chipBox.height / 2;
-
       await page.touchscreen.tap(clickX, clickY);
-      await page.touchscreen.tap(chipCx, chipCy);
 
       const panel = page.locator("[data-ask-panel]");
       await expect(panel).toBeVisible();
+      await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：代码第 9 行");
+
+      // While panel is open at 390, assert bottom bar is not visible
+      await expect(page.locator("[data-ask-bottom-bar]")).not.toBeVisible();
+
+      // Assert no visible chip/control is covered: for every visible button inside [data-ask-panel], elementFromPoint at center is inside it
+      const allUncovered = await page.evaluate(() => {
+        const p = document.querySelector("[data-ask-panel]");
+        if (!p) return false;
+        const buttons = Array.from(p.querySelectorAll("button")).filter((btn) => {
+          const r = btn.getBoundingClientRect();
+          return r.width > 0 && r.height > 0;
+        });
+        if (buttons.length === 0) return false;
+        return buttons.every((btn) => {
+          const r = btn.getBoundingClientRect();
+          const cx = r.left + r.width / 2;
+          const cy = r.top + r.height / 2;
+          const el = document.elementFromPoint(cx, cy);
+          return Boolean(el && (el === btn || btn.contains(el)));
+        });
+      });
+      expect(allUncovered).toBe(true);
+
+      // Tap 取消 at its center
+      const cancelBtn = page.locator("[data-ask-panel] [data-ask-cancel]");
+      await expect(cancelBtn).toBeVisible();
+      const cancelBox = (await cancelBtn.boundingBox())!;
+      await page.touchscreen.tap(cancelBox.x + cancelBox.width / 2, cancelBox.y + cancelBox.height / 2);
+
+      // Expect bar visible
+      const bar = page.locator("[data-ask-bottom-bar]");
+      await expect(bar).toBeVisible();
+
+      // Expect elementFromPoint at the exit button center (inside the bar) to be the exit button itself or inside it
+      const exitBtn = bar.locator("[data-ask-entry]");
+      await expect(exitBtn).toBeVisible();
+      const exitBox = (await exitBtn.boundingBox())!;
+      const exitCx = exitBox.x + exitBox.width / 2;
+      const exitCy = exitBox.y + exitBox.height / 2;
+      const isExit = await page.evaluate(
+        ({ x, y }) => {
+          const el = document.elementFromPoint(x, y);
+          const btn = document.querySelector("[data-ask-bottom-bar] [data-ask-entry]");
+          return el !== null && (el === btn || btn?.contains(el) === true);
+        },
+        { x: exitCx, y: exitCy },
+      );
+      expect(isExit).toBe(true);
+
+      // Then tap a chip ([data-ask-shortcut="subtitle"]) and expect panel label 「已选：当前字幕」
+      const chip = bar.locator('[data-ask-shortcut="subtitle"]');
+      await expect(chip).toBeVisible();
+      const chipBox = (await chip.boundingBox())!;
+      await page.touchscreen.tap(chipBox.x + chipBox.width / 2, chipBox.y + chipBox.height / 2);
+
+      await expect(panel).toBeVisible();
       await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：当前字幕");
+    });
+
+    test("cancel keeps selecting, focus on chip, exit within 100ms", async ({ page }) => {
+      await startGenerated(page);
+      await pauseLecture(page);
+      await enterSelection(page);
+
+      // Read --ask-bottom-occlusion before opening panel
+      const occlusionBefore = await page.evaluate(() => {
+        const raw = getComputedStyle(document.documentElement).getPropertyValue("--ask-bottom-occlusion");
+        return parseFloat(raw) || 0;
+      });
+
+      const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+      await code.scrollIntoViewIfNeeded();
+      await expect(code).toBeVisible();
+
+      const line9 = await getMonacoLineBox(page, 9);
+      const codeBox = (await code.boundingBox())!;
+      const clickX = codeBox.x + 80;
+      const clickY = (line9.top + line9.bottom) / 2;
+
+      await page.touchscreen.tap(clickX, clickY);
+
+      const panel = page.locator("[data-ask-panel]");
+      await expect(panel).toBeVisible();
+
+      const cancelBtn = page.locator("[data-ask-panel] [data-ask-cancel]");
+      await expect(cancelBtn).toBeVisible();
+      const cancelBox = (await cancelBtn.boundingBox())!;
+      await page.touchscreen.tap(cancelBox.x + cancelBox.width / 2, cancelBox.y + cancelBox.height / 2);
+
+      // Assert still selecting (layer visible, entry aria-pressed true)
+      const layer = page.locator("[data-ask-layer]");
+      await expect(layer).toBeVisible();
+
+      const bar = page.locator("[data-ask-bottom-bar]");
+      await expect(bar).toBeVisible();
+      const barExit = bar.locator("[data-ask-entry]");
+      await expect(barExit).toHaveAttribute("aria-pressed", "true");
+
+      // [data-ask-selection] still visible
+      const selectionEl = page.locator("[data-ask-selection]");
+      await expect(selectionEl).toBeVisible();
+
+      // document.activeElement is a [data-ask-shortcut] inside the bar with tabIndex 0
+      const activeInfo = await page.evaluate(() => {
+        const el = document.activeElement;
+        const b = document.querySelector("[data-ask-bottom-bar]");
+        const isInsideBar = Boolean(b && el && b.contains(el));
+        const hasShortcut = el?.hasAttribute("data-ask-shortcut") ?? false;
+        const tabIndex = (el as HTMLElement)?.tabIndex;
+        return { isInsideBar, hasShortcut, tabIndex };
+      });
+      expect(activeInfo.isInsideBar).toBe(true);
+      expect(activeInfo.hasShortcut).toBe(true);
+      expect(activeInfo.tabIndex).toBe(0);
+
+      // read --ask-bottom-occlusion via getComputedStyle(documentElement) and assert it equals value measured before (±1px)
+      const occlusionAfter = await page.evaluate(() => {
+        const raw = getComputedStyle(document.documentElement).getPropertyValue("--ask-bottom-occlusion");
+        return parseFloat(raw) || 0;
+      });
+      expect(Math.abs(occlusionAfter - occlusionBefore)).toBeLessThanOrEqual(1);
+
+      // within 100ms touchscreen.tap the exit button and assert ask exits normally
+      const exitBox = (await barExit.boundingBox())!;
+      await page.touchscreen.tap(exitBox.x + exitBox.width / 2, exitBox.y + exitBox.height / 2);
+
+      await expect(layer).toHaveCount(0);
+      await expect(page.locator("[data-ask-entry]")).not.toHaveAttribute("aria-pressed", "true");
     });
 
     test("q. tap in the gap between two chips in the bar -> selection unchanged and ask mode active", async ({ page }) => {
