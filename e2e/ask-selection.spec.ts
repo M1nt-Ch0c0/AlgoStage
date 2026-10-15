@@ -2321,6 +2321,65 @@ test.describe("390 selection flow", () => {
       await page.keyboard.press("ArrowRight");
       await expect(secondChip).toBeFocused();
     });
+
+    // regression guard vs a9cedbb (c852e36 fresh sampling broke it)
+    test("scroll mid-drag: lines 3–8 stay aligned", async ({ page }) => {
+      await startGenerated(page);
+      await pauseLecture(page);
+      await enterSelection(page);
+
+      const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+      await code.scrollIntoViewIfNeeded();
+      await expect(code).toBeVisible();
+
+      const bar = page.locator("[data-ask-bottom-bar]");
+      await expect(bar).toBeVisible();
+      const barBox = (await bar.boundingBox())!;
+
+      const line10Box = await getMonacoLineBox(page, 10);
+      if (line10Box.bottom > barBox.y - 8) {
+        await page.evaluate((dy) => window.scrollBy(0, dy), line10Box.bottom - barBox.y + 16);
+      }
+
+      const codeBox = (await code.boundingBox())!;
+      const line3Box = await getMonacoLineBox(page, 3);
+      const startX = codeBox.x + 60;
+      const startY = (line3Box.top + line3Box.bottom) / 2;
+
+      await page.mouse.move(startX, startY);
+      await page.mouse.down();
+
+      const line5Box = await getMonacoLineBox(page, 5);
+      const line5Y = (line5Box.top + line5Box.bottom) / 2;
+      await page.mouse.move(codeBox.x + 100, line5Y, { steps: 4 });
+
+      await page.evaluate(() => window.scrollBy(0, 44));
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+
+      const line8Box = await getMonacoLineBox(page, 8);
+      const endBox = (await code.boundingBox())!;
+      const endX = endBox.x + 160;
+      const endY = (line8Box.top + line8Box.bottom) / 2;
+      await page.mouse.move(endX, endY, { steps: 5 });
+      await page.mouse.up();
+
+      const panel = page.locator("[data-ask-panel]");
+      await expect(panel).toBeVisible();
+      await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：代码第 3–8 行");
+
+      const selection = page.locator("[data-ask-selection]");
+      await expect(selection).toBeVisible();
+
+      const currentLine3 = await getMonacoLineBox(page, 3);
+      const currentLine8 = await getMonacoLineBox(page, 8);
+      const selRect = await selection.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        return { top: r.top, bottom: r.bottom };
+      });
+
+      expect(Math.abs(selRect.top - currentLine3.top)).toBeLessThanOrEqual(6);
+      expect(Math.abs(selRect.bottom - currentLine8.bottom)).toBeLessThanOrEqual(6);
+    });
   });
 
   test.describe("S5-chip390 reduced motion", () => {
