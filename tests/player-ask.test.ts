@@ -596,7 +596,12 @@ describe("回答到达 / 播放 / 展开", () => {
     s().answerArrived(answerOf({ id: "ans-cap", stepId: "s1", segments: [segment("only")] }), guard({ token: 1 }));
     expect(s()).toMatchObject({ askPhase: "playing", askCaptureFallback: true });
     s().nextAnswerSegment(s().askPlaybackRun);
-    expect(s()).toMatchObject({ askPhase: "done", askCaptureFallback: false });
+    // 播完停在 done，提示还在。exitAsk 在 done 是空操作，下一次提问才清掉。
+    expect(s()).toMatchObject({ askPhase: "done", askCaptureFallback: true });
+    s().exitAsk();
+    expect(s()).toMatchObject({ askPhase: "done", askCaptureFallback: true });
+    s().enterAsk();
+    expect(s().askCaptureFallback).toBe(false);
   });
 
   test("selecting 时 replay 不生效", () => {

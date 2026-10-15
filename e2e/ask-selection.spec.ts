@@ -240,6 +240,101 @@ async function expectReason(page: Page, reason: keyof typeof REASONS) {
  * 面板显示 data-ask-capture-fallback，请求 image 为 null。
  * 必须在点「提问」之前装上。
  */
+/**
+ * #39 的截图失败，加上可放行的分块 NDJSON。
+ * 先写 start + segment（回答文字出现，phase 停在 streaming），放行后再写 result 进入播放。
+ */
+async function mockHeldCaptureFallbackAsk(page: Page) {
+  let image: unknown = "missing";
+  let release: (() => void) | null = null;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const sockets = new Set<Socket>();
+  const server: Server = createServer((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (chunk: Buffer) => chunks.push(chunk));
+    req.on("end", () => {
+      try {
+        const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as { image?: unknown };
+        image = body.image ?? null;
+      } catch {
+        image = null;
+      }
+    });
+    res.writeHead(200, {
+      "Content-Type": "application/x-ndjson",
+      "Cache-Control": "no-cache, no-transform",
+    });
+    const segment = { id: "seg1", narration: ANSWER_NARRATION };
+    res.write(`${JSON.stringify({ type: "start", answerId: "ans-e2e-sel", stepId: "s1", imageUsed: false })}\n`);
+    res.write(`${JSON.stringify({ type: "segment", segment })}\n`);
+    void gate.then(() => {
+      if (res.writableEnded) return;
+      const answer = {
+        v: 1,
+        id: "ans-e2e-sel",
+        stepId: "s1",
+        question: QUESTION,
+        selection: {
+          mode: "region",
+          bbox: { x: 0, y: 0, width: 40, height: 40 },
+          targets: [{ kind: "viz", id: "viz:s1", stepId: "s1", text: "可视化" }],
+        },
+        segments: [segment],
+        createdAt: "2026-10-14T00:00:00.000Z",
+      };
+      res.end(`${JSON.stringify({ type: "result", answer })}\n`);
+    });
+  });
+  server.on("connection", (socket) => {
+    sockets.add(socket);
+    socket.on("close", () => sockets.delete(socket));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+  const { port } = server.address() as AddressInfo;
+  await page.route("**/api/lecture/ask", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    await route.continue({ url: `http://127.0.0.1:${port}/api/lecture/ask` });
+  });
+  return {
+    release: () => release?.(),
+    image: () => image,
+    close: async () => {
+      release?.();
+      for (const socket of sockets) socket.destroy();
+      if (server.listening) await new Promise<void>((resolve) => server.close(() => resolve()));
+    },
+  };
+}
+
+/** 截图失败后：回答文字出现时提示还在，放行进入播放后提示仍在。 */
+async function expectCaptureFallbackThroughPlayback(page: Page) {
+  const held = await mockHeldCaptureFallbackAsk(page);
+  try {
+    await startGenerated(page);
+    await pauseLecture(page);
+    await enterSelection(page);
+    await dragOnStage(page);
+    await stubCapture(page);
+    await askQuestion(page);
+
+    const notice = page.locator("[data-ask-capture-fallback]");
+    await expect(notice).toHaveText(CAPTURE_FALLBACK);
+    await expect(page.getByText(ANSWER_NARRATION)).toBeVisible();
+    await expect(notice).toBeVisible();
+    await expect(notice).toHaveText(CAPTURE_FALLBACK);
+
+    held.release();
+    await expect(page.getByRole("button", { name: "回到这一步", exact: true })).toBeVisible();
+    await expect(notice).toBeVisible();
+    await expect(notice).toHaveText(CAPTURE_FALLBACK);
+    expect(held.image()).toBeNull();
+  } finally {
+    await held.close();
+  }
+}
+
 async function stubCapture(page: Page) {
   await page.evaluate(() => {
     HTMLCanvasElement.prototype.toDataURL = function toDataURL() {
@@ -461,6 +556,12 @@ test.describe("1280 selection flow", () => {
     await expect(page.locator("[data-ask-capture-fallback]")).toHaveText(CAPTURE_FALLBACK);
     await expect(page.getByText(ANSWER_NARRATION)).toBeVisible();
     expect(image).toBeNull();
+  });
+
+  test("39b. capture fallback stays visible after answer text and during playback", async ({ page }) => {
+    test.setTimeout(45_000);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await expectCaptureFallbackThroughPlayback(page);
   });
 
   test("S2. Q enters, exit button >=44x44, Esc exits", async ({ page }) => {
@@ -786,6 +887,12 @@ test.describe("390 selection flow", () => {
     const selectionBox = page.locator("[data-ask-selection]");
     await expect(rubber.or(selectionBox)).toBeVisible();
     await page.mouse.up();
+  });
+
+  test("39b. 390: capture fallback stays visible after answer text and during playback", async ({ page }) => {
+    test.setTimeout(45_000);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await expectCaptureFallbackThroughPlayback(page);
   });
 });
 

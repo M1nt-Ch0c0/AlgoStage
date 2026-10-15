@@ -141,8 +141,9 @@ interface PlayerState {
 
   askPhase: AskPhase;
   /**
-   * 这次提问截图失败。挂在 store 上，避免回答落地把 phase 拉到 playing、
+   * 这次提问截图失败。挂在 store 上，避免回答落地把 phase 拉到 streaming / playing、
    * 面板按阶段卸载后本地 state 把「没截到图」提示丢掉。
+   * 播完进入 done 也不清：下一次 enterAsk，或仍在 selecting / drafting / error 时 exitAsk 才清掉。
    */
   askCaptureFallback: boolean;
   askContext: AskContext | null;
@@ -1154,7 +1155,6 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       draftStepId: null,
       askPlaybackPaused: false,
       previewSegments: [],
-      askCaptureFallback: false,
     });
   },
 

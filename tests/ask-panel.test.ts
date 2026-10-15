@@ -379,6 +379,61 @@ describe("ask panel", () => {
     expect(container.querySelector("[data-ask-capture-fallback]")).toBeNull();
   });
 
+  test("25d. 截图失败提示从 streaming 留到 playing 和 done，下一次提问才卸", async () => {
+    draft("drafting", { draftQuestion: "换个例子讲讲" });
+    await render();
+    vi.mocked(captureStage).mockResolvedValue({
+      ok: false,
+      reason: "RENDER_FAILED",
+      fallbackText: "步骤内容",
+    });
+    vi.mocked(sendAsk).mockImplementation(async () => {
+      usePlayerStore.setState({ askPhase: "streaming", selection: null, draftQuestion: "" });
+    });
+    await act(async () => {
+      submitButton().click();
+    });
+    expect(usePlayerStore.getState().askPhase).toBe("streaming");
+    expect(container.querySelector("[data-ask-panel]")).toBeNull();
+    expect(container.querySelector("[data-ask-capture-fallback]")?.textContent).toBe(ASK_CAPTURE_FALLBACK);
+
+    await act(async () => {
+      usePlayerStore.setState({ askPhase: "playing" });
+    });
+    expect(container.querySelector("[data-ask-panel]")).toBeNull();
+    expect(container.querySelector("[data-ask-capture-fallback]")?.textContent).toBe(ASK_CAPTURE_FALLBACK);
+
+    await act(async () => {
+      usePlayerStore.setState({ askPhase: "done" });
+    });
+    expect(container.querySelector("[data-ask-capture-fallback]")?.textContent).toBe(ASK_CAPTURE_FALLBACK);
+    expect(usePlayerStore.getState().askCaptureFallback).toBe(true);
+
+    await act(async () => {
+      usePlayerStore.getState().setLectureAnswerMeta({
+        cacheKey: "c".repeat(40),
+        scriptVersion: "d".repeat(40),
+        askDisabledStepIds: [],
+        storageMode: "server",
+      });
+      usePlayerStore.getState().setAnswers(Object.create(null));
+      usePlayerStore.setState({
+        askPhase: "done",
+        askCaptureFallback: true,
+        selection: null,
+        draftQuestion: "",
+        status: "paused",
+        answersReady: true,
+      });
+    });
+    expect(container.querySelector("[data-ask-capture-fallback]")?.textContent).toBe(ASK_CAPTURE_FALLBACK);
+    await act(async () => {
+      usePlayerStore.getState().enterAsk();
+    });
+    expect(usePlayerStore.getState().askCaptureFallback).toBe(false);
+    expect(container.querySelector("[data-ask-capture-fallback]")).toBeNull();
+  });
+
   test("26. sending 显示等待秒数，每 10 秒更新 status；取消调用 cancelAsk，回到 drafting 后草稿与选区还在", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-14T00:00:03.000Z"));

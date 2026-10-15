@@ -2,8 +2,8 @@
  * AskPanel · 提问面板。桌面（≥lg）绝对定位浮在选区右侧，放不下则放下方；
  * 窄屏固定底部抽屉，最高 50vh，bottom 跟 visualViewport 避开键盘。
  * 提问先 captureStage；stepId 或 selection 引用变了就丢弃。截图失败仍 sendAsk(null)，
- * 并把「没截到图」记在 store。回答落到 playing 时提问面板卸掉（选区已被清空，
- * 不能留着「已选：无」的草稿框）；截图失败提示单独留到这段回答播完。
+ * 并把「没截到图」记在 store。回答开始流出或落到 playing 时提问面板卸掉（选区已被清空，
+ * 不能留着「已选：无」的草稿框）；截图失败提示留到下一次提问，或仍在圈选时退出。
  * Esc 由画选层的窗口监听处理。关面板（关闭按钮）后焦点回到画选层。
  */
 "use client";
@@ -108,7 +108,7 @@ function elapsedSeconds(startedAt: number | null, now: number): number {
   return Math.max(0, Math.floor((now - startedAt) / 1000));
 }
 
-/** 回答播放中不再挂草稿面板，只把没截到图的说明留在舞台上。 */
+/** 回答流出或播放时不再挂草稿面板，只把没截到图的说明留在舞台上。 */
 function CaptureFallbackNotice() {
   return (
     <p
@@ -123,8 +123,9 @@ function CaptureFallbackNotice() {
 export default function AskPanel({ stage }: AskPanelProps) {
   const askPhase = usePlayerStore((s) => s.askPhase);
   const captureFailed = usePlayerStore((s) => s.askCaptureFallback);
-  // playing 不在 PANEL_PHASES：answerArrived 已清掉选区和草稿，再挂面板会显示「已选：无」。
-  if (askPhase === "playing") {
+  // streaming / playing / done 不挂草稿面板：选区已被清空，再挂会显示「已选：无」。
+  // 截图失败提示从回答文字出现留到下一次提问，或仍在圈选时退出。不跟 phase 一起卸。
+  if (askPhase === "streaming" || askPhase === "playing" || askPhase === "done") {
     if (!captureFailed) return null;
     return <CaptureFallbackNotice />;
   }
