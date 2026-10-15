@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AskStatusRow } from "../components/board/ask-status-row";
 import { ASK_CAPTURE_PREPARING, ASK_WAITING_STATUS } from "../lib/ask/ask-ui-text";
 
-const HEIGHT_CLASS = "h-6 overflow-hidden text-xs leading-6 whitespace-nowrap text-ellipsis text-chalk-300";
+const HEIGHT_CLASS = "h-12 text-xs leading-6 text-chalk-300 md:h-6";
+const TRUNCATION = ["whitespace-nowrap", "overflow-hidden", "text-ellipsis", "truncate"];
 
 let root: Root;
 let container: HTMLDivElement;
@@ -35,6 +36,16 @@ function row(): HTMLElement {
   return el;
 }
 
+function expectReservedHeight(el: HTMLElement) {
+  expect(el.className).toContain("h-12");
+  expect(el.className).toContain("md:h-6");
+  expect(el.className).toContain("leading-6");
+  expect(el.className).not.toMatch(/\bmin-h-/);
+  for (const name of TRUNCATION) {
+    expect(el.classList.contains(name)).toBe(false);
+  }
+}
+
 describe("AskStatusRow", () => {
   test("idle, preparing, and waiting share one element and the same height classes", async () => {
     await render("idle");
@@ -42,6 +53,7 @@ describe("AskStatusRow", () => {
     expect(container.querySelectorAll("[data-ask-status-row]")).toHaveLength(1);
     expect(idle.tagName).toBe("P");
     expect(idle.className).toBe(`${HEIGHT_CLASS} invisible`);
+    expectReservedHeight(idle);
     expect(idle.getAttribute("aria-hidden")).toBe("true");
     expect(idle.hasAttribute("data-ask-capture-preparing")).toBe(false);
     expect(idle.hasAttribute("data-ask-waiting")).toBe(false);
@@ -52,6 +64,7 @@ describe("AskStatusRow", () => {
     expect(container.querySelectorAll("[data-ask-status-row]")).toHaveLength(1);
     expect(preparing.tagName).toBe(idle.tagName);
     expect(preparing.className).toBe(HEIGHT_CLASS);
+    expectReservedHeight(preparing);
     expect(preparing.hasAttribute("aria-hidden")).toBe(false);
     expect(preparing.hasAttribute("data-ask-capture-preparing")).toBe(true);
     expect(preparing.hasAttribute("data-ask-waiting")).toBe(false);
@@ -62,6 +75,7 @@ describe("AskStatusRow", () => {
     expect(container.querySelectorAll("[data-ask-status-row]")).toHaveLength(1);
     expect(waiting.tagName).toBe(idle.tagName);
     expect(waiting.className).toBe(HEIGHT_CLASS);
+    expectReservedHeight(waiting);
     expect(waiting.hasAttribute("aria-hidden")).toBe(false);
     expect(waiting.hasAttribute("data-ask-waiting")).toBe(true);
     expect(waiting.hasAttribute("data-ask-capture-preparing")).toBe(false);
