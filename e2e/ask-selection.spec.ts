@@ -1230,6 +1230,7 @@ test.describe("390 selection flow", () => {
       await enterSelection(page);
 
       const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+      await code.scrollIntoViewIfNeeded();
       await expect(code).toBeVisible();
 
       const box = await code.boundingBox();
@@ -1293,6 +1294,7 @@ test.describe("390 selection flow", () => {
         await enterSelection(page);
 
         const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+        await code.scrollIntoViewIfNeeded();
         await expect(code).toBeVisible();
 
         const box = await code.boundingBox();
@@ -1351,6 +1353,7 @@ test.describe("390 selection flow", () => {
       await enterSelection(page);
 
       const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+      await code.scrollIntoViewIfNeeded();
       await expect(code).toBeVisible();
 
       const box = await code.boundingBox();
