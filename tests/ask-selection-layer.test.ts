@@ -1099,4 +1099,76 @@ describe("resolveAskEscape", () => {
     expect(layer().textContent).not.toContain(ASK_CODE_MISS_HINT);
     expect(getAskCodeMissNotice()).toBeNull();
   });
+
+  test("short single-line drag in code with box height 12px yields single line chip and codeRange", async () => {
+    const codeEl = document.createElement("div");
+    codeEl.setAttribute("data-ask-target", "code");
+    codeEl.setAttribute("data-ask-id", "code:main");
+    codeEl.setAttribute("data-ask-step-id", "s1");
+    codeEl.getBoundingClientRect = () => domRect(200, 0, 150, 200);
+    stage.append(codeEl);
+
+    const mockHandle: CodeEditorHandle = {
+      getLineRangeForClientBox: vi.fn((top: number, bottom: number) => {
+        const startLine = Math.floor(top / 20) + 1;
+        const endLine = Math.floor((bottom - 1) / 20) + 1;
+        return { startLine, endLine };
+      }),
+      getLinesText: vi.fn((start, end) => `line ${start} to ${end}`),
+      getFullText: vi.fn(() => "full code"),
+    };
+    registerCodeEditor(codeEl, mockHandle);
+
+    const setSpy = vi.spyOn(usePlayerStore.getState(), "setAskSelection");
+    await render();
+
+    // Box height 12px (64..76 inside line 4: 60..80), width 60px (>= dragThreshold, < 24)
+    await gesture(220, 64, 280, 76);
+
+    expect(setSpy).toHaveBeenCalledTimes(1);
+    expect(mockHandle.getLineRangeForClientBox).toHaveBeenCalledWith(64, 76);
+
+    const sel = usePlayerStore.getState().selection;
+    expect(sel).not.toBeNull();
+    expect(sel?.targets).toHaveLength(1);
+    expect(sel?.targets[0].kind).toBe("code");
+    expect(sel?.targets[0].codeRange).toEqual({ startLine: 4, endLine: 4 });
+    expect(summarizeSelection(sel!)).toBe("已选：代码第 4 行");
+  });
+
+  test("click (no motion) in code receives 1px box around pointer y and yields line chip", async () => {
+    const codeEl = document.createElement("div");
+    codeEl.setAttribute("data-ask-target", "code");
+    codeEl.setAttribute("data-ask-id", "code:main");
+    codeEl.setAttribute("data-ask-step-id", "s1");
+    codeEl.getBoundingClientRect = () => domRect(200, 0, 150, 200);
+    stage.append(codeEl);
+
+    const mockHandle: CodeEditorHandle = {
+      getLineRangeForClientBox: vi.fn((top: number, bottom: number) => {
+        const startLine = Math.floor(top / 20) + 1;
+        const endLine = Math.floor((bottom - 1) / 20) + 1;
+        return { startLine, endLine };
+      }),
+      getLinesText: vi.fn((start, end) => `line ${start} to ${end}`),
+      getFullText: vi.fn(() => "full code"),
+    };
+    registerCodeEditor(codeEl, mockHandle);
+
+    const setSpy = vi.spyOn(usePlayerStore.getState(), "setAskSelection");
+    await render();
+
+    // Click at y = 70 (inside line 4: 60..80) with no motion
+    await gesture(250, 70, 250, 70);
+
+    expect(setSpy).toHaveBeenCalledTimes(1);
+    expect(mockHandle.getLineRangeForClientBox).toHaveBeenCalledWith(70, 71);
+
+    const sel = usePlayerStore.getState().selection;
+    expect(sel).not.toBeNull();
+    expect(sel?.targets).toHaveLength(1);
+    expect(sel?.targets[0].kind).toBe("code");
+    expect(sel?.targets[0].codeRange).toEqual({ startLine: 4, endLine: 4 });
+    expect(summarizeSelection(sel!)).toBe("已选：代码第 4 行");
+  });
 });
