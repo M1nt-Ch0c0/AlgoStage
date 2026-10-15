@@ -227,7 +227,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
   // 有选区进入 drafting 时焦点进输入框（§7）。
   useEffect(() => {
     if (!drafting) return;
-    textareaRef.current?.focus();
+    textareaRef.current?.focus({ preventScroll: true });
   }, [drafting]);
 
   useEffect(() => {
@@ -321,7 +321,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
       return;
     }
     if (action === "edit") {
-      textareaRef.current?.focus();
+      textareaRef.current?.focus({ preventScroll: true });
     }
   };
 
