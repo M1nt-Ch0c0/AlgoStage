@@ -127,6 +127,23 @@ async function enterSelection(page: Page) {
   await expect(button).toHaveAttribute("aria-pressed", "true");
 }
 
+/** Q 或入口按钮进入圈选，焦点留在入口，Esc 退出。 */
+async function expectEscFromEntry(page: Page, how: "q" | "click") {
+  const button = entry(page);
+  await expect(button).toBeEnabled();
+  await expect(button).not.toHaveAttribute("aria-disabled", "true");
+  await button.focus();
+  await expect(button).toBeFocused();
+  if (how === "q") await page.keyboard.press("q");
+  else await button.click();
+  await expect(layer(page)).toBeVisible();
+  await expect(button).toHaveAttribute("aria-pressed", "true");
+  await expect(button).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(layer(page)).toHaveCount(0);
+  await expect(button).not.toHaveAttribute("aria-pressed", "true");
+}
+
 async function openPanel(page: Page) {
   const shortcut = page.locator('[data-ask-shortcut="step"]');
   await expect(shortcut).toBeVisible();
@@ -323,5 +340,21 @@ test.describe("ask Esc stepwise exit", () => {
     } finally {
       await stream.close();
     }
+  });
+
+  test("Esc exits selection while focus stays on the entry button", async ({ page }) => {
+    await startGenerated(page);
+    await expectEscFromEntry(page, "q");
+    await expectEscFromEntry(page, "click");
+  });
+});
+
+test.describe("ask Esc from entry at 390", () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 }, reducedMotion: "reduce" });
+
+  test("Esc exits selection while focus stays on the entry button", async ({ page }) => {
+    await startGenerated(page);
+    await expectEscFromEntry(page, "q");
+    await expectEscFromEntry(page, "click");
   });
 });
