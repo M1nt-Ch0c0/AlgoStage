@@ -299,6 +299,7 @@ async function streamAnswer(req: NextRequest, context: AskContext, session: Stre
           referenceCode: context.ownership.referenceCode,
           selection: summarizeSelection(context.body.selection),
           question: context.body.question,
+          imageAttached: context.imageUsed,
         });
         const image = context.imageUsed && context.body.image
           ? { mime: context.body.image.mime, dataBase64: context.body.image.dataBase64 }
