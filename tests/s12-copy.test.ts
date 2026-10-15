@@ -51,7 +51,7 @@ describe("D2 Demo UI 拆解", () => {
 
 describe("S12 版本号", () => {
   it("package.json 与 lockfile 根版本一致", () => {
-    expect(version).toBe("0.3.0");
+    expect(version).toBe("0.3.1");
     const lock = JSON.parse(read("package-lock.json"));
     expect(lock.version).toBe(version);
     expect(lock.packages[""].version).toBe(version);
