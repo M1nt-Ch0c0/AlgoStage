@@ -531,6 +531,33 @@ describe("resolveAskEscape", () => {
     expect(resolveAskEscape("drafting", body, { ...plain, defaultPrevented: true })).toBe("ignore");
   });
 
+  test("捷径上拖过阈值从起点起框，原地抬起仍是点选捷径", async () => {
+    await render();
+    const host = layer();
+    const chip = host.querySelector<HTMLButtonElement>('[data-ask-shortcut="subtitle"]')!;
+
+    await act(async () => {
+      chip.dispatchEvent(pointer("pointerdown", { clientX: 20, clientY: 12 }));
+      window.dispatchEvent(pointer("pointermove", { clientX: 80, clientY: 70 }));
+      host.dispatchEvent(pointer("pointermove", { clientX: 80, clientY: 70 }));
+    });
+    expect(host.querySelector("[data-ask-rubber]")).not.toBeNull();
+
+    await act(async () => {
+      host.dispatchEvent(pointer("pointerup", { clientX: 80, clientY: 70 }));
+    });
+    expect(usePlayerStore.getState().selection).not.toBeNull();
+
+    usePlayerStore.getState().clearAskSelection();
+    await act(async () => {
+      chip.dispatchEvent(pointer("pointerdown", { pointerId: 4, clientX: 20, clientY: 12 }));
+      window.dispatchEvent(pointer("pointermove", { pointerId: 4, clientX: 22, clientY: 14 }));
+      window.dispatchEvent(pointer("pointerup", { pointerId: 4, clientX: 22, clientY: 14 }));
+    });
+    expect(host.querySelector("[data-ask-rubber]")).toBeNull();
+    expect(usePlayerStore.getState().selection).toBeNull();
+  });
+
   test("guard: pointerdown inside [data-ask-entry] does not start selection", async () => {
     const entryBtn = document.createElement("button");
     entryBtn.setAttribute("data-ask-entry", "");

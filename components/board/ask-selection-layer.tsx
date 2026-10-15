@@ -377,14 +377,20 @@ function AskSelectionLayerActive({
     [getStage, setAskSelection],
   );
 
-  const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0 && event.pointerType === "mouse") return;
-    if ((event.target as Element | null)?.closest?.("[data-ask-entry]")) return;
-    const host = getStage();
-    if (!host) return;
-    const sample = sampleAt(host, event.clientX, event.clientY);
-    pointersRef.current.set(event.pointerId, sample);
-    event.currentTarget.setPointerCapture(event.pointerId);
+  const beginPointer = (
+    hostEl: HTMLElement,
+    pointerId: number,
+    pointerType: string,
+    button: number,
+    clientX: number,
+    clientY: number,
+  ) => {
+    if (button !== 0 && pointerType === "mouse") return;
+    const stageHost = getStage();
+    if (!stageHost) return;
+    const sample = sampleAt(stageHost, clientX, clientY);
+    pointersRef.current.set(pointerId, sample);
+    if (!hostEl.hasPointerCapture(pointerId)) hostEl.setPointerCapture(pointerId);
 
     if (pointersRef.current.size >= 2) {
       // 第二指：放弃当前框，进入滚动。不 hitTest。
@@ -401,6 +407,11 @@ function AskSelectionLayerActive({
     originRef.current = sample;
     drawingRef.current = true;
     setRubberBand(bandFrom(sample, sample));
+  };
+
+  const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if ((event.target as Element | null)?.closest?.("[data-ask-entry], [data-ask-shortcut]")) return;
+    beginPointer(event.currentTarget, event.pointerId, event.pointerType, event.button, event.clientX, event.clientY);
   };
 
   const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
@@ -587,7 +598,29 @@ function AskSelectionLayerActive({
                   setActiveShortcut(index);
                   pickShortcut(item.key);
                 }}
-                onPointerDown={(event) => event.stopPropagation()}
+                onPointerDown={(event) => {
+                  // 点按仍选中捷径。拖过阈值就从起点起框，捷径不能挡住代码区起拖。
+                  if (event.button !== 0 && event.pointerType === "mouse") return;
+                  const startX = event.clientX;
+                  const startY = event.clientY;
+                  const pointerId = event.pointerId;
+                  const host = event.currentTarget.closest<HTMLElement>("[data-ask-layer]");
+                  if (!host) return;
+                  const onMove = (move: globalThis.PointerEvent) => {
+                    if (move.pointerId !== pointerId) return;
+                    if (Math.hypot(move.clientX - startX, move.clientY - startY) < ASK_LIMITS.dragThresholdPx) return;
+                    window.removeEventListener("pointermove", onMove);
+                    window.removeEventListener("pointerup", onUp);
+                    beginPointer(host, pointerId, event.pointerType, 0, startX, startY);
+                  };
+                  const onUp = (up: globalThis.PointerEvent) => {
+                    if (up.pointerId !== pointerId) return;
+                    window.removeEventListener("pointermove", onMove);
+                    window.removeEventListener("pointerup", onUp);
+                  };
+                  window.addEventListener("pointermove", onMove);
+                  window.addEventListener("pointerup", onUp);
+                }}
               >
                 {item.label}
               </button>
