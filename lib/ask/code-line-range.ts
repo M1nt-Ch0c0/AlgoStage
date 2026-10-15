@@ -5,13 +5,13 @@ export interface CodeLineRangeEditor {
   getVisibleRanges?(): Array<{ startLineNumber: number; endLineNumber: number }> | null;
   getScrollTop?(): number;
   getTopForLineNumber?(lineNumber: number): number;
-  getOption?(option: any): any;
+  getOption?(option: unknown): unknown;
   lineHeight?: number;
 }
 
 export interface ComputeLineRangeOptions {
   lineHeight?: number;
-  lineHeightOption?: any;
+  lineHeightOption?: unknown;
 }
 
 /**

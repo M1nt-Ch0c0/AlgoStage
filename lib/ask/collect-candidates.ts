@@ -104,7 +104,7 @@ export function collectAskCandidates(stage: HTMLElement, box?: AskBBox): AskCand
         }
 
         let codeRange: { startLine: number; endLine: number } | undefined;
-        let text = "";
+        let text: string;
 
         if (handle) {
           const sr = stage.getBoundingClientRect();
