@@ -80,10 +80,6 @@ export function computeLineRange(
   const y2 = boxBottom - editorRect.top - contentTop + scrollTop;
   if (!Number.isFinite(y1) || !Number.isFinite(y2)) return null;
 
-  const testY1 = y1 + 2;
-  const testY2 = y2 - 2;
-  if (testY1 >= testY2) return null;
-
   let callerLineHeight: number | undefined;
   if (typeof options?.lineHeight === "number" && Number.isFinite(options.lineHeight) && options.lineHeight > 0) {
     callerLineHeight = options.lineHeight;
@@ -108,6 +104,24 @@ export function computeLineRange(
     }
     return 0;
   };
+
+  if (y2 - y1 < 4) {
+    const y = (y1 + y2) / 2;
+    for (let n = minVisible; n <= maxVisible; n++) {
+      const top_n = editor.getTopForLineNumber(n);
+      if (typeof top_n !== "number" || !Number.isFinite(top_n)) return null;
+      const lh = getLineHeight(n);
+      if (typeof lh !== "number" || !Number.isFinite(lh) || lh <= 0) return null;
+      if (top_n <= y && y < top_n + lh) {
+        return { startLine: n, endLine: n };
+      }
+    }
+    return null;
+  }
+
+  const testY1 = y1 + 2;
+  const testY2 = y2 - 2;
+  if (testY1 >= testY2) return null;
 
   let start: number | null = null;
   for (let n = minVisible; n <= maxVisible; n++) {
