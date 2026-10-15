@@ -219,6 +219,7 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
     if (!ESCAPE_PHASES.has(askPhase)) return;
     const onKey = (event: globalThis.KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      if (event.repeat) return;
       const action = resolveAskEscape(usePlayerStore.getState().askPhase, event.target, {
         composing: event.isComposing,
         defaultPrevented: event.defaultPrevented,

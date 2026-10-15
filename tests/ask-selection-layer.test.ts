@@ -383,8 +383,8 @@ describe("AskSelectionLayer", () => {
     expect(document.activeElement).toBe(buttons()[1]);
   });
 
-  function pressEscape(target: EventTarget) {
-    const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+  function pressEscape(target: EventTarget, init: KeyboardEventInit = {}) {
+    const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true, ...init });
     target.dispatchEvent(event);
     return event;
   }
@@ -514,6 +514,19 @@ describe("AskSelectionLayer", () => {
     expect(usePlayerStore.getState().askPhase).toBe("streaming");
     expect(usePlayerStore.getState().askContext?.token).toBe(4);
     expect(container.querySelector("[data-ask-layer]")).toBeNull();
+  });
+
+  test("按住 Esc 的重复键只处理一次", async () => {
+    await render();
+    const first = await act(async () => pressEscape(document.body));
+    expect(first.defaultPrevented).toBe(true);
+    expect(usePlayerStore.getState().askPhase).toBe("idle");
+
+    usePlayerStore.setState({ askPhase: "selecting", status: "interrupted" });
+    await render();
+    const repeated = await act(async () => pressEscape(document.body, { repeat: true }));
+    expect(repeated.defaultPrevented).toBe(false);
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
   });
 
   test("画选层元素不再单独处理 Esc，窗口监听只退出一次", async () => {

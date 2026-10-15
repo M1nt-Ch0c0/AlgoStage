@@ -274,6 +274,24 @@ test.describe("ask Esc stepwise exit", () => {
     await expect(entry(page)).not.toHaveAttribute("aria-pressed", "true");
   });
 
+  test("held Esc exits one level: the panel closes and selection stays", async ({ page }) => {
+    await startGenerated(page);
+    await enterSelection(page);
+    await openPanel(page);
+    await panel(page).locator("[data-ask-question]").fill(QUESTION);
+
+    await page.keyboard.down("Escape");
+    await expect(panel(page)).toHaveCount(0);
+    await expect(layer(page)).toBeVisible();
+    await expect(entry(page)).toHaveAttribute("aria-pressed", "true");
+    // 键还按着：重复 keydown 不能再退出圈选。
+    await page.keyboard.down("Escape");
+    await expect(layer(page)).toBeVisible();
+    await expect(entry(page)).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.up("Escape");
+    await expect(layer(page)).toBeVisible();
+  });
+
   test("Esc during sending leaves the panel open and the held answer still plays", async ({ page }) => {
     const stream = await mockHeldAskStream(page);
     try {
