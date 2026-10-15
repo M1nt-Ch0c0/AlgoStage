@@ -1264,6 +1264,47 @@ describe("resolveAskEscape", () => {
       window.matchMedia = originalMatchMedia;
     });
 
+    test("sets --ask-player-bar-h on mobile and resets to 0px on unmount or desktop", async () => {
+      const originalMatchMedia = window.matchMedia;
+      window.matchMedia = vi.fn().mockImplementation((query: string) => {
+        if (query === "(max-width: 639px)") {
+          return {
+            matches: true,
+            media: query,
+            addEventListener: vi.fn(),
+            removeEventListener: vi.fn(),
+          };
+        }
+        return {
+          matches: false,
+          media: query,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+        };
+      });
+
+      const playerEl = document.createElement("div");
+      playerEl.setAttribute("aria-label", "讲解播放区");
+      playerEl.getBoundingClientRect = () => domRect(0, 708, 390, 60);
+      document.body.appendChild(playerEl);
+
+      await render();
+
+      await act(async () => {
+        window.dispatchEvent(new Event("resize"));
+      });
+
+      expect(document.documentElement.style.getPropertyValue("--ask-player-bar-h")).toBe("60px");
+
+      await act(async () => {
+        root.unmount();
+      });
+      expect(document.documentElement.style.getPropertyValue("--ask-player-bar-h")).toBe("0px");
+
+      playerEl.remove();
+      window.matchMedia = originalMatchMedia;
+    });
+
     test("isElementFullyInView pure function checks top >= 0 and bottom <= innerHeight - barHeight", () => {
       const viewport = { innerHeight: 844, bottomBarHeight: 60 };
       // Fully visible inside (0 .. 784)

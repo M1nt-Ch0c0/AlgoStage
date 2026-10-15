@@ -2,21 +2,27 @@
 
 :root {
   --ask-bottom-bar-h: 0px;
+  --ask-player-bar-h: 0px;
 }
 
 @media (max-width: 639px) {
+  [data-ask-bottom-bar] {
+    bottom: calc(var(--ask-player-bar-h) + env(safe-area-inset-bottom) + 8px) !important;
+    z-index: 40 !important;
+  }
+
   [data-ask-panel] {
-    bottom: calc(var(--ask-bottom-bar-h) + env(safe-area-inset-bottom) + 16px) !important;
+    bottom: calc(var(--ask-player-bar-h) + var(--ask-bottom-bar-h) + env(safe-area-inset-bottom) + 16px) !important;
   }
 
   [data-ask-target="code"] {
     scroll-margin-top: 3.5rem;
-    scroll-margin-bottom: calc(var(--ask-bottom-bar-h) + env(safe-area-inset-bottom) + 8px);
+    scroll-margin-bottom: calc(var(--ask-player-bar-h) + var(--ask-bottom-bar-h) + env(safe-area-inset-bottom) + 8px);
   }
 
   [data-ask-selection] {
     /* S4 ask-panel mobile max-height is 50vh; fallback for drawer height */
-    scroll-margin-bottom: calc(var(--ask-bottom-bar-h) + 50vh);
+    scroll-margin-bottom: calc(var(--ask-player-bar-h) + var(--ask-bottom-bar-h) + 50vh);
   }
 }
 
