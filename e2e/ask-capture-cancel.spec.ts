@@ -585,9 +585,6 @@ function installStatusStability(width: number, touch: boolean) {
           const copyBeforePress = await page.evaluate(
             () => document.querySelector("[data-ask-capture-preparing]")?.textContent ?? "",
           );
-          // Extend the main-thread stall so the press is guaranteed to be queued
-          // as input during the stall. The real capture stall length varies with box load.
-          await page.evaluate(() => { setTimeout(() => { const t = performance.now(); while (performance.now() - t < 600) {} }, 0); });
           await down(page, client, cancelAt.x, cancelAt.y, touch);
           await waitStallEnd(page);
           await expect(page.locator("[data-ask-cancel]")).toHaveAttribute("data-pressed", "");
@@ -623,9 +620,6 @@ function installStatusStability(width: number, touch: boolean) {
       await withStallSession(page, async (client) => {
         await pressAt(page, submitAt.x, submitAt.y, touch);
         await expect(page.locator("[data-ask-capture-preparing]")).toBeAttached({ timeout: 15_000 });
-        // Extend the main-thread stall so the press is guaranteed to be queued
-        // as input during the stall. The real capture stall length varies with box load.
-        await page.evaluate(() => { setTimeout(() => { const t = performance.now(); while (performance.now() - t < 600) {} }, 0); });
         await down(page, client, cancelAt.x, cancelAt.y, touch);
         await waitStallEnd(page);
         await moveTo(page, client, cancelAt.x, slideY, touch);
@@ -676,9 +670,6 @@ function installStatusStability(width: number, touch: boolean) {
           const preparing = page.locator("[data-ask-capture-preparing]");
           await expect(preparing).toBeAttached({ timeout: 15_000 });
           const copyBeforePress = (await preparing.textContent()) ?? "";
-          // Extend the main-thread stall so the press is guaranteed to be queued
-          // as input during the stall. The real capture stall length varies with box load.
-          await page.evaluate(() => { setTimeout(() => { const t = performance.now(); while (performance.now() - t < 600) {} }, 0); });
           await down(page, client, cancelAt.x, cancelAt.y, touch);
           await waitStallEnd(page);
           await page.waitForTimeout(2600);
