@@ -5,6 +5,7 @@
  */
 import { create } from "zustand";
 import { appendAnswer } from "@/lib/ask/answers";
+import { setAskCodeMissNotice } from "@/lib/ask/code-editor-registry";
 import type { AnswerSegment, AskSelectionSummary, StepAnswer, StepAnswersMap } from "@/lib/ask/types";
 import type { TeachingScript, TeachingStep } from "@/lib/teaching/types";
 
@@ -941,6 +942,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (state.askPhase !== "selecting" && state.askPhase !== "drafting" && state.askPhase !== "error") {
       return;
     }
+    setAskCodeMissNotice(null);
     const ctx = state.askContext;
     set({
       askPhase: "idle",
