@@ -449,6 +449,7 @@ async function measureCancelPaint(page: Page, width: number) {
     ab: AB_FLAGS,
     kind: "cancel-paint",
     cancelPointerUpAt: phases?.cancelPointerUpAt ?? null,
+    cancelPointerUpDispatchAt: phases?.cancelPointerUpDispatchAt ?? null,
     cancelPaintAt: phases?.cancelPaintAt ?? null,
     cancelPaintAfterReleaseMs: phases?.cancelPaintAfterReleaseMs ?? null,
     phases,
@@ -464,6 +465,8 @@ async function measureCancelPaint(page: Page, width: number) {
       ab: AB_FLAGS,
       width,
       kind: "cancel-paint",
+      cancelPointerUpAt: phases?.cancelPointerUpAt ?? null,
+      cancelPointerUpDispatchAt: phases?.cancelPointerUpDispatchAt ?? null,
       cancelPaintAfterReleaseMs: phases?.cancelPaintAfterReleaseMs ?? null,
     }),
   );

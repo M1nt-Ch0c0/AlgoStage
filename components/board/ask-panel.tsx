@@ -24,6 +24,7 @@ import { chooseAskScrollBlock } from "@/lib/ask/ask-scroll";
 import { ASK_ERROR_SPECS, resolveAskError, type AskErrorAction } from "@/lib/ask/ask-errors";
 import { askAb } from "@/lib/ask/ask-ab";
 import {
+  isAskTimingEnabled,
   markAskPhase,
   markAskPointerDown,
   markAskTiming,
@@ -129,15 +130,16 @@ function clampQuestion(value: string): string {
  * When requestAnimationFrame is missing, one macrotask stands in for both.
  */
 /**
- * Probe mark. Call after the cancelled or idle state is committed.
- * The next animation frame is when that paint is on screen, and that
- * frame's time minus the 取消 pointerup is cancelPaintAfterReleaseMs.
+ * Probe mark. Call after the cancelled or idle state is committed, in the
+ * same turn as that setState. React 19 flushes the update before the task
+ * yields, so the next animation frame is the paint of that state.
+ * That frame's time minus the 取消 release is cancelPaintAfterReleaseMs.
+ * No timer, settle, or hold wait sits between the commit and this frame.
  * No-op unless the timing probe is installed.
  */
 export function noteCancelPaintAfterRelease(): void {
-  if (typeof window === "undefined") return;
-  if (window.__ASK_TIMING__ == null || typeof window.__ASK_TIMING__ !== "object") return;
-  const raf = window.requestAnimationFrame;
+  if (!isAskTimingEnabled()) return;
+  const raf = globalThis.requestAnimationFrame;
   const stamp = () => {
     markAskTiming("cancelPaintAt");
     noteCancelPaint();
@@ -449,7 +451,9 @@ function AskPanelActive({ stage }: AskPanelProps) {
         setPreparing(false);
         usePlayerStore.getState().closeAskPanel();
         // The panel unmounts on this path, so the paint mark cannot wait
-        // for an effect. The next frame after the idle commit is the mark.
+        // for an effect. React flushes this commit before the task yields;
+        // the next frame, and only that frame, is the paint mark. The
+        // settle wait and the hold wait have already resolved by here.
         noteCancelPaintAfterRelease();
         sendingRef.current = false;
         return;
@@ -598,9 +602,16 @@ function AskPanelActive({ stage }: AskPanelProps) {
       // onLateCancel. Calling retroCancel here as well would abort twice.
       const held = holdRef.current.isPending(askSessionRef.current);
       const sentWhileHeld = heldAfterSendRef.current;
-      // performance.now(), same clock as the paint frame. event.timeStamp
-      // is not that clock, so the delta would not be a paint delay.
-      if (inside && sendingRef.current) markAskTiming("cancelPointerUpAt");
+      // Both clocks. event.timeStamp is when the pointer went up. The
+      // handler's performance.now() is when the event was dispatched. They
+      // match when the main thread was free. When the release was queued
+      // during the capture long task, timeStamp is inside that task and
+      // dispatch is when the thread became free. The paint delta uses the
+      // later of the two, so the queued stall is not charged to the paint.
+      if (inside && sendingRef.current) {
+        markAskTiming("cancelPointerUpAt", event.timeStamp);
+        markAskTiming("cancelPointerUpDispatchAt");
+      }
       holdRef.current.release(inside);
       setHoldPressed(false);
       if (!inside) clearHeldAfterSendOffButton();

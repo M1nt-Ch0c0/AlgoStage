@@ -3,7 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { resetLongTaskEndForTests } from "../lib/ask/ask-timing";
-import AskPanel, { yieldPaintFrames } from "../components/board/ask-panel";
+import AskPanel, { noteCancelPaintAfterRelease, yieldPaintFrames } from "../components/board/ask-panel";
 import { ASK_CAPTURE_FALLBACK, ASK_CAPTURE_PREPARING, ASK_CHIPS, ASK_WAITING_STATUS } from "../lib/ask/ask-ui-text";
 import { ASK_ERROR_SPECS } from "../lib/ask/ask-errors";
 import { ASK_LIMITS, type AskSelectionSummary } from "../lib/ask/types";
@@ -488,6 +488,28 @@ describe("ask panel", () => {
     });
     expect(usePlayerStore.getState().askCaptureFallback).toBe(false);
     expect(container.querySelector("[data-ask-capture-fallback]")).toBeNull();
+  });
+
+  test("noteCancelPaintAfterRelease stamps the next frame and no later timer", async () => {
+    const frames: FrameRequestCallback[] = [];
+    let clock = 100;
+    vi.stubGlobal("performance", { now: () => clock });
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    const probe: { cancelPaintAt?: number } = {};
+    (window as unknown as { __ASK_TIMING__?: typeof probe }).__ASK_TIMING__ = probe;
+    try {
+      noteCancelPaintAfterRelease();
+      expect(frames).toHaveLength(1);
+      clock = 116;
+      frames[0]?.(clock);
+      expect(probe.cancelPaintAt).toBe(116);
+    } finally {
+      delete (window as unknown as { __ASK_TIMING__?: unknown }).__ASK_TIMING__;
+      vi.unstubAllGlobals();
+    }
   });
 
   test("yieldPaintFrames resolves after two animation frames", async () => {

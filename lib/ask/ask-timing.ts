@@ -13,6 +13,7 @@ export type AskTimingMark =
   | "workerInitAt"
   | "workerReadyAt"
   | "cancelPointerUpAt"
+  | "cancelPointerUpDispatchAt"
   | "cancelPaintAt";
 
 export type AskTimingPhase =
@@ -34,14 +35,25 @@ export type AskTimingProbe = {
   workerInitAt?: number;
   /** performance.now() just after new Worker() returns. */
   workerReadyAt?: number;
-  /** performance.now() at the 取消 pointerup that cancelled a preparing submit. */
+  /**
+   * event.timeStamp of the 取消 pointerup, on the performance.now() clock.
+   * When the release is queued during a long task this is earlier than dispatch.
+   */
   cancelPointerUpAt?: number;
   /**
+   * performance.now() when the pointerup handler ran. Equals cancelPointerUpAt
+   * when the main thread was free. The gap is the time the event sat queued.
+   */
+  cancelPointerUpDispatchAt?: number;
+  /**
    * performance.now() at the animation frame after the cancelled or idle
-   * state has rendered. cancelPaintAfterReleaseMs is this minus cancelPointerUpAt.
+   * state has rendered. cancelPaintAfterReleaseMs is this minus the release.
+   * The release is the later of the event time and the dispatch time, so a
+   * release delivered during a long task is measured from when the handler
+   * ran, and a free-thread release is measured from the event itself.
    */
   cancelPaintAt?: number;
-  /** cancelPointerUpAt → cancelPaintAt. */
+  /** Release → cancelPaintAt. See cancelPaintAt for which release clock. */
   cancelPaintAfterReleaseMs?: number;
   firstPointerDownTs?: number;
   /** submitAt → captureStart, which includes the pre-capture double rAF. */
@@ -143,6 +155,22 @@ export function notePreCapture(): void {
 }
 
 /**
+ * Which release clock the paint delta uses.
+ * A release delivered during a long task has an event time well before the
+ * handler runs; measuring from that time charges the stall to the paint.
+ * Use the dispatch time in that case. When the thread was free, the event
+ * time and the dispatch time agree and the event time is the release.
+ */
+export function cancelReleaseMark(probe: AskTimingProbe): number | undefined {
+  const eventAt = probe.cancelPointerUpAt;
+  const dispatchAt = probe.cancelPointerUpDispatchAt;
+  if (eventAt == null && dispatchAt == null) return undefined;
+  if (eventAt == null) return dispatchAt;
+  if (dispatchAt == null) return eventAt;
+  return Math.max(eventAt, dispatchAt);
+}
+
+/**
  * The panel calls this after the cancelled or idle state has committed.
  * The duration is the next animation frame after that paint, minus the
  * pointerup that released 取消. No-op until both marks exist.
@@ -151,7 +179,7 @@ export function noteCancelPaint(): void {
   const probe = askTimingProbe();
   if (!probe) return;
   if (probe.cancelPaintAfterReleaseMs != null) return;
-  const up = probe.cancelPointerUpAt;
+  const up = cancelReleaseMark(probe);
   const paint = probe.cancelPaintAt;
   if (up == null || paint == null) return;
   const duration = paint - up;

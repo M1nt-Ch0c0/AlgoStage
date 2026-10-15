@@ -5,6 +5,7 @@ import {
   markAskPointerDown,
   markAskTiming,
   msSinceLongTaskEnd,
+  cancelReleaseMark,
   noteCancelPaint,
   noteLongTaskEnded,
   notePreCapture,
@@ -58,6 +59,7 @@ describe("ask timing probe", () => {
     markAskTiming("workerInitAt", 12);
     markAskTiming("workerReadyAt", 18);
     markAskTiming("cancelPointerUpAt", 1000);
+    markAskTiming("cancelPointerUpDispatchAt", 1000);
     markAskTiming("cancelPaintAt", 1016);
     noteCancelPaint();
     markAskPhase("domToCanvasMs", 800);
@@ -77,6 +79,7 @@ describe("ask timing probe", () => {
       workerInitAt: 12,
       workerReadyAt: 18,
       cancelPointerUpAt: 1000,
+      cancelPointerUpDispatchAt: 1000,
       cancelPaintAt: 1016,
       cancelPaintAfterReleaseMs: 16,
       domToCanvasMs: 800,
@@ -114,6 +117,31 @@ describe("ask timing probe", () => {
     noteCancelPaint();
     noteCancelPaint();
     expect(probe.cancelPaintAfterReleaseMs).toBe(18);
+  });
+
+  test("a release delivered during a long task measures paint from dispatch, and records both clocks", () => {
+    const probe: AskTimingProbe = {};
+    install(probe);
+    // event.timeStamp is inside the long task; the handler runs when the
+    // thread is free, about 200ms later. Paint is the next frame after that.
+    markAskTiming("cancelPointerUpAt", 1000);
+    markAskTiming("cancelPointerUpDispatchAt", 1200);
+    markAskTiming("cancelPaintAt", 1216);
+    noteCancelPaint();
+    expect(cancelReleaseMark(probe)).toBe(1200);
+    expect(probe.cancelPointerUpAt).toBe(1000);
+    expect(probe.cancelPointerUpDispatchAt).toBe(1200);
+    expect(probe.cancelPaintAfterReleaseMs).toBe(16);
+  });
+
+  test("a free-thread release uses the event time when it is the later clock", () => {
+    const probe: AskTimingProbe = {};
+    install(probe);
+    markAskTiming("cancelPointerUpAt", 500);
+    markAskTiming("cancelPointerUpDispatchAt", 500);
+    markAskTiming("cancelPaintAt", 516);
+    noteCancelPaint();
+    expect(probe.cancelPaintAfterReleaseMs).toBe(16);
   });
 
   test("keeps the first value of each mark", () => {
