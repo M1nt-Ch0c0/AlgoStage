@@ -394,7 +394,8 @@ describe("ask panel", () => {
       submitButton().click();
     });
     expect(usePlayerStore.getState().askPhase).toBe("streaming");
-    expect(container.querySelector("[data-ask-panel]")).toBeNull();
+    // start 之后选区还在，草稿面板留着，失败提示同时在。
+    expect(container.querySelector("[data-ask-panel]")).not.toBeNull();
     expect(container.querySelector("[data-ask-capture-fallback]")?.textContent).toBe(ASK_CAPTURE_FALLBACK);
 
     await act(async () => {

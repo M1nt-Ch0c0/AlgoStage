@@ -123,9 +123,10 @@ function CaptureFallbackNotice() {
 export default function AskPanel({ stage }: AskPanelProps) {
   const askPhase = usePlayerStore((s) => s.askPhase);
   const captureFailed = usePlayerStore((s) => s.askCaptureFallback);
-  // streaming / playing / done 不挂草稿面板：选区已被清空，再挂会显示「已选：无」。
+  // playing / done 不挂草稿面板：选区已被清空，再挂会显示「已选：无」。
+  // streaming 还留着选区，面板要留到 start 之后、result 之前（Esc 仍不关它）。
   // 截图失败提示从回答文字出现留到下一次提问，或仍在圈选时退出。不跟 phase 一起卸。
-  if (askPhase === "streaming" || askPhase === "playing" || askPhase === "done") {
+  if (askPhase === "playing" || askPhase === "done") {
     if (!captureFailed) return null;
     return <CaptureFallbackNotice />;
   }
