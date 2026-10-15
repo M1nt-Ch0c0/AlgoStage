@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Route } from "@playwright/test";
+import { expect, test, type CDPSession, type Page, type Route } from "@playwright/test";
 
 /**
  * 提问提交时「正在准备截图…」不把取消按钮顶下去；截图卡住时取消不发出提问请求。
@@ -197,6 +197,114 @@ async function boxCenter(page: Page, selector: string) {
 async function pressAt(page: Page, x: number, y: number, touch: boolean) {
   if (touch) await page.touchscreen.tap(x, y);
   else await page.mouse.click(x, y);
+}
+
+type PointerClient = Pick<CDPSession, "send">;
+
+function touchPoint(x: number, y: number) {
+  return [{ x: Math.round(x), y: Math.round(y) }];
+}
+
+/** Touch goes through CDP Input.dispatchTouchEvent; mouse uses page.mouse. */
+async function down(page: Page, client: PointerClient, x: number, y: number, touch: boolean) {
+  if (touch) {
+    await client.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: touchPoint(x, y),
+    });
+    return;
+  }
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+}
+
+async function up(page: Page, client: PointerClient, x: number, y: number, touch: boolean) {
+  if (touch) {
+    await client.send("Input.dispatchTouchEvent", {
+      type: "touchEnd",
+      touchPoints: touchPoint(x, y),
+    });
+    return;
+  }
+  await page.mouse.move(x, y);
+  await page.mouse.up();
+}
+
+async function moveTo(page: Page, client: PointerClient, x: number, y: number, touch: boolean) {
+  if (touch) {
+    await client.send("Input.dispatchTouchEvent", {
+      type: "touchMove",
+      touchPoints: touchPoint(x, y),
+    });
+    return;
+  }
+  await page.mouse.move(x, y);
+}
+
+/** Resolves only when the main thread is free enough to run this evaluate. */
+async function waitStallEnd(page: Page) {
+  await page.evaluate(() => 0);
+}
+
+/**
+ * Records any flash of ask chips, code-miss hint, waiting row, or error
+ * (panel role=alert / data-ask-error, or the step-answer role=alert).
+ * Real selectors from components/board/ask-panel.tsx and step-answers.tsx.
+ */
+async function installFlashObserver(page: Page) {
+  await page.evaluate(() => {
+    const selector = [
+      "[data-ask-panel] [data-ask-chip]",
+      "[data-ask-panel] [data-testid='ask-code-miss-hint']",
+      "[data-ask-waiting]",
+      "[data-ask-error]",
+      "[data-testid='step-answers'] [role='alert']",
+    ].join(", ");
+    const flashes: string[] = [];
+    const describe = (node: Node | null) => {
+      if (!(node instanceof Element)) return;
+      if (node.matches(selector)) flashes.push(node.getAttribute("data-ask-chip") ? "chip" : node.tagName);
+      for (const el of node.querySelectorAll(selector)) {
+        flashes.push(el.getAttribute("data-ask-chip") ? "chip" : el.tagName);
+      }
+    };
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) describe(node);
+        if (record.type === "attributes") describe(record.target);
+      }
+    });
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+    });
+    (window as unknown as { __askFlash?: { flashes: string[]; stop: () => string[] } }).__askFlash = {
+      flashes,
+      stop: () => {
+        observer.disconnect();
+        return flashes;
+      },
+    };
+  });
+}
+
+async function readFlashes(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const bag = (window as unknown as { __askFlash?: { stop: () => string[] } }).__askFlash;
+    return bag ? bag.stop() : [];
+  });
+}
+
+/** closeAskPanel from a capture-stall cancel: panel unmounts, layer stays, submit is gone. */
+async function expectClosedLikeCancel(page: Page) {
+  await expect(page.locator("[data-ask-panel]")).toHaveCount(0, { timeout: 10_000 });
+  await expect(page.locator("[data-ask-submit]")).toHaveCount(0);
+  await expect(page.locator("[data-ask-layer]")).toBeVisible();
+  await expect(page.locator("[data-ask-entry]")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("[data-ask-waiting]")).toHaveCount(0);
+  await expect(page.locator("[data-ask-error]")).toHaveCount(0);
+  await expect(page.locator("[data-testid='step-answers'] [role='alert']")).toHaveCount(0);
 }
 
 function installStatusStability(width: number, touch: boolean) {
@@ -435,6 +543,159 @@ function installStatusStability(width: number, touch: boolean) {
         }
       });
     }
+
+    // One CDP session drives both CPU throttle and (on touch) dispatchTouchEvent.
+    async function withStallSession(page: Page, run: (client: PointerClient) => Promise<void>) {
+      const client = await page.context().newCDPSession(page);
+      await client.send("Emulation.setCPUThrottlingRate", { rate: 4 });
+      try {
+        await run(client);
+      } finally {
+        await client.send("Emulation.setCPUThrottlingRate", { rate: 1 }).catch(() => {});
+      }
+    }
+
+    for (let i = 1; i <= 10; i += 1) {
+      test(`取消 held through capture stall, released 150ms after stall on button sends no ask run ${i}`, async ({
+        page,
+      }) => {
+        test.setTimeout(60_000);
+        let askRequests = 0;
+        await page.route("**/api/lecture/ask", async (route) => {
+          askRequests += 1;
+          await route.fulfill({
+            status: 200,
+            contentType: "application/x-ndjson",
+            body: askStream("s1"),
+          });
+        });
+        await openAskPanel(page);
+
+        const cancelAt = await boxCenter(page, "[data-ask-cancel]");
+        const submitAt = await boxCenter(page, "[data-ask-submit]");
+        // Already on the button, so down()'s move is not a second trip across the page.
+        if (!touch) await page.mouse.move(cancelAt.x, cancelAt.y);
+        await withStallSession(page, async (client) => {
+          await pressAt(page, submitAt.x, submitAt.y, touch);
+          const preparing = page.locator("[data-ask-capture-preparing]");
+          // toBeVisible waits for box stability and can return only after the
+          // post-stall yield, which is too late to press. Attached resolves on
+          // the frame that paints the row, while capture is still running.
+          await expect(preparing).toBeAttached({ timeout: 15_000 });
+          const copyBeforePress = await page.evaluate(
+            () => document.querySelector("[data-ask-capture-preparing]")?.textContent ?? "",
+          );
+          await down(page, client, cancelAt.x, cancelAt.y, touch);
+          await waitStallEnd(page);
+          await expect(page.locator("[data-ask-cancel]")).toHaveAttribute("data-pressed", "");
+          await expect(preparing).toHaveText(copyBeforePress);
+          await page.waitForTimeout(150);
+          await up(page, client, cancelAt.x, cancelAt.y, touch);
+          await page.waitForTimeout(2500);
+          expect(askRequests).toBe(0);
+          await expect(page.locator("[data-ask-waiting]")).toHaveCount(0);
+        });
+      });
+    }
+
+    test("press 取消 during stall, slide off, release sends normally", async ({ page }) => {
+      test.setTimeout(60_000);
+      let askRequests = 0;
+      await page.route("**/api/lecture/ask", async (route) => {
+        askRequests += 1;
+        await route.fulfill({
+          status: 200,
+          contentType: "application/x-ndjson",
+          body: askStream("s1"),
+        });
+      });
+      await openAskPanel(page);
+
+      const cancelAt = await boxCenter(page, "[data-ask-cancel]");
+      const submitAt = await boxCenter(page, "[data-ask-submit]");
+      const slideY = cancelAt.y - 120;
+      expect(slideY).toBeGreaterThanOrEqual(1);
+      expect(slideY).toBeLessThan(cancelAt.top);
+
+      await withStallSession(page, async (client) => {
+        await pressAt(page, submitAt.x, submitAt.y, touch);
+        await expect(page.locator("[data-ask-capture-preparing]")).toBeAttached({ timeout: 15_000 });
+        await down(page, client, cancelAt.x, cancelAt.y, touch);
+        await waitStallEnd(page);
+        await moveTo(page, client, cancelAt.x, slideY, touch);
+        await up(page, client, cancelAt.x, slideY, touch);
+      });
+
+      await expect.poll(() => askRequests, { timeout: 15_000 }).toBe(1);
+      await expect(page.getByText(ANSWER_NARRATION)).toBeVisible({ timeout: 15_000 });
+    });
+
+    test("hold 取消 past 2s timeout sends, then release on button aborts", async ({ page }) => {
+      test.setTimeout(60_000);
+      let askRequests = 0;
+      let parkedRelease = () => {};
+      const parked = new Promise<void>((resolve) => {
+        parkedRelease = resolve;
+      });
+      let routeSawAbort = false;
+      const failedTexts: string[] = [];
+      page.on("requestfailed", (request) => {
+        if (!request.url().includes("/api/lecture/ask")) return;
+        failedTexts.push(request.failure()?.errorText ?? "");
+      });
+      await page.route("**/api/lecture/ask", async (route) => {
+        askRequests += 1;
+        const request = route.request();
+        try {
+          // Hold the response until the route is aborted or the test releases it.
+          await parked;
+          await route.fulfill({
+            status: 200,
+            contentType: "application/x-ndjson",
+            body: askStream("s1"),
+          });
+        } catch {
+          routeSawAbort = true;
+        }
+        if (request.failure()) routeSawAbort = true;
+      });
+
+      try {
+        await openAskPanel(page);
+        const cancelAt = await boxCenter(page, "[data-ask-cancel]");
+        const submitAt = await boxCenter(page, "[data-ask-submit]");
+
+        await withStallSession(page, async (client) => {
+          await pressAt(page, submitAt.x, submitAt.y, touch);
+          const preparing = page.locator("[data-ask-capture-preparing]");
+          await expect(preparing).toBeAttached({ timeout: 15_000 });
+          const copyBeforePress = (await preparing.textContent()) ?? "";
+          await down(page, client, cancelAt.x, cancelAt.y, touch);
+          await waitStallEnd(page);
+          await page.waitForTimeout(2600);
+          expect(askRequests).toBe(1);
+          // ask-panel.tsx has no answer-dot marker. Waiting is [data-ask-waiting];
+          // an in-flight answer body is [data-testid=ask-preview] in step-answers.tsx.
+          await expect(page.locator("[data-ask-waiting]")).toHaveCount(0);
+          await expect(page.locator("[data-testid='ask-preview']")).toHaveCount(0);
+          await expect(page.locator("[data-ask-cancel]")).toHaveAttribute("data-pressed", "");
+          await expect(preparing).toHaveText(copyBeforePress);
+
+          await installFlashObserver(page);
+          await up(page, client, cancelAt.x, cancelAt.y, touch);
+        });
+
+        await expect.poll(() => failedTexts.length, { timeout: 10_000 }).toBeGreaterThan(0);
+        expect(failedTexts.some((text) => /abort/i.test(text)) || routeSawAbort).toBe(true);
+        await expect(page.getByText(ANSWER_NARRATION)).toHaveCount(0);
+        await expect(page.locator("[data-ask-error]")).toHaveCount(0);
+        await expect(page.locator("[data-testid='step-answers'] [role='alert']")).toHaveCount(0);
+        expect(await readFlashes(page)).toEqual([]);
+        await expectClosedLikeCancel(page);
+      } finally {
+        parkedRelease();
+      }
+    });
   });
 }
 
