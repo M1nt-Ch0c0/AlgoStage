@@ -208,15 +208,16 @@ test.describe("ask Esc stepwise exit", () => {
     await page.keyboard.press("Escape");
     await expect(layer(page)).toHaveCount(0);
 
-    // 面板 textarea：第一次 Esc 关面板回到 selecting 且焦点在画选层，第二次退出。
+    // 面板 textarea：第一次 Esc 关面板回到 selecting，焦点回到捷径选中的步骤，第二次退出。
     await enterSelection(page);
     await openPanel(page);
     const question = panel(page).locator("[data-ask-question]");
+    const stepTarget = page.locator('[data-ask-id="step:s1"]');
     await question.fill(QUESTION);
     await question.press("Escape");
     await expect(panel(page)).toHaveCount(0);
     await expect(layer(page)).toBeVisible();
-    await expect(layer(page)).toBeFocused();
+    await expect(stepTarget).toBeFocused();
     await expect(entry(page)).toHaveAttribute("aria-pressed", "true");
     await page.keyboard.press("Escape");
     await expect(layer(page)).toHaveCount(0);

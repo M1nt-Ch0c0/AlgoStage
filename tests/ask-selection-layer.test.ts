@@ -418,7 +418,7 @@ describe("AskSelectionLayer", () => {
     expect(close.defaultPrevented).toBe(true);
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
     expect(usePlayerStore.getState().draftQuestion).toBe("窗口也能关");
-    expect(document.activeElement).toBe(layer());
+    expect(document.activeElement).toBe(target);
 
     const exit = await act(async () => pressEscape(layer()));
     expect(exit.defaultPrevented).toBe(true);
@@ -463,6 +463,27 @@ describe("AskSelectionLayer", () => {
 
     editor.remove();
     panel.remove();
+  });
+
+  test("关面板后目标已不在文档里，焦点落到画选层", async () => {
+    await render();
+    const target = stage.querySelector<HTMLElement>('[data-ask-id="step:s1"]')!;
+    usePlayerStore.setState({
+      askPhase: "drafting",
+      status: "interrupted",
+      selection: {
+        mode: "single",
+        bbox: { x: 80, y: 10, width: 60, height: 30 },
+        targets: [{ kind: "step", id: "step:s1", stepId: "s1", text: "步骤内容" }],
+      },
+    });
+    await render();
+    target.remove();
+    expect(target.isConnected).toBe(false);
+    const close = await act(async () => pressEscape(document.body));
+    expect(close.defaultPrevented).toBe(true);
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
+    expect(document.activeElement).toBe(layer());
   });
 
   test("sending/streaming 时窗口级 Esc 不关面板也不退出", async () => {

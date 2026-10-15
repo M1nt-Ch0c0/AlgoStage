@@ -149,6 +149,20 @@ function shortcutId(stepId: string, key: ShortcutKey): string {
   return `${key}:${stepId}`;
 }
 
+function cssEscape(value: string): string {
+  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") return CSS.escape(value);
+  return value.replace(/[^a-zA-Z0-9_-]/g, (ch) => `\\${ch}`);
+}
+
+/** 关面板后要还回去的舞台目标。不在文档里则没有。 */
+function focusTargetFor(selection: AskSelectionSummary | null): HTMLElement | null {
+  const id = selection?.targets[0]?.id;
+  if (!id) return null;
+  const target = document.querySelector<HTMLElement>(`[data-ask-id="${cssEscape(id)}"]`);
+  if (!target || !target.isConnected) return null;
+  return target;
+}
+
 function findByAskId(host: HTMLElement, id: string): HTMLElement | null {
   for (const el of host.querySelectorAll<HTMLElement>("[data-ask-id]")) {
     if (el.getAttribute("data-ask-id") !== id) continue;
@@ -318,9 +332,16 @@ function AskSelectionLayerActive({
     };
   }, [clearAskSelection]);
 
-  // 进入 selecting（含关面板之后）时焦点回到画选层，不回到舞台上的选中目标。
+  // 进入 selecting 时：有选区就把焦点还给原目标；目标已不在文档里，
+  // 或 focus() 之后 activeElement 不是它，才落到画选层。
   useEffect(() => {
     if (askPhase !== "selecting") return;
+    const target = focusTargetFor(usePlayerStore.getState().selection);
+    if (target) {
+      if (!target.hasAttribute("tabindex")) target.tabIndex = -1;
+      target.focus();
+      if (document.activeElement === target) return;
+    }
     rootRef.current?.focus();
   }, [askPhase]);
 
