@@ -427,14 +427,22 @@ test.describe("1280 selection flow", () => {
 
     const chip = page.locator('[data-ask-shortcut="subtitle"]');
     await expect(chip).toBeVisible();
-    const box = await chip.boundingBox();
-    expect(box).not.toBeNull();
-    const startX = box!.x + box!.width / 2;
-    const startY = box!.y + box!.height / 2;
+    const chipBox = await chip.boundingBox();
+    expect(chipBox).not.toBeNull();
+    const startX = chipBox!.x + chipBox!.width / 2;
+    const startY = chipBox!.y + chipBox!.height / 2;
+
+    // End over viz so the rubber band has a real ask target (chip+80,+60 was empty on 1280).
+    const viz = page.locator('[data-ask-stage] [data-ask-id="viz:s1"]').first();
+    await expect(viz).toBeVisible();
+    const vizBox = await viz.boundingBox();
+    if (!vizBox) throw new Error("viz target has no box");
+    const endX = vizBox.x + Math.max(vizBox.width - 8, 40);
+    const endY = vizBox.y + Math.max(Math.min(vizBox.height - 8, 80), 36);
 
     await page.mouse.move(startX, startY);
     await page.mouse.down();
-    await page.mouse.move(startX + 80, startY + 60, { steps: 6 });
+    await page.mouse.move(endX, endY, { steps: 8 });
     await expect(page.locator("[data-ask-rubber]")).toBeVisible();
     await page.mouse.up();
 
