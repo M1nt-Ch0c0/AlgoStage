@@ -1,16 +1,16 @@
 /**
- * One reserved-height status line for the ask panel.
+ * One minimum-height status line for the ask panel.
  * Idle, preparing, and waiting share the same node so the row under it
  * (取消) does not jump when the copy changes.
- * Copy is product-locked and must never be truncated. Desktop (the panel's
- * md breakpoint, 768px) reserves one line. Narrower widths reserve two lines
- * so the longest waiting copy can wrap without moving 取消.
+ * Rows reserve a minimum height (one line at md+, two lines narrower) and
+ * grow taller when copy exceeds that (320px / large font) instead of
+ * overflowing. Copy is never truncated.
  */
 import { ASK_CAPTURE_PREPARING, ASK_WAITING_STATUS } from "@/lib/ask/ask-ui-text";
 
 export type AskStatusRowState = "idle" | "preparing" | "waiting";
 
-const ROW_CLASS = "h-12 text-xs leading-6 text-chalk-300 md:h-6";
+const ROW_CLASS = "min-h-12 text-xs leading-6 text-chalk-300 md:min-h-6";
 
 export function AskStatusRow({
   state,
