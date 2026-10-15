@@ -3,70 +3,10 @@
  * at each quality until the blob fits maxBytes.
  */
 
-export type EncodeRequest = {
-  bitmap: ImageBitmap;
-  qualities: readonly number[];
-  maxBytes: number;
-  webp: boolean;
-};
+import { handleEncodeMessage, type EncodeRequest } from "./capture-encode";
 
-export type EncodeResponse =
-  | { ok: true; mime: "image/webp" | "image/jpeg"; base64: string; bytes: number }
-  | { ok: false; tooLarge: true }
-  | { ok: false; error: string };
-
-function bytesOf(blob: Blob): Promise<{ bytes: Uint8Array; base64: string }> {
-  return blob.arrayBuffer().then((buffer) => {
-    const bytes = new Uint8Array(buffer);
-    let binary = "";
-    const chunk = 0x8000;
-    for (let i = 0; i < bytes.length; i += chunk) {
-      binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-    }
-    return { bytes, base64: btoa(binary) };
-  });
-}
-
-async function encode(request: EncodeRequest): Promise<EncodeResponse> {
-  const width = request.bitmap.width;
-  const height = request.bitmap.height;
-  const canvas = new OffscreenCanvas(width, height);
-  const ctx = canvas.getContext("2d");
-  if (!ctx) {
-    request.bitmap.close();
-    throw new Error("NO_CONTEXT");
-  }
-  ctx.drawImage(request.bitmap, 0, 0);
-  request.bitmap.close();
-
-  let webp = request.webp;
-  for (const quality of request.qualities) {
-    let mime: "image/webp" | "image/jpeg" = webp ? "image/webp" : "image/jpeg";
-    let blob = await canvas.convertToBlob({ type: mime, quality });
-    if (webp && blob.type !== "image/webp") {
-      webp = false;
-      mime = "image/jpeg";
-      blob = await canvas.convertToBlob({ type: mime, quality });
-    }
-    if (blob.size <= request.maxBytes) {
-      const encoded = await bytesOf(blob);
-      return { ok: true, mime, base64: encoded.base64, bytes: encoded.bytes.length };
-    }
-  }
-  return { ok: false, tooLarge: true };
-}
+export type { EncodeRequest, EncodeResponse } from "./capture-encode";
 
 self.onmessage = (event: MessageEvent<EncodeRequest>) => {
-  const request = event.data;
-  encode(request).then(
-    (response) => {
-      self.postMessage(response);
-    },
-    (error: unknown) => {
-      self.postMessage({
-        ok: false,
-        error: error instanceof Error ? error.message : "ENCODE_FAILED",
-      });
-    },
-  );
+  void handleEncodeMessage(event.data, (r) => self.postMessage(r));
 };

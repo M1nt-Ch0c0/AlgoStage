@@ -39,6 +39,8 @@ export default defineConfig({
         "lib/ask/**",
         "lib/judge/{browser,compare,worker-common,javascript-worker,python-worker,specs}.ts",
       ],
+      // thin worker entry shell (self.onmessage wiring only) that cannot run under vitest; logic lives in capture-encode.ts which is covered.
+      exclude: ["lib/ask/capture-encode.worker.ts"],
       thresholds: { perFile: true, statements: 60, branches: 60, functions: 60, lines: 60 },
     },
   },

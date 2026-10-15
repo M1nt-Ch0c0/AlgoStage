@@ -12,7 +12,7 @@ import {
   toCropRect,
   yieldTwoFrames,
 } from "@/lib/ask/capture";
-import type { EncodeRequest, EncodeResponse } from "@/lib/ask/capture-encode.worker";
+import type { EncodeRequest, EncodeResponse } from "@/lib/ask/capture-encode";
 
 const { mockState, domToCanvasMock } = vi.hoisted(() => ({
   mockState: { shouldThrow: false },
