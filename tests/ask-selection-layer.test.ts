@@ -1687,8 +1687,12 @@ describe("resolveAskEscape", () => {
       expect(clickEvent.defaultPrevented).toBe(false);
     });
 
-    test("touch pointerup on [data-ask-panel] [data-ask-cancel] suppresses subsequent ghost click once", async () => {
+    test("touch pointerup on [data-ask-panel] [data-ask-cancel] when cancel activates on pointerup suppresses subsequent ghost click once", async () => {
       await render();
+
+      await act(async () => {
+        usePlayerStore.setState({ askPhase: "drafting" });
+      });
 
       const panel = document.createElement("div");
       panel.setAttribute("data-ask-panel", "");
@@ -1697,6 +1701,64 @@ describe("resolveAskEscape", () => {
       cancelBtn.textContent = "取消";
       panel.append(cancelBtn);
       document.body.append(panel);
+
+      cancelBtn.addEventListener("pointerup", () => {
+        usePlayerStore.setState({ askPhase: "selecting" });
+        panel.remove();
+      });
+
+      const down = new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 1, pointerType: "touch" });
+      const up = new PointerEvent("pointerup", { bubbles: true, cancelable: true, pointerId: 1, pointerType: "touch" });
+
+      await act(async () => {
+        cancelBtn.dispatchEvent(down);
+        cancelBtn.dispatchEvent(up);
+      });
+
+      const ghostClick = new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 });
+      Object.defineProperty(ghostClick, "timeStamp", { value: up.timeStamp + 50 });
+
+      let stopped = false;
+      ghostClick.stopPropagation = () => { stopped = true; };
+
+      await act(async () => {
+        document.body.dispatchEvent(ghostClick);
+      });
+
+      expect(ghostClick.defaultPrevented).toBe(true);
+      expect(stopped).toBe(true);
+
+      // Block-once rule: second click is not blocked
+      const secondClick = new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 });
+      Object.defineProperty(secondClick, "timeStamp", { value: up.timeStamp + 60 });
+
+      await act(async () => {
+        document.body.dispatchEvent(secondClick);
+      });
+
+      expect(secondClick.defaultPrevented).toBe(false);
+      if (panel.parentNode) panel.remove();
+    });
+
+    test("touch pointerup+click on cancel -> cancel click NOT blocked, panel closes", async () => {
+      await render();
+
+      await act(async () => {
+        usePlayerStore.setState({ askPhase: "drafting" });
+      });
+
+      const panel = document.createElement("div");
+      panel.setAttribute("data-ask-panel", "");
+      const cancelBtn = document.createElement("button");
+      cancelBtn.setAttribute("data-ask-cancel", "");
+      cancelBtn.textContent = "取消";
+      panel.append(cancelBtn);
+      document.body.append(panel);
+
+      cancelBtn.addEventListener("click", () => {
+        usePlayerStore.getState().closeAskPanel();
+        panel.remove();
+      });
 
       const down = new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 1, pointerType: "touch" });
       const up = new PointerEvent("pointerup", { bubbles: true, cancelable: true, pointerId: 1, pointerType: "touch" });
@@ -1713,23 +1775,27 @@ describe("resolveAskEscape", () => {
         cancelBtn.dispatchEvent(clickEvent);
       });
 
-      expect(clickEvent.defaultPrevented).toBe(true);
+      expect(clickEvent.defaultPrevented).toBe(false);
+      expect(usePlayerStore.getState().askPhase).toBe("selecting");
 
-      // Block-once rule: second click is not blocked
-      const secondClick = new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 });
-      Object.defineProperty(secondClick, "timeStamp", { value: up.timeStamp + 60 });
+      // Verify no ghost suppression was armed (subsequent tap click is not blocked)
+      const afterClick = new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 });
+      Object.defineProperty(afterClick, "timeStamp", { value: up.timeStamp + 100 });
 
       await act(async () => {
-        cancelBtn.dispatchEvent(secondClick);
+        document.body.dispatchEvent(afterClick);
       });
+      expect(afterClick.defaultPrevented).toBe(false);
 
-      expect(secondClick.defaultPrevented).toBe(false);
-
-      panel.remove();
+      if (panel.parentNode) panel.remove();
     });
 
     test("touch pointerup on cancel followed by new pointerdown clears suppression", async () => {
       await render();
+
+      await act(async () => {
+        usePlayerStore.setState({ askPhase: "drafting" });
+      });
 
       const panel = document.createElement("div");
       panel.setAttribute("data-ask-panel", "");
@@ -1741,6 +1807,11 @@ describe("resolveAskEscape", () => {
       const exitBtn = document.createElement("button");
       exitBtn.setAttribute("data-ask-entry", "");
       document.body.append(panel, exitBtn);
+
+      cancelBtn.addEventListener("pointerup", () => {
+        usePlayerStore.setState({ askPhase: "selecting" });
+        panel.remove();
+      });
 
       const down = new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 1, pointerType: "touch" });
       const up = new PointerEvent("pointerup", { bubbles: true, cancelable: true, pointerId: 1, pointerType: "touch" });
@@ -1764,7 +1835,7 @@ describe("resolveAskEscape", () => {
 
       expect(clickEvent.defaultPrevented).toBe(false);
 
-      panel.remove();
+      if (panel.parentNode) panel.remove();
       exitBtn.remove();
     });
 

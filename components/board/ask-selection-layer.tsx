@@ -419,6 +419,8 @@ function AskSelectionLayerActive({
   const suppressClickUntilRef = useRef<number | null>(null);
   const touchCompletedSelectionRef = useRef(false);
   const lastPointerTypeRef = useRef<string | null>(null);
+  const lastTouchCancelPointerUpRef = useRef<number | null>(null);
+  const cancelClickSeenRef = useRef(false);
 
   const bottomBarRef = useRef<HTMLDivElement>(null);
 
@@ -455,16 +457,23 @@ function AskSelectionLayerActive({
       lastPointerTypeRef.current = event.pointerType;
       suppressClickUntilRef.current = null;
       touchCompletedSelectionRef.current = false;
+      lastTouchCancelPointerUpRef.current = null;
+      cancelClickSeenRef.current = false;
     };
     const onDocPointerUp = (event: globalThis.PointerEvent) => {
       if (event.pointerType !== "touch") return;
       const target = event.target as Element | null;
       if (target?.closest?.("[data-ask-panel] [data-ask-cancel], [data-ask-cancel]")) {
-        suppressClickUntilRef.current = event.timeStamp + 400;
-        touchCompletedSelectionRef.current = true;
+        lastTouchCancelPointerUpRef.current = event.timeStamp;
+        cancelClickSeenRef.current = false;
       }
     };
     const onDocClick = (event: globalThis.MouseEvent) => {
+      cancelClickSeenRef.current = true;
+      const target = event.target as Element | null;
+      if (target?.closest?.("[data-ask-panel] [data-ask-cancel], [data-ask-cancel]")) {
+        return;
+      }
       if (event.detail === 0) return;
       if (lastPointerTypeRef.current !== "touch") return;
       if (!touchCompletedSelectionRef.current) return;
@@ -594,11 +603,25 @@ function AskSelectionLayerActive({
     const isMobileDevice = typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches;
     const closingPanel = prev === "drafting" || prev === "error";
 
-    if (askPhase === "selecting" && closingPanel && isMobileDevice) {
-      const bar = bottomBarRef.current ?? document.querySelector<HTMLElement>("[data-ask-bottom-bar]");
-      const chips = bar?.querySelectorAll<HTMLButtonElement>("[data-ask-shortcut]");
-      const currentChip = Array.from(chips ?? []).find((c) => c.tabIndex === 0) ?? chips?.[0];
-      currentChip?.focus({ preventScroll: true });
+    if (askPhase === "selecting" && closingPanel) {
+      const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+      const lastUp = lastTouchCancelPointerUpRef.current;
+      if (
+        lastUp != null &&
+        Math.abs(now - lastUp) <= 400 &&
+        !cancelClickSeenRef.current
+      ) {
+        suppressClickUntilRef.current = Math.max(now, lastUp) + 400;
+        touchCompletedSelectionRef.current = true;
+      }
+      lastTouchCancelPointerUpRef.current = null;
+
+      if (isMobileDevice) {
+        const bar = bottomBarRef.current ?? document.querySelector<HTMLElement>("[data-ask-bottom-bar]");
+        const chips = bar?.querySelectorAll<HTMLButtonElement>("[data-ask-shortcut]");
+        const currentChip = Array.from(chips ?? []).find((c) => c.tabIndex === 0) ?? chips?.[0];
+        currentChip?.focus({ preventScroll: true });
+      }
     }
   }, [active, askPhase, updateMeasurements]);
 
