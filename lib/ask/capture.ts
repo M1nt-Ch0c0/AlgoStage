@@ -21,9 +21,25 @@ export type CaptureFailReason =
   | "TOO_MANY_NODES"
   | "TIMEOUT";
 
+export type CaptureEncoder = "worker" | "main";
+
+export type CapturePerfInfo = {
+  encoder: CaptureEncoder;
+  mime: "image/webp" | "image/jpeg";
+  bytes: number;
+};
+
+declare global {
+  interface Window {
+    /** Last successful capture, read by the S4 perf probe. */
+    __s4Capture?: CapturePerfInfo;
+  }
+}
+
 export type CaptureResult =
   | {
       ok: true;
+      encoder: CaptureEncoder;
       image: { mime: "image/webp" | "image/jpeg"; dataBase64: string };
       bytes: number;
     }
@@ -32,6 +48,12 @@ export type CaptureResult =
       reason: CaptureFailReason;
       fallbackText: string;
     };
+
+/** Expose the encoder the S4 perf probe records. No-op outside the browser. */
+export function noteCapturePerf(info: CapturePerfInfo): void {
+  if (typeof window === "undefined") return;
+  window.__s4Capture = info;
+}
 
 export const CAPTURE_DEFAULTS = {
   timeoutMs: 3000,
@@ -360,7 +382,7 @@ async function encodeOnMainThread(
       const base64 = url.slice(url.indexOf(",") + 1);
       const bytes = decodedBase64Bytes(base64);
       if (bytes <= maxBytes) {
-        return { ok: true, image: { mime, dataBase64: base64 }, bytes };
+        return { ok: true, encoder: "main", image: { mime, dataBase64: base64 }, bytes };
       }
     }
   }
@@ -477,7 +499,14 @@ export async function captureStage(
           return { ok: false, reason: "TOO_LARGE", fallbackText };
         }
         if (off !== "FALLBACK") {
-          return { ok: true, image: { mime: off.mime, dataBase64: off.dataBase64 }, bytes: off.bytes };
+          const encoded = {
+            ok: true as const,
+            encoder: "worker" as const,
+            image: { mime: off.mime, dataBase64: off.dataBase64 },
+            bytes: off.bytes,
+          };
+          noteCapturePerf({ encoder: "worker", mime: off.mime, bytes: off.bytes });
+          return encoded;
         }
       }
 
@@ -485,6 +514,7 @@ export async function captureStage(
       if (timedOut) return timeoutResult();
       if (!main) return timeoutResult();
       if (!main.ok) return { ...main, fallbackText };
+      noteCapturePerf({ encoder: "main", mime: main.image.mime, bytes: main.bytes });
       return main;
     };
 

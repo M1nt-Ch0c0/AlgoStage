@@ -216,10 +216,16 @@ describe("lib/ask/capture", () => {
       const res = await captureStage(container, flipped);
       expect(res.ok).toBe(true);
       if (res.ok) {
+        expect(res.encoder).toBe("main");
         expect(res.image.mime).toBe("image/webp");
         expect(res.image.dataBase64).toBe("AAAA");
         expect(res.bytes).toBe(3);
       }
+      expect(window.__s4Capture).toEqual({
+        encoder: "main",
+        mime: "image/webp",
+        bytes: 3,
+      });
 
       // Normalized bbox: x=10, y=20, w=40, h=30 -> scale 2 -> x=20, y=40, w=80, h=60
       expect(drawImageMock).toHaveBeenCalledWith(
@@ -856,6 +862,76 @@ describe("lib/ask/capture", () => {
       expect(posted).toHaveLength(3);
       expect(posted.map((request) => request.webp)).toEqual([true, true, true]);
       expect(worker.terminated).toBe(true);
+
+      vi.unstubAllGlobals();
+    });
+
+    it("reports encoder main and publishes it for the perf probe", async () => {
+      vi.stubGlobal("Worker", undefined);
+      delete window.__s4Capture;
+
+      const res = await captureStage(container, baseSel);
+      expect(res).toMatchObject({
+        ok: true,
+        encoder: "main",
+        image: { mime: "image/webp", dataBase64: "AAAA" },
+        bytes: 3,
+      });
+      expect(window.__s4Capture).toEqual({
+        encoder: "main",
+        mime: "image/webp",
+        bytes: 3,
+      });
+
+      vi.unstubAllGlobals();
+    });
+
+    it("reports encoder worker when off-thread encode succeeds", async () => {
+      const bitmap = { close: vi.fn() };
+      vi.stubGlobal("createImageBitmap", vi.fn(async () => bitmap));
+      vi.stubGlobal("OffscreenCanvas", class OffscreenCanvas {});
+      delete window.__s4Capture;
+
+      class FakeWorker {
+        listeners = new Map<string, Set<(event: { data: unknown }) => void>>();
+        addEventListener(type: string, handler: (event: { data: unknown }) => void) {
+          const set = this.listeners.get(type) ?? new Set();
+          set.add(handler);
+          this.listeners.set(type, set);
+        }
+        removeEventListener(type: string, handler: (event: { data: unknown }) => void) {
+          this.listeners.get(type)?.delete(handler);
+        }
+        postMessage() {
+          queueMicrotask(() => {
+            for (const handler of this.listeners.get("message") ?? []) {
+              handler({ data: { ok: true, mime: "image/webp", base64: "AAAA", bytes: 3 } });
+            }
+          });
+        }
+        terminate() {}
+      }
+
+      vi.stubGlobal(
+        "Worker",
+        vi.fn(function Worker() {
+          return new FakeWorker();
+        }),
+      );
+
+      const res = await captureStage(container, baseSel);
+      expect(res).toMatchObject({
+        ok: true,
+        encoder: "worker",
+        image: { mime: "image/webp", dataBase64: "AAAA" },
+        bytes: 3,
+      });
+      expect(window.__s4Capture).toEqual({
+        encoder: "worker",
+        mime: "image/webp",
+        bytes: 3,
+      });
+      expect(createdCanvases).toHaveLength(0);
 
       vi.unstubAllGlobals();
     });
