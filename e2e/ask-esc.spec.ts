@@ -223,7 +223,7 @@ test.describe("ask Esc stepwise exit", () => {
     await expect(entry(page)).not.toHaveAttribute("aria-pressed", "true");
   });
 
-  test("Esc inside Monaco does not leave selection mode", async ({ page }) => {
+  test("Esc inside Monaco follows stepwise exit", async ({ page }) => {
     await startGenerated(page);
     const monaco = page.locator(".monaco-editor");
     await expect(monaco).toBeVisible();
@@ -243,25 +243,34 @@ test.describe("ask Esc stepwise exit", () => {
     await expect(layer(page)).toHaveCount(0);
     await expect(entry(page)).not.toHaveAttribute("aria-pressed", "true");
 
+    // (a) 点在 Monaco 中心再按 Esc：selecting 直接退出。
     await enterSelection(page);
-    // 画选层 absolute inset-0 z-30 盖住 Monaco，鼠标点不到编辑器；圈选中只能用键盘或程序把焦点送进 textarea。
-    await textarea().focus();
-    await expect(textarea()).toBeFocused();
-    await page.keyboard.press("Control+End");
-    await page.keyboard.type("qQ");
-    await page.keyboard.press("Shift+ArrowLeft");
-    await page.keyboard.press("Control+A");
+    await clickCenter(page, monaco);
     await page.keyboard.press("Escape");
-    await expect(layer(page)).toBeVisible();
-    await expect(entry(page)).toHaveAttribute("aria-pressed", "true");
+    await expect(layer(page)).toHaveCount(0);
+    await expect(entry(page)).not.toHaveAttribute("aria-pressed", "true");
 
-    await openPanel(page);
+    // (b) 焦点在 Monaco 文本框：selecting 下 Esc 退出圈选。
+    await enterSelection(page);
+    await expect(textarea()).toBeAttached();
     await textarea().focus();
     await expect(textarea()).toBeFocused();
     await page.keyboard.press("Escape");
-    await expect(panel(page)).toBeVisible();
+    await expect(layer(page)).toHaveCount(0);
+    await expect(entry(page)).not.toHaveAttribute("aria-pressed", "true");
+
+    // (c) 面板打开且焦点在 Monaco：第一次 Esc 关面板，第二次退出圈选。
+    await enterSelection(page);
+    await openPanel(page);
+    await expect(textarea()).toBeAttached();
+    await textarea().focus();
+    await expect(textarea()).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(panel(page)).toHaveCount(0);
     await expect(layer(page)).toBeVisible();
-    await expect(entry(page)).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("Escape");
+    await expect(layer(page)).toHaveCount(0);
+    await expect(entry(page)).not.toHaveAttribute("aria-pressed", "true");
   });
 
   test("Esc during sending leaves the panel open and the held answer still plays", async ({ page }) => {
