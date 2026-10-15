@@ -152,12 +152,25 @@ describe("computeLineRange / getLineRangeForClientBox", () => {
     expect(computeLineRange(editor, 350, 400)).toBeNull();
   });
 
-  it("returns null when box height is <= 4px (y2 - 2 <= y1 + 2)", () => {
+  it("returns null when box height is exactly 4px (inset interval empty)", () => {
     const editor = createMockEditor();
     // 4px box: y1=20, y2=24 -> y1+2=22, y2-2=22 (empty test interval)
     expect(computeLineRange(editor, 120, 124)).toBeNull();
-    // 0px point click: y1=20, y2=20 -> y1+2=22, y2-2=18
-    expect(computeLineRange(editor, 120, 120)).toBeNull();
+  });
+
+  it("point-like box (<4px): 1px box inside line 5 -> {5,5}; and 1px box on exact boundary between 5 and 6 -> 6", () => {
+    const editor = createMockEditor();
+    // Line 5: [80, 100), Line 6: [100, 120). editorRect.top = 100.
+    // 1px box inside line 5: client Y in [185, 186] -> y = 85.5
+    expect(computeLineRange(editor, 185, 186)).toEqual({ startLine: 5, endLine: 5 });
+
+    // 1px box on exact boundary between 5 and 6:
+    // Boundary is y = 100 (client Y = 200).
+    // Centered 1px box: client Y [199.5, 200.5] -> y = (99.5 + 100.5) / 2 = 100.
+    // top_5 <= 100 < top_5 + lh (80 <= 100 < 100) is false.
+    // top_6 <= 100 < top_6 + lh (100 <= 100 < 120) is true -> line 6.
+    expect(computeLineRange(editor, 199.5, 200.5)).toEqual({ startLine: 6, endLine: 6 });
+    expect(computeLineRange(editor, 200, 201)).toEqual({ startLine: 6, endLine: 6 });
   });
 
   it("returns null when APIs are missing or return invalid data", () => {
