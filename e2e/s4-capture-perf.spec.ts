@@ -1,6 +1,7 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, type Page, type Route } from "@playwright/test";
+import type { AskTimingProbe } from "../lib/ask/ask-timing";
 
 /**
  * S4-a：提问提交时 captureStage（modern-screenshot domToCanvas）的性能测量。
@@ -184,6 +185,7 @@ type PerfSummary = {
   requestElapsedMs: number;
   imageAttached: boolean;
   encoder: "worker" | "main" | null;
+  phases: AskTimingProbe | null;
 };
 
 declare global {
@@ -203,6 +205,7 @@ const LABEL = process.env.S4_LABEL ?? "run";
 
 async function installLongTaskObserver(page: Page) {
   await page.addInitScript(() => {
+    window.__ASK_TIMING__ = {};
     window.__s4LongTasks = [];
     window.__s4Marks = {};
     const observer = new PerformanceObserver((list) => {
@@ -284,6 +287,7 @@ async function measureCapture(page: Page, width: number) {
       return (window.__s4LongTasks ?? []).filter((task) => task.start >= t0);
     });
     const encoder = await page.evaluate(() => window.__s4Capture?.encoder ?? null);
+    const phases = await page.evaluate(() => window.__ASK_TIMING__ ?? null);
     if (test.info().project.name === "chromium") {
       expect(encoder).toBe("worker");
     }
@@ -296,6 +300,7 @@ async function measureCapture(page: Page, width: number) {
       requestElapsedMs,
       imageAttached,
       encoder,
+      phases,
     };
 
     writeFileSync(path.join(OUT_DIR, `${LABEL}-${width}.json`), `${JSON.stringify(summary, null, 2)}\n`);
@@ -308,6 +313,7 @@ async function measureCapture(page: Page, width: number) {
         longTaskCount: longTasks.length,
         imageAttached,
         encoder,
+        phases,
       }),
     );
     console.log(
