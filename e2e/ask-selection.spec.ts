@@ -2055,46 +2055,62 @@ test.describe("390 selection flow", () => {
       // Close with Esc
       await page.keyboard.press("Escape");
       await expect(panel).toHaveCount(0);
+
+      // After closing panel with Esc, focus moves to the current chip (tabIndex 0) in the bar at 390
       await expect.poll(() =>
         page.evaluate(() => {
-          const active = document.activeElement;
+          const active = document.activeElement as HTMLElement | null;
           if (!active) return false;
-          const lyr = document.querySelector("[data-ask-layer]");
-          if (lyr && (lyr === active || lyr.contains(active))) return true;
-          const target = document.querySelector('[data-ask-stage] [data-ask-target="code"]');
-          return !!target && (target === active || target.contains(active));
+          const bar = document.querySelector("[data-ask-bottom-bar]");
+          return Boolean(
+            bar &&
+            bar.contains(active) &&
+            active.hasAttribute("data-ask-shortcut") &&
+            active.tabIndex === 0,
+          );
         }),
       ).toBe(true);
 
-      const startsInsideMonaco = await page.evaluate(() => {
-        const active = document.activeElement;
-        const target = document.querySelector('[data-ask-stage] [data-ask-target="code"]');
-        return Boolean(target && active && (target === active || target.contains(active)));
-      });
-      if (startsInsideMonaco) {
-        await page.locator("[data-ask-layer]").focus();
-      }
+      const initialChipKey = await page.evaluate(() =>
+        document.activeElement?.getAttribute("data-ask-shortcut"),
+      );
 
-      // Pressing Tab moves focus to bar chips in order, then to the exit/entry button
-      const activeElements: string[] = [];
-      const chipsCount = await page.locator("[data-ask-shortcut]").count();
-      for (let i = 0; i < chipsCount + 2; i++) {
-        await page.keyboard.press("Tab");
-        const info = await page.evaluate(() => {
-          const el = document.activeElement;
-          if (!el) return "none";
-          if (el.hasAttribute("data-ask-shortcut")) return `shortcut:${el.getAttribute("data-ask-shortcut")}`;
-          if (el.hasAttribute("data-ask-entry")) return "entry";
-          return el.tagName.toLowerCase();
-        });
-        activeElements.push(info);
-      }
+      // Tab moves focus forward to the exit button in the bar (roving: only one chip is tabbable)
+      await page.keyboard.press("Tab");
+      await expect.poll(() =>
+        page.evaluate(() => {
+          const active = document.activeElement as HTMLElement | null;
+          if (!active) return false;
+          const bar = document.querySelector("[data-ask-bottom-bar]");
+          return Boolean(
+            bar &&
+            bar.contains(active) &&
+            active.hasAttribute("data-ask-entry"),
+          );
+        }),
+      ).toBe(true);
 
-      const firstShortcutIndex = activeElements.findIndex((id) => id.startsWith("shortcut:"));
-      const firstEntryIndex = activeElements.findIndex((id) => id === "entry");
+      // Return focus to the chip and test ArrowRight roving navigation among chips
+      await page.keyboard.press("Shift+Tab");
+      await expect.poll(() =>
+        page.evaluate(() => {
+          const active = document.activeElement as HTMLElement | null;
+          return Boolean(active && active.hasAttribute("data-ask-shortcut") && active.tabIndex === 0);
+        }),
+      ).toBe(true);
 
-      expect(firstShortcutIndex).toBeGreaterThanOrEqual(0);
-      expect(firstEntryIndex).toBeGreaterThan(firstShortcutIndex);
+      await page.keyboard.press("ArrowRight");
+      await expect.poll(() =>
+        page.evaluate(() => {
+          const active = document.activeElement as HTMLElement | null;
+          return Boolean(active && active.hasAttribute("data-ask-shortcut") && active.tabIndex === 0);
+        }),
+      ).toBe(true);
+
+      const nextChipKey = await page.evaluate(() =>
+        document.activeElement?.getAttribute("data-ask-shortcut"),
+      );
+      expect(nextChipKey).not.toBe(initialChipKey);
     });
 
     test("n. after exit (Esc twice) and after switching problems, no bottom bar and CSS variables are 0px or empty", async ({ page }) => {
