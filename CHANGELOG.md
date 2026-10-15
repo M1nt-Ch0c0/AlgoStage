@@ -1,14 +1,5 @@
 # Changelog
 
-## [0.3.2] - 未发布
-
-### 安全修复
-- 【待合入 sec-next-1641】Next.js 从 16.4.0 升级到 16.4.1，修复以下漏洞（均影响 16.4.0）：
-  - [GHSA-673q-mjm6-r5xr](https://github.com/advisories/GHSA-673q-mjm6-r5xr)（严重）：未登录即可远程执行代码（`use cache` 返回 typed array）。
-  - [GHSA-2464-fhr4-w9xw](https://github.com/advisories/GHSA-2464-fhr4-w9xw) / CVE-2026-96889（严重）：未登录即可远程执行代码（图片优化处理 SVG）。
-  - [GHSA-p3m5-59mp-jv5r](https://github.com/advisories/GHSA-p3m5-59mp-jv5r)（高危）：Server Actions 拒绝服务。
-- 本版只包含这项安全升级，没有功能变化。
-
 ## [0.3.3] - 未发布
 
 ### 新增
@@ -25,6 +16,15 @@
 - 【待合入 ask-v032-btn-size】「圈选提问」按钮加大，更容易点到。
 - 【待合入 ask-v032-capture】点「提问」后立刻显示「正在准备截图…」；截图超过 3 秒就放弃，只发送选中的文字。
 - 【待合入 byok-settings-fix】设置页三家服务商统一为单列：服务商 → Key → Base URL → 模型 → 测试连接，OpenAI 兼容多一个必填的 Base URL。切换服务商时模型名和 Base URL 回到该家默认值并提示「已切换为 {服务商} 的默认模型」；之前填过的会恢复，不提示。Key 按服务商分开保存在本机，不会带到别家。
+
+## [0.3.2] - 未发布
+
+### 安全修复
+- 【待合入 sec-next-1641】Next.js 从 16.4.0 升级到 16.4.1，修复以下漏洞（均影响 16.4.0）：
+  - [GHSA-673q-mjm6-r5xr](https://github.com/advisories/GHSA-673q-mjm6-r5xr)（严重）：未登录即可远程执行代码（`use cache` 返回 typed array）。
+  - [GHSA-2464-fhr4-w9xw](https://github.com/advisories/GHSA-2464-fhr4-w9xw) / CVE-2026-96889（严重）：未登录即可远程执行代码（图片优化处理 SVG）。
+  - [GHSA-p3m5-59mp-jv5r](https://github.com/advisories/GHSA-p3m5-59mp-jv5r)（高危）：Server Actions 拒绝服务。
+- 本版只包含这项安全升级，没有功能变化。
 
 ## [0.3.1] - 2026-10-14
 
