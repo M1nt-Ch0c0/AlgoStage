@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { scrollHeight, clientHeight, scrollWidth, clientWidth } from "happy-dom/lib/PropertySymbol.js";
+import AskEntry from "../components/board/ask-entry";
 import AskSelectionLayer from "../components/board/ask-selection-layer";
 import { ASK_CODE_MISS_HINT, ASK_EMPTY_HIT, ASK_ENTERED_STATUS, ASK_RESIZE_HINT } from "../lib/ask/ask-ui-text";
 import { type CodeEditorHandle, getAskCodeMissNotice, registerCodeEditor, resetCodeEditorRegistry } from "../lib/ask/code-editor-registry";
@@ -583,6 +584,75 @@ describe("AskSelectionLayer", () => {
     expect(sel?.targets[0].kind).toBe("code");
     expect(sel?.targets[0].codeRange).toBeUndefined();
     expect(summarizeSelection(sel!)).toBe("已选：当前代码");
+    expect(layer().textContent).not.toContain(ASK_CODE_MISS_HINT);
+    expect(getAskCodeMissNotice()).toBeNull();
+  });
+
+  test("exit-ask path explicitly clears code-miss notice, and re-entry shows no hint", async () => {
+    usePlayerStore.getState().setLectureAnswerMeta({
+      cacheKey: "ck-1",
+      scriptVersion: "v1",
+      askDisabledStepIds: [],
+      storageMode: "server",
+    });
+
+    const codeEl = document.createElement("div");
+    codeEl.setAttribute("data-ask-target", "code");
+    codeEl.setAttribute("data-ask-id", "code:main");
+    codeEl.setAttribute("data-ask-step-id", "s1");
+    codeEl.getBoundingClientRect = () => domRect(250, 10, 80, 50);
+    stage.append(codeEl);
+
+    const mockHandle: CodeEditorHandle = {
+      getLineRangeForClientBox: vi.fn(() => null),
+      getLinesText: vi.fn(() => ""),
+      getFullText: vi.fn(() => ""),
+    };
+    registerCodeEditor(codeEl, mockHandle);
+
+    await act(async () => {
+      root.render(
+        createElement(
+          "div",
+          null,
+          createElement(AskSelectionLayer, { stage }),
+          createElement(AskEntry),
+        ),
+      );
+    });
+
+    // Box covering viz (150..210, 10..40) and code (250..330, 10..60)
+    await gesture(160, 20, 280, 45);
+
+    expect(getAskCodeMissNotice()).toBe(ASK_CODE_MISS_HINT);
+
+    const exitBtn = container.querySelector<HTMLButtonElement>("[data-ask-entry]");
+    if (exitBtn) {
+      await act(async () => {
+        exitBtn.click();
+      });
+    } else {
+      act(() => {
+        usePlayerStore.getState().exitAsk();
+      });
+    }
+
+    expect(getAskCodeMissNotice()).toBeNull();
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "q", bubbles: true }));
+    });
+    if (usePlayerStore.getState().askPhase !== "selecting") {
+      act(() => {
+        if (usePlayerStore.getState().askPhase === "drafting") {
+          usePlayerStore.getState().closeAskPanel();
+        } else {
+          usePlayerStore.getState().enterAsk();
+        }
+      });
+    }
+
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
     expect(layer().textContent).not.toContain(ASK_CODE_MISS_HINT);
     expect(getAskCodeMissNotice()).toBeNull();
   });

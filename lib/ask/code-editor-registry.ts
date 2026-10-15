@@ -29,6 +29,7 @@ let codeMissNotice: string | null = null;
 const noticeListeners = new Set<() => void>();
 
 export function setAskCodeMissNotice(text: string | null): void {
+  console.log("setAskCodeMissNotice called with:", text, new Error().stack);
   if (codeMissNotice === text) return;
   codeMissNotice = text;
   for (const listener of noticeListeners) {
