@@ -245,6 +245,8 @@ function AskPanelActive({ stage }: AskPanelProps) {
     const startSelection = state.selection;
     if (!startSelection) return;
     sendingRef.current = true;
+    // 新的一次截图开始：上一轮「没截到图」先清掉，这次失败再写回。
+    usePlayerStore.setState({ askCaptureFallback: false });
     let capture: CaptureResult | null;
     try {
       capture = await captureStage(resolveStage(stage), startSelection);

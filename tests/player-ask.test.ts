@@ -176,6 +176,34 @@ describe("进入 / 退出 / 草稿", () => {
     expect(s()).toMatchObject({ askPhase: "idle", status: "paused", draftQuestion: "还在" });
   });
 
+  test("closeAskPanel 保留 askCaptureFallback，exitAsk 才清掉", () => {
+    loadReady();
+    s().pause();
+    enterDrafting("没截到还留着");
+    usePlayerStore.setState({ askCaptureFallback: true });
+    s().closeAskPanel();
+    expect(s()).toMatchObject({ askPhase: "selecting", askCaptureFallback: true });
+    s().exitAsk();
+    expect(s()).toMatchObject({ askPhase: "idle", askCaptureFallback: false });
+  });
+
+  test("answerFailed 保留 askCaptureFallback，下一次提问才清掉", () => {
+    loadReady();
+    s().pause();
+    enterDrafting("失败也留提示");
+    s().askSent(guard({ token: 4 }));
+    // 截图失败记在发送之后：answerFailed / closeAskPanel 都不清它。
+    usePlayerStore.setState({ askCaptureFallback: true });
+    s().answerFailed("TIMEOUT", true, guard({ token: 4 }));
+    expect(s()).toMatchObject({ askPhase: "error", askCaptureFallback: true, askErrorCode: "TIMEOUT" });
+    s().closeAskPanel();
+    expect(s()).toMatchObject({ askPhase: "selecting", askCaptureFallback: true });
+    // 下一次进入提问才清掉。
+    s().exitAsk();
+    s().enterAsk();
+    expect(s().askCaptureFallback).toBe(false);
+  });
+
   test("error 态退出保留选区和草稿", () => {
     loadReady();
     enterDrafting("失败也留着");
