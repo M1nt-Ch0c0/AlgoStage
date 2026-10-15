@@ -357,6 +357,7 @@ function AskSelectionLayerActive({
   const [hint, setHint] = useState<string | null>(null);
   const [activeShortcut, setActiveShortcut] = useState(0);
   const [rovingIndex, setRovingIndex] = useState(0);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
 
   const getStage = useCallback(() => resolveStage(stage, stageRef), [stage, stageRef]);
@@ -419,12 +420,20 @@ function AskSelectionLayerActive({
   }, []);
 
   // 测量底部条高度与播放区高度并同步 --ask-bottom-bar-h 和 --ask-player-bar-h。
-  // 桌面/inactive/unmount 时设为 0px（或 removeProperty）。
+  // 桌面/inactive/unmount/键盘打开时设为 0px（或 removeProperty）。
   useEffect(() => {
     if (typeof document === "undefined") return;
     const isMobile = () => typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches;
+    const isKeyboardOpen = () => {
+      if (typeof window === "undefined" || !window.visualViewport) return false;
+      return window.innerHeight - window.visualViewport.height > 120;
+    };
+
     const updateBarHeight = () => {
-      if (!active || !isMobile()) {
+      const kbOpen = isKeyboardOpen();
+      setKeyboardOpen(kbOpen);
+
+      if (!active || !isMobile() || kbOpen) {
         document.documentElement.style.setProperty("--ask-bottom-bar-h", "0px");
         document.documentElement.style.setProperty("--ask-player-bar-h", "0px");
         return;
@@ -473,12 +482,14 @@ function AskSelectionLayerActive({
     const onMqChange = () => updateBarHeight();
     mq.addEventListener("change", onMqChange);
     window.addEventListener("resize", onMqChange);
+    window.visualViewport?.addEventListener("resize", onMqChange);
 
     return () => {
       cancelAnimationFrame(rafId);
       ro?.disconnect();
       mq.removeEventListener("change", onMqChange);
       window.removeEventListener("resize", onMqChange);
+      window.visualViewport?.removeEventListener("resize", onMqChange);
       document.documentElement.style.setProperty("--ask-bottom-bar-h", "0px");
       document.documentElement.style.setProperty("--ask-player-bar-h", "0px");
     };
@@ -901,9 +912,10 @@ function AskSelectionLayerActive({
           <div
             ref={bottomBarRef}
             data-ask-bottom-bar
+            data-keyboard-open={keyboardOpen ? "" : undefined}
             role="group"
             aria-label="点选捷径"
-            className="pointer-events-auto flex flex-wrap gap-2 max-sm:fixed max-sm:inset-x-2 max-sm:top-auto max-sm:bottom-[calc(var(--ask-player-bar-h)+env(safe-area-inset-bottom)+8px)] max-sm:z-40 max-sm:rounded-xl max-sm:border max-sm:border-board-600 max-sm:bg-board-900/95 max-sm:p-2 max-sm:shadow-lg sm:relative sm:inset-auto sm:bottom-auto sm:z-auto sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none sm:gap-1"
+            className={`pointer-events-auto flex flex-wrap gap-2 max-sm:fixed max-sm:inset-x-2 max-sm:top-auto max-sm:bottom-[calc(var(--ask-player-bar-h)+env(safe-area-inset-bottom)+8px)] max-sm:z-40 max-sm:rounded-xl max-sm:border max-sm:border-board-600 max-sm:bg-board-900/95 max-sm:p-2 max-sm:shadow-lg sm:relative sm:inset-auto sm:bottom-auto sm:z-auto sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none sm:gap-1 ${keyboardOpen ? "max-sm:hidden" : ""}`}
           >
             {visibleShortcuts.map((item, index) => (
               <button

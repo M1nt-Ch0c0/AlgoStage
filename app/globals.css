@@ -12,7 +12,7 @@
   }
 
   [data-ask-panel] {
-    bottom: calc(var(--ask-player-bar-h) + var(--ask-bottom-bar-h) + env(safe-area-inset-bottom) + 16px) !important;
+    margin-bottom: calc(var(--ask-player-bar-h) + var(--ask-bottom-bar-h) + env(safe-area-inset-bottom) + 16px);
   }
 
   [data-ask-target="code"] {
