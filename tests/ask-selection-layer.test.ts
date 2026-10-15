@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { scrollHeight, clientHeight, scrollWidth, clientWidth } from "happy-dom/lib/PropertySymbol.js";
 import AskEntry from "../components/board/ask-entry";
-import AskSelectionLayer, { isElementFullyInView, resolveAskEscape } from "../components/board/ask-selection-layer";
+import AskSelectionLayer, { computeBottomOcclusion, computeOcclusion, isElementFullyInView, resolveAskEscape } from "../components/board/ask-selection-layer";
 import { ASK_CODE_MISS_HINT, ASK_EMPTY_HIT, ASK_ENTERED_STATUS, ASK_RESIZE_HINT } from "../lib/ask/ask-ui-text";
 import { type CodeEditorHandle, getAskCodeMissNotice, registerCodeEditor, resetCodeEditorRegistry } from "../lib/ask/code-editor-registry";
 import { summarizeSelection } from "../lib/ask/collect-candidates";
@@ -1319,6 +1319,83 @@ describe("resolveAskEscape", () => {
 
       // Both off-screen
       expect(isElementFullyInView({ top: -100, bottom: 900 }, viewport)).toBe(false);
+    });
+
+    test("computeBottomOcclusion / computeOcclusion pure helper computes total occlusion with gaps", () => {
+      expect(computeBottomOcclusion({})).toBe(0);
+      expect(computeOcclusion({ playerHeight: 0, barHeight: 0, panelHeight: 0 })).toBe(0);
+
+      // Player and bar present, no panel: 60 + 52 + 8 + 16 = 136
+      expect(computeBottomOcclusion({ playerHeight: 60, barHeight: 52 })).toBe(136);
+
+      // Player, bar, and panel present: 60 + 52 + 200 + 8 + 16 = 336
+      expect(computeOcclusion({ playerHeight: 60, barHeight: 52, panelHeight: 200 })).toBe(336);
+
+      // Only bar present: 0 + 52 + 0 + 8 + 16 = 76
+      expect(computeBottomOcclusion({ barHeight: 52 })).toBe(76);
+
+      // Ceiling of fractional heights
+      expect(computeBottomOcclusion({ playerHeight: 59.4, barHeight: 51.2, panelHeight: 199.1 })).toBe(60 + 52 + 200 + 8 + 16);
+    });
+
+    test("sets --ask-bottom-occlusion-h on mobile and reacts to panel and unmount", async () => {
+      const originalMatchMedia = window.matchMedia;
+      window.matchMedia = vi.fn().mockImplementation((query: string) => {
+        if (query === "(max-width: 639px)") {
+          return {
+            matches: true,
+            media: query,
+            addEventListener: vi.fn(),
+            removeEventListener: vi.fn(),
+          };
+        }
+        return {
+          matches: false,
+          media: query,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+        };
+      });
+
+      const playerEl = document.createElement("div");
+      playerEl.setAttribute("aria-label", "讲解播放区");
+      playerEl.getBoundingClientRect = () => domRect(0, 708, 390, 60);
+      document.body.appendChild(playerEl);
+
+      await render();
+      const bar = layer().querySelector<HTMLElement>("[data-ask-bottom-bar]");
+      expect(bar).not.toBeNull();
+      bar!.getBoundingClientRect = () => domRect(8, 790, 374, 52);
+
+      await act(async () => {
+        window.dispatchEvent(new Event("resize"));
+      });
+
+      // player 60 + bar 52 + gaps 24 = 136px
+      expect(document.documentElement.style.getPropertyValue("--ask-bottom-occlusion-h")).toBe("136px");
+
+      // Add panel
+      const panelEl = document.createElement("div");
+      panelEl.setAttribute("data-ask-panel", "");
+      panelEl.getBoundingClientRect = () => domRect(8, 500, 374, 200);
+      document.body.appendChild(panelEl);
+
+      await act(async () => {
+        window.dispatchEvent(new Event("resize"));
+      });
+
+      // player 60 + bar 52 + panel 200 + gaps 24 = 336px
+      expect(document.documentElement.style.getPropertyValue("--ask-bottom-occlusion-h")).toBe("336px");
+
+      panelEl.remove();
+      playerEl.remove();
+
+      await act(async () => {
+        root.unmount();
+      });
+      expect(document.documentElement.style.getPropertyValue("--ask-bottom-occlusion-h")).toBe("0px");
+
+      window.matchMedia = originalMatchMedia;
     });
 
     test("pointerdown cancels in-flight smooth scroll via window.scrollTo", async () => {

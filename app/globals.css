@@ -3,6 +3,7 @@
 :root {
   --ask-bottom-bar-h: 0px;
   --ask-player-bar-h: 0px;
+  --ask-bottom-occlusion-h: 0px;
 }
 
 @media (max-width: 639px) {
@@ -17,12 +18,11 @@
 
   [data-ask-target="code"] {
     scroll-margin-top: 3.5rem;
-    scroll-margin-bottom: calc(var(--ask-player-bar-h) + var(--ask-bottom-bar-h) + env(safe-area-inset-bottom) + 8px);
+    scroll-margin-bottom: calc(var(--ask-bottom-occlusion-h) + env(safe-area-inset-bottom));
   }
 
   [data-ask-selection] {
-    /* S4 ask-panel mobile max-height is 50vh; fallback for drawer height */
-    scroll-margin-bottom: calc(var(--ask-player-bar-h) + var(--ask-bottom-bar-h) + 50vh);
+    scroll-margin-bottom: calc(var(--ask-bottom-occlusion-h) + env(safe-area-inset-bottom));
   }
 }
 

@@ -177,6 +177,27 @@ export function findScrollable(start: HTMLElement | null): HTMLElement {
   return document.documentElement;
 }
 
+export interface OcclusionParts {
+  playerHeight?: number;
+  barHeight?: number;
+  panelHeight?: number;
+}
+
+export function computeBottomOcclusion(parts: OcclusionParts): number {
+  const player = Math.max(0, Math.ceil(parts.playerHeight ?? 0));
+  const bar = Math.max(0, Math.ceil(parts.barHeight ?? 0));
+  const panel = Math.max(0, Math.ceil(parts.panelHeight ?? 0));
+
+  if (player === 0 && bar === 0 && panel === 0) return 0;
+
+  const playerBarGap = player > 0 || bar > 0 ? 8 : 0;
+  const barAboveGap = bar > 0 || panel > 0 ? 16 : 0;
+
+  return player + bar + panel + playerBarGap + barAboveGap;
+}
+
+export const computeOcclusion = computeBottomOcclusion;
+
 function shortcutId(stepId: string, key: ShortcutKey): string {
   return `${key}:${stepId}`;
 }
@@ -419,7 +440,7 @@ function AskSelectionLayerActive({
     };
   }, []);
 
-  // 测量底部条高度与播放区高度并同步 --ask-bottom-bar-h 和 --ask-player-bar-h。
+  // 测量底部条高度、播放区高度与抽屉面板高度，并同步 --ask-bottom-bar-h、--ask-player-bar-h 和 --ask-bottom-occlusion-h。
   // 桌面/inactive/unmount/键盘打开时设为 0px（或 removeProperty）。
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -429,16 +450,21 @@ function AskSelectionLayerActive({
       return window.innerHeight - window.visualViewport.height > 120;
     };
 
-    const updateBarHeight = () => {
+    let observedPanelEl: HTMLElement | null = null;
+    let ro: ResizeObserver | null = null;
+
+    const updateMeasurements = () => {
       const kbOpen = isKeyboardOpen();
       setKeyboardOpen(kbOpen);
 
       if (!active || !isMobile() || kbOpen) {
         document.documentElement.style.setProperty("--ask-bottom-bar-h", "0px");
         document.documentElement.style.setProperty("--ask-player-bar-h", "0px");
+        document.documentElement.style.setProperty("--ask-bottom-occlusion-h", "0px");
         return;
       }
 
+      let playerH = 0;
       const playerEl = document.querySelector<HTMLElement>('[aria-label="讲解播放区"]');
       if (playerEl) {
         const playerRect = playerEl.getBoundingClientRect();
@@ -446,40 +472,73 @@ function AskSelectionLayerActive({
         const vh = (typeof window !== "undefined" ? window.innerHeight : 0) || 800;
         const isVisibleAtBottom = ph > 0 && playerRect.bottom > 0 && playerRect.top < vh;
         if (isVisibleAtBottom) {
-          document.documentElement.style.setProperty("--ask-player-bar-h", `${Math.ceil(ph)}px`);
-        } else {
-          document.documentElement.style.setProperty("--ask-player-bar-h", "0px");
+          playerH = Math.ceil(ph);
         }
-      } else {
-        document.documentElement.style.setProperty("--ask-player-bar-h", "0px");
       }
+      document.documentElement.style.setProperty("--ask-player-bar-h", `${playerH}px`);
 
+      let barH = 0;
       const el = bottomBarRef.current ?? document.querySelector<HTMLElement>("[data-ask-bottom-bar]");
       if (el) {
         const rect = el.getBoundingClientRect();
-        const h = rect.height || 0;
-        document.documentElement.style.setProperty("--ask-bottom-bar-h", `${Math.ceil(h)}px`);
-      } else {
-        document.documentElement.style.setProperty("--ask-bottom-bar-h", "0px");
+        barH = Math.ceil(rect.height || 0);
       }
+      document.documentElement.style.setProperty("--ask-bottom-bar-h", `${barH}px`);
+
+      let panelH = 0;
+      const panelEl = document.querySelector<HTMLElement>("[data-ask-panel]");
+      if (panelEl) {
+        const rect = panelEl.getBoundingClientRect();
+        panelH = Math.ceil(rect.height || 0);
+      }
+
+      if (panelEl !== observedPanelEl) {
+        if (observedPanelEl && ro) {
+          ro.unobserve(observedPanelEl);
+        }
+        observedPanelEl = panelEl;
+        if (panelEl && ro) {
+          ro.observe(panelEl);
+        }
+      }
+
+      const totalOcclusion = computeBottomOcclusion({
+        playerHeight: playerH,
+        barHeight: barH,
+        panelHeight: panelH,
+      });
+      document.documentElement.style.setProperty("--ask-bottom-occlusion-h", `${totalOcclusion}px`);
     };
 
-    updateBarHeight();
-    const rafId = requestAnimationFrame(updateBarHeight);
+    updateMeasurements();
+    const rafId = requestAnimationFrame(updateMeasurements);
 
     const barEl = bottomBarRef.current ?? document.querySelector<HTMLElement>("[data-ask-bottom-bar]");
     const playerEl = document.querySelector<HTMLElement>('[aria-label="讲解播放区"]');
-    let ro: ResizeObserver | null = null;
+    const panelEl = document.querySelector<HTMLElement>("[data-ask-panel]");
+
     if (typeof ResizeObserver !== "undefined") {
       ro = new ResizeObserver(() => {
-        updateBarHeight();
+        updateMeasurements();
       });
       if (barEl) ro.observe(barEl);
       if (playerEl) ro.observe(playerEl);
+      if (panelEl) {
+        observedPanelEl = panelEl;
+        ro.observe(panelEl);
+      }
+    }
+
+    let mo: MutationObserver | null = null;
+    if (typeof MutationObserver !== "undefined") {
+      mo = new MutationObserver(() => {
+        updateMeasurements();
+      });
+      mo.observe(document.body, { childList: true, subtree: true });
     }
 
     const mq = window.matchMedia("(max-width: 639px)");
-    const onMqChange = () => updateBarHeight();
+    const onMqChange = () => updateMeasurements();
     mq.addEventListener("change", onMqChange);
     window.addEventListener("resize", onMqChange);
     window.visualViewport?.addEventListener("resize", onMqChange);
@@ -487,13 +546,15 @@ function AskSelectionLayerActive({
     return () => {
       cancelAnimationFrame(rafId);
       ro?.disconnect();
+      mo?.disconnect();
       mq.removeEventListener("change", onMqChange);
       window.removeEventListener("resize", onMqChange);
       window.visualViewport?.removeEventListener("resize", onMqChange);
       document.documentElement.style.setProperty("--ask-bottom-bar-h", "0px");
       document.documentElement.style.setProperty("--ask-player-bar-h", "0px");
+      document.documentElement.style.setProperty("--ask-bottom-occlusion-h", "0px");
     };
-  }, [active]);
+  }, [active, askPhase]);
 
   // 当进入 ask 模式（selecting）在移动端时，确保代码区域可见。
   useEffect(() => {
