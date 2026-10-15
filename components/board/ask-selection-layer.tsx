@@ -88,6 +88,30 @@ export function isElementFullyInView(
   return true;
 }
 
+/**
+ * 快捷选项 roving tabindex 计算。
+ * ArrowLeft / ArrowRight / Home / End 支持循环移动焦点。
+ */
+export function nextRovingIndex(
+  current: number,
+  total: number,
+  key: "ArrowRight" | "ArrowLeft" | "Home" | "End",
+): number {
+  if (total <= 0) return 0;
+  switch (key) {
+    case "ArrowRight":
+      return (current + 1) % total;
+    case "ArrowLeft":
+      return (current - 1 + total) % total;
+    case "Home":
+      return 0;
+    case "End":
+      return total - 1;
+    default:
+      return current;
+  }
+}
+
 /** 退出圈选并将焦点还给入口按钮（若在 DOM 中）。 */
 export function exitAskAndFocusEntry(): void {
   setAskCodeMissNotice(null);
@@ -900,30 +924,11 @@ function AskSelectionLayerActive({
     // Esc 只由窗口级监听处理，避免和这里重复退出。
     if (key === "Escape") return;
     const blocked = key === " " || key === "ArrowLeft" || key === "ArrowRight" || key === "ArrowUp" || key === "ArrowDown";
-    if (blocked || key === "Enter" || key === "Tab") {
+    if (blocked || key === "Enter") {
       event.stopPropagation();
     }
     if (key === " " || key === "ArrowLeft" || key === "ArrowRight") {
       event.preventDefault();
-    }
-
-    if (key === "Tab") {
-      const count = visibleShortcuts.length;
-      if (count === 0) return;
-      event.preventDefault();
-      if (!event.shiftKey && activeShortcut === count - 1) {
-        const entryEl = document.querySelector<HTMLElement>("[data-ask-entry]");
-        if (entryEl) {
-          entryEl.focus();
-          return;
-        }
-      }
-      const dir = event.shiftKey ? -1 : 1;
-      const next = (activeShortcut + dir + count) % count;
-      setActiveShortcut(next);
-      const buttons = rootRef.current?.querySelectorAll<HTMLButtonElement>("[data-ask-shortcut]");
-      buttons?.[next]?.focus();
-      return;
     }
 
     if (key === "ArrowUp" || key === "ArrowDown" || key === "ArrowLeft" || key === "ArrowRight") {
@@ -996,69 +1001,106 @@ function AskSelectionLayerActive({
               event.stopPropagation();
             }}
           >
-            <div
-              role="group"
-              aria-label="快捷选项"
-              className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto py-0.5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden sm:contents"
-            >
-              {visibleShortcuts.map((item, index) => (
-                <button
-                  key={item.key}
-                  type="button"
-                  data-ask-shortcut={item.key}
-                  tabIndex={index === activeShortcut ? 0 : -1}
-                  className="min-h-11 min-w-11 pointer-coarse:min-h-11 pointer-coarse:min-w-11 inline-flex shrink-0 items-center justify-center rounded-full border border-board-600 bg-board-900/80 px-3 py-1 text-xs sm:px-2 sm:py-0.5 sm:text-[10px] sm:min-h-0 sm:min-w-0 sm:pointer-coarse:min-h-11 sm:pointer-coarse:min-w-11 text-chalk-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beam-gold focus-visible:ring-inset"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    // 拖过阈值后的 click 只留下框选，不再把捷径当成点选。
-                    if (dragStartedRef.current) {
-                      dragStartedRef.current = false;
-                      return;
-                    }
-                    setActiveShortcut(index);
-                    pickShortcut(item.key);
-                  }}
-                  onPointerDown={(event) => {
-                    // 点按仍选中捷径。拖过阈值就从起点起框，捷径不能挡住代码区起拖。
-                    if (event.button !== 0 && event.pointerType === "mouse") return;
-                    const startX = event.clientX;
-                    const startY = event.clientY;
-                    const pointerId = event.pointerId;
-                    const host = event.currentTarget.closest<HTMLElement>("[data-ask-layer]");
-                    if (!host) return;
-                    chipDragCleanupRef.current?.();
-                    dragStartedRef.current = false;
-                    const detach = () => {
-                      window.removeEventListener("pointermove", onMove);
-                      window.removeEventListener("pointerup", onUp);
-                      window.removeEventListener("pointercancel", onCancel);
-                      if (chipDragCleanupRef.current === detach) chipDragCleanupRef.current = null;
-                    };
-                    const onMove = (move: globalThis.PointerEvent) => {
-                      if (move.pointerId !== pointerId) return;
-                      if (Math.hypot(move.clientX - startX, move.clientY - startY) < ASK_LIMITS.dragThresholdPx) return;
-                      dragStartedRef.current = true;
-                      detach();
-                      beginPointer(host, pointerId, event.pointerType, 0, startX, startY);
-                    };
-                    const onUp = (up: globalThis.PointerEvent) => {
-                      if (up.pointerId !== pointerId) return;
-                      detach();
-                    };
-                    const onCancel = (cancel: globalThis.PointerEvent) => {
-                      if (cancel.pointerId !== pointerId) return;
-                      detach();
-                    };
-                    chipDragCleanupRef.current = detach;
-                    window.addEventListener("pointermove", onMove);
-                    window.addEventListener("pointerup", onUp);
-                    window.addEventListener("pointercancel", onCancel);
-                  }}
+            {(() => {
+              const selectedShortcutKey =
+                selection?.mode === "single" && selection.targets.length === 1
+                  ? (selection.targets[0].kind as ShortcutKey)
+                  : null;
+              const selectedShortcutIndex = visibleShortcuts.findIndex(
+                (item) => item.key === selectedShortcutKey,
+              );
+              const effectiveTabbableIndex =
+                selectedShortcutIndex !== -1
+                  ? selectedShortcutIndex
+                  : Math.min(activeShortcut, Math.max(0, visibleShortcuts.length - 1));
+
+              return (
+                <div
+                  role="group"
+                  aria-label="快捷选项"
+                  className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto py-0.5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden sm:contents"
                 >
-                  {item.label}
-                </button>
-              ))}
-            </div>
+                  {visibleShortcuts.map((item, index) => {
+                    const isSelected = selectedShortcutIndex === index;
+                    const isTabbable = index === effectiveTabbableIndex;
+                    return (
+                      <button
+                        key={item.key}
+                        type="button"
+                        data-ask-shortcut={item.key}
+                        aria-pressed={isSelected ? true : undefined}
+                        tabIndex={isTabbable ? 0 : -1}
+                        className="min-h-11 min-w-11 pointer-coarse:min-h-11 pointer-coarse:min-w-11 inline-flex shrink-0 items-center justify-center rounded-full border border-board-600 bg-board-900/80 px-3 py-1 text-xs sm:px-2 sm:py-0.5 sm:text-[10px] sm:min-h-0 sm:min-w-0 sm:pointer-coarse:min-h-11 sm:pointer-coarse:min-w-11 text-chalk-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beam-gold focus-visible:ring-inset"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          // 拖过阈值后的 click 只留下框选，不再把捷径当成点选。
+                          if (dragStartedRef.current) {
+                            dragStartedRef.current = false;
+                            return;
+                          }
+                          setActiveShortcut(index);
+                          pickShortcut(item.key);
+                        }}
+                        onKeyDown={(event) => {
+                          if (
+                            event.key === "ArrowRight" ||
+                            event.key === "ArrowLeft" ||
+                            event.key === "Home" ||
+                            event.key === "End"
+                          ) {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            const next = nextRovingIndex(index, visibleShortcuts.length, event.key);
+                            setActiveShortcut(next);
+                            const buttons =
+                              bottomBarRef.current?.querySelectorAll<HTMLButtonElement>("[data-ask-shortcut]");
+                            buttons?.[next]?.focus();
+                          }
+                        }}
+                        onPointerDown={(event) => {
+                          // 点按仍选中捷径。拖过阈值就从起点起框，捷径不能挡住代码区起拖。
+                          if (event.button !== 0 && event.pointerType === "mouse") return;
+                          const startX = event.clientX;
+                          const startY = event.clientY;
+                          const pointerId = event.pointerId;
+                          const host = event.currentTarget.closest<HTMLElement>("[data-ask-layer]");
+                          if (!host) return;
+                          chipDragCleanupRef.current?.();
+                          dragStartedRef.current = false;
+                          const detach = () => {
+                            window.removeEventListener("pointermove", onMove);
+                            window.removeEventListener("pointerup", onUp);
+                            window.removeEventListener("pointercancel", onCancel);
+                            if (chipDragCleanupRef.current === detach) chipDragCleanupRef.current = null;
+                          };
+                          const onMove = (move: globalThis.PointerEvent) => {
+                            if (move.pointerId !== pointerId) return;
+                            if (Math.hypot(move.clientX - startX, move.clientY - startY) < ASK_LIMITS.dragThresholdPx) return;
+                            dragStartedRef.current = true;
+                            detach();
+                            beginPointer(host, pointerId, event.pointerType, 0, startX, startY);
+                          };
+                          const onUp = (up: globalThis.PointerEvent) => {
+                            if (up.pointerId !== pointerId) return;
+                            detach();
+                          };
+                          const onCancel = (cancel: globalThis.PointerEvent) => {
+                            if (cancel.pointerId !== pointerId) return;
+                            detach();
+                          };
+                          chipDragCleanupRef.current = detach;
+                          window.addEventListener("pointermove", onMove);
+                          window.addEventListener("pointerup", onUp);
+                          window.addEventListener("pointercancel", onCancel);
+                        }}
+                      >
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
             {isMobile ? (
               <button
                 type="button"

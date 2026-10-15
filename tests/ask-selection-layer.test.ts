@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { scrollHeight, clientHeight, scrollWidth, clientWidth } from "happy-dom/lib/PropertySymbol.js";
 import AskEntry from "../components/board/ask-entry";
-import AskSelectionLayer, { computeBottomOcclusion, computeOcclusion, isElementFullyInView, resolveAskEscape } from "../components/board/ask-selection-layer";
+import AskSelectionLayer, { computeBottomOcclusion, computeOcclusion, isElementFullyInView, nextRovingIndex, resolveAskEscape } from "../components/board/ask-selection-layer";
 import { ASK_CODE_MISS_HINT, ASK_EMPTY_HIT, ASK_ENTERED_STATUS, ASK_RESIZE_HINT } from "../lib/ask/ask-ui-text";
 import { type CodeEditorHandle, getAskCodeMissNotice, registerCodeEditor, resetCodeEditorRegistry } from "../lib/ask/code-editor-registry";
 import { summarizeSelection } from "../lib/ask/collect-candidates";
@@ -420,21 +420,49 @@ describe("AskSelectionLayer", () => {
     status.remove();
   });
 
-  test("Tab 在捷径组内循环并切换 tabIndex", async () => {
+  test("roving tabindex: ArrowRight/ArrowLeft navigate among chips", async () => {
     await render();
     const host = layer();
     const buttons = () => [...host.querySelectorAll<HTMLButtonElement>("[data-ask-shortcut]")];
     expect(buttons()[0].tabIndex).toBe(0);
     expect(buttons()[1].tabIndex).toBe(-1);
 
-    const tab = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    const right = new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true });
     await act(async () => {
-      host.dispatchEvent(tab);
+      buttons()[0].dispatchEvent(right);
     });
-    expect(tab.defaultPrevented).toBe(true);
+    expect(right.defaultPrevented).toBe(true);
     expect(buttons()[1].tabIndex).toBe(0);
     expect(buttons()[0].tabIndex).toBe(-1);
     expect(document.activeElement).toBe(buttons()[1]);
+
+    const left = new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true });
+    await act(async () => {
+      buttons()[1].dispatchEvent(left);
+    });
+    expect(left.defaultPrevented).toBe(true);
+    expect(buttons()[0].tabIndex).toBe(0);
+    expect(buttons()[1].tabIndex).toBe(-1);
+    expect(document.activeElement).toBe(buttons()[0]);
+  });
+
+  test("selected shortcut has tabIndex=0 and aria-pressed=true", async () => {
+    usePlayerStore.setState({
+      selection: {
+        mode: "single",
+        bbox: { x: 0, y: 0, width: 10, height: 10 },
+        targets: [{ kind: "step", id: "s1", stepId: "s1", text: "step 1" }],
+      },
+      askPhase: "selecting",
+    });
+    await render();
+    const host = layer();
+    const buttons = () => [...host.querySelectorAll<HTMLButtonElement>("[data-ask-shortcut]")];
+
+    expect(buttons()[1].tabIndex).toBe(0);
+    expect(buttons()[0].tabIndex).toBe(-1);
+    expect(buttons()[1].getAttribute("aria-pressed")).toBe("true");
+    expect(buttons()[0].getAttribute("aria-pressed")).toBeNull();
   });
 
   function pressEscape(target: EventTarget, init: KeyboardEventInit = {}) {
@@ -1422,6 +1450,29 @@ describe("resolveAskEscape", () => {
       expect(usePlayerStore.getState().askPhase).toBe("idle");
 
       window.matchMedia = originalMatchMedia;
+    });
+  });
+
+  describe("nextRovingIndex", () => {
+    test("ArrowRight moves forward and wraps around", () => {
+      expect(nextRovingIndex(0, 3, "ArrowRight")).toBe(1);
+      expect(nextRovingIndex(1, 3, "ArrowRight")).toBe(2);
+      expect(nextRovingIndex(2, 3, "ArrowRight")).toBe(0);
+    });
+
+    test("ArrowLeft moves backward and wraps around", () => {
+      expect(nextRovingIndex(0, 3, "ArrowLeft")).toBe(2);
+      expect(nextRovingIndex(2, 3, "ArrowLeft")).toBe(1);
+      expect(nextRovingIndex(1, 3, "ArrowLeft")).toBe(0);
+    });
+
+    test("Home moves to first index and End moves to last", () => {
+      expect(nextRovingIndex(2, 3, "Home")).toBe(0);
+      expect(nextRovingIndex(0, 3, "End")).toBe(2);
+    });
+
+    test("handles empty list gracefully", () => {
+      expect(nextRovingIndex(0, 0, "ArrowRight")).toBe(0);
     });
   });
 });
