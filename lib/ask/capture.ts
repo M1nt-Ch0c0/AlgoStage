@@ -295,6 +295,10 @@ export async function encodeOffThread(
           cleanup();
           reject(event.error ?? new Error(event.message || "worker error"));
         };
+        const onMessageError = () => {
+          cleanup();
+          reject(new Error("worker messageerror"));
+        };
         const poll = setInterval(() => {
           if (timedOut()) {
             cleanup();
@@ -305,9 +309,11 @@ export async function encodeOffThread(
           clearInterval(poll);
           worker.removeEventListener("message", onMessage);
           worker.removeEventListener("error", onError);
+          worker.removeEventListener("messageerror", onMessageError);
         };
         worker.addEventListener("message", onMessage);
         worker.addEventListener("error", onError);
+        worker.addEventListener("messageerror", onMessageError);
         worker.postMessage(request, [bitmap]);
       });
 
