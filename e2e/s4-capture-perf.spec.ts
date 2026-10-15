@@ -300,6 +300,17 @@ async function measureCapture(page: Page, width: number) {
 
     writeFileSync(path.join(OUT_DIR, `${LABEL}-${width}.json`), `${JSON.stringify(summary, null, 2)}\n`);
     console.log(
+      JSON.stringify({
+        label: LABEL,
+        width,
+        longestTaskMs,
+        requestElapsedMs,
+        longTaskCount: longTasks.length,
+        imageAttached,
+        encoder,
+      }),
+    );
+    console.log(
       `[s4-capture] ${LABEL} ${width}px longest=${longestTaskMs.toFixed(1)}ms count=${longTasks.length} elapsed=${requestElapsedMs.toFixed(1)}ms image=${imageAttached} encoder=${encoder}`,
     );
 
