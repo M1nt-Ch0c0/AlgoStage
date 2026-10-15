@@ -24,7 +24,7 @@ import { chooseAskScrollBlock } from "@/lib/ask/ask-scroll";
 import { ASK_ERROR_SPECS, resolveAskError, type AskErrorAction } from "@/lib/ask/ask-errors";
 import { captureStage, type CaptureResult } from "@/lib/ask/capture";
 import { createCancelHold } from "@/lib/ask/cancel-hold";
-import { yieldToInput } from "@/lib/ask/yield-macrotask";
+import { settleInput, yieldToInput } from "@/lib/ask/yield-macrotask";
 import { usePointerActivate } from "@/lib/ask/use-pointer-activate";
 import { collectAskCandidates, summarizeSelection } from "@/lib/ask/collect-candidates";
 import { getAskCodeMissNotice, subscribeAskCodeMissNotice } from "@/lib/ask/code-editor-registry";
@@ -339,6 +339,9 @@ function AskPanelActive({ stage }: AskPanelProps) {
     // before deciding to send, so a 取消 press during that stall is visible.
     await yieldToInput();
     await yieldToInput();
+    // Input queued during the stall can still be in transit after those
+    // yields. Wait a fixed settle window before the hold decision.
+    await settleInput();
     holdWaitingRef.current = true;
     const holdResult = await holdRef.current.wait(session, 2000);
     holdWaitingRef.current = false;
@@ -463,9 +466,13 @@ function AskPanelActive({ stage }: AskPanelProps) {
         event.clientX <= box.right &&
         event.clientY >= box.top &&
         event.clientY <= box.bottom;
+      // An in-submit hold owns the release. The button action would unmount
+      // the panel and reset the hold before wait() can see the cancel.
+      const held = holdRef.current.isPending(askSessionRef.current);
       holdRef.current.release(inside);
       setHoldPressed(false);
       if (!inside) clearHeldAfterSendOffButton();
+      if (held && inside) return;
       activate.onPointerUp(event);
     },
     onPointerCancel: (event: ReactPointerEvent<HTMLButtonElement>) => {

@@ -187,7 +187,7 @@ async function drainPaintFrames() {
   });
 }
 
-/** Drain the pre-capture double rAF, then both post-capture yieldToInput turns. */
+/** Drain the pre-capture double rAF, then both post-capture yieldToInput turns and the settle wait. */
 async function finishCaptureTurn() {
   await Promise.resolve();
   await drainPaintFrames();
@@ -199,6 +199,9 @@ async function finishCaptureTurn() {
       setTimeout(resolve, 0);
     });
   }
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 50);
+  });
 }
 
 function statusRow(): HTMLElement {
@@ -707,55 +710,6 @@ describe("ask panel", () => {
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
   });
 
-  test("25e. 截图返回后、yield 完成前取消则不调用 sendAsk", async () => {
-    draft("drafting", { draftQuestion: "为什么这样写？" });
-    await render();
-
-    const realRaf = window.requestAnimationFrame.bind(window);
-    let releaseSecond: (() => void) | undefined;
-    let calls = 0;
-    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
-      calls += 1;
-      // Paint uses the first two frames. The fourth frame is the second
-      // post-capture yield, which this test holds open across the cancel.
-      if (calls === 4) {
-        releaseSecond = () => {
-          realRaf(callback);
-        };
-        return 2;
-      }
-      return realRaf(callback);
-    });
-
-    const pendingSubmit = act(async () => {
-      submitButton().click();
-    });
-    await vi.waitFor(() => {
-      expect(releaseSecond).toBeTypeOf("function");
-    });
-    expect(captureStage).toHaveBeenCalledTimes(1);
-    expect(sendAsk).not.toHaveBeenCalled();
-    expect(statusRow().textContent).toBe(ASK_CAPTURE_PREPARING);
-
-    await act(async () => {
-      const cancel = container.querySelector<HTMLButtonElement>("[data-ask-cancel]");
-      if (cancel) activateButton(cancel);
-    });
-    expect(container.querySelector("[data-ask-panel]")).toBeNull();
-    expect(usePlayerStore.getState().askPhase).toBe("selecting");
-
-    releaseSecond?.();
-    await pendingSubmit;
-    await act(async () => {
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, 0);
-      });
-    });
-    expect(sendAsk).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(sendAsk).mock.calls[0]?.[1]?.isCurrent?.()).toBe(false);
-    expect(usePlayerStore.getState().askPhase).toBe("selecting");
-  });
-
   test("25f. 截图成功且中途未取消时 sendAsk 只调用一次", async () => {
     draft("drafting", { draftQuestion: "为什么这样写？" });
     await render();
@@ -1017,5 +971,67 @@ describe("ask panel", () => {
     expect(captureStage).toHaveBeenCalledTimes(1);
     expect(sendAsk).toHaveBeenCalledTimes(1);
     expect(sendAsk).toHaveBeenCalledWith(OK_CAPTURE, expect.objectContaining({ isCurrent: expect.any(Function) }));
+  });
+
+  test("25e. 截图返回后、yield 完成前取消则不调用 sendAsk", async () => {
+    draft("drafting", { draftQuestion: "为什么这样写？" });
+    await render();
+
+    const realRaf = window.requestAnimationFrame.bind(window);
+    let releaseSecond: (() => void) | undefined;
+    let settle: (() => void) | undefined;
+    let calls = 0;
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      calls += 1;
+      // Paint uses the first two frames. The fourth frame is the second
+      // post-capture yield, which this test holds open across the cancel.
+      if (calls === 4) {
+        releaseSecond = () => {
+          realRaf(callback);
+        };
+        return 2;
+      }
+      return realRaf(callback);
+    });
+    vi.stubGlobal("setTimeout", (callback: TimerHandler, delay?: number) => {
+      if (delay === 50 && typeof callback === "function") {
+        settle = () => {
+          callback();
+        };
+        return 50;
+      }
+      if (typeof callback === "function") callback();
+      return 0;
+    });
+
+    const pendingSubmit = act(async () => {
+      submitButton().click();
+    });
+    await vi.waitFor(() => {
+      expect(releaseSecond).toBeTypeOf("function");
+    });
+    expect(captureStage).toHaveBeenCalledTimes(1);
+    expect(sendAsk).not.toHaveBeenCalled();
+    expect(statusRow().textContent).toBe(ASK_CAPTURE_PREPARING);
+
+    await act(async () => {
+      const cancel = container.querySelector<HTMLButtonElement>("[data-ask-cancel]");
+      if (cancel) activateButton(cancel);
+    });
+    expect(container.querySelector("[data-ask-panel]")).toBeNull();
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
+
+    releaseSecond?.();
+    await vi.waitFor(() => {
+      expect(settle).toBeTypeOf("function");
+    });
+    settle?.();
+    await act(async () => {
+      await pendingSubmit;
+    });
+    expect(sendAsk).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(sendAsk).mock.calls[0]?.[1]?.isCurrent?.()).toBe(false);
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
+    vi.unstubAllGlobals();
   });
 });

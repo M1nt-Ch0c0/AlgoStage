@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { yieldMacrotask, yieldToInput } from "../lib/ask/yield-macrotask";
+import { ASK_INPUT_SETTLE_MS, settleInput, yieldMacrotask, yieldToInput } from "../lib/ask/yield-macrotask";
 
 describe("yieldToInput", () => {
   afterEach(() => {
@@ -142,6 +142,24 @@ describe("yieldToInput", () => {
     await tasks.flushNext();
     await pending;
     expect(settled).toBe(true);
+  });
+});
+
+describe("settleInput", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("waits ASK_INPUT_SETTLE_MS before resolving", async () => {
+    expect(ASK_INPUT_SETTLE_MS).toBe(50);
+    const delays: number[] = [];
+    vi.stubGlobal("setTimeout", (callback: () => void, delayMs: number) => {
+      delays.push(delayMs);
+      callback();
+      return 1;
+    });
+    await settleInput();
+    expect(delays).toEqual([ASK_INPUT_SETTLE_MS]);
   });
 });
 
