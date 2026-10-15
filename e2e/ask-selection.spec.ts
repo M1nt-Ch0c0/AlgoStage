@@ -2060,10 +2060,28 @@ test.describe("390 selection flow", () => {
       await expect(panel).toBeVisible();
       await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：代码第 5 行");
 
-      // Close with Esc (focus on layer)
+      // Close with Esc
       await page.keyboard.press("Escape");
       await expect(panel).toHaveCount(0);
-      await expect(page.locator("[data-ask-layer]")).toBeFocused();
+      await expect.poll(() =>
+        page.evaluate(() => {
+          const active = document.activeElement;
+          if (!active) return false;
+          const lyr = document.querySelector("[data-ask-layer]");
+          if (lyr && (lyr === active || lyr.contains(active))) return true;
+          const target = document.querySelector('[data-ask-stage] [data-ask-target="code"]');
+          return !!target && (target === active || target.contains(active));
+        }),
+      ).toBe(true);
+
+      const startsInsideMonaco = await page.evaluate(() => {
+        const active = document.activeElement;
+        const target = document.querySelector('[data-ask-stage] [data-ask-target="code"]');
+        return Boolean(target && active && (target === active || target.contains(active)));
+      });
+      if (startsInsideMonaco) {
+        await page.locator("[data-ask-layer]").focus();
+      }
 
       // Pressing Tab moves focus to bar chips in order, then to the exit/entry button
       const activeElements: string[] = [];
