@@ -347,6 +347,7 @@ function AskSelectionLayerActive({
   const scrollRafRef = useRef<number | null>(null);
   const enteringSmoothScrollRef = useRef(false);
   const enteringScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const enteringScrollRafRef = useRef<number | null>(null);
   const chipDragCleanupRef = useRef<(() => void) | null>(null);
   const dragStartedRef = useRef(false);
 
@@ -489,8 +490,11 @@ function AskSelectionLayerActive({
     const isMobile = typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches;
     if (!isMobile) return;
 
-    let rafId: number | null = null;
-    rafId = requestAnimationFrame(() => {
+    if (enteringScrollRafRef.current != null) {
+      cancelAnimationFrame(enteringScrollRafRef.current);
+    }
+    enteringScrollRafRef.current = requestAnimationFrame(() => {
+      enteringScrollRafRef.current = null;
       const host = getStage();
       const codeEl = host?.querySelector<HTMLElement>('[data-ask-target="code"]');
       if (!codeEl) return;
@@ -525,7 +529,10 @@ function AskSelectionLayerActive({
     });
 
     return () => {
-      if (rafId != null) cancelAnimationFrame(rafId);
+      if (enteringScrollRafRef.current != null) {
+        cancelAnimationFrame(enteringScrollRafRef.current);
+        enteringScrollRafRef.current = null;
+      }
       if (enteringScrollTimerRef.current) {
         clearTimeout(enteringScrollTimerRef.current);
         enteringScrollTimerRef.current = null;
@@ -576,9 +583,11 @@ function AskSelectionLayerActive({
     (origin: PointerSample, current: PointerSample) => {
       const host = getStage();
       if (!host) return;
-      const dx = current.x - origin.x;
-      const dy = current.y - origin.y;
-      const raw = bandFrom(origin, current);
+      const freshOrigin = sampleAt(host, origin.clientX, origin.clientY);
+      const freshCurrent = sampleAt(host, current.clientX, current.clientY);
+      const dx = freshCurrent.x - freshOrigin.x;
+      const dy = freshCurrent.y - freshOrigin.y;
+      const raw = bandFrom(freshOrigin, freshCurrent);
       const box = normalizeBBox(raw);
       const motion = Math.max(Math.abs(dx), Math.abs(dy));
 
@@ -596,13 +605,14 @@ function AskSelectionLayerActive({
       );
 
       const isPointInside = (pt: PointerSample, el: HTMLElement) => {
+        const freshPt = sampleAt(host, pt.clientX, pt.clientY);
         const r = normalizeBBox(relativeRect(host, el));
-        return pt.x >= r.x && pt.x <= r.x + r.width && pt.y >= r.y && pt.y <= r.y + r.height;
+        return freshPt.x >= r.x && freshPt.x <= r.x + r.width && freshPt.y >= r.y && freshPt.y <= r.y + r.height;
       };
 
       const isClick = motion < ASK_LIMITS.dragThresholdPx;
       const clickCodeEl = isClick
-        ? codeElements.find((codeEl) => isPointInside(current, codeEl) || isPointInside(origin, codeEl))
+        ? codeElements.find((codeEl) => isPointInside(freshCurrent, codeEl) || isPointInside(freshOrigin, codeEl))
         : undefined;
 
       let point: { x: number; y: number } | null;
@@ -612,7 +622,7 @@ function AskSelectionLayerActive({
         candidateBox = box;
         point = null;
       } else if (isClick && clickCodeEl) {
-        const pointerPos = isPointInside(current, clickCodeEl) ? current : origin;
+        const pointerPos = isPointInside(freshCurrent, clickCodeEl) ? freshCurrent : freshOrigin;
         candidateBox = { x: pointerPos.x, y: pointerPos.y, width: 1, height: 1 };
         point = { x: pointerPos.x, y: pointerPos.y };
       } else {
@@ -689,6 +699,10 @@ function AskSelectionLayerActive({
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if ((event.target as Element | null)?.closest?.("[data-ask-entry], [data-ask-shortcut]")) return;
+    if (enteringScrollRafRef.current != null) {
+      cancelAnimationFrame(enteringScrollRafRef.current);
+      enteringScrollRafRef.current = null;
+    }
     if (enteringSmoothScrollRef.current) {
       enteringSmoothScrollRef.current = false;
       if (enteringScrollTimerRef.current) {
@@ -696,7 +710,11 @@ function AskSelectionLayerActive({
         enteringScrollTimerRef.current = null;
       }
       if (typeof window !== "undefined") {
-        window.scrollTo({ top: window.scrollY, behavior: "auto" });
+        window.scrollTo({ top: window.scrollY, left: window.scrollX, behavior: "auto" });
+      }
+      const scroller = findScrollable(getStage());
+      if (scroller && scroller !== document.documentElement && scroller !== document.body) {
+        scroller.scrollTo({ top: scroller.scrollTop, left: scroller.scrollLeft, behavior: "auto" });
       }
     }
     beginPointer(event.currentTarget, event.pointerId, event.pointerType, event.button, event.clientX, event.clientY);
@@ -719,13 +737,16 @@ function AskSelectionLayerActive({
     if (!drawingRef.current || !originRef.current || suppressDrawRef.current) return;
     const current = pointersRef.current.get(event.pointerId);
     if (!current) return;
-    setRubberBand(bandFrom(originRef.current, current));
+    const freshOrigin = sampleAt(host, originRef.current.clientX, originRef.current.clientY);
+    setRubberBand(bandFrom(freshOrigin, current));
   };
 
   const onPointerUp = (event: PointerEvent<HTMLDivElement>) => {
+    const host = getStage();
+    const upSample = host ? sampleAt(host, event.clientX, event.clientY) : undefined;
     const wasDrawing = drawingRef.current && originRef.current != null && !scrollModeRef.current;
     const origin = originRef.current;
-    const current = pointersRef.current.get(event.pointerId) ?? origin;
+    const current = upSample ?? pointersRef.current.get(event.pointerId) ?? origin;
     pointersRef.current.delete(event.pointerId);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);

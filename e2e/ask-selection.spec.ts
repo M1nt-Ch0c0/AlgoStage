@@ -1802,17 +1802,31 @@ test.describe("390 selection flow", () => {
       const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
       await expect(code).toBeVisible();
 
-      const box = (await code.boundingBox())!;
-      const line2 = await getMonacoLineBox(page, 2);
-      const line4 = await getMonacoLineBox(page, 4);
+      // Ensure line 2 is within viewport during entering scroll
+      await expect.poll(async () => {
+        try {
+          const l2 = await getMonacoLineBox(page, 2);
+          const vh = page.viewportSize()?.height ?? 800;
+          return l2.top >= 0 && l2.bottom <= vh;
+        } catch {
+          return false;
+        }
+      }, { timeout: 3000 }).toBe(true);
 
-      const startX = box.x + 60;
-      const startY = line2.top + 4;
-      const endX = box.x + 160;
-      const endY = line4.bottom - 4;
+      const boxAtDown = (await code.boundingBox())!;
+      const line2 = await getMonacoLineBox(page, 2);
+      const startX = boxAtDown.x + 60;
+      const startY = (line2.top + line2.bottom) / 2;
 
       await page.mouse.move(startX, startY);
       await page.mouse.down();
+
+      // Pointerdown cancels in-flight smooth scroll; sample fresh rects for line 4
+      const boxAtUp = (await code.boundingBox())!;
+      const line4 = await getMonacoLineBox(page, 4);
+      const endX = boxAtUp.x + 160;
+      const endY = (line4.top + line4.bottom) / 2;
+
       await page.mouse.move(endX, endY, { steps: 5 });
       await page.mouse.up();
 
