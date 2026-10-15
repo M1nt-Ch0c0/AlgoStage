@@ -696,6 +696,60 @@ function installStatusStability(width: number, touch: boolean) {
         parkedRelease();
       }
     });
+
+    for (let i = 1; i <= 10; i += 1) {
+      test(`forced stall: 取消 pressed mid-stall sends no ask run ${i}`, async ({ page }) => {
+        test.setTimeout(60_000);
+        let askRequests = 0;
+        const failedTexts: string[] = [];
+        page.on("requestfailed", (request) => {
+          if (!request.url().includes("/api/lecture/ask")) return;
+          failedTexts.push(request.failure()?.errorText ?? "");
+        });
+        await page.route("**/api/lecture/ask", async (route) => {
+          askRequests += 1;
+          await new Promise((resolve) => {
+            setTimeout(resolve, 15_000);
+          });
+          if (route.request().failure()) return;
+          await route.fulfill({
+            status: 200,
+            contentType: "application/x-ndjson",
+            body: askStream("s1"),
+          });
+        });
+        await openAskPanel(page);
+
+        const cancelAt = await boxCenter(page, "[data-ask-cancel]");
+        const submitAt = await boxCenter(page, "[data-ask-submit]");
+        if (!touch) await page.mouse.move(cancelAt.x, cancelAt.y);
+        await withStallSession(page, async (client) => {
+          await pressAt(page, submitAt.x, submitAt.y, touch);
+          await expect(page.locator("[data-ask-capture-preparing]")).toBeAttached({ timeout: 15_000 });
+          await page.evaluate(() => {
+            setTimeout(() => {
+              const t = performance.now();
+              while (performance.now() - t < 600) {
+                // Busy-wait so the 取消 press is queued during the long task.
+              }
+            }, 0);
+          });
+          await down(page, client, cancelAt.x, cancelAt.y, touch);
+          await page.waitForTimeout(150);
+          await up(page, client, cancelAt.x, cancelAt.y, touch);
+        });
+
+        await expect.poll(
+          () => (askRequests === 0 || failedTexts.length > 0 ? "closed" : "pending"),
+          { timeout: 10_000 },
+        ).toBe("closed");
+        await expect(page.getByText("播放回答")).toHaveCount(0);
+        await expect(page.getByText(ANSWER_NARRATION)).toHaveCount(0);
+        await expect(page.locator("[data-ask-error]")).toHaveCount(0);
+        await expect(page.locator("[data-testid='step-answers'] [role='alert']")).toHaveCount(0);
+        await expect(page.locator("[data-answer-mark]")).toHaveCount(0);
+      });
+    }
   });
 }
 
