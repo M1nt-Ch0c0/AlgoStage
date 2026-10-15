@@ -344,7 +344,7 @@ describe("ask panel", () => {
     expect(usePlayerStore.getState().askCaptureFallback).toBe(true);
   });
 
-  test("25b. 回答落到 playing 后面板仍显示截图失败提示", async () => {
+  test("25b. 回答落到 playing 后草稿面板卸掉，截图失败提示还在", async () => {
     draft("drafting", { draftQuestion: "换个例子讲讲" });
     await render();
     vi.mocked(captureStage).mockResolvedValue({
@@ -353,14 +353,30 @@ describe("ask panel", () => {
       fallbackText: "步骤内容",
     });
     vi.mocked(sendAsk).mockImplementation(async () => {
-      usePlayerStore.setState({ askPhase: "playing" });
+      usePlayerStore.setState({ askPhase: "playing", selection: null, draftQuestion: "" });
     });
     await act(async () => {
       submitButton().click();
     });
     expect(usePlayerStore.getState().askPhase).toBe("playing");
     expect(usePlayerStore.getState().askCaptureFallback).toBe(true);
+    expect(container.querySelector("[data-ask-panel]")).toBeNull();
+    expect(container.textContent).not.toContain("已选：无");
     expect(container.querySelector("[data-ask-capture-fallback]")?.textContent).toBe(ASK_CAPTURE_FALLBACK);
+  });
+
+  test("25c. 截图成功落到 playing 不留草稿面板，也不显示截图失败提示", async () => {
+    draft("drafting", { draftQuestion: "换个例子讲讲" });
+    await render();
+    vi.mocked(sendAsk).mockImplementation(async () => {
+      usePlayerStore.setState({ askPhase: "playing", selection: null, draftQuestion: "" });
+    });
+    await act(async () => {
+      submitButton().click();
+    });
+    expect(usePlayerStore.getState().askCaptureFallback).toBe(false);
+    expect(container.querySelector("[data-ask-panel]")).toBeNull();
+    expect(container.querySelector("[data-ask-capture-fallback]")).toBeNull();
   });
 
   test("26. sending 显示等待秒数，每 10 秒更新 status；取消调用 cancelAsk，回到 drafting 后草稿与选区还在", async () => {

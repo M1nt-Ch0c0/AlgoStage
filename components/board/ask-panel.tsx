@@ -2,7 +2,8 @@
  * AskPanel · 提问面板。桌面（≥lg）绝对定位浮在选区右侧，放不下则放下方；
  * 窄屏固定底部抽屉，最高 50vh，bottom 跟 visualViewport 避开键盘。
  * 提问先 captureStage；stepId 或 selection 引用变了就丢弃。截图失败仍 sendAsk(null)，
- * 并把「没截到图」记在 store：回答落到 playing 时面板不卸载，提示还在。
+ * 并把「没截到图」记在 store。回答落到 playing 时提问面板卸掉（选区已被清空，
+ * 不能留着「已选：无」的草稿框）；截图失败提示单独留到这段回答播完。
  * Esc 由画选层的窗口监听处理。关面板（关闭按钮）后焦点回到画选层。
  */
 "use client";
@@ -24,7 +25,7 @@ import {
 import { ASK_LIMITS, type AskSelectionSummary, type AskTarget } from "@/lib/ask/types";
 import { usePlayerStore } from "@/lib/player/store";
 
-const PANEL_PHASES = new Set(["drafting", "sending", "streaming", "error", "playing"]);
+const PANEL_PHASES = new Set(["drafting", "sending", "streaming", "error"]);
 const DESKTOP_QUERY = "(min-width: 1024px)";
 const PANEL_WIDTH = 320;
 const GAP = 8;
@@ -107,8 +108,26 @@ function elapsedSeconds(startedAt: number | null, now: number): number {
   return Math.max(0, Math.floor((now - startedAt) / 1000));
 }
 
+/** 回答播放中不再挂草稿面板，只把没截到图的说明留在舞台上。 */
+function CaptureFallbackNotice() {
+  return (
+    <p
+      data-ask-capture-fallback
+      className="pointer-events-none absolute top-2 right-2 z-40 max-w-xs rounded-md border border-board-600 bg-board-900/95 px-2 py-1 text-[11px] text-chalk-500 shadow-lg"
+    >
+      {ASK_CAPTURE_FALLBACK}
+    </p>
+  );
+}
+
 export default function AskPanel({ stage }: AskPanelProps) {
   const askPhase = usePlayerStore((s) => s.askPhase);
+  const captureFailed = usePlayerStore((s) => s.askCaptureFallback);
+  // playing 不在 PANEL_PHASES：answerArrived 已清掉选区和草稿，再挂面板会显示「已选：无」。
+  if (askPhase === "playing") {
+    if (!captureFailed) return null;
+    return <CaptureFallbackNotice />;
+  }
   if (!PANEL_PHASES.has(askPhase)) return null;
   return <AskPanelActive stage={stage} />;
 }
