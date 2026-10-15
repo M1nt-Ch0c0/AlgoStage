@@ -307,6 +307,33 @@ async function expectClosedLikeCancel(page: Page) {
   await expect(page.locator("[data-testid='step-answers'] [role='alert']")).toHaveCount(0);
 }
 
+const STALL_TITLES = [
+  "held through capture stall",
+  "press 取消 during stall",
+  "hold 取消 past 2s",
+  "forced stall",
+];
+
+function isStallTest(title: string) {
+  return STALL_TITLES.some((part) => title.includes(part));
+}
+
+/** One JSON line plus a Playwright attachment. Assertions are unchanged. */
+async function dumpAskTiming(page: Page, title: string, status: string) {
+  const timing = await page
+    .evaluate(() => {
+      const probe = (window as unknown as { __ASK_TIMING__?: unknown }).__ASK_TIMING__;
+      return probe && typeof probe === "object" ? probe : null;
+    })
+    .catch(() => null);
+  const line = JSON.stringify({ title, status, timing });
+  console.log(`ASK_TIMING ${line}`);
+  await test.info().attach("ask-timing", {
+    body: Buffer.from(`${line}\n`),
+    contentType: "application/json",
+  });
+}
+
 function installStatusStability(width: number, touch: boolean) {
   const label = width === 1280 ? "Desktop" : "390";
 
@@ -321,6 +348,18 @@ function installStatusStability(width: number, touch: boolean) {
             viewport: { width: 390, height: 844 },
           },
     );
+
+    test.beforeEach(async ({ page }, info) => {
+      if (!isStallTest(info.title)) return;
+      await page.addInitScript(() => {
+        (window as unknown as { __ASK_TIMING__?: object }).__ASK_TIMING__ = {};
+      });
+    });
+
+    test.afterEach(async ({ page }, info) => {
+      if (!isStallTest(info.title)) return;
+      await dumpAskTiming(page, info.title, info.status ?? "unknown");
+    });
 
     test("取消 y equal in idle/preparing/streaming", async ({ page }) => {
       const held = await routeHeldAsk(page);
