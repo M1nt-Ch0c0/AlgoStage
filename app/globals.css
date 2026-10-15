@@ -1,3 +1,5 @@
+@import "tailwindcss";
+
 :root {
   --ask-bottom-bar-h: 0px;
 }
@@ -17,8 +19,6 @@
     scroll-margin-bottom: calc(var(--ask-bottom-bar-h) + 50vh);
   }
 }
-
-@import "tailwindcss";
 
 /*
  * AlgoStage · Chalkboard Dark 设计 token
