@@ -447,8 +447,19 @@ function AskSelectionLayerActive({
       return window.innerHeight - window.visualViewport.height > 120;
     };
 
+    let observedBarEl: HTMLElement | null = null;
+    let observedPlayerEl: HTMLElement | null = null;
     let observedPanelEl: HTMLElement | null = null;
     let ro: ResizeObserver | null = null;
+
+    let rafHandle: number | null = null;
+    const scheduleUpdate = () => {
+      if (rafHandle !== null) return;
+      rafHandle = requestAnimationFrame(() => {
+        rafHandle = null;
+        updateMeasurements();
+      });
+    };
 
     const updateMeasurements = () => {
       const kbOpen = isKeyboardOpen();
@@ -465,19 +476,18 @@ function AskSelectionLayerActive({
       const playerEl = document.querySelector<HTMLElement>('[aria-label="讲解播放区"]');
       if (playerEl) {
         const playerRect = playerEl.getBoundingClientRect();
-        const ph = playerRect.height || 0;
-        const vh = (typeof window !== "undefined" ? window.innerHeight : 0) || 800;
-        const isVisibleAtBottom = ph > 0 && playerRect.bottom > 0 && playerRect.top < vh;
-        if (isVisibleAtBottom) {
-          playerH = Math.ceil(ph);
+        const vh = typeof window !== "undefined" ? window.innerHeight : 0;
+        const isVisible = playerRect.height > 0 && playerRect.bottom > 0 && playerRect.top < vh;
+        if (isVisible) {
+          playerH = Math.max(0, Math.ceil(vh - playerRect.top));
         }
       }
       document.documentElement.style.setProperty("--ask-player-bar-h", `${playerH}px`);
 
       let barH = 0;
-      const el = bottomBarRef.current ?? document.querySelector<HTMLElement>("[data-ask-bottom-bar]");
-      if (el) {
-        const rect = el.getBoundingClientRect();
+      const barEl = bottomBarRef.current ?? document.querySelector<HTMLElement>("[data-ask-bottom-bar]");
+      if (barEl) {
+        const rect = barEl.getBoundingClientRect();
         barH = Math.ceil(rect.height || 0);
       }
       document.documentElement.style.setProperty("--ask-bottom-bar-h", `${barH}px`);
@@ -489,13 +499,21 @@ function AskSelectionLayerActive({
         panelH = Math.ceil(rect.height || 0);
       }
 
-      if (panelEl !== observedPanelEl) {
-        if (observedPanelEl && ro) {
-          ro.unobserve(observedPanelEl);
+      if (ro) {
+        if (playerEl !== observedPlayerEl) {
+          if (observedPlayerEl) ro.unobserve(observedPlayerEl);
+          observedPlayerEl = playerEl;
+          if (playerEl) ro.observe(playerEl);
         }
-        observedPanelEl = panelEl;
-        if (panelEl && ro) {
-          ro.observe(panelEl);
+        if (barEl !== observedBarEl) {
+          if (observedBarEl) ro.unobserve(observedBarEl);
+          observedBarEl = barEl;
+          if (barEl) ro.observe(barEl);
+        }
+        if (panelEl !== observedPanelEl) {
+          if (observedPanelEl) ro.unobserve(observedPanelEl);
+          observedPanelEl = panelEl;
+          if (panelEl) ro.observe(panelEl);
         }
       }
 
@@ -508,7 +526,6 @@ function AskSelectionLayerActive({
     };
 
     updateMeasurements();
-    const rafId = requestAnimationFrame(updateMeasurements);
 
     const barEl = bottomBarRef.current ?? document.querySelector<HTMLElement>("[data-ask-bottom-bar]");
     const playerEl = document.querySelector<HTMLElement>('[aria-label="讲解播放区"]');
@@ -516,10 +533,16 @@ function AskSelectionLayerActive({
 
     if (typeof ResizeObserver !== "undefined") {
       ro = new ResizeObserver(() => {
-        updateMeasurements();
+        scheduleUpdate();
       });
-      if (barEl) ro.observe(barEl);
-      if (playerEl) ro.observe(playerEl);
+      if (barEl) {
+        observedBarEl = barEl;
+        ro.observe(barEl);
+      }
+      if (playerEl) {
+        observedPlayerEl = playerEl;
+        ro.observe(playerEl);
+      }
       if (panelEl) {
         observedPanelEl = panelEl;
         ro.observe(panelEl);
@@ -529,24 +552,33 @@ function AskSelectionLayerActive({
     let mo: MutationObserver | null = null;
     if (typeof MutationObserver !== "undefined") {
       mo = new MutationObserver(() => {
-        updateMeasurements();
+        scheduleUpdate();
       });
       mo.observe(document.body, { childList: true, subtree: true });
     }
 
     const mq = window.matchMedia("(max-width: 639px)");
-    const onMqChange = () => updateMeasurements();
+    const onMqChange = () => scheduleUpdate();
     mq.addEventListener("change", onMqChange);
-    window.addEventListener("resize", onMqChange);
-    window.visualViewport?.addEventListener("resize", onMqChange);
+
+    const onResize = () => scheduleUpdate();
+    window.addEventListener("resize", onResize);
+    window.visualViewport?.addEventListener("resize", onResize);
+
+    const onScroll = () => scheduleUpdate();
+    window.addEventListener("scroll", onScroll, { passive: true, capture: true });
 
     return () => {
-      cancelAnimationFrame(rafId);
+      if (rafHandle !== null) {
+        cancelAnimationFrame(rafHandle);
+        rafHandle = null;
+      }
       ro?.disconnect();
       mo?.disconnect();
       mq.removeEventListener("change", onMqChange);
-      window.removeEventListener("resize", onMqChange);
-      window.visualViewport?.removeEventListener("resize", onMqChange);
+      window.removeEventListener("resize", onResize);
+      window.visualViewport?.removeEventListener("resize", onResize);
+      window.removeEventListener("scroll", onScroll, { capture: true } as EventListenerOptions);
       document.documentElement.style.setProperty("--ask-bottom-bar-h", "0px");
       document.documentElement.style.setProperty("--ask-player-bar-h", "0px");
       document.documentElement.style.setProperty("--ask-bottom-occlusion", "0px");

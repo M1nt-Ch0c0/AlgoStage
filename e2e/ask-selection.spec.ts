@@ -1696,10 +1696,16 @@ test.describe("390 selection flow", () => {
       expect(exitBox).not.toBeNull();
       const exitCx = exitBox!.x + exitBox!.width / 2;
       const exitCy = exitBox!.y + exitBox!.height / 2;
-      const isExitHit = await exitBtn.evaluate((el, { x, y }) => {
+      const { isExitHit, hitHtml, closestBar, closestLabel } = await exitBtn.evaluate((el, { x, y }) => {
         const hit = document.elementFromPoint(x, y);
-        return hit !== null && (hit === el || el.contains(hit));
+        return {
+          isExitHit: hit !== null && (hit === el || el.contains(hit)),
+          hitHtml: hit ? hit.outerHTML.slice(0, 200) : "null",
+          closestBar: Boolean(hit?.closest("[data-ask-bottom-bar]")),
+          closestLabel: hit?.closest("[aria-label]")?.getAttribute("aria-label") ?? null,
+        };
       }, { x: exitCx, y: exitCy });
+      console.log(`[test d exit hit] html=${hitHtml} closestBar=${closestBar} closestLabel=${closestLabel}`);
       expect(isExitHit).toBe(true);
     });
 
