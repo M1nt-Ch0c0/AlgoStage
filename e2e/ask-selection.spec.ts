@@ -2749,6 +2749,34 @@ test.describe("390 selection flow", () => {
           await button.scrollIntoViewIfNeeded();
           await page.evaluate(() => window.scrollTo({ top: 0, behavior: "auto" }));
           const y0 = await page.evaluate(() => window.scrollY);
+          await page.evaluate(() => {
+            const w = window as unknown as {
+              __n2press?: {
+                clientY: number;
+                scrollY: number;
+                tag: string;
+                insideHeader: boolean;
+                insideLayer: boolean;
+              };
+              __n2pressHandler?: (e: PointerEvent) => void;
+            };
+            w.__n2press = undefined;
+            if (w.__n2pressHandler) {
+              window.removeEventListener("pointerdown", w.__n2pressHandler, { capture: true });
+            }
+            const handler = (e: PointerEvent) => {
+              const target = e.target as HTMLElement | null;
+              w.__n2press = {
+                clientY: e.clientY,
+                scrollY: window.scrollY,
+                tag: target?.tagName?.toLowerCase() ?? "",
+                insideHeader: !!target?.closest?.("header"),
+                insideLayer: !!target?.closest?.("[data-ask-layer]"),
+              };
+            };
+            w.__n2pressHandler = handler;
+            window.addEventListener("pointerdown", handler, { capture: true });
+          });
           await button.click();
           await expect.poll(() => page.evaluate(() => window.scrollY), { timeout: 3000 }).not.toBe(y0);
 
@@ -2766,19 +2794,25 @@ test.describe("390 selection flow", () => {
                 const cur = scroller.scrollTop || window.scrollY;
                 if (cur !== prevScroll) {
                   const box = codeEl.getBoundingClientRect();
+                  const hb = document.querySelector('header')?.getBoundingClientRect().bottom ?? 0;
+                  const bottomBarTop = document.querySelector('[data-ask-bottom-bar]')?.getBoundingClientRect().top ?? innerHeight;
                   const lines = document.querySelectorAll<HTMLElement>(".monaco-editor .line-numbers");
                   for (const ln of lines) {
                     const r = ln.getBoundingClientRect();
+                    const startX = Math.round(box.left + 60);
+                    const startY = Math.round(r.top + r.height / 2);
+                    const elAtPoint = document.elementFromPoint(startX, startY);
                     if (
                       r.height > 0 &&
-                      r.top >= 0 &&
-                      r.bottom <= window.innerHeight &&
+                      r.top >= hb + 4 &&
+                      r.bottom <= bottomBarTop - 4 &&
                       r.top >= box.top &&
-                      r.bottom <= box.bottom
+                      r.bottom <= box.bottom &&
+                      !elAtPoint?.closest('header')
                     ) {
                       resolve({
-                        startX: Math.round(box.left + 60),
-                        startY: Math.round(r.top + r.height / 2),
+                        startX,
+                        startY,
                       });
                       return;
                     }
@@ -2799,6 +2833,25 @@ test.describe("390 selection flow", () => {
             await page.mouse.down();
             await page.mouse.move(startX + 12, startY);
             await page.mouse.up();
+          }
+
+          const n2press = await page.evaluate(
+            () =>
+              (
+                window as unknown as {
+                  __n2press?: {
+                    clientY: number;
+                    scrollY: number;
+                    tag: string;
+                    insideHeader: boolean;
+                    insideLayer: boolean;
+                  };
+                }
+              ).__n2press,
+          );
+          {
+            const window = { __n2press: n2press };
+            console.log('N2RUN', mode, run, startY, JSON.stringify(window.__n2press));
           }
 
           await expect(panel).toBeVisible();
