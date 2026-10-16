@@ -983,6 +983,16 @@ installStatusStability(390, true);
 /** Capture-phase pointerdown record. ts is the renderer clock (event.timeStamp). */
 type AskPointerDown = { ts: number; pointerType: string; inCancel: boolean };
 
+/** Capture-phase pointerup record. ts is event.timeStamp. */
+type AskPointerUp = { ts: number; inCancel: boolean };
+
+type AskCancelProbe = {
+  __askPointerDownTs?: AskPointerDown[];
+  __askPointerUpTs?: AskPointerUp[];
+  /** performance.now() when [data-ask-panel] first leaves the document. */
+  __askPanelGoneAt?: number;
+};
+
 /**
  * Prod path (no stall hook). Press 取消 within 150ms of submit and release
  * on the button. Either cancel wins before send, or the request is aborted
@@ -1043,25 +1053,50 @@ function installNaturalCancel(width: number, touch: boolean) {
         const client = await page.context().newCDPSession(page);
         if (!touch) await page.mouse.move(cancelAt.x, cancelAt.y);
 
-        // Capture-phase records for both pointerdowns. event.timeStamp is the
-        // renderer clock, which is what the stall marks use. pointerType and
-        // inCancel (target inside [data-ask-cancel]) distinguish the cancel
-        // press from the submit press. The listener is installed before
-        // either gesture so the submit press is included.
+        // Capture-phase records for both pointerdowns and pointerups.
+        // event.timeStamp is the renderer clock, which is what the stall
+        // marks use. pointerType and inCancel (target inside [data-ask-cancel])
+        // distinguish the cancel press from the submit press. The same
+        // evaluate installs a MutationObserver that stamps performance.now()
+        // the first time [data-ask-panel] is gone. That stamp is the 390
+        // close, taken when the removal commits, not when a later evaluate
+        // round-trips. Listeners are installed before either gesture so the
+        // submit press is included.
         await page.evaluate(() => {
-          const win = window as unknown as { __askPointerDownTs?: AskPointerDown[] };
+          const win = window as unknown as AskCancelProbe;
           win.__askPointerDownTs = [];
+          win.__askPointerUpTs = [];
+          delete win.__askPanelGoneAt;
+          const inCancel = (event: Event) =>
+            !!(event.target instanceof Element && event.target.closest("[data-ask-cancel]"));
           document.addEventListener(
             "pointerdown",
             (event) => {
               win.__askPointerDownTs?.push({
                 ts: event.timeStamp,
                 pointerType: event.pointerType,
-                inCancel: !!(event.target instanceof Element && event.target.closest("[data-ask-cancel]")),
+                inCancel: inCancel(event),
               });
             },
             true,
           );
+          document.addEventListener(
+            "pointerup",
+            (event) => {
+              win.__askPointerUpTs?.push({
+                ts: event.timeStamp,
+                inCancel: inCancel(event),
+              });
+            },
+            true,
+          );
+          const observer = new MutationObserver(() => {
+            if (win.__askPanelGoneAt != null) return;
+            if (document.querySelector("[data-ask-panel]") != null) return;
+            win.__askPanelGoneAt = performance.now();
+            observer.disconnect();
+          });
+          observer.observe(document.body, { childList: true, subtree: true });
         });
         // Chips are already on screen. An add or a remove from here is a
         // flicker. The observer ignores a removal that is the whole panel
@@ -1074,8 +1109,8 @@ function installNaturalCancel(width: number, touch: boolean) {
         // stall is a synchronous busy loop that marks ASK_TEST_STALL_HOOK at
         // its start, so an in-page read cannot see that mark until the loop
         // ends. A Node-side evaluate that loses a 40ms race means the main
-        // thread is blocked and the stall is in progress: touchStart (then
-        // up()'s touchEnd) is dispatched then, still without awaiting
+        // thread is blocked and the stall is in progress: touchStart and
+        // touchEnd are both queued in that turn, still without awaiting
         // submit. 1280 keeps mouse.down() in this turn and releases later.
         const submitted = pressAt(page, submitAt.x, submitAt.y, touch);
         if (width === 390) {
@@ -1105,15 +1140,18 @@ function installNaturalCancel(width: number, touch: boolean) {
               continue;
             }
             // 40ms won: the renderer main thread is blocked (stall in
-            // progress). Dispatch the touch before awaiting the evaluate
-            // that is still queued behind the busy loop. up() is the
-            // touchEnd the rest of the file uses, so the press releases on
-            // 取消 during the stall (the later up() is that release on 1280).
+            // progress). Queue touchStart and touchEnd in this turn, before
+            // awaiting the evaluate that is still behind the busy loop.
+            // Awaiting touchStart or submit would hold the release until the
+            // stall ended. 1280 releases later with up().
             touchStarted = client.send("Input.dispatchTouchEvent", {
               type: "touchStart",
               touchPoints: touchPoint(cancelAt.x, cancelAt.y),
             });
-            touchEnded = up(page, client, cancelAt.x, cancelAt.y, true);
+            touchEnded = client.send("Input.dispatchTouchEvent", {
+              type: "touchEnd",
+              touchPoints: touchPoint(cancelAt.x, cancelAt.y),
+            });
             await pending;
           }
           if (!touchStarted || !touchEnded) {
@@ -1132,9 +1170,14 @@ function installNaturalCancel(width: number, touch: boolean) {
             const measures = performance.getEntriesByName("ASK_TEST_STALL_HOOK", "measure");
             const start = marks[0]?.startTime;
             const duration = measures[0]?.duration;
-            const downs =
-              (window as unknown as { __askPointerDownTs?: AskPointerDown[] }).__askPointerDownTs ?? [];
-            return { start, duration, downs };
+            const win = window as unknown as AskCancelProbe;
+            return {
+              start,
+              duration,
+              downs: win.__askPointerDownTs ?? [],
+              ups: win.__askPointerUpTs ?? [],
+              panelGoneAt: win.__askPanelGoneAt,
+            };
           });
           expect(stamp.start, "stall mark").toEqual(expect.any(Number));
           expect(stamp.duration, "stall measure").toBeGreaterThan(0);
@@ -1148,31 +1191,21 @@ function installNaturalCancel(width: number, touch: boolean) {
           const stallEnd = stallStart + (stamp.duration as number);
           expect(cancelTs).toBeGreaterThanOrEqual(stallStart);
           expect(cancelTs).toBeLessThanOrEqual(stallEnd);
-          // The panel unmounts on the frame after the stall. That close is
-          // the paint this gate reads, and it is under 100ms from stall end.
-          const closed = await page.evaluate(async () => {
-            const end = performance.getEntriesByName("ASK_TEST_STALL_HOOK_END", "mark")[0]?.startTime;
-            const t0 = typeof end === "number" ? end : performance.now();
-            const gone = () => document.querySelector("[data-ask-panel]") == null;
-            if (gone()) return performance.now() - t0;
-            return new Promise<number>((resolve) => {
-              const started = performance.now();
-              const tick = () => {
-                if (gone()) {
-                  resolve(performance.now() - t0);
-                  return;
-                }
-                if (performance.now() - started > 100) {
-                  resolve(performance.now() - t0);
-                  return;
-                }
-                requestAnimationFrame(tick);
-              };
-              requestAnimationFrame(tick);
-            });
-          });
-          expect(closed).toBeLessThan(100);
-          console.log(`CANCEL390 round=${i} paint=${Math.round(closed)}ms`);
+          // Close is the in-page removal stamp minus the later of stall end
+          // and the cancel pointerup. Both clocks are the renderer's. A
+          // page.evaluate that starts after Node has awaited touchEnd measures
+          // the Playwright round-trip instead of this gap.
+          const cancelUp = stamp.ups.find((entry) => entry.inCancel);
+          expect(cancelUp?.ts, "cancel pointerup timeStamp").toEqual(expect.any(Number));
+          const release = cancelUp?.ts as number;
+          expect(release).toBeGreaterThanOrEqual(cancelTs);
+          expect(stamp.panelGoneAt, "panel removed during cancel").toEqual(expect.any(Number));
+          const panelGoneAt = stamp.panelGoneAt as number;
+          const paint = panelGoneAt - Math.max(stallEnd, release);
+          expect(paint).toBeLessThan(100);
+          console.log(
+            `CANCEL390 round=${i} paint=${paint}ms release=${release} stallEnd=${stallEnd}`,
+          );
           // The press landed inside the stall, so the ask never goes out.
           expect(askRequests).toBe(0);
           await expect(page.locator("[data-ask-panel]")).toHaveCount(0);
