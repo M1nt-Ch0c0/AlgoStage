@@ -781,4 +781,162 @@ describe("early 取消 press", () => {
     vi.stubGlobal("setTimeout", realSetTimeout);
     vi.stubGlobal("clearTimeout", realClearTimeout);
   });
+
+  test("cancel after capture returns and before send: sendAsk is never called", async () => {
+    const { cancel, submit } = await renderPanel();
+    // Capture resolves ok and does not abort. The press is already down when
+    // that return starts the hold wait, which is what arms the 2s timer.
+    // pointerup lands inside the button in that window. captureAbortRef is
+    // already null, so the release neither bumps the epoch nor aborts the
+    // signal. The pre-send check has to read the release flag and the hold
+    // latch. A check that only looks at the epoch and the aborted signal
+    // still sends.
+    let releaseHold: (() => void) | undefined;
+    const realSetTimeout = setTimeout;
+    vi.stubGlobal("setTimeout", ((callback: TimerHandler, delay?: number, ...args: unknown[]) => {
+      if (delay === 2000 && typeof callback === "function") {
+        releaseHold = () => {
+          callback(...args);
+        };
+        return 2000;
+      }
+      return realSetTimeout(callback as never, delay, ...args);
+    }) as typeof setTimeout);
+
+    const release = await reachBeforeEncode(submit);
+    expect(sendAsk).not.toHaveBeenCalled();
+    expect(container.querySelector("[data-ask-capture-preparing]")).not.toBeNull();
+
+    // Press held across capture. The hold is pending when wait() runs, so
+    // the 2s timer arms instead of resolving send immediately.
+    await act(async () => {
+      cancel.dispatchEvent(pointer("pointerdown", performance.now(), 12, 10));
+    });
+    expect(cancel.hasAttribute("data-pressed")).toBe(true);
+    expect(sendAsk).not.toHaveBeenCalled();
+
+    await act(async () => {
+      release();
+      await new Promise<void>((resolve) => {
+        realSetTimeout(resolve, 0);
+      });
+    });
+    await vi.waitFor(() => {
+      expect(releaseHold).toBeTypeOf("function");
+    });
+    expect(captureStage).toHaveBeenCalled();
+    expect(sendAsk).not.toHaveBeenCalled();
+    expect(cancel.hasAttribute("data-pressed")).toBe(true);
+
+    // Release on 取消 inside the hold window, after capture has returned.
+    await act(async () => {
+      cancel.dispatchEvent(pointer("pointerup", performance.now() + 10, 14, 12));
+    });
+
+    await act(async () => {
+      await new Promise<void>((resolve) => {
+        realSetTimeout(resolve, 0);
+      });
+    });
+
+    expect(sendAsk).not.toHaveBeenCalled();
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
+    expect(container.querySelector("[data-ask-panel]")).toBeNull();
+
+    vi.stubGlobal("setTimeout", realSetTimeout);
+  });
+
+  test("settle-time cancel closes the panel and notes paint once", async () => {
+    const { cancel, submit } = await renderPanel();
+    vi.spyOn(cancel, "getBoundingClientRect").mockReturnValue(BUTTON_BOX);
+    const closeSpy = vi.spyOn(usePlayerStore.getState(), "closeAskPanel");
+    const probe: {
+      cancelPointerUpAt?: number;
+      cancelPointerUpDispatchAt?: number;
+      cancelPaintAt?: number;
+      cancelPaintAfterReleaseMs?: number;
+    } = {};
+    (window as unknown as { __ASK_TIMING__?: typeof probe }).__ASK_TIMING__ = probe;
+
+    // Capture has returned and encode is still pending, so the hold wait is
+    // open when the settle-frame close runs. Flushing the frame and then
+    // letting submit continue is both close paths for one release.
+    let releaseEncode: (() => void) | undefined;
+    vi.mocked(captureStage).mockImplementation(async (_container, _selection, opts) => {
+      await opts?.beforeEncode?.();
+      await new Promise<void>((resolve) => {
+        releaseEncode = resolve;
+      });
+      return {
+        ok: true,
+        encoder: "main",
+        image: { mime: "image/jpeg", dataBase64: "qq==" },
+        bytes: 1,
+      };
+    });
+
+    vi.useFakeTimers({
+      toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "requestAnimationFrame", "cancelAnimationFrame"],
+    });
+    await act(async () => {
+      submit.click();
+    });
+    await act(async () => {
+      vi.advanceTimersToNextFrame();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(releaseEncode).toBeUndefined();
+    expect(sendAsk).not.toHaveBeenCalled();
+
+    // Release during the 120ms settle. The close is scheduled on the next
+    // frame and must not run again when submit sees the same cancel.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(40);
+      cancel.dispatchEvent(pointer("pointerdown", 40, 12, 10));
+      cancel.dispatchEvent(pointer("pointerup", 41, 14, 12));
+    });
+    expect(closeSpy).not.toHaveBeenCalled();
+    expect(probe.cancelPaintAt).toBeUndefined();
+
+    await act(async () => {
+      vi.advanceTimersToNextFrame();
+      await Promise.resolve();
+    });
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
+    expect(probe.cancelPaintAt).toBeUndefined();
+
+    await act(async () => {
+      releaseEncode?.();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+    expect(sendAsk).not.toHaveBeenCalled();
+
+    // noteCancelPaintAfterRelease stamps the next frame. A second call
+    // would schedule another, and cancelPaintAt is written only once.
+    await act(async () => {
+      vi.advanceTimersToNextFrame();
+    });
+    expect(probe.cancelPaintAt).toEqual(expect.any(Number));
+    expect(probe.cancelPaintAfterReleaseMs).toEqual(expect.any(Number));
+    const paintedAt = probe.cancelPaintAt;
+
+    await act(async () => {
+      vi.advanceTimersToNextFrame();
+    });
+    expect(probe.cancelPaintAt).toBe(paintedAt);
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+
+    delete (window as unknown as { __ASK_TIMING__?: unknown }).__ASK_TIMING__;
+  });
 });
