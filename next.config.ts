@@ -5,6 +5,14 @@ const basePath = process.env.NEXT_PUBLIC_BASE_PATH || undefined;
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // An unset NEXT_PUBLIC_ value is not inlined, so the capture stall block
+  // would survive a release build as a runtime read. Empty strings are
+  // inlined and the block is dropped. A hook build sets both in the
+  // environment, and config env does not override an existing value.
+  env: {
+    NEXT_PUBLIC_ASK_TEST_BUILD: process.env.NEXT_PUBLIC_ASK_TEST_BUILD ?? "",
+    NEXT_PUBLIC_ASK_TEST_STALL_MS: process.env.NEXT_PUBLIC_ASK_TEST_STALL_MS ?? "",
+  },
   async headers() {
     return [{ source: "/judge/:path*", headers: [
       { key: "Cross-Origin-Opener-Policy", value: "same-origin" },

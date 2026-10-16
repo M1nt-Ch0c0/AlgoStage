@@ -514,12 +514,12 @@ export async function captureStage(
       const dropped = walk.dropped;
       let canvas: HTMLCanvasElement;
       try {
-        // Compile-time stall. Next inlines both process.env references and
-        // drops this block unless the test-build flag is "1" and a stall is
-        // set. A release build tree-shakes the whole block, marker string
-        // included. The loop is synchronous and shares the domToCanvas task;
-        // the call is the next statement. A hook build keeps the mark name
-        // as a string literal in the compiled .js.
+        // Compile-time stall. Next inlines a NEXT_PUBLIC_ value only when it
+        // is set, and drops this block when the flag is not "1". An unset
+        // flag is left as a runtime read, so a release build sets both to
+        // "" (next.config env) and the marker string is gone. The loop is
+        // synchronous and shares the domToCanvas task; the call is the next
+        // statement. A hook build keeps the mark name as a string literal.
         // Hook build: NEXT_PUBLIC_ASK_TEST_BUILD=1 NEXT_PUBLIC_ASK_TEST_STALL_MS=1500
         if (process.env.NEXT_PUBLIC_ASK_TEST_BUILD === "1" && process.env.NEXT_PUBLIC_ASK_TEST_STALL_MS) {
           performance.mark("ASK_TEST_STALL_HOOK");
