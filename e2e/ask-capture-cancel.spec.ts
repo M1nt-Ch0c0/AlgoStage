@@ -243,14 +243,20 @@ async function moveTo(page: Page, client: PointerClient, x: number, y: number, t
 
 /**
  * Stall tests run against the compile-time hook in lib/ask/capture.ts.
- * NEXT_PUBLIC_ASK_TEST_STALL_MS is inlined next to domToCanvas; unset builds
- * tree-shake the loop, so those tests skip instead of racing a short capture.
+ * A hook build sets NEXT_PUBLIC_ASK_TEST_BUILD=1 and
+ * NEXT_PUBLIC_ASK_TEST_STALL_MS=1500. Next inlines both next to domToCanvas.
+ * A release build (flag unset) tree-shakes the loop, so those tests skip
+ * instead of racing a short capture.
  */
+const STALL_HOOK_BUILD = process.env.NEXT_PUBLIC_ASK_TEST_BUILD === "1";
 const STALL_HOOK_MS = Number(process.env.NEXT_PUBLIC_ASK_TEST_STALL_MS);
-const stallHookOn = Number.isFinite(STALL_HOOK_MS) && STALL_HOOK_MS > 0;
+const stallHookOn = STALL_HOOK_BUILD && Number.isFinite(STALL_HOOK_MS) && STALL_HOOK_MS > 0;
 
 function requireStallHook() {
-  test.skip(!stallHookOn, "requires NEXT_PUBLIC_ASK_TEST_STALL_MS (hook build, e.g. 1500)");
+  test.skip(
+    !stallHookOn,
+    "requires a hook build: NEXT_PUBLIC_ASK_TEST_BUILD=1 NEXT_PUBLIC_ASK_TEST_STALL_MS=1500",
+  );
 }
 
 /** Resolves only when the main thread is free enough to run this evaluate. */
