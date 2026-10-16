@@ -1036,15 +1036,21 @@ function installNaturalCancel(width: number, touch: boolean) {
         const client = await page.context().newCDPSession(page);
         if (!touch) await page.mouse.move(cancelAt.x, cancelAt.y);
 
+        // Issue time of the cancel, taken before either gesture is awaited.
+        // On touch, pressAt is touchscreen.tap and down() is one CDP
+        // touchStart. Both return only after the renderer dequeues them.
+        // A capture stall holds that return, so a stamp after the await
+        // measures the stall (the 390 hook runs that exceeded 150ms).
         const submittedAt = Date.now();
-        await pressAt(page, submitAt.x, submitAt.y, touch);
+        const submitted = pressAt(page, submitAt.x, submitAt.y, touch);
+        const pressedAt = Date.now();
+        expect(pressedAt - submittedAt).toBeLessThanOrEqual(150);
+        await submitted;
         // After submit: the chips are already on screen, so an add or a
         // remove from here is a flicker. The observer ignores a removal
         // that is the whole panel unmounting on a successful cancel.
         await installChipHintObserver(page);
-        const pressedAt = Date.now();
         await down(page, client, cancelAt.x, cancelAt.y, touch);
-        expect(pressedAt - submittedAt).toBeLessThanOrEqual(150);
         await up(page, client, cancelAt.x, cancelAt.y, touch);
 
         // Either the press cancelled before send, or the request went out and
