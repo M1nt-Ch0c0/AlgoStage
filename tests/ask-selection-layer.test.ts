@@ -3191,6 +3191,7 @@ describe("resolveAskEscape", () => {
 
   describe("entering scroll live detection at pointerdown", () => {
     afterEach(() => {
+      vi.useRealTimers();
       cleanupEnteringScroll?.();
       cleanupEnteringScroll = null;
     });
@@ -3463,6 +3464,43 @@ describe("resolveAskEscape", () => {
       await act(async () => {
         host.dispatchEvent(pointer("pointerup", { pointerId: 1, clientX: 30, clientY: 30 }));
       });
+    });
+
+    test("tracker started by entering smooth scroll -> scrollend with static window.scrollY -> advance fake timers 900ms and performance.now >100ms -> pointerdown idle path", async () => {
+      vi.useFakeTimers();
+      setupEnteringScrollEnv();
+      try {
+        await startEnteringScroll(0);
+
+        await act(async () => {
+          window.dispatchEvent(new Event("scrollend"));
+        });
+
+        await act(async () => {
+          vi.advanceTimersByTime(900);
+        });
+
+        fakeNow += 120;
+
+        const windowScrollSpy = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+        const rafSpy = vi.spyOn(window, "requestAnimationFrame");
+        windowScrollSpy.mockClear();
+        rafSpy.mockClear();
+
+        const host = layer();
+        await act(async () => {
+          host.dispatchEvent(pointer("pointerdown", { pointerId: 1, clientX: 20, clientY: 20 }));
+        });
+
+        expect(windowScrollSpy).not.toHaveBeenCalled();
+        expect(rafSpy).not.toHaveBeenCalled();
+
+        await act(async () => {
+          host.dispatchEvent(pointer("pointerup", { pointerId: 1, clientX: 20, clientY: 20 }));
+        });
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 
