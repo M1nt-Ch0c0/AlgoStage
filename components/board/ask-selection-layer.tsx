@@ -1105,18 +1105,23 @@ function AskSelectionLayerActive({
       );
 
       if (!inView) {
-        codeEl.style.scrollMarginTop = `${headerBottom + 8}px`;
+        const desiredTop = headerBottom + 8;
+        const deltaY = codeRect.top - desiredTop;
+        // Tall block already clear of header: nothing to do (bottom may still clip).
+        if (Math.abs(deltaY) < 1 && codeRect.top >= headerBottom) {
+          return;
+        }
+        if (Math.abs(deltaY) < 1) {
+          return;
+        }
         const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        const scroller = findScrollable(host);
         if (!prefersReduced) {
           enteringSmoothScrollRef.current = true;
-          // 一次性计算并缓存可滚动祖先元素列表，避免平滑滚动期间在 rAF / scroll 监听中强制重排
           enteringScrollAncestorsRef.current = getScrollableAncestors(host);
-          // 记录初始滚动位置和时间戳
           enteringScrollStartTimeRef.current = performance.now();
           enteringScrollPositionsRef.current = getScrollPositions();
           enteringScrollTimestampRef.current = enteringScrollStartTimeRef.current;
-
-          // 追踪平滑滚动：每帧记录最新滚动位置和变化时间戳
           const track = () => {
             const current = getScrollPositions();
             if (!isSameScrollPositions(enteringScrollPositionsRef.current, current)) {
@@ -1126,7 +1131,6 @@ function AskSelectionLayerActive({
             enteringScrollRafRef.current = requestAnimationFrame(track);
           };
           enteringScrollRafRef.current = requestAnimationFrame(track);
-
           if (enteringScrollTimerRef.current) clearTimeout(enteringScrollTimerRef.current);
           const onScrollEnd = () => {
             if (enteringScrollTimestampRef.current === enteringScrollStartTimeRef.current) {
@@ -1142,7 +1146,7 @@ function AskSelectionLayerActive({
             window.removeEventListener("scrollend", onScrollEnd);
           }, 800);
         }
-        codeEl.scrollIntoView({ block: "nearest", behavior: prefersReduced ? "auto" : "smooth" });
+        scroller.scrollBy({ top: deltaY, left: 0, behavior: prefersReduced ? "auto" : "smooth" });
       }
     });
 
@@ -1287,11 +1291,7 @@ function AskSelectionLayerActive({
 
         if (!hasValidCode) {
           setRubberBand(null);
-          if (codeIntersected) {
-            setHint(ASK_CODE_MISS_HINT);
-          } else {
-            setHint(ASK_EMPTY_HIT);
-          }
+          setHint(null);
           setAskCodeMissNotice(null);
           incrementVoid();
           return false;
@@ -1300,11 +1300,7 @@ function AskSelectionLayerActive({
 
       if (hit.targets.length === 0) {
         setRubberBand(null);
-        if (codeIntersected) {
-          setHint(ASK_CODE_MISS_HINT);
-        } else {
-          setHint(ASK_EMPTY_HIT);
-        }
+        setHint(null);
         setAskCodeMissNotice(null);
         incrementVoid();
         return false;

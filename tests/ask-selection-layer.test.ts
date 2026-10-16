@@ -211,7 +211,7 @@ describe("AskSelectionLayer", () => {
     expect(usePlayerStore.getState().selection?.mode).toBe("single");
   });
 
-  test("15. 落空不调用 setAskSelection，提示落空，仍 selecting", async () => {
+  test("15. 落空不调用 setAskSelection，仍 selecting", async () => {
     const setSpy = vi.spyOn(usePlayerStore.getState(), "setAskSelection");
     await render();
     // Tap in the empty gap between step (ends at x=140) and viz (starts at x=150).
@@ -219,7 +219,7 @@ describe("AskSelectionLayer", () => {
     expect(setSpy).not.toHaveBeenCalled();
     expect(usePlayerStore.getState().selection).toBeNull();
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
-    expect(layer().textContent).toContain(ASK_EMPTY_HIT);
+    expect(layer().textContent).not.toContain(ASK_EMPTY_HIT);
   });
 
   test("16. 再画替换选区，setAskSelection 调用两次", async () => {
@@ -1181,7 +1181,7 @@ describe("resolveAskEscape", () => {
     }
   });
 
-  test("(a) only code boxed with zero code units -> hint ASK_CODE_MISS_HINT, no panel selection", async () => {
+  test("(a) only code boxed with zero code units -> no panel selection", async () => {
     const codeEl = document.createElement("div");
     codeEl.setAttribute("data-ask-target", "code");
     codeEl.setAttribute("data-ask-id", "code:main");
@@ -1205,7 +1205,8 @@ describe("resolveAskEscape", () => {
     expect(setSpy).not.toHaveBeenCalled();
     expect(usePlayerStore.getState().selection).toBeNull();
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
-    expect(layer().textContent).toContain(ASK_CODE_MISS_HINT);
+    expect(layer().textContent).not.toContain(ASK_CODE_MISS_HINT);
+    expect(layer().textContent).not.toContain(ASK_EMPTY_HIT);
     expect(getAskCodeMissNotice()).toBeNull();
   });
 
@@ -1239,7 +1240,7 @@ describe("resolveAskEscape", () => {
     expect(getAskCodeMissNotice()).toBe(ASK_CODE_MISS_HINT);
   });
 
-  test("(c) nothing intersected -> ASK_EMPTY_HIT", async () => {
+  test("(c) nothing intersected -> silent void (no hint)", async () => {
     const setSpy = vi.spyOn(usePlayerStore.getState(), "setAskSelection");
     await render();
 
@@ -1249,7 +1250,7 @@ describe("resolveAskEscape", () => {
     expect(setSpy).not.toHaveBeenCalled();
     expect(usePlayerStore.getState().selection).toBeNull();
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
-    expect(layer().textContent).toContain(ASK_EMPTY_HIT);
+    expect(layer().textContent).not.toContain(ASK_EMPTY_HIT);
     expect(getAskCodeMissNotice()).toBeNull();
   });
 
@@ -1357,7 +1358,7 @@ describe("resolveAskEscape", () => {
     expect(getAskCodeMissNotice()).toBeNull();
   });
 
-  test("case 3: getFullText '' and no textContent -> hint ASK_CODE_MISS_HINT, no selection", async () => {
+  test("case 3: getFullText '' and no textContent -> no selection", async () => {
     const codeEl = document.createElement("div");
     codeEl.setAttribute("data-ask-target", "code");
     codeEl.setAttribute("data-ask-id", "code:main");
@@ -1382,7 +1383,8 @@ describe("resolveAskEscape", () => {
     expect(setSpy).not.toHaveBeenCalled();
     expect(usePlayerStore.getState().selection).toBeNull();
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
-    expect(layer().textContent).toContain(ASK_CODE_MISS_HINT);
+    expect(layer().textContent).not.toContain(ASK_CODE_MISS_HINT);
+    expect(layer().textContent).not.toContain(ASK_EMPTY_HIT);
     expect(getAskCodeMissNotice()).toBeNull();
   });
 
@@ -3531,7 +3533,7 @@ describe("resolveAskEscape", () => {
       expect(usePlayerStore.getState().askPhase).toBe("drafting");
     });
 
-    test("N2: (b) settled point maps to an empty range: commitBand returns false, prior selection unchanged, no rubber band left, empty-hit hint shown", async () => {
+    test("N2: (b) settled point maps to an empty range: commitBand returns false, prior selection unchanged, no rubber band left", async () => {
       setupEnteringScrollEnv();
       await startEnteringScroll(10);
       const host = layer();
@@ -3579,8 +3581,8 @@ describe("resolveAskEscape", () => {
       // no rubber band left
       expect(layer().querySelector("[data-ask-rubber]")).toBeNull();
 
-      // empty-hit hint shown (code miss hint for code hit or ASK_EMPTY_HIT)
-      expect(layer().textContent).toContain(ASK_CODE_MISS_HINT);
+      expect(layer().textContent).not.toContain(ASK_CODE_MISS_HINT);
+      expect(layer().textContent).not.toContain(ASK_EMPTY_HIT);
     });
 
     test("press after scroll (press during scroll, scroll stops, commit uses settled line, void count unchanged)", async () => {
@@ -3801,18 +3803,21 @@ describe("resolveAskEscape", () => {
       expect(host.getAttribute("data-ask-void-count")).toBe("0");
     });
 
-    test("entering scroll sets codeEl.style.scrollMarginTop to headerBottom + 8px when header is fixed or sticky", async () => {
+    test("entering scroll uses measured scrollBy so code top sits at headerBottom+8 (no scrollMarginTop)", async () => {
+      const scrollBySpy = vi.spyOn(scroller, "scrollBy").mockImplementation(() => {});
       setupEnteringScrollEnv();
       const header = document.createElement("header");
       header.getBoundingClientRect = () => domRect(0, 0, 400, 56);
       document.body.appendChild(header);
 
-      const origGetComputedStyle = window.getComputedStyle;
       vi.spyOn(window, "getComputedStyle").mockImplementation((el: Element) => {
         if (el === header) {
-          return { position: "fixed" } as CSSStyleDeclaration;
+          return { position: "fixed", overflow: "visible", overflowX: "visible", overflowY: "visible" } as CSSStyleDeclaration;
         }
-        return origGetComputedStyle(el);
+        if (el === scroller) {
+          return { overflow: "auto", overflowX: "auto", overflowY: "auto" } as CSSStyleDeclaration;
+        }
+        return { overflow: "visible", overflowX: "visible", overflowY: "visible" } as CSSStyleDeclaration;
       });
 
       const codeEl = ensureCodeElement();
@@ -3824,10 +3829,15 @@ describe("resolveAskEscape", () => {
         flushPendingRafs();
       });
 
-      expect(codeEl.style.scrollMarginTop).toBe("64px");
-      expect(codeEl.scrollIntoView).toHaveBeenCalled();
+      expect(codeEl.style.scrollMarginTop).toBe("");
+      expect(codeEl.scrollIntoView).not.toHaveBeenCalled();
+      expect(scrollBySpy).toHaveBeenCalled();
+      const scrollCall = scrollBySpy.mock.calls[0]?.[0];
+      expect(typeof scrollCall === "object" && scrollCall !== null).toBe(true);
+      expect((scrollCall as ScrollToOptions).top).toBeCloseTo(40 - (56 + 8));
 
       header.remove();
+      scrollBySpy.mockRestore();
     });
 
     test("STEP 2: in hasValidCode, if no matching element is found treat code as invalid instead of falling back to codeElements[0]", async () => {
