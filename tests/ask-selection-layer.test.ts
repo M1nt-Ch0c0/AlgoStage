@@ -3812,4 +3812,72 @@ describe("resolveAskEscape", () => {
       }
     });
   });
+
+  describe("IME composition guard", () => {
+    test("keydown Enter with isComposing:true and with keyCode 229 on a chip and on the layer => no selection, panel not opened, defaultPrevented false", async () => {
+      await render();
+      const host = layer();
+      const chip = host.querySelector<HTMLButtonElement>('[data-ask-shortcut="step"]');
+      expect(chip).not.toBeNull();
+
+      // 1. Layer onKeyDown: isComposing: true
+      host.focus();
+      usePlayerStore.setState({ selection: null, askPhase: "selecting" });
+      const layerComposingEvent = new KeyboardEvent("keydown", {
+        key: "Enter",
+        isComposing: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      await act(async () => {
+        host.dispatchEvent(layerComposingEvent);
+      });
+      expect(layerComposingEvent.defaultPrevented).toBe(false);
+      expect(usePlayerStore.getState().selection).toBeNull();
+      expect(usePlayerStore.getState().askPhase).toBe("selecting");
+
+      // 2. Layer onKeyDown: keyCode 229
+      const layer229Event = new KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        cancelable: true,
+      });
+      Object.defineProperty(layer229Event, "keyCode", { value: 229 });
+      await act(async () => {
+        host.dispatchEvent(layer229Event);
+      });
+      expect(layer229Event.defaultPrevented).toBe(false);
+      expect(usePlayerStore.getState().selection).toBeNull();
+      expect(usePlayerStore.getState().askPhase).toBe("selecting");
+
+      // 3. Chip onKeyDown: isComposing: true
+      chip!.focus();
+      const chipComposingEvent = new KeyboardEvent("keydown", {
+        key: "Enter",
+        isComposing: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      await act(async () => {
+        chip!.dispatchEvent(chipComposingEvent);
+      });
+      expect(chipComposingEvent.defaultPrevented).toBe(false);
+      expect(usePlayerStore.getState().selection).toBeNull();
+      expect(usePlayerStore.getState().askPhase).toBe("selecting");
+
+      // 4. Chip onKeyDown: keyCode 229
+      const chip229Event = new KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        cancelable: true,
+      });
+      Object.defineProperty(chip229Event, "keyCode", { value: 229 });
+      await act(async () => {
+        chip!.dispatchEvent(chip229Event);
+      });
+      expect(chip229Event.defaultPrevented).toBe(false);
+      expect(usePlayerStore.getState().selection).toBeNull();
+      expect(usePlayerStore.getState().askPhase).toBe("selecting");
+    });
+  });
 });

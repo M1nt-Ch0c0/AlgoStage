@@ -777,6 +777,30 @@ test.describe("1280 selection flow", () => {
     expect(seen.some((e) => e.key === " " && e.metaKey)).toBe(true);
   });
 
+  test("IME guard 1280: dispatch keydown Enter with isComposing:true or keyCode 229 on a chip asserts no selection and panel not visible", async ({ page }) => {
+    await startGenerated(page);
+    await pauseLecture(page);
+    await enterSelection(page);
+
+    const chip = page.locator('[data-ask-bottom-bar] [data-ask-shortcut="step"]');
+    await chip.focus();
+    await expect(chip).toBeFocused();
+
+    await chip.evaluate((el) => {
+      el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", isComposing: true, bubbles: true, cancelable: true }));
+    });
+    await expect(page.locator("[data-ask-panel]")).toHaveCount(0);
+    await expect(page.locator("[data-ask-selection]")).toHaveCount(0);
+
+    await chip.evaluate((el) => {
+      const ev = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+      Object.defineProperty(ev, "keyCode", { value: 229 });
+      el.dispatchEvent(ev);
+    });
+    await expect(page.locator("[data-ask-panel]")).toHaveCount(0);
+    await expect(page.locator("[data-ask-selection]")).toHaveCount(0);
+  });
+
   test("F1 1280: Shift+click on chip selects it as normal", async ({ page }) => {
     await startGenerated(page);
     await pauseLecture(page);
@@ -2339,6 +2363,30 @@ test.describe("390 selection flow", () => {
       expect(seen.some((e) => e.key === "Enter" && e.metaKey)).toBe(true);
       expect(seen.some((e) => e.key === " " && e.ctrlKey)).toBe(true);
       expect(seen.some((e) => e.key === " " && e.metaKey)).toBe(true);
+    });
+
+    test("IME guard 390: dispatch keydown Enter with isComposing:true or keyCode 229 on a chip asserts no selection and panel not visible", async ({ page }) => {
+      await startGenerated(page);
+      await pauseLecture(page);
+      await enterSelection(page);
+
+      const chip = page.locator('[data-ask-bottom-bar] [data-ask-shortcut="subtitle"]');
+      await chip.focus();
+      await expect(chip).toBeFocused();
+
+      await chip.evaluate((el) => {
+        el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", isComposing: true, bubbles: true, cancelable: true }));
+      });
+      await expect(page.locator("[data-ask-panel]")).toHaveCount(0);
+      await expect(page.locator("[data-ask-selection]")).toHaveCount(0);
+
+      await chip.evaluate((el) => {
+        const ev = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+        Object.defineProperty(ev, "keyCode", { value: 229 });
+        el.dispatchEvent(ev);
+      });
+      await expect(page.locator("[data-ask-panel]")).toHaveCount(0);
+      await expect(page.locator("[data-ask-selection]")).toHaveCount(0);
     });
 
     test("F1 390: Shift+click on chip selects it as normal", async ({ page }) => {

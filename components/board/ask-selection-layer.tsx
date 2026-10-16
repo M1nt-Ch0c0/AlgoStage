@@ -1561,6 +1561,7 @@ function AskSelectionLayerActive({
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
     const key = event.key;
     // Esc 只由窗口级监听处理，避免和这里重复退出。
     if (key === "Escape") return;
@@ -1699,6 +1700,7 @@ function AskSelectionLayerActive({
                           pickShortcut(item.key);
                         }}
                         onKeyDown={(event) => {
+                          if (event.nativeEvent.isComposing || event.keyCode === 229) return;
                           // 1280：从芯片组 Shift+Tab 回到入口按钮（和入口 Tab 进来对称）。
                           // 焦点在芯片上：Enter / 空格选中这个芯片本身，不交给图层的 Enter（会选当前代码）。
                           if (
