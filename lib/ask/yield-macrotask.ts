@@ -116,6 +116,30 @@ export async function yieldMacrotask(options?: {
 // the observed gap and still returns before the test's 150ms post-stall hold.
 export const ASK_INPUT_SETTLE_MS = 120;
 
+/**
+ * Two macrotasks and nothing after them. A 取消 issued during the capture
+ * stall arrives as a CDP command first; that command enqueues the pointer
+ * events, and those events run on the following turn. One macrotask resumes
+ * before the events, so domToCanvas would start and the panel would stay up
+ * for the whole raster. The second turn is the one the handlers run on.
+ * Unlike yieldMacrotask, this does not arm the 120ms input settle: the
+ * caller is about to start domToCanvas, and that settle would sit in front
+ * of every capture. An abort that is already set, or that either turn
+ * delivers, ends the wait. The caller reads signal.aborted after this returns.
+ */
+export async function yieldForQueuedInput(signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return;
+  const host = globalThis as typeof globalThis & SchedulerYieldHost;
+  const yieldTurn = host.scheduler?.yield;
+  if (typeof yieldTurn === "function") {
+    await Promise.resolve(yieldTurn.call(host.scheduler));
+  }
+  if (signal?.aborted) return;
+  await nextMacrotask().promise;
+  if (signal?.aborted) return;
+  await nextMacrotask().promise;
+}
+
 export function settleInput(elapsedMs = 0): Promise<void> {
   const remaining = Math.max(0, ASK_INPUT_SETTLE_MS - Math.max(0, elapsedMs));
   if (remaining === 0) return Promise.resolve();

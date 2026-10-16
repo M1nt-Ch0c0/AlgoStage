@@ -144,6 +144,7 @@ afterEach(async () => {
   usePlayerStore.getState().reset();
   resetCodeEditorRegistry();
   resetLongTaskEndForTests();
+  delete (window as Window & { __askPanelGoneAt?: number }).__askPanelGoneAt;
   container.remove();
   stage.remove();
   status.remove();
@@ -229,6 +230,9 @@ function expectPanelHiddenSelecting() {
   expect(held?.hasAttribute("inert")).toBe(true);
   expect(held?.inert).toBe(true);
   expect(usePlayerStore.getState().askPhase).toBe("selecting");
+  // The visual close is this hide. The node stays one frame, so the stamp
+  // is performance.now() at hide, not the later removeChild.
+  expect((window as Window & { __askPanelGoneAt?: number }).__askPanelGoneAt).toEqual(expect.any(Number));
 }
 
 /** Drain the pre-capture paint, then the post-capture macrotask and settle. */
@@ -822,6 +826,75 @@ describe("ask panel", () => {
     expect(container.querySelector("[data-ask-capture-fallback]")?.textContent).toBe(ASK_CAPTURE_FALLBACK);
     expect(sendAsk).toHaveBeenCalledTimes(1);
     expect(sendAsk).toHaveBeenCalledWith(null, expect.objectContaining({ isCurrent: expect.any(Function) }));
+  });
+
+  test("waiting-phase pointerup hides and stamps cancel paint before the probe frame", async () => {
+    draft("sending", { draftQuestion: "等这一下" });
+    await render();
+    const probe: {
+      cancelPaintAt?: number;
+      cancelPaintAfterReleaseMs?: number;
+      cancelPointerUpAt?: number;
+      cancelPointerUpDispatchAt?: number;
+    } = {};
+    (window as unknown as { __ASK_TIMING__?: typeof probe }).__ASK_TIMING__ = probe;
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    const cancel = container.querySelector<HTMLButtonElement>("[data-ask-cancel]");
+    if (!cancel) throw new Error("cancel missing");
+    vi.spyOn(cancel, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 40,
+      bottom: 20,
+      width: 40,
+      height: 20,
+      toJSON() {
+        return {};
+      },
+    });
+    await act(async () => {
+      cancel.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          bubbles: true,
+          cancelable: true,
+          button: 0,
+          pointerId: 1,
+          isPrimary: true,
+          clientX: 10,
+          clientY: 8,
+        }),
+      );
+      cancel.dispatchEvent(
+        new PointerEvent("pointerup", {
+          bubbles: true,
+          cancelable: true,
+          button: 0,
+          pointerId: 1,
+          isPrimary: true,
+          clientX: 12,
+          clientY: 9,
+        }),
+      );
+    });
+    const panel = container.querySelector<HTMLElement>("[data-ask-panel]");
+    expect(panel?.style.display).toBe("none");
+    expect(probe.cancelPaintAt).toEqual(expect.any(Number));
+    expect(probe.cancelPaintAfterReleaseMs).toEqual(expect.any(Number));
+    expect(probe.cancelPaintAfterReleaseMs ?? Infinity).toBeLessThanOrEqual(50);
+    expect(retroCancelAsk).toHaveBeenCalled();
+    // The probe rAF is still scheduled. It must not move the stamp.
+    const paintedAt = probe.cancelPaintAt;
+    const paintedMs = probe.cancelPaintAfterReleaseMs;
+    frames[0]?.(paintedAt! + 200);
+    expect(probe.cancelPaintAt).toBe(paintedAt);
+    expect(probe.cancelPaintAfterReleaseMs).toBe(paintedMs);
+    delete (window as unknown as { __ASK_TIMING__?: unknown }).__ASK_TIMING__;
   });
 
   test("26. sending 显示等待秒数，每 10 秒更新 status；取消调用 cancelAsk，回到 drafting 后草稿与选区还在", async () => {

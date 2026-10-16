@@ -62,6 +62,13 @@ function hideAskPanelNow(panel: HTMLElement | null): void {
   panel.style.display = "none";
   panel.setAttribute("aria-hidden", "true");
   panel.setAttribute("inert", "");
+  // The cancel clock is this hide, which is the visual close. b2 keeps the
+  // node mounted for one frame, so a removal observer stamps too late.
+  // Stamp once, on the first hide, and leave a later removeChild alone.
+  const win = window as Window & { __askPanelGoneAt?: number };
+  if (win.__askPanelGoneAt == null) {
+    win.__askPanelGoneAt = performance.now();
+  }
 }
 
 const DESKTOP_QUERY = "(min-width: 1024px)";
@@ -880,9 +887,16 @@ function AskPanelActive({ stage }: AskPanelProps) {
           const raf = globalThis.requestAnimationFrame;
           if (typeof raf === "function") raf(() => closeSettled());
           else closeSettled();
+        } else if (captureAbortRef.current && sendingRef.current) {
+          // The release was queued during the stall and is dispatched in the
+          // pre-raster yield, before the post-raster settle exists. Waiting
+          // for that settle (or for captureStage to return) keeps the panel
+          // up for the rest of the raster. Hide on this pointerup. The
+          // epoch bump above already discards the screenshot.
+          setPreparing(false);
+          closeCancelledOnce(askSessionRef.current);
         }
       }
-      if (!sentWhileHeld) retroCancel(inside);
       // Waiting phase: the request is already out (or askSent has shown the
       // waiting row) and submit is still awaiting it, so sendingRef is true
       // and this press armed the capture hold. That hold's wait() already
@@ -891,7 +905,19 @@ function AskPanelActive({ stage }: AskPanelProps) {
       // Abort here too, including that gap, and close the panel. A slide-off
       // does not. send-held still aborts once, in onLateCancel. The capture
       // hold's own wait (holdWaitingRef) is drafting, not this phase.
-      if (inside && waitingPhase && !sentWhileHeld && !holdWaitingRef.current) {
+      const waitingCancel = inside && waitingPhase && !sentWhileHeld && !holdWaitingRef.current;
+      if (waitingCancel) {
+        // Hide before retroCancel. The visual close is this display:none.
+        // Stamp the paint on the hide, in this turn. noteCancelPaintAfterRelease
+        // still schedules the probe rAF, but under 4× CPU that frame lands
+        // ~110ms later and would charge the abort and the store update to a
+        // panel the user can no longer see. The first stamp wins.
+        hideAskPanelNow(panelRef.current);
+        markAskTiming("cancelPaintAt");
+        noteCancelPaint();
+      }
+      if (!sentWhileHeld) retroCancel(inside);
+      if (waitingCancel) {
         cancelHitRef.current = false;
         pointerDownIdRef.current = null;
         stopEarlyPress();

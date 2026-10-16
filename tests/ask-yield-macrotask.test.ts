@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { yieldMacrotask } from "../lib/ask/yield-macrotask";
+import { yieldForQueuedInput, yieldMacrotask } from "../lib/ask/yield-macrotask";
 
 describe("yieldMacrotask", () => {
   afterEach(() => {
@@ -122,5 +122,64 @@ describe("yieldMacrotask", () => {
     await vi.advanceTimersByTimeAsync(120);
     await pending;
     expect(settled).toBe(true);
+  });
+});
+
+describe("yieldForQueuedInput", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  test("is two macrotasks and does not arm the 120ms settle", async () => {
+    const delays: number[] = [];
+    const pending: Array<() => void> = [];
+    vi.stubGlobal("setTimeout", (callback: () => void, delayMs: number) => {
+      delays.push(delayMs);
+      pending.push(callback);
+      return delays.length;
+    });
+    vi.stubGlobal("scheduler", undefined);
+
+    let settled = false;
+    const running = yieldForQueuedInput().then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(delays).toEqual([0]);
+    expect(settled).toBe(false);
+    pending[0]?.();
+    await Promise.resolve();
+    expect(delays).toEqual([0, 0]);
+    expect(settled).toBe(false);
+    pending[1]?.();
+    await running;
+    expect(settled).toBe(true);
+  });
+
+  test("returns immediately when the signal is already aborted", async () => {
+    const scheduled = vi.fn();
+    vi.stubGlobal("setTimeout", scheduled);
+    const controller = new AbortController();
+    controller.abort();
+    await yieldForQueuedInput(controller.signal);
+    expect(scheduled).not.toHaveBeenCalled();
+  });
+
+  test("returns after the macrotask when the signal aborts during it", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("scheduler", undefined);
+    const controller = new AbortController();
+    let settled = false;
+    const pending = yieldForQueuedInput(controller.signal).then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    controller.abort();
+    await vi.advanceTimersByTimeAsync(0);
+    await pending;
+    expect(settled).toBe(true);
+    expect(controller.signal.aborted).toBe(true);
   });
 });

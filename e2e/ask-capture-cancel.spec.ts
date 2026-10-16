@@ -1168,9 +1168,10 @@ function installNaturalCancel(width: number, touch: boolean) {
               for (const node of record.removedNodes) notePanel(node, "remove");
               for (const node of record.addedNodes) notePanel(node, "add");
             }
-            // Once per callback, after every record in the batch: stamp the
-            // first time the panel is gone, whether it was the removed node
-            // or a descendant of one.
+            // The paint clock is the hide, which hideAskPanelNow writes.
+            // A removal stamp is a frame later (b2 keeps the node) and, when
+            // the hide's microtask has not run yet, it overwrites the earlier
+            // number. Only stamp removal when nothing has hidden the panel.
             if (win.__askPanelGoneAt == null && document.querySelector("[data-ask-panel]") == null) {
               win.__askPanelGoneAt = performance.now();
             }
@@ -1244,32 +1245,36 @@ function installNaturalCancel(width: number, touch: boolean) {
         }
 
         if (width === 390) {
-          // The removal observer stamps __askPanelGoneAt when the panel
-          // leaves. Wait for that number before reading it. A timeout means
-          // the panel never left; the assertion below then fails.
-          await page
-            .waitForFunction(
-              () =>
-                typeof (window as unknown as { __askPanelGoneAt?: unknown }).__askPanelGoneAt ===
-                "number",
-              undefined,
-              { timeout: 2000, polling: "raf" },
-            )
-            .catch(() => {});
+          // Read the stamp inside the page, on the turn the hide writes it.
+          // A later page.evaluate starts only after Node has awaited touchEnd,
+          // and that round-trip is longer than the paint budget. b2 removes
+          // the node one frame after the hide, so the clock is the hide.
           const stamp = await page.evaluate(() => {
-            const marks = performance.getEntriesByName("ASK_TEST_STALL_HOOK", "mark");
-            const measures = performance.getEntriesByName("ASK_TEST_STALL_HOOK", "measure");
-            const start = marks[0]?.startTime;
-            const duration = measures[0]?.duration;
             const win = window as unknown as AskCancelProbe;
-            return {
-              start,
-              duration,
-              downs: win.__askPointerDownTs ?? [],
-              ups: win.__askPointerUpTs ?? [],
-              panelGoneAt: win.__askPanelGoneAt,
-              events: win.__askPanelEvents ?? [],
+            const read = () => {
+              const marks = performance.getEntriesByName("ASK_TEST_STALL_HOOK", "mark");
+              const measures = performance.getEntriesByName("ASK_TEST_STALL_HOOK", "measure");
+              return {
+                start: marks[0]?.startTime,
+                duration: measures[0]?.duration,
+                downs: win.__askPointerDownTs ?? [],
+                ups: win.__askPointerUpTs ?? [],
+                panelGoneAt: win.__askPanelGoneAt,
+                events: win.__askPanelEvents ?? [],
+              };
             };
+            if (typeof win.__askPanelGoneAt === "number") return read();
+            return new Promise<ReturnType<typeof read>>((resolve) => {
+              const started = performance.now();
+              const tick = () => {
+                if (typeof win.__askPanelGoneAt === "number" || performance.now() - started > 2000) {
+                  resolve(read());
+                  return;
+                }
+                requestAnimationFrame(tick);
+              };
+              requestAnimationFrame(tick);
+            });
           });
           expect(stamp.start, "stall mark").toEqual(expect.any(Number));
           expect(stamp.duration, "stall measure").toBeGreaterThan(0);
@@ -1303,8 +1308,9 @@ function installNaturalCancel(width: number, touch: boolean) {
           const t0src = pointerUpInStall ? "stallEnd" : "pointerup";
           const paint = panelGoneAt - t0;
           const seq = stamp.events;
+          const cancelOffset = cancelTs - stallStart;
           console.log(
-            `CANCEL390 round=${i} paint=${paint}ms t0=${t0src} release=${release} stallEnd=${stallEnd} events=${JSON.stringify(seq)}`,
+            `CANCEL390 round=${i} paint=${paint}ms t0=${t0src} cancelOffset=${cancelOffset} release=${release} stallEnd=${stallEnd} events=${JSON.stringify(seq)}`,
           );
           expect(paint).toBeLessThan(100);
           // The press landed inside the stall, so the ask never goes out.
@@ -1357,8 +1363,9 @@ installNaturalCancel(390, true);
  * Prod path (no stall hook). The ask response is held so the panel stays in
  * the waiting phase (request seen, no first token). 300ms later, press and
  * release 取消. The request aborts and the panel closes with no answer, no
- * red dot, and no error. cancelPaintAfterReleaseMs is pointerup → the next
- * frame after the cancelled state.
+ * red dot, and no error. cancelPaintAfterReleaseMs is pointerup dispatch →
+ * the sync hide in that same turn. The probe still schedules a later frame;
+ * the first stamp is the one that counts.
  */
 function installWaitingPhaseCancel(width: number, touch: boolean, throttle: number) {
   const label = width === 1280 ? "Desktop" : "390";
@@ -1501,8 +1508,8 @@ function installWaitingPhaseCancel(width: number, touch: boolean, throttle: numb
           await expect(page.getByText("播放回答")).toHaveCount(0);
           await expect(page.locator("[data-testid='ask-preview']")).toHaveCount(0);
 
-          // pointerup → the frame after the cancelled state. The probe writes
-          // it on that frame, so poll until the mark exists, then bound it.
+          // pointerup dispatch → the sync hide in that turn. Poll until the
+          // probe has written the delta, then bound it.
           await expect
             .poll(
               () =>

@@ -1218,7 +1218,7 @@ describe("lib/ask/capture", () => {
       vi.unstubAllGlobals();
     });
 
-    it("runs the ASK_TEST_STALL_HOOK busy loop in the same task as domToCanvas when NEXT_PUBLIC_ASK_TEST_STALL_MS is set", async () => {
+    it("runs the ASK_TEST_STALL_HOOK busy loop before domToCanvas, then yields once, when NEXT_PUBLIC_ASK_TEST_STALL_MS is set", async () => {
       const source = captureStage.toString();
       expect(source).toContain("ASK_TEST_STALL_HOOK");
       expect(source).toContain('process.env.NEXT_PUBLIC_ASK_TEST_BUILD === "1"');
@@ -1229,10 +1229,17 @@ describe("lib/ask/capture", () => {
       // The marker string lives only inside the compile-time test block.
       const blockStart = source.lastIndexOf("if (", hookAt);
       expect(source.slice(blockStart, hookAt)).toContain('process.env.NEXT_PUBLIC_ASK_TEST_BUILD === "1"');
-      // No await between the hook and the domToCanvas call: same task.
-      // The slice stops before the await that is the call itself.
+      // The stall stays before the raster call. One input yield sits between
+      // them so a 取消 queued during the busy loop aborts before raster.
+      // That yield is the only await in the gap (the call's own await is
+      // stripped from the end of the slice).
       const between = source.slice(hookAt, callAt).replace(/await\s*$/, "");
-      expect(between).not.toContain("await");
+      // After the stall the wait is the input settle, which ends when the
+      // signal aborts. The no-stall path is the two-macrotask yield.
+      expect(between).toContain("yieldMacrotask");
+      expect(between).toContain("yieldForQueuedInput");
+      expect(between.match(/await/g)?.length).toBe(1);
+      expect(source.indexOf("beforeEncode", callAt)).toBeGreaterThan(callAt);
 
       vi.stubEnv("NEXT_PUBLIC_ASK_TEST_BUILD", "1");
       vi.stubEnv("NEXT_PUBLIC_ASK_TEST_STALL_MS", "80");
@@ -1251,6 +1258,18 @@ describe("lib/ask/capture", () => {
       vi.unstubAllEnvs();
     });
 
+    it("an aborted signal before domToCanvas skips raster and returns ABORTED", async () => {
+      const controller = new AbortController();
+      controller.abort();
+      const res = await captureStage(container, baseSel, { signal: controller.signal });
+      expect(res).toEqual({
+        ok: false,
+        reason: "ABORTED",
+        fallbackText: "Code target",
+      });
+      expect(domToCanvasMock).not.toHaveBeenCalled();
+    });
+
     it("a stall longer than timeoutMs returns ABORTED when 取消 aborted during the stall", async () => {
       vi.useFakeTimers();
       const controller = new AbortController();
@@ -1260,8 +1279,16 @@ describe("lib/ask/capture", () => {
       });
 
       const pending = captureStage(container, baseSel, { timeoutMs: 1000, signal: controller.signal });
-      await vi.advanceTimersByTimeAsync(1001);
+      // No stall in this unit test, so the pre-raster wait is two
+      // macrotasks. A 取消 issued during a stall is queued behind the first
+      // and runs on the second, before domToCanvas.
+      await Promise.resolve();
+      setTimeout(() => {
+        controller.abort();
+      }, 0);
+      await vi.advanceTimersByTimeAsync(0);
       const res = await pending;
+      expect(domToCanvasMock).not.toHaveBeenCalled();
 
       expect(res).toEqual({
         ok: false,
@@ -1277,9 +1304,12 @@ describe("lib/ask/capture", () => {
       domToCanvasMock.mockImplementation(() => new Promise(() => {}));
 
       const pending = captureStage(container, baseSel, { timeoutMs: 1000, signal: controller.signal });
-      // The 1000ms timer yields one macrotask before it commits. That
-      // macrotask is not inside this advance. The press queued behind the
-      // stall aborts in the gap, then the next tick commits ABORTED.
+      // The pre-raster yield is one macrotask and domToCanvas starts after
+      // it. The 1000ms timer yields its own macrotask before it commits.
+      // The press queued behind the stall aborts in that gap, then the next
+      // tick commits ABORTED. No extra advance sits between the start and
+      // the timeout: one would run the pre-raster yield and leave the
+      // timeout's own yield with nothing queued behind it.
       await vi.advanceTimersByTimeAsync(1000);
       controller.abort();
       await vi.advanceTimersByTimeAsync(1);
@@ -1299,9 +1329,9 @@ describe("lib/ask/capture", () => {
       domToCanvasMock.mockImplementation(() => new Promise(() => {}));
 
       const pending = captureStage(container, baseSel, { timeoutMs: 1000, signal: controller.signal });
-      // The timeout callback is queued. The cancel is registered after it,
-      // also as a timer, so it runs only once that callback has started and
-      // yielded its macrotask.
+      // The timeout callback is queued together with the pre-raster yield.
+      // The cancel is registered after that callback, also as a timer, so
+      // it runs once the callback has started and yielded its macrotask.
       await vi.advanceTimersByTimeAsync(1000);
       setTimeout(() => {
         controller.abort();

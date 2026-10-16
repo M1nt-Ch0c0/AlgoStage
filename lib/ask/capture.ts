@@ -7,7 +7,7 @@
 import { ASK_LIMITS } from "@/lib/ask/types";
 import type { AskBBox, AskSelection, AskTarget } from "@/lib/ask/types";
 import { markAskPhase, markAskTiming, noteLongTaskEnded, notePreCapture } from "./ask-timing";
-import { yieldMacrotask } from "./yield-macrotask";
+import { yieldForQueuedInput, yieldMacrotask } from "./yield-macrotask";
 import { acquireEncodeWorker, retireEncodeWorker } from "./capture-worker";
 import { intersects, normalizeBBox } from "./hit-test";
 import type { EncodeRequest, EncodeResponse } from "./capture-encode";
@@ -598,6 +598,7 @@ export async function captureStage(
         // synchronous and shares the domToCanvas task; the call is the next
         // statement. A hook build keeps the mark name as a string literal.
         // Hook build: NEXT_PUBLIC_ASK_TEST_BUILD=1 NEXT_PUBLIC_ASK_TEST_STALL_MS=1500
+        let stalled = false;
         if (process.env.NEXT_PUBLIC_ASK_TEST_BUILD === "1" && process.env.NEXT_PUBLIC_ASK_TEST_STALL_MS) {
           performance.mark("ASK_TEST_STALL_HOOK");
           const ms = Number(process.env.NEXT_PUBLIC_ASK_TEST_STALL_MS);
@@ -613,6 +614,25 @@ export async function captureStage(
             "ASK_TEST_STALL_HOOK",
             "ASK_TEST_STALL_HOOK_END",
           );
+          stalled = true;
+        }
+        // One input yield before raster. A 取消 queued during the stall is
+        // not in this thread yet: the CDP command lands on the next
+        // macrotask and the pointer events follow, measured 34–97ms after
+        // the thread frees under 4× CPU. Two macrotasks miss that tail and
+        // raster starts, so the panel stays up for the whole raster. After
+        // the stall, wait the same settle encode uses and stop the moment
+        // the signal aborts, which skips domToCanvas. With no stall the
+        // press is already queued, so one two-macrotask yield is enough and
+        // the happy path does not pay the settle. The post-raster
+        // beforeEncode yield stays. No signal (the capture unit tests) has
+        // nothing that can abort, so it does not wait.
+        if (signal) {
+          await (stalled
+            ? yieldMacrotask({ signal, done: () => signal.aborted })
+            : yieldForQueuedInput(signal));
+          if (signal.aborted) return abortedResult();
+          if (timedOut) return timeoutResult();
         }
         // Segment the domToCanvas task. modern-screenshot 4.7 calls
         // onCloneEachNode per cloned node, onCloneNode once the clone tree
