@@ -418,6 +418,20 @@ async function mockHeldLecture(page: Page) {
   };
 }
 
+async function installPointerdownClock(page: Page) {
+  await page.evaluate(() => {
+    const w = window as unknown as { __askDownTs?: number[]; __askDownInstalled?: boolean };
+    w.__askDownTs = [];
+    if (w.__askDownInstalled) return;
+    w.__askDownInstalled = true;
+    document.addEventListener("pointerdown", (event) => w.__askDownTs?.push(event.timeStamp), { capture: true });
+  });
+}
+
+async function readPointerdownClock(page: Page): Promise<number[]> {
+  return page.evaluate(() => (window as unknown as { __askDownTs?: number[] }).__askDownTs ?? []);
+}
+
 test.describe("1280 selection flow", () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
@@ -2365,16 +2379,48 @@ test.describe("390 selection flow", () => {
       await expect(cancelBtn).toBeVisible();
       const cancelBox = (await cancelBtn.boundingBox())!;
 
+      await installPointerdownClock(page);
       await page.touchscreen.tap(cancelBox.x + cancelBox.width / 2, cancelBox.y + cancelBox.height / 2);
-      const tCancel = performance.now();
       await page.touchscreen.tap(exitX, exitY);
-      const tExit = performance.now();
-      const gap = tExit - tCancel;
+      const downs = await readPointerdownClock(page);
+      expect(downs.length).toBeGreaterThanOrEqual(2);
+      const gap = downs[1] - downs[0];
       console.log(`[cancel->exit gap] ${gap.toFixed(1)}ms`);
       expect(gap).toBeLessThan(100);
 
       await expect(page.locator("[data-ask-layer]")).toHaveCount(0);
       await expect(page.locator("[data-ask-entry]")).not.toHaveAttribute("aria-pressed", "true");
+    });
+
+    test("tap completes a selection, then a chip tap within 100ms takes effect", async ({ page }) => {
+      await startGenerated(page);
+      await pauseLecture(page);
+      await enterSelection(page);
+
+      const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+      await code.scrollIntoViewIfNeeded();
+      await expect(code).toBeVisible();
+      const line9 = await getMonacoLineBox(page, 9);
+      const codeBox = (await code.boundingBox())!;
+
+      await installPointerdownClock(page);
+      await page.touchscreen.tap(codeBox.x + 80, (line9.top + line9.bottom) / 2);
+      // Bar is hidden while the panel is open (option B); the visible subtitle chip lives in the panel.
+      const chip = page
+        .locator("[data-ask-panel] [data-ask-shortcut='subtitle'], [data-ask-bottom-bar] [data-ask-shortcut='subtitle']")
+        .locator("visible=true")
+        .first();
+      const chipBox = (await chip.boundingBox())!;
+      await page.touchscreen.tap(chipBox.x + chipBox.width / 2, chipBox.y + chipBox.height / 2);
+      const downs = await readPointerdownClock(page);
+      expect(downs.length).toBeGreaterThanOrEqual(2);
+      const gap = downs[1] - downs[0];
+      console.log(`[selection->chip gap] ${gap.toFixed(1)}ms`);
+      expect(gap).toBeLessThan(100);
+
+      const panel = page.locator("[data-ask-panel]");
+      await expect(panel).toBeVisible();
+      await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：当前字幕");
     });
 
     test("q. tap in the gap between two chips in the bar -> selection unchanged and ask mode active", async ({ page }) => {
