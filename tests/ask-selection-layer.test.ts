@@ -3145,6 +3145,38 @@ describe("resolveAskEscape", () => {
       expect(usePlayerStore.getState().selection).not.toBeNull();
     });
 
+    test("N2: deferred touch release resets click suppression when origin changed or drawing stopped before settle rAF", async () => {
+      setupEnteringScrollEnv();
+      await startEnteringScroll(10);
+      const host = layer();
+
+      const upTime = performance.now();
+      await act(async () => {
+        host.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 1, clientX: 20, clientY: 20, pointerType: "touch" }));
+        const up = new PointerEvent("pointerup", { bubbles: true, cancelable: true, pointerId: 1, clientX: 20, clientY: 20, pointerType: "touch" });
+        Object.defineProperty(up, "timeStamp", { value: upTime });
+        host.dispatchEvent(up);
+      });
+
+      // Stop drawing / reset origin before settle rAF
+      await act(async () => {
+        window.dispatchEvent(new Event("resize"));
+      });
+
+      // Settle rAF runs
+      await act(async () => {
+        flushPendingRafs();
+      });
+
+      // Subsequent click within 400ms is NOT suppressed
+      const clickEvent = new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 });
+      Object.defineProperty(clickEvent, "timeStamp", { value: upTime + 50 });
+      await act(async () => {
+        document.dispatchEvent(clickEvent);
+      });
+      expect(clickEvent.defaultPrevented).toBe(false);
+    });
+
     test("STEP 2: in hasValidCode, if no matching element is found treat code as invalid instead of falling back to codeElements[0]", async () => {
       await render();
       const host = layer();

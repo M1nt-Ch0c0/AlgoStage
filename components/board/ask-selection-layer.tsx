@@ -1363,7 +1363,13 @@ function AskSelectionLayerActive({
         const pending = pendingReleaseRef.current;
         pendingReleaseRef.current = null;
 
-        if (originRef.current !== start || !drawingRef.current) return;
+        if (originRef.current !== start || !drawingRef.current) {
+          if (pending && pending.pointerType === "touch") {
+            suppressClickUntilRef.current = null;
+            touchCompletedSelectionRef.current = false;
+          }
+          return;
+        }
         const settledHost = getStage();
         if (!settledHost) {
           if (pending) {
