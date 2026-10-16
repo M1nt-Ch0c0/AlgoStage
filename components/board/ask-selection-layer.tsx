@@ -27,7 +27,7 @@ import {
 } from "@/lib/ask/ask-ui-text";
 import { ASK_LIMITS, type AskBBox, type AskSelectionSummary, type AskTarget } from "@/lib/ask/types";
 import { setAskCodeMissNotice } from "@/lib/ask/code-editor-registry";
-import { getAskBottomObstacle, getAskPublishedObstacle, measureAskElementHeight } from "@/lib/ask/ask-occlusion";
+import { getAskBottomObstacle, measureAskElementHeight, measureAskPlayerBarHeight } from "@/lib/ask/ask-occlusion";
 import { scheduleEncodeWorkerPrewarm } from "@/lib/ask/capture-worker";
 import { usePlayerStore } from "@/lib/player/store";
 import { useIsMobile } from "./use-is-mobile";
@@ -579,7 +579,7 @@ function AskSelectionLayerActive({
       return;
     }
 
-    const playerH = getAskBottomObstacle(null);
+    const playerH = measureAskPlayerBarHeight();
 
     let panelH = 0;
     const panelEl = document.querySelector<HTMLElement>("[data-ask-panel]");
@@ -754,7 +754,7 @@ function AskSelectionLayerActive({
       if (!codeEl) return;
 
       const barEl = bottomBarRef.current ?? document.querySelector<HTMLElement>("[data-ask-bottom-bar]");
-      const barObstacle = getAskPublishedObstacle(barEl);
+      const barObstacle = getAskBottomObstacle(barEl);
       const codeRect = codeEl.getBoundingClientRect();
 
       const inView = isElementFullyInView(

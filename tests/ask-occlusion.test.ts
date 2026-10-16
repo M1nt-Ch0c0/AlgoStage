@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { getAskBottomObstacle, getAskBottomOcclusion, getAskPublishedObstacle, measureAskElementHeight, measureAskPlayerBarHeight } from "../lib/ask/ask-occlusion";
+import { getAskBottomObstacle, getAskBottomOcclusion, measureAskElementHeight, measureAskPlayerBarHeight } from "../lib/ask/ask-occlusion";
 
 describe("getAskBottomOcclusion", () => {
   afterEach(() => {
@@ -176,11 +176,9 @@ describe("measureAskElementHeight / getAskBottomObstacle", () => {
     expect(measureAskElementHeight(null)).toBe(0);
   });
 
-  test("published obstacle uses the published occlusion when present", () => {
+  test("obstacle uses the published occlusion when present", () => {
     const root = document.createElement("div");
     root.style.setProperty("--ask-bottom-occlusion", "230px");
-    expect(getAskPublishedObstacle(fakeEl(60), root)).toBe(230);
-    // Desktop has no player bar, so the obstacle is the published occlusion.
     expect(getAskBottomObstacle(fakeEl(60), root)).toBe(230);
   });
 
@@ -211,7 +209,8 @@ describe("measureAskElementHeight / getAskBottomObstacle", () => {
     const root = document.createElement("div");
     root.style.setProperty("--ask-bottom-occlusion", "230px");
     expect(measureAskPlayerBarHeight()).toBe(162);
-    expect(getAskBottomObstacle(fakeEl(60), root)).toBe(162);
+    // The obstacle keeps its original meaning even on a narrow viewport.
+    expect(getAskBottomObstacle(fakeEl(60), root)).toBe(230);
 
     player.remove();
     Object.defineProperty(window, "innerHeight", { configurable: true, value: originalHeight });

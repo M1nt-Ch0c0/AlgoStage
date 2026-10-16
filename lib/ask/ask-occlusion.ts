@@ -63,33 +63,15 @@ export function measureAskPlayerBarHeight(root?: ParentNode | null): number {
 }
 
 /**
- * Obstacle the chip390 entering-scroll check uses.
+ * Bottom obstacle used to decide whether content is in view above the ask bar.
  * Prefers the published --ask-bottom-occlusion (player + bar + gap); falls back to
  * the bar's own height before the variable has been written.
- */
-export function getAskPublishedObstacle(
-  barEl: Element | null | undefined,
-  root?: HTMLElement,
-): number {
-  const occlusion = root ? getAskBottomOcclusion(root) : getAskBottomOcclusion();
-  return occlusion > 0 ? occlusion : measureAskElementHeight(barEl);
-}
-
-/**
- * Value published as --ask-player-bar-h.
- * On a narrow viewport this is the player area's visible height, including 0
- * when that area is missing: falling through to the occlusion total would
- * republish the bar and the panel as the player height. Otherwise it prefers
- * the published occlusion, then the bar's own height.
+ * chip390-b's entering-scroll check depends on this meaning.
  */
 export function getAskBottomObstacle(
   barEl: Element | null | undefined,
   root?: HTMLElement,
 ): number {
-  if (typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches) {
-    // The player area lives in the document, not inside the style root a
-    // caller passes for the occlusion variable.
-    return measureAskPlayerBarHeight(typeof document !== "undefined" ? document : null);
-  }
-  return getAskPublishedObstacle(barEl, root);
+  const occlusion = root ? getAskBottomOcclusion(root) : getAskBottomOcclusion();
+  return occlusion > 0 ? occlusion : measureAskElementHeight(barEl);
 }

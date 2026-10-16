@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect } from "react";
-import { getAskBottomObstacle } from "@/lib/ask/ask-occlusion";
+import { measureAskPlayerBarHeight } from "@/lib/ask/ask-occlusion";
 import { usePlayerStore } from "@/lib/player/store";
 
 /** Layout on the client so the first paint already has the offset; effect during SSR. */
@@ -31,7 +31,7 @@ function keyboardOpen(): boolean {
 export function syncAskPlayerBarHeight(): void {
   if (typeof document === "undefined") return;
   const phase = usePlayerStore.getState().askPhase;
-  const height = ASK_OPEN_PHASES.has(phase) && !keyboardOpen() ? getAskBottomObstacle(null) : 0;
+  const height = ASK_OPEN_PHASES.has(phase) && !keyboardOpen() ? measureAskPlayerBarHeight() : 0;
   document.documentElement.style.setProperty("--ask-player-bar-h", `${height}px`);
 }
 
