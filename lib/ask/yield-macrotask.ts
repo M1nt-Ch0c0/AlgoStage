@@ -8,7 +8,8 @@
  * isInputPending stays false until it arrives, so a yield loop never sees
  * it. The settle is the window that press uses to land before encode.
  * A caller that already has its answer passes done(). The settle timer is
- * still armed (a held macrotask holds both), but it is not awaited.
+ * still armed (a held macrotask holds both), but it is not awaited, and it
+ * is cleared so it does not fire after the caller has moved on.
  *
  * The cancel decision is the 取消 hit flag that yield lets the listener set,
  * not a timestamp compared with sentAt.
@@ -24,15 +25,20 @@ type InputScheduling = {
   isInputPending?: () => boolean;
 };
 
-function nextMacrotask(delayMs = 0): Promise<void> {
-  return new Promise((resolve) => {
+function nextMacrotask(delayMs = 0): { promise: Promise<void>; handle: ReturnType<typeof setTimeout> } {
+  // The Promise executor runs synchronously, so the handle is assigned
+  // before this function returns. Node's Timeout and the DOM number id
+  // do not overlap, so the handle is not seeded with a numeric zero.
+  let handle!: ReturnType<typeof setTimeout>;
+  const promise = new Promise<void>((resolve) => {
     // Named so a test can tell this yield from the pre-capture paint timer.
     // The post-stall settle uses the same name: one release covers both.
     function askInputMacrotask() {
       resolve();
     }
-    setTimeout(askInputMacrotask, delayMs);
+    handle = setTimeout(askInputMacrotask, delayMs);
   });
+  return { promise, handle };
 }
 
 function inputStillPending(): boolean {
@@ -43,7 +49,11 @@ function inputStillPending(): boolean {
   return isInputPending.call(scheduling) === true;
 }
 
-export async function yieldMacrotask(options?: { done?: () => boolean }): Promise<void> {
+export async function yieldMacrotask(options?: {
+  done?: () => boolean;
+  /** Aborted when 取消 is decided. Ends the settle immediately. */
+  signal?: AbortSignal;
+}): Promise<void> {
   const started = typeof performance !== "undefined" ? performance.now() : Date.now();
   const host = globalThis as typeof globalThis & SchedulerYieldHost;
   const yieldTurn = host.scheduler?.yield;
@@ -60,13 +70,39 @@ export async function yieldMacrotask(options?: { done?: () => boolean }): Promis
   // A caller that already has its answer (the 取消 hit landed during the
   // stall) passes done(). The settle then stops: the remaining wait would
   // sit between that release and the close, which is the 390 cancel paint.
+  // A release that lands while the settle timer is running aborts signal.
+  // That ends the wait the same way, and the timer is cleared.
   const elapsed = (typeof performance !== "undefined" ? performance.now() : Date.now()) - started;
   const remaining = Math.max(0, ASK_INPUT_SETTLE_MS - Math.max(0, elapsed));
   const macrotask = nextMacrotask();
-  const settle = remaining > 0 ? nextMacrotask(remaining) : Promise.resolve();
-  await macrotask;
-  if (options?.done?.()) return;
-  await settle;
+  const settle = remaining > 0 ? nextMacrotask(remaining) : null;
+  await macrotask.promise;
+  const decided = () => options?.done?.() === true || options?.signal?.aborted === true;
+  if (decided()) {
+    // The settle was armed in the same turn as the macrotask. A decided
+    // cancel does not wait it out. Clear it so it is not still pending
+    // after the panel has closed.
+    if (settle) clearTimeout(settle.handle);
+    return;
+  }
+  if (!settle) return;
+  const signal = options?.signal;
+  if (!signal) {
+    await settle.promise;
+    return;
+  }
+  let onAbort: (() => void) | undefined;
+  const aborted = new Promise<void>((resolve) => {
+    if (signal.aborted) {
+      resolve();
+      return;
+    }
+    onAbort = () => resolve();
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+  await Promise.race([settle.promise, aborted]);
+  if (onAbort) signal.removeEventListener("abort", onAbort);
+  if (decided()) clearTimeout(settle.handle);
 }
 
 /**
@@ -83,7 +119,7 @@ export const ASK_INPUT_SETTLE_MS = 120;
 export function settleInput(elapsedMs = 0): Promise<void> {
   const remaining = Math.max(0, ASK_INPUT_SETTLE_MS - Math.max(0, elapsedMs));
   if (remaining === 0) return Promise.resolve();
-  return nextMacrotask(remaining);
+  return nextMacrotask(remaining).promise;
 }
 
 /**
@@ -97,10 +133,10 @@ export async function yieldToInput(): Promise<void> {
       raf(() => resolve());
     });
   }
-  await nextMacrotask();
+  await nextMacrotask().promise;
   for (let extra = 0; extra < 3; extra += 1) {
     if (!inputStillPending()) return;
-    await nextMacrotask();
+    await nextMacrotask().promise;
   }
 }
 
