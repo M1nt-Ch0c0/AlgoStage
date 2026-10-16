@@ -1276,7 +1276,7 @@ describe("lib/ask/capture", () => {
       domToCanvasMock.mockImplementation(async (_node: unknown, options: {
         onCloneEachNode?: (node: Node) => void;
       }) => {
-        expect(section.getAttribute("data-ask-capture-pad-above")).toBe("16");
+        expect(section.getAttribute("data-ask-capture-pad-above")).toBe("17");
         const clone = section.cloneNode(false) as HTMLElement;
         clone.style.paddingTop = "16px";
         options.onCloneEachNode?.(clone);
@@ -1287,8 +1287,8 @@ describe("lib/ask/capture", () => {
 
       const res = await captureStage(container, baseSel);
       expect(res.ok).toBe(true);
-      // The copied 16px plus the measured 16px that foreignObject drops.
-      expect(padding).toBe("32px");
+      // The copied 16px plus the measured pad (16px foreignObject drop + 1px Uma nudge).
+      expect(padding).toBe("33px");
       expect(section.hasAttribute("data-ask-capture-pad-above")).toBe(false);
       container.remove();
     });

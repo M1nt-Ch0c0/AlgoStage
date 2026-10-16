@@ -475,7 +475,11 @@ function paddingAboveSelection(node: HTMLElement, containerRect: ClientRectLike,
   if (!Number.isFinite(paddingTop) || paddingTop <= 0) return 0;
   const top = node.getBoundingClientRect().top - containerRect.top;
   const norm = normalizeBBox(bbox);
-  return Math.max(0, Math.min(paddingTop, norm.y - top));
+  const measured = Math.max(0, Math.min(paddingTop, norm.y - top));
+  // Uma 390: offline dy=+1 on the closed-panel crop vs pre-encode. One extra
+  // CSS px of pad-above shifts the subtitle glyphs onto that baseline.
+  if (measured <= 0) return 0;
+  return measured + 1;
 }
 
 /** Exported so the capture unit test can pair a live spacer with its clone. */
@@ -995,6 +999,48 @@ export async function captureStage(
       }
 
       const cropRect = { x: cropX, y: cropY, w: cropW, h: cropH };
+      // Uma 390: a 1px gold-ring remnant still lands on the last crop row after
+      // the live border clear (modern-screenshot copies longhands onto an
+      // ancestor). Copy the row above over it so the fill matches the crop's
+      // board (not board-950 from resolveStageBackground). Only when that last
+      // row is a flat near-gold band (not real content).
+      {
+        const rowH = Math.max(1, Math.round(scaleY));
+        const ctx = canvas.getContext("2d");
+        if (ctx && cropW > 0 && cropH >= rowH * 2) {
+          const y = cropBottom - rowH;
+          const sample = ctx.getImageData(cropX, y, Math.min(cropW, 32), rowH).data;
+          let flat = true;
+          const r0 = sample[0]!, g0 = sample[1]!, b0 = sample[2]!;
+          // Gold remnant is olive (~52,56,38), not chalk and not the open board.
+          const looksGold =
+            r0 > 40 && r0 < 80 && g0 > 40 && g0 < 80 && b0 > 25 && b0 < 55 &&
+            Math.abs(r0 - g0) < 15;
+          for (let i = 4; i < sample.length; i += 4) {
+            if (
+              Math.abs(sample[i]! - r0) > 6 ||
+              Math.abs(sample[i + 1]! - g0) > 6 ||
+              Math.abs(sample[i + 2]! - b0) > 6
+            ) {
+              flat = false;
+              break;
+            }
+          }
+          if (flat && looksGold) {
+            ctx.drawImage(
+              canvas,
+              cropX,
+              y - rowH,
+              cropW,
+              rowH,
+              cropX,
+              y,
+              cropW,
+              rowH,
+            );
+          }
+        }
+      }
       // Test-only. The probe object is installed by the harness before
       // submit. A page that never sets it (including a release build) does
       // not allocate or keep the pre-encode canvas.
