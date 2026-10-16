@@ -540,13 +540,15 @@ describe("early 取消 press", () => {
     });
     expect(sendAsk).not.toHaveBeenCalled();
 
-    // The timeout timer is due. Its callback yields one macrotask before it
-    // resolves. Register 取消 after that callback has started, so the abort
-    // is the timer behind the yield and runs before TIMEOUT is committed.
+    // The timeout timer is due. Its callback starts and yields one macrotask
+    // (A) before it resolves. Schedule 取消 in that same synchronous turn,
+    // before any await or act. fireTimeout queues A immediately; this timer
+    // (C) is the next macrotask, so the abort runs after A and before the
+    // second yield (B), which A schedules only when it fires. Awaiting
+    // Promise.resolve() inside act before scheduling C is not that order:
+    // React's act flush is a macrotask (setImmediate / MessageChannel) and
+    // can run A before C is queued, which puts B ahead of the abort.
     fireTimeout?.();
-    await act(async () => {
-      await Promise.resolve();
-    });
     setTimeout(() => {
       cancel.dispatchEvent(pointer("pointerdown", 3000, 12, 10));
       cancel.dispatchEvent(pointer("pointerup", 3001, 14, 12));
@@ -712,6 +714,12 @@ describe("early 取消 press", () => {
     const realSetTimeout = setTimeout;
     const realClearTimeout = clearTimeout;
     let holdTimer: (() => void) | undefined;
+    // Not a number. happy-dom's delay>0 setTimeout returns Node's Timeout,
+    // and Node clearTimeout looks a numeric id up in knownTimersById
+    // (lib/internal/timers.js: number or string → knownTimersById[timer]).
+    // Ids are sequential per process, so a fake 2000 can be a live
+    // settle/yield/act timer and pointerup's clearTimeout would cancel it.
+    const HOLD_HANDLE = Symbol("hold-timeout");
     vi.stubGlobal("setTimeout", ((callback: TimerHandler, delay?: number, ...args: unknown[]) => {
       // The hold's 2s timer is the only long timer on this path. Hold it
       // so the test can fire the timeout while the press is still down.
@@ -719,17 +727,17 @@ describe("early 取消 press", () => {
         holdTimer = () => {
           callback(...args);
         };
-        return 2000;
+        return HOLD_HANDLE;
       }
       return realSetTimeout(callback as never, delay, ...args);
-    }) as typeof setTimeout);
+    }) as unknown as typeof setTimeout);
     vi.stubGlobal("clearTimeout", ((handle: unknown) => {
-      if (handle === 2000) {
+      if (handle === HOLD_HANDLE) {
         holdTimer = undefined;
         return;
       }
       realClearTimeout(handle as ReturnType<typeof setTimeout>);
-    }) as typeof clearTimeout);
+    }) as unknown as typeof clearTimeout);
 
     let releaseSend: (() => void) | undefined;
     vi.mocked(sendAsk).mockImplementation(async (_capture, options) => {
@@ -793,15 +801,30 @@ describe("early 取消 press", () => {
     // still sends.
     let releaseHold: (() => void) | undefined;
     const realSetTimeout = setTimeout;
+    const realClearTimeout = clearTimeout;
+    // Same sentinel as the 2s-hold test above. Returning the number 2000
+    // without stubbing clearTimeout lets pointerup's clearTimeout(2000) hit
+    // Node's knownTimersById. Timer ids are sequential integers for the
+    // whole worker, and vi.waitFor's poll count varies, so id 2000 is
+    // sometimes a live settle/yield/act macrotask. Cancelling that timer
+    // drops the macrotask this test still awaits, and sendAsk then runs.
+    const HOLD_HANDLE = Symbol("hold-timeout");
     vi.stubGlobal("setTimeout", ((callback: TimerHandler, delay?: number, ...args: unknown[]) => {
       if (delay === 2000 && typeof callback === "function") {
         releaseHold = () => {
           callback(...args);
         };
-        return 2000;
+        return HOLD_HANDLE;
       }
       return realSetTimeout(callback as never, delay, ...args);
-    }) as typeof setTimeout);
+    }) as unknown as typeof setTimeout);
+    vi.stubGlobal("clearTimeout", ((handle: unknown) => {
+      if (handle === HOLD_HANDLE) {
+        releaseHold = undefined;
+        return;
+      }
+      realClearTimeout(handle as ReturnType<typeof setTimeout>);
+    }) as unknown as typeof clearTimeout);
 
     const release = await reachBeforeEncode(submit);
     expect(sendAsk).not.toHaveBeenCalled();
@@ -844,6 +867,7 @@ describe("early 取消 press", () => {
     expect(container.querySelector("[data-ask-panel]")).toBeNull();
 
     vi.stubGlobal("setTimeout", realSetTimeout);
+    vi.stubGlobal("clearTimeout", realClearTimeout);
   });
 
   test("settle-time cancel closes the panel and notes paint once", async () => {
@@ -881,19 +905,24 @@ describe("early 取消 press", () => {
     await act(async () => {
       submit.click();
     });
+    // Paint is one frame plus a delay-0 macrotask. The next delay-0 is the
+    // post-capture yield, which arms the 120ms settle and then awaits
+    // beforeEncode. Encode stays pending until releaseEncode runs. Each
+    // step asserts the timer it just produced, so a missed macrotask cannot
+    // be papered over by an extra advance. advanceTimersByTimeAsync yields
+    // one macrotask after the tick, which is the flush the sync frame
+    // advance does not do.
     await act(async () => {
       vi.advanceTimersToNextFrame();
-    });
-    await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
-    });
+    expect(releaseEncode).toBeUndefined();
+    expect(vi.getTimerCount()).toBe(1);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
     expect(releaseEncode).toBeUndefined();
+    expect(vi.getTimerCount()).toBe(1);
     expect(sendAsk).not.toHaveBeenCalled();
 
     // Release during the 120ms settle. The close is scheduled on the next
@@ -905,14 +934,17 @@ describe("early 取消 press", () => {
     });
     expect(closeSpy).not.toHaveBeenCalled();
     expect(probe.cancelPaintAt).toBeUndefined();
+    expect(vi.getTimerCount()).toBe(1);
 
     await act(async () => {
       vi.advanceTimersToNextFrame();
-      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(0);
     });
     expect(closeSpy).toHaveBeenCalledTimes(1);
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
     expect(probe.cancelPaintAt).toBeUndefined();
+    // The frame callback only schedules the paint stamp. It has not run.
+    expect(vi.getTimerCount()).toBe(1);
 
     await act(async () => {
       releaseEncode?.();
@@ -926,13 +958,16 @@ describe("early 取消 press", () => {
     // would schedule another, and cancelPaintAt is written only once.
     await act(async () => {
       vi.advanceTimersToNextFrame();
+      await vi.advanceTimersByTimeAsync(0);
     });
     expect(probe.cancelPaintAt).toEqual(expect.any(Number));
     expect(probe.cancelPaintAfterReleaseMs).toEqual(expect.any(Number));
     const paintedAt = probe.cancelPaintAt;
+    expect(vi.getTimerCount()).toBe(0);
 
     await act(async () => {
       vi.advanceTimersToNextFrame();
+      await vi.advanceTimersByTimeAsync(0);
     });
     expect(probe.cancelPaintAt).toBe(paintedAt);
     expect(closeSpy).toHaveBeenCalledTimes(1);
