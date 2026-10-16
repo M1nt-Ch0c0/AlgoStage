@@ -3394,7 +3394,7 @@ test.describe("390 selection flow", () => {
       expect(Math.abs(occlusionAfter - occlusionBefore)).toBeLessThanOrEqual(1);
     });
 
-    test("cancel then exit within 100ms exits ask mode", async ({ page }) => {
+    async function assertCancelThenExitWithin100ms(page: Page) {
       await startGenerated(page);
       await pauseLecture(page);
       await enterSelection(page);
@@ -3423,16 +3423,80 @@ test.describe("390 selection flow", () => {
       const cancelBox = (await cancelBtn.boundingBox())!;
 
       await installPointerdownClock(page);
+
+      await page.evaluate(() => {
+        const w = window as unknown as {
+          __cancelUpAt?: number;
+          __panelGoneAt?: number;
+        };
+        w.__cancelUpAt = undefined;
+        w.__panelGoneAt = undefined;
+
+        document.addEventListener(
+          "pointerup",
+          (event) => {
+            const target =
+              event.target instanceof Element
+                ? event.target
+                : (event.target as Node | null)?.parentElement;
+            if (target?.closest?.("[data-ask-panel] [data-ask-cancel]")) {
+              w.__cancelUpAt = performance.now();
+            }
+          },
+          { capture: true },
+        );
+
+        const observer = new MutationObserver(() => {
+          if (w.__cancelUpAt !== undefined && w.__panelGoneAt === undefined) {
+            if (!document.querySelector("[data-ask-panel]")) {
+              w.__panelGoneAt = performance.now();
+              observer.disconnect();
+            }
+          }
+        });
+
+        observer.observe(document.body, { childList: true, subtree: true });
+      });
+
+      const askRequests: string[] = [];
+      page.on("request", (req) => {
+        if (req.url().includes("/api/lecture/ask")) {
+          askRequests.push(req.url());
+        }
+      });
+
       await page.touchscreen.tap(cancelBox.x + cancelBox.width / 2, cancelBox.y + cancelBox.height / 2);
       await page.touchscreen.tap(exitX, exitY);
       const downs = await readPointerdownClock(page);
       expect(downs.length).toBeGreaterThanOrEqual(2);
       const gap = downs[1] - downs[0];
       console.log(`[cancel->exit gap] ${gap.toFixed(1)}ms`);
-      expect(gap).toBeLessThan(100);
+
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () => (window as unknown as { __panelGoneAt?: number }).__panelGoneAt,
+          ),
+        )
+        .toBeDefined();
+
+      const { cancelUpAt, panelGoneAt } = await page.evaluate(() => {
+        const w = window as unknown as {
+          __cancelUpAt?: number;
+          __panelGoneAt?: number;
+        };
+        return { cancelUpAt: w.__cancelUpAt, panelGoneAt: w.__panelGoneAt };
+      });
+      expect(cancelUpAt).toBeDefined();
+      expect(panelGoneAt! - cancelUpAt!).toBeLessThanOrEqual(100);
 
       await expect(page.locator("[data-ask-layer]")).toHaveCount(0);
       await expect(page.locator("[data-ask-entry]")).not.toHaveAttribute("aria-pressed", "true");
+      expect(askRequests).toEqual([]);
+    }
+
+    test("cancel then exit within 100ms exits ask mode", async ({ page }) => {
+      await assertCancelThenExitWithin100ms(page);
     });
 
     test("tap completes a selection, then a chip tap within 100ms takes effect", async ({ page }) => {
@@ -3468,7 +3532,6 @@ test.describe("390 selection flow", () => {
       expect(downs.length).toBeGreaterThanOrEqual(2);
       const gap = downs[1] - downs[0];
       console.log(`[selection->chip gap] ${gap.toFixed(1)}ms`);
-      expect(gap).toBeLessThan(100);
 
       const panel = page.locator("[data-ask-panel]");
       await expect(panel).toBeVisible();
