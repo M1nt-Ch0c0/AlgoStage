@@ -20,8 +20,9 @@ import {
 } from "react";
 import Link from "next/link";
 import { cancelAsk, retroCancelAsk, sendAsk } from "@/lib/ask/ask-client";
-import { chooseAskScrollBlock } from "@/lib/ask/ask-scroll";
 import { ASK_ERROR_SPECS, resolveAskError, type AskErrorAction } from "@/lib/ask/ask-errors";
+import { getAskBottomOcclusion } from "@/lib/ask/ask-occlusion";
+import { chooseAskScrollBlock } from "@/lib/ask/ask-scroll";
 import { askAb } from "@/lib/ask/ask-ab";
 import {
   isAskTimingEnabled,
@@ -328,8 +329,9 @@ function AskPanelActive({ stage }: AskPanelProps) {
       const box = selection?.bbox;
       if (hostEl && box && box.width > 0 && box.height > 0) {
         const marker = hostEl.querySelector<HTMLElement>("[data-ask-selection]") ?? hostEl;
-        const panelHeight = panelRef.current?.getBoundingClientRect().height ?? 0;
-        const availableHeight = window.innerHeight - panelHeight - drawerBottomOffset;
+        // Player bar + bottom bar + panel. Same total as scroll-margin-bottom in globals.css.
+        const bottomOcclusion = getAskBottomOcclusion();
+        const availableHeight = window.innerHeight - bottomOcclusion - drawerBottomOffset;
         const markerHeight = marker.getBoundingClientRect().height;
         const block = chooseAskScrollBlock(markerHeight, availableHeight);
         const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
