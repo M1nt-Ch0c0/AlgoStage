@@ -1090,15 +1090,17 @@ function AskSelectionLayerActive({
       const codeRect = codeEl.getBoundingClientRect();
 
       const headerEl = typeof document !== "undefined" ? document.querySelector<HTMLElement>("header") : null;
-      let headerBottom = 0;
+      let topInset = 0;
       if (headerEl && typeof window !== "undefined") {
         const headerPos = window.getComputedStyle(headerEl).position;
         if (headerPos === "fixed" || headerPos === "sticky") {
-          headerBottom = headerEl.getBoundingClientRect().bottom;
+          // Use offsetHeight (stable) — NOT live getBoundingClientRect().bottom which goes
+          // negative if sticky has already left the viewport during a prior scroll.
+          topInset = Math.max(0, headerEl.offsetHeight || headerEl.getBoundingClientRect().height || 0);
         }
       }
 
-      const desiredTop = headerBottom + 8;
+      const desiredTop = topInset + 8;
       const availableBottom = window.innerHeight - barObstacle;
       if (codeRect.top >= desiredTop - 1 && codeRect.top < availableBottom) {
         return;

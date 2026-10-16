@@ -3805,7 +3805,7 @@ describe("resolveAskEscape", () => {
       expect(host.getAttribute("data-ask-void-count")).toBe("0");
     });
 
-    test("entering scroll uses measured scrollBy so code top sits at headerBottom+8 (no scrollMarginTop)", async () => {
+    test("entering scroll uses measured scrollTo so code top sits at headerBottom+8 (no scrollMarginTop)", async () => {
       const scrolling = document.scrollingElement ?? document.documentElement;
       scrolling.scrollTop = 0;
       if (typeof scrolling.scrollTo !== "function") {
@@ -3818,6 +3818,7 @@ describe("resolveAskEscape", () => {
 
       const header = document.createElement("header");
       header.getBoundingClientRect = () => domRect(0, 0, 400, 56);
+      Object.defineProperty(header, "offsetHeight", { value: 56, configurable: true });
       document.body.appendChild(header);
 
       vi.spyOn(window, "getComputedStyle").mockImplementation((el: Element) => {
