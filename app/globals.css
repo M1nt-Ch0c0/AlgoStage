@@ -6,12 +6,16 @@
   --ask-bottom-occlusion: 0px;
 }
 
-@media (max-width: 639px) {
-  [data-ask-bottom-bar] {
-    bottom: calc(var(--ask-player-bar-h) + env(safe-area-inset-bottom) + 8px) !important;
-    z-index: 40 !important;
+@layer components {
+  @media (max-width: 639px) {
+    [data-ask-bottom-bar] {
+      bottom: calc(var(--ask-player-bar-h) + env(safe-area-inset-bottom) + 8px);
+      z-index: 40;
+    }
   }
+}
 
+@media (max-width: 639px) {
   [data-ask-panel] {
     margin-bottom: calc(var(--ask-player-bar-h) + var(--ask-bottom-bar-h) + env(safe-area-inset-bottom) + 16px);
   }
