@@ -624,33 +624,27 @@ async function readPreEncodePng(page: Page): Promise<Buffer | null> {
 }
 
 /**
- * Screenshot the viewport, crop the selection's CSS rect at device pixels,
- * and scale that crop down to the capture canvas size (scale:1, CSS pixels).
+ * Screenshot the selection's CSS rect at scale "css", sized to the pre-encode
+ * canvas. Capture rasters at scale:1, so the baseline is already CSS pixels.
+ * A full-page device-pixel shot scaled down to that size anti-aliases glyphs
+ * a second time and misses the 0.99 gate on edges the product painted once.
+ *
+ * The selection bbox is fractional. Playwright's clip rounds each edge to a
+ * device pixel and then divides by DPR, so a half-pixel origin (390, y=430.5,
+ * DPR 3) comes back one CSS pixel taller than canvas drawImage's floor/ceil
+ * crop. The clip is snapped to outWidth×outHeight, which is that canvas size.
  */
 async function baselinePng(page: Page, crop: CropBox, outWidth: number, outHeight: number): Promise<Buffer> {
-  const shot = await page.screenshot({ type: "png" });
-  const base64 = shot.toString("base64");
-  const scaled = await page.evaluate(
-    async ({ pngBase64, crop: box, outWidth: w, outHeight: h }) => {
-      const decoded = await createImageBitmap(await (await fetch(`data:image/png;base64,${pngBase64}`)).blob());
-      const dpr = window.devicePixelRatio || 1;
-      const sx = Math.round(box.x * dpr);
-      const sy = Math.round(box.y * dpr);
-      const sw = Math.max(1, Math.round(box.width * dpr));
-      const sh = Math.max(1, Math.round(box.height * dpr));
-      const canvas = document.createElement("canvas");
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) throw new Error("no 2d context");
-      ctx.drawImage(decoded, sx, sy, sw, sh, 0, 0, w, h);
-      decoded.close();
-      const png = canvas.toDataURL("image/png");
-      return png.slice(png.indexOf(",") + 1);
+  return page.screenshot({
+    type: "png",
+    scale: "css",
+    clip: {
+      x: Math.floor(crop.x),
+      y: Math.floor(crop.y),
+      width: outWidth,
+      height: outHeight,
     },
-    { pngBase64: base64, crop, outWidth, outHeight },
-  );
-  return Buffer.from(scaled, "base64");
+  });
 }
 
 async function assertPreEncodePixels(page: Page, width: number) {
