@@ -802,6 +802,209 @@ test.describe("1280 selection flow", () => {
     }
   });
 
+  let recordedForwardSequence: string[] = [];
+
+  test("F2 1280: Tab from entry walks panel in order", async ({ page }) => {
+    await startGenerated(page);
+    await pauseLecture(page);
+    await enterSelection(page);
+
+    // Open panel by clicking subtitle shortcut chip
+    const subtitleChip = page.locator('[data-ask-bottom-bar] [data-ask-shortcut="subtitle"]');
+    await subtitleChip.click();
+    const panel = page.locator("[data-ask-panel]");
+    await expect(panel).toBeVisible();
+
+    // Type text into textarea so submit button is enabled (not disabled)
+    await panel.locator("[data-ask-question]").fill("请问这行代码的意思");
+
+    // Focus entry
+    const entryBtn = entry(page).first();
+    await entryBtn.focus();
+    await expect(entryBtn).toBeFocused();
+
+    // From the desktop entry, Tab lands on the first [data-ask-panel] [data-ask-shortcut]
+    await page.keyboard.press("Tab");
+    const landsOnFirstShortcut = await page.evaluate(() => {
+      const el = document.activeElement;
+      const firstShortcut = document.querySelector("[data-ask-panel] [data-ask-shortcut]");
+      return el !== null && el === firstShortcut;
+    });
+    expect(landsOnFirstShortcut).toBe(true);
+
+    // Keep pressing Tab and record activeElement until it leaves [data-ask-panel] (max 30 presses)
+    const inPanelSequence: Array<{
+      id: string;
+      isShortcut: boolean;
+      isQuestion: boolean;
+      isCancel: boolean;
+      isSubmit: boolean;
+    }> = [];
+
+    for (let press = 0; press < 30; press++) {
+      const current = await page.evaluate(() => {
+        const el = document.activeElement;
+        if (!el || !el.closest("[data-ask-panel]")) {
+          return null;
+        }
+        const shortcut = el.getAttribute("data-ask-shortcut");
+        const chip = el.getAttribute("data-ask-chip");
+        const isQuestion = el.tagName.toLowerCase() === "textarea" && el.hasAttribute("data-ask-question");
+        const isCancel = el.hasAttribute("data-ask-cancel");
+        const isSubmit = el.hasAttribute("data-ask-submit");
+
+        let id = el.tagName.toLowerCase();
+        if (shortcut) id = `shortcut:${shortcut}`;
+        else if (chip) id = `chip:${chip}`;
+        else if (isQuestion) id = "textarea[data-ask-question]";
+        else if (isCancel) id = "[data-ask-cancel]";
+        else if (isSubmit) id = "[data-ask-submit]";
+
+        return {
+          id,
+          isShortcut: Boolean(shortcut),
+          isQuestion,
+          isCancel,
+          isSubmit,
+        };
+      });
+
+      if (!current) {
+        break;
+      }
+      inPanelSequence.push(current);
+      await page.keyboard.press("Tab");
+    }
+
+    // Save recorded forward sequence for reverse checks
+    recordedForwardSequence = inPanelSequence.map((item) => item.id);
+
+    // Assert the recorded sequence includes, in this relative order: a shortcut chip, textarea[data-ask-question], [data-ask-cancel], [data-ask-submit]
+    const shortcutIndex = inPanelSequence.findIndex((item) => item.isShortcut);
+    const textareaIndex = inPanelSequence.findIndex((item) => item.isQuestion);
+    const cancelIndex = inPanelSequence.findIndex((item) => item.isCancel);
+    const submitIndex = inPanelSequence.findIndex((item) => item.isSubmit);
+
+    expect(shortcutIndex).toBeGreaterThanOrEqual(0);
+    expect(textareaIndex).toBeGreaterThan(shortcutIndex);
+    expect(cancelIndex).toBeGreaterThan(textareaIndex);
+    expect(submitIndex).toBeGreaterThan(cancelIndex);
+
+    // The submit is the last element inside the panel
+    expect(submitIndex).toBe(inPanelSequence.length - 1);
+
+    // The next focused element after submit is outside [data-ask-panel] and outside [data-ask-bottom-bar] and is NOT the entry
+    const afterSubmit = await page.evaluate(() => {
+      const el = document.activeElement;
+      const inPanel = Boolean(el?.closest("[data-ask-panel]"));
+      const inBottomBar = Boolean(el?.closest("[data-ask-bottom-bar]"));
+      const isEntry = Boolean(el?.hasAttribute("data-ask-entry") || el?.closest("[data-ask-entry]"));
+      return {
+        outsidePanel: Boolean(el && !inPanel),
+        outsideBottomBar: Boolean(el && !inBottomBar),
+        isNotEntry: Boolean(el && !isEntry),
+      };
+    });
+    expect(afterSubmit.outsidePanel).toBe(true);
+    expect(afterSubmit.outsideBottomBar).toBe(true);
+    expect(afterSubmit.isNotEntry).toBe(true);
+  });
+
+  test("F2 1280: Shift+Tab from 提问 back to entry", async ({ page }) => {
+    await startGenerated(page);
+    await pauseLecture(page);
+    await enterSelection(page);
+
+    // Open panel by clicking subtitle shortcut chip
+    const subtitleChip = page.locator('[data-ask-bottom-bar] [data-ask-shortcut="subtitle"]');
+    await subtitleChip.click();
+    const panel = page.locator("[data-ask-panel]");
+    await expect(panel).toBeVisible();
+
+    // Type text into textarea so submit button is enabled (never submit)
+    await panel.locator("[data-ask-question]").fill("请问这行代码的意思");
+
+    // Forward in-panel sequence (from previous test or DOM query if run standalone)
+    const forwardSequence =
+      recordedForwardSequence.length > 0
+        ? recordedForwardSequence
+        : await page.evaluate(() => {
+            const p = document.querySelector("[data-ask-panel]");
+            if (!p) return [];
+            const candidates = Array.from(
+              p.querySelectorAll<HTMLElement>("button, textarea, input, select, a[href], [tabindex]")
+            ).filter((el) => {
+              if (el.getAttribute("tabindex") === "-1") return false;
+              if ((el as HTMLButtonElement).disabled) return false;
+              return el.offsetWidth > 0 || el.offsetHeight > 0 || el.getClientRects().length > 0;
+            });
+            return candidates.map((el) => {
+              const shortcut = el.getAttribute("data-ask-shortcut");
+              const chip = el.getAttribute("data-ask-chip");
+              const isQuestion = el.tagName.toLowerCase() === "textarea" && el.hasAttribute("data-ask-question");
+              const isCancel = el.hasAttribute("data-ask-cancel");
+              const isSubmit = el.hasAttribute("data-ask-submit");
+              if (shortcut) return `shortcut:${shortcut}`;
+              if (chip) return `chip:${chip}`;
+              if (isQuestion) return "textarea[data-ask-question]";
+              if (isCancel) return "[data-ask-cancel]";
+              if (isSubmit) return "[data-ask-submit]";
+              return el.tagName.toLowerCase();
+            });
+          });
+
+    const expectedReverseSequence = [...forwardSequence].reverse();
+
+    // Starting focus on [data-ask-submit]
+    const submitBtn = panel.locator("[data-ask-submit]");
+    await submitBtn.focus();
+    await expect(submitBtn).toBeFocused();
+
+    // Record reverse sequence starting with [data-ask-submit], then press Shift+Tab until leaving panel
+    const recordedReverseSequence: string[] = [];
+    const startId = await page.evaluate(() => {
+      const el = document.activeElement;
+      if (!el?.closest("[data-ask-panel]")) return null;
+      if (el.hasAttribute("data-ask-submit")) return "[data-ask-submit]";
+      return el.tagName.toLowerCase();
+    });
+    expect(startId).toBe("[data-ask-submit]");
+    if (startId) {
+      recordedReverseSequence.push(startId);
+    }
+
+    for (let press = 0; press < 30; press++) {
+      await page.keyboard.press("Shift+Tab");
+      const current = await page.evaluate(() => {
+        const el = document.activeElement;
+        if (!el || !el.closest("[data-ask-panel]")) return null;
+        const shortcut = el.getAttribute("data-ask-shortcut");
+        const chip = el.getAttribute("data-ask-chip");
+        const isQuestion = el.tagName.toLowerCase() === "textarea" && el.hasAttribute("data-ask-question");
+        const isCancel = el.hasAttribute("data-ask-cancel");
+        const isSubmit = el.hasAttribute("data-ask-submit");
+        if (shortcut) return `shortcut:${shortcut}`;
+        if (chip) return `chip:${chip}`;
+        if (isQuestion) return "textarea[data-ask-question]";
+        if (isCancel) return "[data-ask-cancel]";
+        if (isSubmit) return "[data-ask-submit]";
+        return el.tagName.toLowerCase();
+      });
+
+      if (!current) {
+        break;
+      }
+      recordedReverseSequence.push(current);
+    }
+
+    // Assert the exact reverse of the recorded forward in-panel sequence
+    expect(recordedReverseSequence).toEqual(expectedReverseSequence);
+
+    // Ending on the entry
+    const entryBtn = entry(page).first();
+    await expect(entryBtn).toBeFocused();
+  });
+
   test("S5-chip390 1280: chip row position unchanged", async ({ page }) => {
     await startGenerated(page);
     await pauseLecture(page);
@@ -1393,6 +1596,32 @@ test.describe("390 selection flow", () => {
   test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
 
   test.describe("390 mobile tap", () => {
+    test("F2 390: panel open, Tab never focuses hidden bottom bar", async ({ page }) => {
+      await startGenerated(page);
+      await pauseLecture(page);
+      await enterSelection(page);
+
+      // Open panel via bottom bar subtitle shortcut chip
+      const subtitleChip = page.locator('[data-ask-bottom-bar] [data-ask-shortcut="subtitle"]');
+      await subtitleChip.click();
+      const panel = page.locator("[data-ask-panel]");
+      await expect(panel).toBeVisible();
+
+      // Press Tab 12 times recording activeElement
+      const activeElementsInsideBottomBar: boolean[] = [];
+      for (let i = 0; i < 12; i++) {
+        await page.keyboard.press("Tab");
+        const inBottomBar = await page.evaluate(() => {
+          const el = document.activeElement;
+          return Boolean(el && el.closest("[data-ask-bottom-bar]"));
+        });
+        activeElementsInsideBottomBar.push(inBottomBar);
+      }
+
+      // Assert none is inside [data-ask-bottom-bar]
+      expect(activeElementsInsideBottomBar.some(Boolean)).toBe(false);
+    });
+
     test("S2. 390: kbd hidden, exit >=44, title row single line", async ({ page }) => {
       await startGenerated(page);
       await pauseLecture(page);

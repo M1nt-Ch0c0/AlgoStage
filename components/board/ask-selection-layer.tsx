@@ -132,6 +132,121 @@ export function nextRovingIndex(
   }
 }
 
+/** 元素是否可见且可获得焦点（tabIndex >= 0 且未 disabled）。 */
+export function isElementTabbable(el: HTMLElement): boolean {
+  if (el.tabIndex < 0) return false;
+  if ("disabled" in el && (el as HTMLButtonElement | HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).disabled) {
+    return false;
+  }
+  if (el.getAttribute("aria-disabled") === "true") {
+    // Note: aria-disabled alone does not prevent tab focus in native HTML, but check if required
+  }
+  if (el.offsetParent === null && el.offsetWidth === 0 && el.offsetHeight === 0) {
+    return false;
+  }
+  const style = typeof window !== "undefined" ? window.getComputedStyle(el) : null;
+  if (style && (style.display === "none" || style.visibility === "hidden")) {
+    return false;
+  }
+  return true;
+}
+
+/** 获取容器内所有按 DOM 顺序排列的可获得焦点元素。 */
+export function getTabbableElements(container: HTMLElement): HTMLElement[] {
+  const candidates = container.querySelectorAll<HTMLElement>(
+    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+  );
+  return Array.from(candidates).filter(isElementTabbable);
+}
+
+/**
+ * 查找桌面入口按钮：[data-ask-entry]:not([data-ask-bottom-bar] [data-ask-entry])。
+ */
+export function getDesktopAskEntry(): HTMLElement | null {
+  if (typeof document === "undefined") return null;
+  return document.querySelector<HTMLElement>(
+    "[data-ask-entry]:not([data-ask-bottom-bar] [data-ask-entry])",
+  );
+}
+
+/**
+ * 查找在 DOM 顺序上位于 entry 之后、且不在 [data-ask-panel] 或 [data-ask-bottom-bar] 内的第一个可获得焦点元素。
+ */
+export function getNextTabbableAfterEntry(entry: HTMLElement): HTMLElement | null {
+  if (typeof document === "undefined") return null;
+  const candidates = document.querySelectorAll<HTMLElement>(
+    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+  );
+  let passedEntry = false;
+  for (const candidate of candidates) {
+    if (!passedEntry) {
+      if (candidate === entry) {
+        passedEntry = true;
+      }
+      continue;
+    }
+    if (candidate.closest("[data-ask-panel]") !== null) continue;
+    if (candidate.closest("[data-ask-bottom-bar]") !== null) continue;
+    if (isElementTabbable(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+/**
+ * 处理面板打开时（drafting / error 阶段）且非移动端的 Tab / Shift+Tab 导航。
+ * 若移动了焦点返回 true，否则返回 false。
+ */
+export function handlePanelTabNavigation(
+  event: Pick<globalThis.KeyboardEvent, "key" | "shiftKey" | "altKey" | "ctrlKey" | "metaKey" | "target">,
+): boolean {
+  if (event.key !== "Tab" || event.altKey || event.ctrlKey || event.metaKey) return false;
+
+  const entry = getDesktopAskEntry();
+  if (!entry) return false;
+
+  const panel = document.querySelector<HTMLElement>("[data-ask-panel]");
+  if (!panel) return false;
+
+  const panelTabbables = getTabbableElements(panel);
+  if (panelTabbables.length === 0) return false;
+
+  const firstPanelTabbable = panelTabbables[0];
+  const lastPanelTabbable = panelTabbables[panelTabbables.length - 1];
+  const active = event.target as HTMLElement | null;
+
+  if (!event.shiftKey) {
+    // 1. Tab on the desktop entry -> focus the first tabbable element inside [data-ask-panel]
+    if (active === entry) {
+      firstPanelTabbable.focus();
+      return true;
+    }
+    // 3. Tab on the last panel tabbable -> focus the first tabbable element after the entry
+    if (active === lastPanelTabbable) {
+      const nextAfterEntry = getNextTabbableAfterEntry(entry);
+      if (nextAfterEntry) {
+        nextAfterEntry.focus();
+        return true;
+      }
+    }
+  } else {
+    // 2. Shift+Tab on the first panel tabbable -> focus the entry
+    if (active === firstPanelTabbable) {
+      entry.focus();
+      return true;
+    }
+    // 4. Shift+Tab on that 'next after entry' element -> focus the last panel tabbable
+    const nextAfterEntry = getNextTabbableAfterEntry(entry);
+    if (nextAfterEntry && active === nextAfterEntry) {
+      lastPanelTabbable.focus();
+      return true;
+    }
+  }
+
+  return false;
+}
+
 /** 退出圈选并将焦点还给入口按钮（若在 DOM 中）。 */
 export function exitAskAndFocusEntry(): void {
   setAskCodeMissNotice(null);
@@ -337,6 +452,24 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [askPhase, closeAskPanel]);
+
+  // 面板打开时（drafting / error 阶段）且非移动端时，通过捕获阶段监听 Tab 键管理焦点流转：
+  // entry -> panel chips (roving) -> textarea -> cancel -> submit -> next after entry
+  useEffect(() => {
+    if (askPhase !== "drafting" && askPhase !== "error") return;
+    const isMobileDevice = typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches;
+    if (isMobileDevice) return;
+
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      const moved = handlePanelTabNavigation(event);
+      if (moved) {
+        event.preventDefault();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [askPhase]);
 
   // drafting → selecting 时把选区摘要写回 role=status。
   // 焦点由 finishAskCancelSync 在同一提交里写。

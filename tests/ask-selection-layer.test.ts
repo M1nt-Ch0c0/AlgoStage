@@ -6,7 +6,18 @@ import { scrollHeight, clientHeight, scrollWidth, clientWidth } from "happy-dom/
 import { armAskCancelGhostSuppress, askCancelGhostUntil, finishAskCancelSync, isAskCancelGhostActive } from "../lib/ask/ask-cancel";
 import AskEntry from "../components/board/ask-entry";
 import AskPlayerBarVar from "../components/board/ask-player-bar-var";
-import AskSelectionLayer, { computeBottomOcclusion, computeOcclusion, isElementFullyInView, nextRovingIndex, resolveAskEscape } from "../components/board/ask-selection-layer";
+import AskSelectionLayer, {
+  computeBottomOcclusion,
+  computeOcclusion,
+  getDesktopAskEntry,
+  getNextTabbableAfterEntry,
+  getTabbableElements,
+  handlePanelTabNavigation,
+  isElementFullyInView,
+  isElementTabbable,
+  nextRovingIndex,
+  resolveAskEscape,
+} from "../components/board/ask-selection-layer";
 import { ASK_CODE_MISS_HINT, ASK_EMPTY_HIT, ASK_ENTERED_STATUS, ASK_RESIZE_HINT } from "../lib/ask/ask-ui-text";
 import { type CodeEditorHandle, getAskCodeMissNotice, registerCodeEditor, resetCodeEditorRegistry } from "../lib/ask/code-editor-registry";
 import { summarizeSelection } from "../lib/ask/collect-candidates";
@@ -2981,6 +2992,145 @@ describe("resolveAskEscape", () => {
       } finally {
         document.removeEventListener("keydown", onDocKeyDown);
       }
+    });
+  });
+
+  describe("Task F2 panel Tab navigation helper", () => {
+    let mockDom: HTMLDivElement;
+
+    beforeEach(() => {
+      mockDom = document.createElement("div");
+      mockDom.innerHTML = `
+        <button data-ask-entry="">退出圈选</button>
+        <button id="after-entry">下一步骤</button>
+        <div data-ask-panel="">
+          <div role="group" aria-label="点选捷径">
+            <button data-ask-shortcut="subtitle" tabindex="0">字幕</button>
+            <button data-ask-shortcut="step" tabindex="-1">步骤</button>
+          </div>
+          <button data-ask-chip="思路是什么？">思路是什么？</button>
+          <textarea data-ask-question=""></textarea>
+          <button data-ask-cancel="">取消</button>
+          <button data-ask-submit="" aria-disabled="true">提问</button>
+        </div>
+        <button id="after-panel">底部重播</button>
+      `;
+      document.body.append(mockDom);
+    });
+
+    afterEach(() => {
+      mockDom.remove();
+    });
+
+    test("isElementTabbable filters disabled and negative tabindex elements", () => {
+      const btn = document.createElement("button");
+      btn.textContent = "btn";
+      expect(isElementTabbable(btn)).toBe(true);
+      btn.disabled = true;
+      expect(isElementTabbable(btn)).toBe(false);
+      btn.disabled = false;
+      btn.tabIndex = -1;
+      expect(isElementTabbable(btn)).toBe(false);
+    });
+
+    test("getTabbableElements finds tabbable elements inside panel in DOM order", () => {
+      const panel = mockDom.querySelector<HTMLElement>("[data-ask-panel]")!;
+      const tabbables = getTabbableElements(panel);
+      expect(tabbables.map((el) => {
+        if (el.hasAttribute("data-ask-shortcut")) return el.getAttribute("data-ask-shortcut");
+        if (el.hasAttribute("data-ask-chip")) return el.getAttribute("data-ask-chip");
+        if (el.hasAttribute("data-ask-cancel")) return "cancel";
+        if (el.hasAttribute("data-ask-submit")) return "submit";
+        return el.tagName.toLowerCase();
+      })).toEqual([
+        "subtitle",
+        "思路是什么？",
+        "textarea",
+        "cancel",
+        "submit",
+      ]);
+      expect(tabbables[0].getAttribute("data-ask-shortcut")).toBe("subtitle");
+      expect(tabbables[tabbables.length - 1].hasAttribute("data-ask-submit")).toBe(true);
+    });
+
+    test("getNextTabbableAfterEntry finds #after-entry and skips panel elements", () => {
+      const entry = getDesktopAskEntry()!;
+      expect(entry).not.toBeNull();
+      const next = getNextTabbableAfterEntry(entry);
+      expect(next?.id).toBe("after-entry");
+    });
+
+    test("Tab on desktop entry focuses first tabbable element in panel", () => {
+      const entry = getDesktopAskEntry()!;
+      entry.focus();
+      const moved = handlePanelTabNavigation({
+        key: "Tab",
+        shiftKey: false,
+        altKey: false,
+        ctrlKey: false,
+        metaKey: false,
+        target: entry,
+      });
+      expect(moved).toBe(true);
+      const subtitleChip = mockDom.querySelector<HTMLElement>('[data-ask-shortcut="subtitle"]')!;
+      expect(document.activeElement).toBe(subtitleChip);
+    });
+
+    test("Shift+Tab on first panel tabbable focuses entry", () => {
+      const entry = getDesktopAskEntry()!;
+      const subtitleChip = mockDom.querySelector<HTMLElement>('[data-ask-shortcut="subtitle"]')!;
+      subtitleChip.focus();
+      const moved = handlePanelTabNavigation({
+        key: "Tab",
+        shiftKey: true,
+        altKey: false,
+        ctrlKey: false,
+        metaKey: false,
+        target: subtitleChip,
+      });
+      expect(moved).toBe(true);
+      expect(document.activeElement).toBe(entry);
+    });
+
+    test("Tab on last panel tabbable focuses next tabbable after entry", () => {
+      const submitBtn = mockDom.querySelector<HTMLElement>("[data-ask-submit]")!;
+      const afterEntry = mockDom.querySelector<HTMLElement>("#after-entry")!;
+      submitBtn.focus();
+      const moved = handlePanelTabNavigation({
+        key: "Tab",
+        shiftKey: false,
+        altKey: false,
+        ctrlKey: false,
+        metaKey: false,
+        target: submitBtn,
+      });
+      expect(moved).toBe(true);
+      expect(document.activeElement).toBe(afterEntry);
+    });
+
+    test("Shift+Tab on next tabbable after entry focuses last panel tabbable", () => {
+      const submitBtn = mockDom.querySelector<HTMLElement>("[data-ask-submit]")!;
+      const afterEntry = mockDom.querySelector<HTMLElement>("#after-entry")!;
+      afterEntry.focus();
+      const moved = handlePanelTabNavigation({
+        key: "Tab",
+        shiftKey: true,
+        altKey: false,
+        ctrlKey: false,
+        metaKey: false,
+        target: afterEntry,
+      });
+      expect(moved).toBe(true);
+      expect(document.activeElement).toBe(submitBtn);
+    });
+
+    test("modifiers or other keys do not move focus", () => {
+      const entry = getDesktopAskEntry()!;
+      entry.focus();
+      expect(handlePanelTabNavigation({ key: "Tab", shiftKey: false, altKey: true, ctrlKey: false, metaKey: false, target: entry })).toBe(false);
+      expect(handlePanelTabNavigation({ key: "Tab", shiftKey: false, altKey: false, ctrlKey: true, metaKey: false, target: entry })).toBe(false);
+      expect(handlePanelTabNavigation({ key: "Tab", shiftKey: false, altKey: false, ctrlKey: false, metaKey: true, target: entry })).toBe(false);
+      expect(handlePanelTabNavigation({ key: "Enter", shiftKey: false, altKey: false, ctrlKey: false, metaKey: false, target: entry })).toBe(false);
     });
   });
 });
