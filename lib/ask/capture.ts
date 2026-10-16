@@ -243,24 +243,39 @@ const PAD_ABOVE_ATTR = "data-ask-capture-pad-above";
  * the undo.
  *
  * The filter drops chrome, but modern-screenshot reads computed style on the
- * live node first and paints box-shadow (the selection's 9999px dim) onto
- * the ancestor. Clearing the inline shadow removes that paint. display:none
- * would too, and it also collapses the stage column in the clone, so the
- * viz slides up and the live crop misses it. The panel is not touched here:
- * the filter drops it.
+ * live node first and paints box-shadow, border, and outline onto the
+ * ancestor (or onto the last row of the crop). The selection's 9999px dim
+ * is a box-shadow. The gold ring is a border. Clearing those inline values
+ * removes that paint. display:none would too, and it also collapses the
+ * stage column in the clone, so the viz slides up and the live crop misses
+ * it. The panel is not touched here: the filter drops it.
  *
  * Monaco stays in the clone. visibility:hidden blanks the glyphs and keeps
  * the live box. display:none would collapse the code board.
  *
  * Restore runs in finally so a thrown raster still puts both back.
  */
+/** Zero width and a transparent color. "none" alone still serializes a style. */
+const CHROME_BORDER_CLEAR = "0px none transparent";
+const CHROME_OUTLINE_CLEAR = "0px none transparent";
+
 function hideCaptureChromeForRaster(container: HTMLElement): () => void {
   const marked = container.querySelectorAll(`[data-ask-layer] ${CAPTURE_EXCLUDE_SELECTOR}`);
-  const previous: { el: HTMLElement; boxShadow: string }[] = [];
+  const previous: { el: HTMLElement; boxShadow: string; border: string; outline: string }[] = [];
   for (const node of marked) {
     if (!(node instanceof HTMLElement)) continue;
-    previous.push({ el: node, boxShadow: node.style.boxShadow });
+    previous.push({
+      el: node,
+      boxShadow: node.style.boxShadow,
+      border: node.style.border,
+      outline: node.style.outline,
+    });
+    // The gold ring is a 2px border (and sometimes an outline). modern-screenshot
+    // copies the computed longhand onto an ancestor before the filter drops the
+    // node. "none" still leaves a style keyword; a zero transparent border does not.
     node.style.boxShadow = "none";
+    node.style.border = CHROME_BORDER_CLEAR;
+    node.style.outline = CHROME_OUTLINE_CLEAR;
   }
   const editors = container.querySelectorAll(".monaco-editor");
   const editorPrevious: { el: HTMLElement; visibility: string }[] = [];
@@ -270,7 +285,11 @@ function hideCaptureChromeForRaster(container: HTMLElement): () => void {
     node.style.visibility = "hidden";
   }
   return () => {
-    for (const item of previous) item.el.style.boxShadow = item.boxShadow;
+    for (const item of previous) {
+      item.el.style.boxShadow = item.boxShadow;
+      item.el.style.border = item.border;
+      item.el.style.outline = item.outline;
+    }
     for (const item of editorPrevious) item.el.style.visibility = item.visibility;
   };
 }
@@ -838,10 +857,10 @@ export async function captureStage(
         if (probe && typeof probe === "object") {
           probe.captureSourceNodes = container.querySelectorAll("*").length;
         }
-        // Clear chrome shadows and blank Monaco before the clone reads
-        // computed style. The filter still drops the chrome. Restore in
-        // finally, including when domToCanvas throws, so the selection and
-        // the editor come back.
+        // Clear chrome shadow, border, and outline, and blank Monaco before
+        // the clone reads computed style. The filter still drops the chrome.
+        // Restore in finally, including when domToCanvas throws, so the
+        // selection and the editor come back.
         const restoreExcluded = hideCaptureChromeForRaster(container);
         let rendered: HTMLCanvasElement | null = null;
         try {
@@ -961,10 +980,13 @@ export async function captureStage(
           : 1;
 
       const crop = toCropRect(sel.bbox, scaleX, scaleY);
-      const cropX = Math.max(0, crop.x);
-      const cropY = Math.max(0, crop.y);
-      const cropRight = Math.min(canvas.width, crop.x + crop.width);
-      const cropBottom = Math.min(canvas.height, crop.y + crop.height);
+      // The selection bbox is fractional CSS px. drawImage samples integer
+      // device pixels, so floor the origin and ceil the far edge. The pixel
+      // harness screenshots this same integer rect at scale "css".
+      const cropX = Math.max(0, Math.floor(crop.x));
+      const cropY = Math.max(0, Math.floor(crop.y));
+      const cropRight = Math.min(canvas.width, Math.ceil(crop.x + crop.width));
+      const cropBottom = Math.min(canvas.height, Math.ceil(crop.y + crop.height));
       const cropW = Math.max(0, cropRight - cropX);
       const cropH = Math.max(0, cropBottom - cropY);
 

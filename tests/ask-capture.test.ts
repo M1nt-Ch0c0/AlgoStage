@@ -970,7 +970,7 @@ describe("lib/ask/capture", () => {
       container.remove();
     });
 
-    it("clears the selection chrome box-shadow during the raster and restores it", async () => {
+    it("clears the selection chrome box-shadow, border, and outline during the raster and restores them", async () => {
       const hitRect = () =>
         ({ left: 20, top: 30, width: 10, height: 10, right: 30, bottom: 40, x: 20, y: 30, toJSON() {} }) as DOMRect;
       const layer = document.createElement("div");
@@ -979,15 +979,21 @@ describe("lib/ask/capture", () => {
       selection.setAttribute("data-ask-selection", "");
       selection.setAttribute("data-ask-capture-exclude", "");
       selection.style.boxShadow = "0 0 0 9999px rgba(0,0,0,0.4)";
+      selection.style.border = "2px solid rgb(212, 168, 83)";
+      selection.style.outline = "1px solid rgb(212, 168, 83)";
       selection.getBoundingClientRect = hitRect;
       layer.append(selection);
       container.append(layer);
       document.body.append(container);
 
       let shadowDuring = "unset";
+      let borderDuring = "unset";
+      let outlineDuring = "unset";
       let displayDuring = "unset";
       domToCanvasMock.mockImplementation(async () => {
         shadowDuring = selection.style.boxShadow;
+        borderDuring = selection.style.border;
+        outlineDuring = selection.style.outline;
         displayDuring = selection.style.display;
         return sourceCanvas;
       });
@@ -995,10 +1001,18 @@ describe("lib/ask/capture", () => {
       const res = await captureStage(container, baseSel);
       expect(res.ok).toBe(true);
       // display:none collapses the stage column in the clone. Clearing the
-      // shadow keeps the box and stops the 9999px dim from painting.
+      // shadow, border, and outline keeps the box and stops the 9999px dim
+      // and the gold ring from painting onto the ancestor. A zero transparent
+      // border is what the clone copies; the keyword "none" still serializes.
       expect(shadowDuring).toBe("none");
+      expect(borderDuring).toBe("0px none transparent");
+      // happy-dom reorders the outline shorthand to color, style, width.
+      expect(outlineDuring).toBe("transparent none 0px");
       expect(displayDuring).toBe("");
       expect(selection.style.boxShadow).toBe("0 0 0 9999px rgba(0,0,0,0.4)");
+      expect(selection.style.border).toBe("2px solid rgb(212, 168, 83)");
+      // happy-dom reorders the restored outline shorthand to color, style, width.
+      expect(selection.style.outline).toBe("rgb(212, 168, 83) solid 1px");
       container.remove();
     });
 
