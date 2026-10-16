@@ -2743,20 +2743,23 @@ test.describe("390 selection flow", () => {
                 const cur = scroller.scrollTop || window.scrollY;
                 if (cur !== prevScroll) {
                   const box = codeEl.getBoundingClientRect();
-                  let chosenY = Math.round(box.top + Math.min(box.height / 2, 80));
                   const lines = document.querySelectorAll<HTMLElement>(".monaco-editor .line-numbers");
                   for (const ln of lines) {
                     const r = ln.getBoundingClientRect();
-                    if (r.height > 0 && r.top >= box.top && r.bottom <= box.bottom) {
-                      chosenY = Math.round(r.top + r.height / 2);
-                      break;
+                    if (
+                      r.height > 0 &&
+                      r.top >= 0 &&
+                      r.bottom <= window.innerHeight &&
+                      r.top >= box.top &&
+                      r.bottom <= box.bottom
+                    ) {
+                      resolve({
+                        startX: Math.round(box.left + 60),
+                        startY: Math.round(r.top + r.height / 2),
+                      });
+                      return;
                     }
                   }
-                  resolve({
-                    startX: Math.round(box.left + 60),
-                    startY: chosenY,
-                  });
-                  return;
                 }
                 prevScroll = cur;
                 requestAnimationFrame(check);
