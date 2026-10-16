@@ -986,12 +986,27 @@ type AskPointerDown = { ts: number; pointerType: string; inCancel: boolean };
 /** Capture-phase pointerup record. ts is event.timeStamp. */
 type AskPointerUp = { ts: number; inCancel: boolean };
 
+/** One [data-ask-panel] insertion or removal. t is performance.now(). */
+type AskPanelEvent = { type: "add" | "remove"; t: number };
+
 type AskCancelProbe = {
   __askPointerDownTs?: AskPointerDown[];
   __askPointerUpTs?: AskPointerUp[];
   /** performance.now() when [data-ask-panel] first leaves the document. */
   __askPanelGoneAt?: number;
+  /** Every add and remove of [data-ask-panel] from before submit until the test ends. */
+  __askPanelEvents?: AskPanelEvent[];
 };
+
+/** True when a remove of [data-ask-panel] is followed later by an add. */
+function panelWasReadded(seq: AskPanelEvent[]): boolean {
+  let removed = false;
+  for (const event of seq) {
+    if (event.type === "remove") removed = true;
+    else if (removed) return true;
+  }
+  return false;
+}
 
 /**
  * Prod path (no stall hook). Press 取消 within 150ms of submit and release
@@ -1057,16 +1072,21 @@ function installNaturalCancel(width: number, touch: boolean) {
         // event.timeStamp is the renderer clock, which is what the stall
         // marks use. pointerType and inCancel (target inside [data-ask-cancel])
         // distinguish the cancel press from the submit press. The same
-        // evaluate installs a MutationObserver that stamps performance.now()
-        // the first time [data-ask-panel] is gone. That stamp is the 390
-        // close, taken when the removal commits, not when a later evaluate
-        // round-trips. Listeners are installed before either gesture so the
-        // submit press is included.
+        // evaluate, still before the submit tap, installs a MutationObserver
+        // and leaves it connected for the whole test. It records every add
+        // and remove of [data-ask-panel] with performance.now(), and stamps
+        // __askPanelGoneAt the first time the panel is absent. It does not
+        // disconnect on that first removal: a later re-add stays in the
+        // sequence. The close stamp is taken when the removal commits, not
+        // when a later evaluate round-trips. Listeners are installed before
+        // either gesture so the submit press is included.
         await page.evaluate(() => {
           const win = window as unknown as AskCancelProbe;
           win.__askPointerDownTs = [];
           win.__askPointerUpTs = [];
           delete win.__askPanelGoneAt;
+          const events: AskPanelEvent[] = [];
+          win.__askPanelEvents = events;
           const inCancel = (event: Event) =>
             !!(event.target instanceof Element && event.target.closest("[data-ask-cancel]"));
           document.addEventListener(
@@ -1090,11 +1110,23 @@ function installNaturalCancel(width: number, touch: boolean) {
             },
             true,
           );
-          const observer = new MutationObserver(() => {
-            if (win.__askPanelGoneAt != null) return;
-            if (document.querySelector("[data-ask-panel]") != null) return;
-            win.__askPanelGoneAt = performance.now();
-            observer.disconnect();
+          const notePanel = (node: Node, type: "add" | "remove") => {
+            if (!(node instanceof Element)) return;
+            if (node.matches("[data-ask-panel]")) {
+              events.push({ type, t: performance.now() });
+            }
+            node.querySelectorAll("[data-ask-panel]").forEach(() => {
+              events.push({ type, t: performance.now() });
+            });
+          };
+          const observer = new MutationObserver((records) => {
+            for (const record of records) {
+              for (const node of record.removedNodes) notePanel(node, "remove");
+              if (win.__askPanelGoneAt == null && document.querySelector("[data-ask-panel]") == null) {
+                win.__askPanelGoneAt = performance.now();
+              }
+              for (const node of record.addedNodes) notePanel(node, "add");
+            }
           });
           observer.observe(document.body, { childList: true, subtree: true });
         });
@@ -1177,6 +1209,7 @@ function installNaturalCancel(width: number, touch: boolean) {
               downs: win.__askPointerDownTs ?? [],
               ups: win.__askPointerUpTs ?? [],
               panelGoneAt: win.__askPanelGoneAt,
+              events: win.__askPanelEvents ?? [],
             };
           });
           expect(stamp.start, "stall mark").toEqual(expect.any(Number));
@@ -1191,8 +1224,9 @@ function installNaturalCancel(width: number, touch: boolean) {
           const stallEnd = stallStart + (stamp.duration as number);
           expect(cancelTs).toBeGreaterThanOrEqual(stallStart);
           expect(cancelTs).toBeLessThanOrEqual(stallEnd);
-          // Close is the in-page removal stamp minus the later of stall end
-          // and the cancel pointerup. Both clocks are the renderer's. A
+          // Close is the in-page removal stamp minus t0. t0 is the cancel
+          // pointerup timeStamp, or stallEnd when that pointerup falls inside
+          // [stallStart, stallEnd]. Both clocks are the renderer's. A
           // page.evaluate that starts after Node has awaited touchEnd measures
           // the Playwright round-trip instead of this gap.
           const cancelUp = stamp.ups.find((entry) => entry.inCancel);
@@ -1201,13 +1235,22 @@ function installNaturalCancel(width: number, touch: boolean) {
           expect(release).toBeGreaterThanOrEqual(cancelTs);
           expect(stamp.panelGoneAt, "panel removed during cancel").toEqual(expect.any(Number));
           const panelGoneAt = stamp.panelGoneAt as number;
-          const paint = panelGoneAt - Math.max(stallEnd, release);
-          expect(paint).toBeLessThan(100);
+          // Uma/Leo: t0 is the cancel pointerup timeStamp. When that stamp
+          // falls inside [stallStart, stallEnd] the pointerup could not run
+          // until the stall ended, so t0 is stallEnd. The render that runs
+          // after the stall counts toward panelGoneAt - t0.
+          const pointerUpInStall = release >= stallStart && release <= stallEnd;
+          const t0 = pointerUpInStall ? stallEnd : release;
+          const t0src = pointerUpInStall ? "stallEnd" : "pointerup";
+          const paint = panelGoneAt - t0;
+          const seq = stamp.events;
           console.log(
-            `CANCEL390 round=${i} paint=${paint}ms release=${release} stallEnd=${stallEnd}`,
+            `CANCEL390 round=${i} paint=${paint}ms t0=${t0src} release=${release} stallEnd=${stallEnd} events=${JSON.stringify(seq)}`,
           );
+          expect(paint).toBeLessThan(100);
           // The press landed inside the stall, so the ask never goes out.
           expect(askRequests).toBe(0);
+          expect(panelWasReadded(seq), `panel was removed and re-added: ${JSON.stringify(seq)}`).toBe(false);
           await expect(page.locator("[data-ask-panel]")).toHaveCount(0);
         }
 
@@ -1228,6 +1271,15 @@ function installNaturalCancel(width: number, touch: boolean) {
         await expect(page.locator("[data-answer-mark]")).toHaveCount(0);
         await expect(page.getByText(ANSWER_NARRATION)).toHaveCount(0);
         expect(await readChipHintChanges(page)).toEqual([]);
+
+        if (width === 390) {
+          const seq = await page.evaluate(() => {
+            const win = window as unknown as AskCancelProbe;
+            return win.__askPanelEvents ?? [];
+          });
+          expect(panelWasReadded(seq), `panel was removed and re-added: ${JSON.stringify(seq)}`).toBe(false);
+          await expect(page.locator("[data-ask-panel]")).toHaveCount(0);
+        }
 
         if (askRequests === 0) {
           await expectClosedLikeCancel(page);
