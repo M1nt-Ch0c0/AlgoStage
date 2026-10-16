@@ -1167,9 +1167,9 @@ function AskSelectionLayerActive({
   }, [active, resetGesture]);
 
   const commitBand = useCallback(
-    (origin: PointerSample, current: PointerSample) => {
+    (origin: PointerSample, current: PointerSample): boolean => {
       const host = getStage();
-      if (!host) return;
+      if (!host) return false;
       const dx = current.x - origin.x;
       const dy = current.y - origin.y;
       const raw = bandFrom(origin, current);
@@ -1251,6 +1251,7 @@ function AskSelectionLayerActive({
         });
 
         if (!hasValidCode) {
+          setRubberBand(null);
           if (codeIntersected) {
             setHint(ASK_CODE_MISS_HINT);
           } else {
@@ -1262,6 +1263,7 @@ function AskSelectionLayerActive({
       }
 
       if (hit.targets.length === 0) {
+        setRubberBand(null);
         if (codeIntersected) {
           setHint(ASK_CODE_MISS_HINT);
         } else {
@@ -1373,7 +1375,26 @@ function AskSelectionLayerActive({
       }
       downClientRef.current = { clientX, clientY };
       pendingReleaseRef.current = null;
-      settleRafRef.current = requestAnimationFrame(() => {
+
+      let lastPositions = getScrollPositions();
+      let sameFrames = 0;
+      let totalFrames = 0;
+
+      const checkSettle = () => {
+        totalFrames += 1;
+        const currentPositions = getScrollPositions();
+        if (isSameScrollPositions(lastPositions, currentPositions)) {
+          sameFrames += 1;
+        } else {
+          sameFrames = 0;
+          lastPositions = currentPositions;
+        }
+
+        if (sameFrames < 2 && totalFrames < 12) {
+          settleRafRef.current = requestAnimationFrame(checkSettle);
+          return;
+        }
+
         settleRafRef.current = null;
         downClientRef.current = null;
         const pending = pendingReleaseRef.current;
@@ -1426,7 +1447,9 @@ function AskSelectionLayerActive({
         const cur = pointersRef.current.get(pointerId);
         if (cur === start) pointersRef.current.set(pointerId, settled);
         setRubberBand(bandFrom(settled, cur === start || !cur ? settled : cur));
-      });
+      };
+
+      settleRafRef.current = requestAnimationFrame(checkSettle);
     } else {
       // 未在滚动：廉价清理可能残留的定时器与状态，不调用 scrollTo，不安排落定 rAF
       clearEnteringScrollTracker();

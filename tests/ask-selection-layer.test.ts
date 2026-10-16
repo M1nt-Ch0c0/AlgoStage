@@ -3018,11 +3018,15 @@ describe("resolveAskEscape", () => {
     };
   }
 
-  function flushPendingRafs() {
-    const entries = Array.from(pendingRafs.entries());
-    pendingRafs.clear();
-    for (const [, cb] of entries) {
-      cb(fakeNow);
+  function flushPendingRafs(max = 20) {
+    let loops = 0;
+    while (pendingRafs.size > 0 && loops < max) {
+      loops++;
+      const entries = Array.from(pendingRafs.entries());
+      pendingRafs.clear();
+      for (const [, cb] of entries) {
+        cb(fakeNow);
+      }
     }
   }
 
@@ -3358,6 +3362,126 @@ describe("resolveAskEscape", () => {
         document.dispatchEvent(clickEvent);
       });
       expect(clickEvent.defaultPrevented).toBe(false);
+    });
+
+    test("N2: (a) press during entering scroll, scroll position keeps changing for 2 frames, then stops: commit uses the settled position (the line under the settled point) and the panel opens", async () => {
+      setupEnteringScrollEnv();
+      await startEnteringScroll(10);
+      const host = layer();
+      const codeEl = stage.querySelector<HTMLElement>('[data-ask-target="code"]')!;
+      codeEl.setAttribute("data-ask-id", "code:main");
+      codeEl.setAttribute("data-ask-step-id", "s1");
+      codeEl.getBoundingClientRect = () => domRect(0, 0, 300, 400);
+
+      const mockHandle: CodeEditorHandle = {
+        getLineRangeForClientBox: vi.fn((top: number, bottom: number) => {
+          // Lines 1-10 at 20px per line (0..200).
+          if (top < 0 || bottom > 200) return null;
+          const startLine = Math.floor(top / 20) + 1;
+          const endLine = Math.floor((bottom - 1) / 20) + 1;
+          if (startLine > 10 || endLine > 10) return null;
+          return { startLine, endLine };
+        }),
+        getLinesText: vi.fn((start, end) => `line ${start} to ${end}`),
+        getFullText: vi.fn(() => "code full text"),
+      };
+      registerCodeEditor(codeEl, mockHandle);
+
+      // Press during scroll at clientX=50, clientY=50
+      await act(async () => {
+        host.dispatchEvent(pointer("pointerdown", { pointerId: 1, clientX: 50, clientY: 50 }));
+        host.dispatchEvent(pointer("pointerup", { pointerId: 1, clientX: 50, clientY: 50 }));
+      });
+
+      // Frame 1: scroll position changes (scrollY 10 -> 20)
+      await act(async () => {
+        currentScrollY = 20;
+        flushPendingRafs(1);
+      });
+      expect(usePlayerStore.getState().selection).toBeNull();
+      expect(usePlayerStore.getState().askPhase).toBe("selecting");
+
+      // Frame 2: scroll position changes again (scrollY 20 -> 30)
+      await act(async () => {
+        currentScrollY = 30;
+        flushPendingRafs(1);
+      });
+      expect(usePlayerStore.getState().selection).toBeNull();
+      expect(usePlayerStore.getState().askPhase).toBe("selecting");
+
+      // Now scroll stops at scrollY = 30: stage top shifted by 20px (e.g. stage scrolled, rect.top is -20)
+      stage.getBoundingClientRect = () => domRect(0, -20, 400, 300);
+
+      // Frame 3: scroll position unchanged (30 == 30, sameFrames = 1 < 2)
+      await act(async () => {
+        flushPendingRafs(1);
+      });
+      expect(usePlayerStore.getState().selection).toBeNull();
+      expect(usePlayerStore.getState().askPhase).toBe("selecting");
+
+      // Frame 4: scroll position unchanged again (30 == 30, sameFrames = 2 -> settles!)
+      await act(async () => {
+        flushPendingRafs(1);
+      });
+
+      const sel = usePlayerStore.getState().selection;
+      expect(sel).not.toBeNull();
+      // Settled sample: y = clientY - (-20) = 70. clientTop = 70 + (-20) = 50 => Math.floor(50/20) + 1 = 3 (line 3)
+      expect(sel?.targets[0].codeRange).toEqual({ startLine: 3, endLine: 3 });
+      // Panel opens (askPhase transitions to drafting)
+      expect(usePlayerStore.getState().askPhase).toBe("drafting");
+    });
+
+    test("N2: (b) settled point maps to an empty range: commitBand returns false, prior selection unchanged, no rubber band left, empty-hit hint shown", async () => {
+      setupEnteringScrollEnv();
+      await startEnteringScroll(10);
+      const host = layer();
+      const codeEl = stage.querySelector<HTMLElement>('[data-ask-target="code"]')!;
+      codeEl.setAttribute("data-ask-id", "code:main");
+      codeEl.setAttribute("data-ask-step-id", "s1");
+      codeEl.getBoundingClientRect = () => domRect(0, 0, 300, 400);
+
+      const mockHandle: CodeEditorHandle = {
+        getLineRangeForClientBox: vi.fn((top: number, bottom: number) => {
+          // Lines 1-5 at 20px per line (0..100). Beyond 100 is empty range (null).
+          if (top < 0 || bottom > 100) return null;
+          const startLine = Math.floor(top / 20) + 1;
+          const endLine = Math.floor((bottom - 1) / 20) + 1;
+          return { startLine, endLine };
+        }),
+        getLinesText: vi.fn((start, end) => `line ${start} to ${end}`),
+        getFullText: vi.fn(() => "code full text"),
+      };
+      registerCodeEditor(codeEl, mockHandle);
+
+      // Set a prior selection
+      const priorSelection = {
+        mode: "single" as const,
+        bbox: { x: 5, y: 5, width: 50, height: 20 },
+        targets: [{ id: "step:s1", kind: "step" as const, text: "步骤 1" }],
+      };
+      usePlayerStore.setState({ selection: priorSelection, askPhase: "selecting" });
+
+      // Tap at clientX=50, clientY=150 (outside valid code lines 0..100)
+      await act(async () => {
+        host.dispatchEvent(pointer("pointerdown", { pointerId: 1, clientX: 50, clientY: 150 }));
+        host.dispatchEvent(pointer("pointerup", { pointerId: 1, clientX: 50, clientY: 150 }));
+      });
+
+      // Flush settle rAFs to let it settle
+      await act(async () => {
+        flushPendingRafs();
+      });
+
+      // commitBand returned false: prior selection unchanged
+      expect(usePlayerStore.getState().selection).toEqual(priorSelection);
+      expect(usePlayerStore.getState().askPhase).toBe("selecting");
+
+      // no rubber band left
+      expect(layer().querySelector("[data-ask-rubber]")).toBeNull();
+
+      // empty-hit hint shown (code miss hint for code hit or ASK_EMPTY_HIT)
+      expect(layer().textContent).toContain(ASK_CODE_MISS_HINT);
     });
 
     test("STEP 2: in hasValidCode, if no matching element is found treat code as invalid instead of falling back to codeElements[0]", async () => {
