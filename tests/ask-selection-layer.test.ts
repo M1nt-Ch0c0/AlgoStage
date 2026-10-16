@@ -9,6 +9,7 @@ import AskSelectionLayer, { computeBottomOcclusion, computeOcclusion, isElementF
 import { ASK_CODE_MISS_HINT, ASK_EMPTY_HIT, ASK_ENTERED_STATUS, ASK_RESIZE_HINT } from "../lib/ask/ask-ui-text";
 import { type CodeEditorHandle, getAskCodeMissNotice, registerCodeEditor, resetCodeEditorRegistry } from "../lib/ask/code-editor-registry";
 import { summarizeSelection } from "../lib/ask/collect-candidates";
+import * as askOcclusion from "../lib/ask/ask-occlusion";
 import * as hitTest from "../lib/ask/hit-test";
 import { usePlayerStore } from "../lib/player/store";
 import type { TeachingScript } from "../lib/teaching/types";
@@ -2116,6 +2117,223 @@ describe("resolveAskEscape", () => {
 
       if (panel.parentNode) panel.remove();
       exitBtn.remove();
+    });
+
+    function mobileMatchMedia() {
+      return vi.fn().mockImplementation((query: string) => ({
+        matches: query === "(max-width: 639px)",
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }));
+    }
+
+    /** Hold requestAnimationFrame so a commit can be observed before the frame runs. */
+    function holdAnimationFrames() {
+      const queued: FrameRequestCallback[] = [];
+      const original = window.requestAnimationFrame.bind(window);
+      const raf = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback: FrameRequestCallback) => {
+        queued.push(callback);
+        return queued.length;
+      });
+      return {
+        raf,
+        pending: () => queued.length,
+        async flush() {
+          const batch = queued.splice(0, queued.length);
+          await act(async () => {
+            for (const callback of batch) callback(performance.now());
+          });
+        },
+        restore() {
+          raf.mockRestore();
+          void original;
+        },
+      };
+    }
+
+    test("askPhase change writes --ask-bottom-bar-h on the next frame, not in the commit", async () => {
+      const originalMatchMedia = window.matchMedia;
+      window.matchMedia = mobileMatchMedia();
+
+      const playerEl = document.createElement("div");
+      playerEl.setAttribute("aria-label", "讲解播放区");
+      playerEl.getBoundingClientRect = () => domRect(0, 708, 390, 60);
+      document.body.appendChild(playerEl);
+
+      document.documentElement.style.removeProperty("--ask-bottom-bar-h");
+      document.documentElement.style.removeProperty("--ask-bottom-occlusion");
+
+      const frames = holdAnimationFrames();
+      await render();
+      const bar = layer().querySelector<HTMLElement>("[data-ask-bottom-bar]");
+      expect(bar).not.toBeNull();
+      bar!.getBoundingClientRect = () => domRect(8, 790, 374, 52);
+
+      // Mount schedules the first measurement; nothing is written inside the commit.
+      expect(document.documentElement.style.getPropertyValue("--ask-bottom-bar-h")).toBe("");
+      expect(frames.pending()).toBeGreaterThan(0);
+      await frames.flush();
+      expect(document.documentElement.style.getPropertyValue("--ask-bottom-bar-h")).toBe("52px");
+      expect(document.documentElement.style.getPropertyValue("--ask-bottom-occlusion")).toBe("120px");
+
+      const setProperty = vi.spyOn(document.documentElement.style, "setProperty");
+      await act(async () => {
+        usePlayerStore.setState({ askPhase: "drafting" });
+      });
+      // The commit itself does not touch the variables. The bar unmounts in
+      // drafting, so the queued frame is the one that publishes 0px.
+      const duringCommit = setProperty.mock.calls.filter(
+        (call) => call[0] === "--ask-bottom-bar-h" || call[0] === "--ask-bottom-occlusion",
+      );
+      expect(duringCommit).toEqual([]);
+      expect(document.documentElement.style.getPropertyValue("--ask-bottom-bar-h")).toBe("52px");
+      expect(frames.pending()).toBe(1);
+
+      await frames.flush();
+      expect(document.documentElement.style.getPropertyValue("--ask-bottom-bar-h")).toBe("0px");
+      expect(document.documentElement.style.getPropertyValue("--ask-bottom-occlusion")).toBe("68px");
+      expect(frames.pending()).toBe(0);
+
+      setProperty.mockRestore();
+      frames.restore();
+      playerEl.remove();
+      window.matchMedia = originalMatchMedia;
+    });
+
+    test("an update does not rewrite a CSS variable whose inline value is unchanged", async () => {
+      const originalMatchMedia = window.matchMedia;
+      window.matchMedia = mobileMatchMedia();
+
+      const playerEl = document.createElement("div");
+      playerEl.setAttribute("aria-label", "讲解播放区");
+      playerEl.getBoundingClientRect = () => domRect(0, 708, 390, 60);
+      document.body.appendChild(playerEl);
+
+      await render();
+      const bar = layer().querySelector<HTMLElement>("[data-ask-bottom-bar]");
+      expect(bar).not.toBeNull();
+      bar!.getBoundingClientRect = () => domRect(8, 790, 374, 52);
+
+      await act(async () => {
+        window.dispatchEvent(new Event("resize"));
+      });
+      expect(document.documentElement.style.getPropertyValue("--ask-bottom-bar-h")).toBe("52px");
+      expect(document.documentElement.style.getPropertyValue("--ask-bottom-occlusion")).toBe("120px");
+
+      const setProperty = vi.spyOn(document.documentElement.style, "setProperty");
+      await act(async () => {
+        window.dispatchEvent(new Event("resize"));
+      });
+
+      const rewritten = setProperty.mock.calls.filter(
+        (call) => call[0] === "--ask-bottom-bar-h" || call[0] === "--ask-bottom-occlusion",
+      );
+      expect(rewritten).toEqual([]);
+      expect(document.documentElement.style.getPropertyValue("--ask-bottom-bar-h")).toBe("52px");
+      expect(document.documentElement.style.getPropertyValue("--ask-bottom-occlusion")).toBe("120px");
+
+      setProperty.mockRestore();
+      playerEl.remove();
+      window.matchMedia = originalMatchMedia;
+    });
+
+    test("one update reads matchMedia, viewport, and element heights before any CSS write", async () => {
+      const originalMatchMedia = window.matchMedia;
+      const originalViewport = window.visualViewport;
+      const order: string[] = [];
+      window.matchMedia = vi.fn().mockImplementation((query: string) => {
+        order.push(`read:matchMedia:${query}`);
+        return {
+          matches: query === "(max-width: 639px)",
+          media: query,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+        };
+      });
+      // happy-dom ships no visualViewport. A stub records the keyboard read.
+      Object.defineProperty(window, "visualViewport", {
+        configurable: true,
+        value: {
+          get height() {
+            order.push("read:visualViewport");
+            return 844;
+          },
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+        },
+      });
+
+      let playerHeight = 60;
+      const playerEl = document.createElement("div");
+      playerEl.setAttribute("aria-label", "讲解播放区");
+      playerEl.getBoundingClientRect = () => domRect(0, 844 - playerHeight, 390, playerHeight);
+      document.body.appendChild(playerEl);
+
+      // AskPlayerBarVar measures the player on its own. Spying the occlusion
+      // helpers records only the reads updateMeasurements takes.
+      vi.spyOn(askOcclusion, "measureAskPlayerBarHeight").mockImplementation(() => {
+        order.push("read:player");
+        return playerHeight;
+      });
+      vi.spyOn(askOcclusion, "measureAskElementHeight").mockImplementation((el) => {
+        order.push(el?.hasAttribute?.("data-ask-panel") ? "read:panel" : "read:bar");
+        if (!el) return 0;
+        return Math.ceil(el.getBoundingClientRect().height);
+      });
+
+      const rawSetProperty = CSSStyleDeclaration.prototype.setProperty;
+      vi.spyOn(CSSStyleDeclaration.prototype, "setProperty").mockImplementation(function (
+        this: CSSStyleDeclaration,
+        property: string,
+        value: string | null,
+        priority?: string,
+      ) {
+        if (property === "--ask-bottom-bar-h" || property === "--ask-bottom-occlusion") {
+          order.push(`write:${property}`);
+        }
+        return rawSetProperty.call(this, property, value, priority);
+      });
+
+      await render();
+      const bar = layer().querySelector<HTMLElement>("[data-ask-bottom-bar]");
+      expect(bar).not.toBeNull();
+      let barHeight = 52;
+      bar!.getBoundingClientRect = () => {
+        order.push("read:rect:bar");
+        return domRect(8, 790, 374, barHeight);
+      };
+
+      // Publish the current geometry first. Scroll only schedules a measurement;
+      // it does not clear the selection the way resize does.
+      await act(async () => {
+        window.dispatchEvent(new Event("scroll"));
+      });
+      expect(document.documentElement.style.getPropertyValue("--ask-bottom-bar-h")).toBe("52px");
+
+      order.length = 0;
+      playerHeight = 80;
+      barHeight = 40;
+      await act(async () => {
+        window.dispatchEvent(new Event("scroll"));
+      });
+
+      const writeAt = order.findIndex((entry) => entry.startsWith("write:"));
+      expect(writeAt).toBeGreaterThan(0);
+      const readsBeforeWrite = order.slice(0, writeAt);
+      expect(readsBeforeWrite.some((entry) => entry.startsWith("read:matchMedia:(max-width: 639px)"))).toBe(true);
+      expect(readsBeforeWrite).toContain("read:visualViewport");
+      expect(readsBeforeWrite).toContain("read:player");
+      expect(readsBeforeWrite).toContain("read:bar");
+      expect(order.slice(writeAt).some((entry) => entry.startsWith("read:"))).toBe(false);
+      expect(order.filter((entry) => entry.startsWith("write:"))).toEqual([
+        "write:--ask-bottom-bar-h",
+        "write:--ask-bottom-occlusion",
+      ]);
+
+      playerEl.remove();
+      Object.defineProperty(window, "visualViewport", { configurable: true, value: originalViewport });
+      window.matchMedia = originalMatchMedia;
     });
 
     test("mouse pointerup on cancel button does not block clicks", async () => {

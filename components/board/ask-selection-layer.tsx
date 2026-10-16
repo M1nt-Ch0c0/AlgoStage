@@ -561,54 +561,95 @@ function AskSelectionLayerActive({
 
   const updateMeasurements = useCallback(() => {
     if (typeof document === "undefined") return;
+    // Reads first. Writing a custom property invalidates style for the whole
+    // document, so a measure after a write pays for a full recalc (the cancel
+    // commit on a 390px phone spent ~90ms here). Every read below runs before
+    // any setProperty.
     const isMobileDevice = typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches;
-    const isKeyboardOpen = () => {
-      if (typeof window === "undefined" || !window.visualViewport) return false;
-      return window.innerHeight - window.visualViewport.height > 120;
-    };
+    const viewport = typeof window !== "undefined" ? window.visualViewport : null;
+    const kbOpen =
+      viewport != null && typeof window !== "undefined" && window.innerHeight - viewport.height > 120;
 
-    const kbOpen = isKeyboardOpen();
+    const rootStyle = document.documentElement.style;
+    const currentBar = rootStyle.getPropertyValue("--ask-bottom-bar-h");
+    const currentOcclusion = rootStyle.getPropertyValue("--ask-bottom-occlusion");
+
+    let nextBar = "0px";
+    let nextOcclusion = "0px";
+    if (active && isMobileDevice && !kbOpen) {
+      const playerH = measureAskPlayerBarHeight();
+
+      let panelH = 0;
+      const panelEl = document.querySelector<HTMLElement>("[data-ask-panel]");
+      if (panelEl) {
+        panelH = measureAskElementHeight(panelEl);
+      }
+
+      let barH = 0;
+      const panelOpen = panelH > 0 || askPhase !== "selecting";
+      if (!panelOpen) {
+        const barEl = bottomBarRef.current ?? document.querySelector<HTMLElement>("[data-ask-bottom-bar]");
+        barH = measureAskElementHeight(barEl);
+      }
+      nextBar = `${barH}px`;
+      nextOcclusion = `${computeBottomOcclusion({
+        playerHeight: playerH,
+        barHeight: barH,
+        panelHeight: panelH,
+      })}px`;
+    }
+
+    // setState after the reads. It does not write a CSS variable, and on the
+    // cancel path the keyboard flag is unchanged so this is a no-op.
     setKeyboardOpen(kbOpen);
 
     // --ask-player-bar-h is owned by AskPlayerBarVar, which stays mounted
     // after this chrome unmounts. This effect only publishes the chip bar
-    // and the occlusion total, and only while the chrome is up.
-    if (!active || !isMobileDevice || kbOpen) {
-      document.documentElement.style.setProperty("--ask-bottom-bar-h", "0px");
-      document.documentElement.style.setProperty("--ask-bottom-occlusion", "0px");
+    // and the occlusion total, and only while the chrome is up. Skip a write
+    // whose inline value is already what we measured: the cancel frame's
+    // selecting restore is then a no-op and the box does not move.
+    if (currentBar !== nextBar) {
+      rootStyle.setProperty("--ask-bottom-bar-h", nextBar);
+    }
+    if (currentOcclusion !== nextOcclusion) {
+      rootStyle.setProperty("--ask-bottom-occlusion", nextOcclusion);
+    }
+  }, [active, askPhase]);
+
+  const measureRafRef = useRef<number | null>(null);
+  // ResizeObserver rebind runs in the same frame as the measurement. The
+  // mount effect fills this in; phase-change frames only measure.
+  const afterMeasureRef = useRef<(() => void) | null>(null);
+  // Latest measurement, so a frame queued before this render still applies
+  // the phase that just committed. scheduleUpdate itself stays stable: the
+  // mount effect must not re-subscribe (and reset the variables) on a phase change.
+  const updateMeasurementsRef = useRef(updateMeasurements);
+  updateMeasurementsRef.current = updateMeasurements;
+  const scheduleUpdate = useCallback(() => {
+    const run = () => {
+      updateMeasurementsRef.current();
+      afterMeasureRef.current?.();
+    };
+    if (typeof requestAnimationFrame !== "function") {
+      run();
       return;
     }
-
-    const playerH = measureAskPlayerBarHeight();
-
-    let panelH = 0;
-    const panelEl = document.querySelector<HTMLElement>("[data-ask-panel]");
-    if (panelEl) {
-      panelH = measureAskElementHeight(panelEl);
-    }
-
-    let barH = 0;
-    const panelOpen = panelH > 0 || askPhase !== "selecting";
-    if (!panelOpen) {
-      const barEl = bottomBarRef.current ?? document.querySelector<HTMLElement>("[data-ask-bottom-bar]");
-      barH = measureAskElementHeight(barEl);
-    }
-    document.documentElement.style.setProperty("--ask-bottom-bar-h", `${barH}px`);
-
-    const totalOcclusion = computeBottomOcclusion({
-      playerHeight: playerH,
-      barHeight: barH,
-      panelHeight: panelH,
+    if (measureRafRef.current !== null) return;
+    measureRafRef.current = requestAnimationFrame(() => {
+      measureRafRef.current = null;
+      run();
     });
-    document.documentElement.style.setProperty("--ask-bottom-occlusion", `${totalOcclusion}px`);
-  }, [active, askPhase]);
+  }, []);
 
   const prevAskPhaseRef = useRef(askPhase);
   useIsomorphicLayoutEffect(() => {
     const prev = prevAskPhaseRef.current;
     prevAskPhaseRef.current = askPhase;
 
-    updateMeasurements();
+    // Phase changes (取消 from waiting unmounts the panel and remounts this
+    // layer in the pointerup commit) must not measure synchronously. One
+    // frame later is the same rAF the ResizeObserver already coalesces on.
+    scheduleUpdate();
 
     const isMobileDevice = typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches;
     const closingPanel = prev === "drafting" || prev === "error";
@@ -637,11 +678,12 @@ function AskSelectionLayerActive({
         currentChip?.focus({ preventScroll: true });
       }
     }
-  }, [active, askPhase, updateMeasurements]);
+  }, [active, askPhase, scheduleUpdate]);
 
   // 测量底部条高度、播放区高度与抽屉面板高度，并同步 --ask-bottom-bar-h 和 --ask-bottom-occlusion。
   // --ask-player-bar-h 由始终挂载的 AskPlayerBarVar 写。
   // 桌面/inactive/unmount/键盘打开时设为 0px（或 removeProperty）。
+  // 首次测量与阶段变化都走 scheduleUpdate 的 rAF，不在这次提交里同步读写。
   useEffect(() => {
     if (typeof document === "undefined") return;
 
@@ -650,36 +692,30 @@ function AskSelectionLayerActive({
     let observedPanelEl: HTMLElement | null = null;
     let ro: ResizeObserver | null = null;
 
-    let rafHandle: number | null = null;
-    const scheduleUpdate = () => {
-      if (rafHandle !== null) return;
-      rafHandle = requestAnimationFrame(() => {
-        rafHandle = null;
-        updateMeasurements();
-        const curBarEl = bottomBarRef.current ?? document.querySelector<HTMLElement>("[data-ask-bottom-bar]");
-        const curPlayerEl = document.querySelector<HTMLElement>('[aria-label="讲解播放区"]');
-        const curPanelEl = document.querySelector<HTMLElement>("[data-ask-panel]");
-        if (ro) {
-          if (curPlayerEl !== observedPlayerEl) {
-            if (observedPlayerEl) ro.unobserve(observedPlayerEl);
-            observedPlayerEl = curPlayerEl;
-            if (curPlayerEl) ro.observe(curPlayerEl);
-          }
-          if (curBarEl !== observedBarEl) {
-            if (observedBarEl) ro.unobserve(observedBarEl);
-            observedBarEl = curBarEl;
-            if (curBarEl) ro.observe(curBarEl);
-          }
-          if (curPanelEl !== observedPanelEl) {
-            if (observedPanelEl) ro.unobserve(observedPanelEl);
-            observedPanelEl = curPanelEl;
-            if (curPanelEl) ro.observe(curPanelEl);
-          }
-        }
-      });
+    const syncObserved = () => {
+      const curBarEl = bottomBarRef.current ?? document.querySelector<HTMLElement>("[data-ask-bottom-bar]");
+      const curPlayerEl = document.querySelector<HTMLElement>('[aria-label="讲解播放区"]');
+      const curPanelEl = document.querySelector<HTMLElement>("[data-ask-panel]");
+      if (!ro) return;
+      if (curPlayerEl !== observedPlayerEl) {
+        if (observedPlayerEl) ro.unobserve(observedPlayerEl);
+        observedPlayerEl = curPlayerEl;
+        if (curPlayerEl) ro.observe(curPlayerEl);
+      }
+      if (curBarEl !== observedBarEl) {
+        if (observedBarEl) ro.unobserve(observedBarEl);
+        observedBarEl = curBarEl;
+        if (curBarEl) ro.observe(curBarEl);
+      }
+      if (curPanelEl !== observedPanelEl) {
+        if (observedPanelEl) ro.unobserve(observedPanelEl);
+        observedPanelEl = curPanelEl;
+        if (curPanelEl) ro.observe(curPanelEl);
+      }
     };
+    afterMeasureRef.current = syncObserved;
 
-    updateMeasurements();
+    scheduleUpdate();
 
     const barEl = bottomBarRef.current ?? document.querySelector<HTMLElement>("[data-ask-bottom-bar]");
     const playerEl = document.querySelector<HTMLElement>('[aria-label="讲解播放区"]');
@@ -723,9 +759,10 @@ function AskSelectionLayerActive({
     window.addEventListener("scroll", onScroll, { passive: true, capture: true });
 
     return () => {
-      if (rafHandle !== null) {
-        cancelAnimationFrame(rafHandle);
-        rafHandle = null;
+      afterMeasureRef.current = null;
+      if (measureRafRef.current !== null) {
+        cancelAnimationFrame(measureRafRef.current);
+        measureRafRef.current = null;
       }
       ro?.disconnect();
       mo?.disconnect();
@@ -736,7 +773,7 @@ function AskSelectionLayerActive({
       document.documentElement.style.setProperty("--ask-bottom-bar-h", "0px");
       document.documentElement.style.setProperty("--ask-bottom-occlusion", "0px");
     };
-  }, [updateMeasurements]);
+  }, [scheduleUpdate]);
 
   // 当进入 ask 模式（selecting）在移动端时，确保代码区域可见。
   useEffect(() => {
