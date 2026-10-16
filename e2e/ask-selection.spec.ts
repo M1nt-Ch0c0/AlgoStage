@@ -755,6 +755,18 @@ test.describe("1280 selection flow", () => {
     expect(seen.some((e) => e.key === "Enter" && e.metaKey)).toBe(true);
   });
 
+  test("F1 1280: Shift+click on chip selects it as normal", async ({ page }) => {
+    await startGenerated(page);
+    await pauseLecture(page);
+    await enterSelection(page);
+
+    const subtitleChip = page.locator('[data-ask-bottom-bar] [data-ask-shortcut="subtitle"]');
+    await subtitleChip.click({ modifiers: ["Shift"] });
+    const panel = page.locator("[data-ask-panel]");
+    await expect(panel).toBeVisible();
+    await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：当前字幕");
+  });
+
   test("chip390-b 1280 plan panel open: Tab from entry skips the 8 plan buttons to the chips; Shift+Tab returns", async ({ page }) => {
     await startGenerated(page);
     await pauseLecture(page);
@@ -2088,6 +2100,18 @@ test.describe("390 selection flow", () => {
       );
       expect(seen.some((e) => e.key === "Enter" && e.ctrlKey)).toBe(true);
       expect(seen.some((e) => e.key === "Enter" && e.metaKey)).toBe(true);
+    });
+
+    test("F1 390: Shift+click on chip selects it as normal", async ({ page }) => {
+      await startGenerated(page);
+      await pauseLecture(page);
+      await enterSelection(page);
+
+      const subtitleChip = page.locator('[data-ask-bottom-bar] [data-ask-shortcut="subtitle"]');
+      await subtitleChip.click({ modifiers: ["Shift"] });
+      const panel = page.locator("[data-ask-panel]");
+      await expect(panel).toBeVisible();
+      await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：当前字幕");
     });
 
     test("a. tap code line 1 -> panel label 已选：代码第 1 行", async ({ page }) => {

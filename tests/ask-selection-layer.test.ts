@@ -3124,6 +3124,33 @@ describe("resolveAskEscape", () => {
         document.removeEventListener("keydown", onDocKeyDown);
       }
     });
+
+    test("modified click on shortcut chip selects the chip as normal", async () => {
+      await render();
+
+      for (const mod of [
+        { shiftKey: true },
+        { ctrlKey: true },
+        { altKey: true },
+        { metaKey: true },
+      ] as const) {
+        await act(async () => usePlayerStore.setState({ askPhase: "selecting", selection: null }));
+        const chip = layer().querySelector<HTMLButtonElement>('[data-ask-shortcut="subtitle"]');
+        expect(chip).not.toBeNull();
+        const clickEv = new MouseEvent("click", {
+          bubbles: true,
+          cancelable: true,
+          ...mod,
+        });
+        await act(async () => {
+          chip!.dispatchEvent(clickEv);
+        });
+        const selection = usePlayerStore.getState().selection;
+        expect(selection?.mode).toBe("single");
+        expect(selection?.targets[0]?.id).toBe("subtitle:s1");
+        expect(usePlayerStore.getState().askPhase).toBe("drafting");
+      }
+    });
   });
 
   describe("entering scroll live detection at pointerdown", () => {

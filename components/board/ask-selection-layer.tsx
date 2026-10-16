@@ -1568,9 +1568,6 @@ function AskSelectionLayerActive({
                         className="min-h-11 min-w-11 pointer-coarse:min-h-11 pointer-coarse:min-w-11 inline-flex shrink-0 items-center justify-center rounded-full border border-board-600 bg-board-900/80 px-3 py-1 text-xs sm:px-2 sm:py-0.5 sm:text-[10px] sm:min-h-0 sm:min-w-0 sm:pointer-coarse:min-h-11 sm:pointer-coarse:min-w-11 text-chalk-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beam-gold focus-visible:ring-inset"
                         onClick={(event) => {
                           event.stopPropagation();
-                          if (event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) {
-                            return;
-                          }
                           // 拖过阈值后的 click 只留下框选，不再把捷径当成点选。
                           if (dragStartedRef.current) {
                             dragStartedRef.current = false;
