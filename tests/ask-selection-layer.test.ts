@@ -1816,7 +1816,7 @@ describe("resolveAskEscape", () => {
       window.matchMedia = originalMatchMedia;
     });
 
-    test("on mobile, closing panel (drafting -> selecting) restores bar, chip focus, and occlusion in one frame synchronously", async () => {
+    test("on mobile, closing panel (drafting -> selecting) restores bar + occlusion sync; chip focus next frame", async () => {
       const originalMatchMedia = window.matchMedia;
       window.matchMedia = vi.fn().mockImplementation((query: string) => ({
         matches: query === "(max-width: 639px)",
@@ -1862,8 +1862,11 @@ describe("resolveAskEscape", () => {
       expect(bar).not.toBeNull();
       const selectionEl = document.querySelector("[data-ask-selection]");
       expect(selectionEl).not.toBeNull();
+      // Occlusion/bar chrome written sync in the cancel commit (Gavin cancel sync write).
+      expect(document.documentElement.style.getPropertyValue("--ask-bottom-occlusion")).not.toBe("");
 
-      // Focus is on the roving tabIndex=0 chip
+      // Chip focus is deferred one frame under 4× cancel ≤100ms budget (Uma).
+      await flushMeasureFrame();
       const activeEl = document.activeElement as HTMLElement | null;
       expect(activeEl).not.toBeNull();
       expect(bar!.contains(activeEl)).toBe(true);
