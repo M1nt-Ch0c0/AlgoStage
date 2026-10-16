@@ -393,6 +393,8 @@ function AskSelectionLayerActive({
   const lastMidRef = useRef<PointerSample | null>(null);
   const scrollDeltaRef = useRef({ x: 0, y: 0 });
   const scrollRafRef = useRef<number | null>(null);
+  const settleRafRef = useRef<number | null>(null);
+  const downClientRef = useRef<{ clientX: number; clientY: number } | null>(null);
   const enteringSmoothScrollRef = useRef(false);
   const enteringScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const enteringScrollRafRef = useRef<number | null>(null);
@@ -544,6 +546,10 @@ function AskSelectionLayerActive({
     return () => {
       chipDragCleanupRef.current?.();
       chipDragCleanupRef.current = null;
+      if (settleRafRef.current != null) {
+        cancelAnimationFrame(settleRafRef.current);
+        settleRafRef.current = null;
+      }
     };
   }, []);
 
@@ -883,6 +889,11 @@ function AskSelectionLayerActive({
       cancelAnimationFrame(scrollRafRef.current);
       scrollRafRef.current = null;
     }
+    if (settleRafRef.current != null) {
+      cancelAnimationFrame(settleRafRef.current);
+      settleRafRef.current = null;
+    }
+    downClientRef.current = null;
     scrollDeltaRef.current = { x: 0, y: 0 };
   }, []);
 
@@ -1013,6 +1024,11 @@ function AskSelectionLayerActive({
     if (!hostEl.hasPointerCapture(pointerId)) hostEl.setPointerCapture(pointerId);
 
     if (pointersRef.current.size >= 2) {
+      if (settleRafRef.current != null) {
+        cancelAnimationFrame(settleRafRef.current);
+        settleRafRef.current = null;
+      }
+      downClientRef.current = null;
       // 第二指：放弃当前框，进入滚动。不 hitTest。
       drawingRef.current = false;
       originRef.current = null;
@@ -1034,7 +1050,14 @@ function AskSelectionLayerActive({
     setRubberBand(bandFrom(start, start));
     // 停滚后浏览器要到下一帧才把滚动位置落定（可能往回退几像素）。
     // 下一帧按落定后的布局重取起点，起点就是按下处此后显示的那一行。
-    requestAnimationFrame(() => {
+    if (settleRafRef.current != null) {
+      cancelAnimationFrame(settleRafRef.current);
+      settleRafRef.current = null;
+    }
+    downClientRef.current = { clientX, clientY };
+    settleRafRef.current = requestAnimationFrame(() => {
+      settleRafRef.current = null;
+      downClientRef.current = null;
       if (originRef.current !== start || !drawingRef.current) return;
       const settledHost = getStage();
       if (!settledHost) return;
@@ -1086,6 +1109,21 @@ function AskSelectionLayerActive({
   };
 
   const onPointerUp = (event: PointerEvent<HTMLDivElement>) => {
+    if (settleRafRef.current != null) {
+      cancelAnimationFrame(settleRafRef.current);
+      settleRafRef.current = null;
+      if (drawingRef.current && originRef.current != null && downClientRef.current) {
+        const settledHost = getStage();
+        if (settledHost) {
+          const settled = sampleAt(settledHost, downClientRef.current.clientX, downClientRef.current.clientY);
+          const prevOrigin = originRef.current;
+          originRef.current = settled;
+          const cur = pointersRef.current.get(event.pointerId);
+          if (cur === prevOrigin) pointersRef.current.set(event.pointerId, settled);
+        }
+      }
+      downClientRef.current = null;
+    }
     if (isIgnoredTarget(event.target)) return;
     const wasDrawing = drawingRef.current && originRef.current != null && !scrollModeRef.current;
     const origin = originRef.current;
@@ -1128,6 +1166,11 @@ function AskSelectionLayerActive({
   };
 
   const onPointerCancel = (event: PointerEvent<HTMLDivElement>) => {
+    if (settleRafRef.current != null) {
+      cancelAnimationFrame(settleRafRef.current);
+      settleRafRef.current = null;
+    }
+    downClientRef.current = null;
     if (isIgnoredTarget(event.target)) return;
     pointersRef.current.delete(event.pointerId);
     if (pointersRef.current.size === 0) resetGesture();
@@ -1297,6 +1340,19 @@ function AskSelectionLayerActive({
                         onKeyDown={(event) => {
                           // 1280：从芯片组 Shift+Tab 回到入口按钮（和入口 Tab 进来对称）。
                           // 焦点在芯片上：Enter / 空格选中这个芯片本身，不交给图层的 Enter（会选当前代码）。
+                          if (
+                            (event.key === "Enter" || event.key === " ") &&
+                            event.shiftKey &&
+                            !event.altKey &&
+                            !event.ctrlKey &&
+                            !event.metaKey
+                          ) {
+                            if (event.key === " ") {
+                              event.preventDefault();
+                            }
+                            event.stopPropagation();
+                            return;
+                          }
                           if (
                             (event.key === "Enter" || event.key === " ") &&
                             !event.altKey &&

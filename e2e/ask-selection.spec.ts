@@ -668,6 +668,24 @@ test.describe("1280 selection flow", () => {
     });
   }
 
+  test("chip390-b nits (a) 1280: Shift+Enter and Shift+Space on a focused chip does not select current code (no selection summary / still selecting)", async ({ page }) => {
+    await startGenerated(page);
+    await pauseLecture(page);
+    await enterSelection(page);
+    const chip = page.locator('[data-ask-bottom-bar] [data-ask-shortcut="step"]');
+    await chip.focus();
+    await expect(chip).toBeFocused();
+
+    for (const combo of ["Shift+Enter", "Shift+Space"]) {
+      await page.keyboard.press(combo);
+      await expect(page.locator("[data-ask-panel]")).toHaveCount(0);
+      await expect(page.locator("[data-ask-selection]")).toHaveCount(0);
+      await expect(page.locator("[data-ask-layer]")).toBeVisible();
+      await expect(page.locator("[role=status]")).not.toHaveText(/已选：/);
+      await expect(chip).toBeFocused();
+    }
+  });
+
   test("chip390-b 1280 plan panel open: Tab from entry skips the 8 plan buttons to the chips; Shift+Tab returns", async ({ page }) => {
     await startGenerated(page);
     await pauseLecture(page);
@@ -1978,6 +1996,68 @@ test.describe("390 selection flow", () => {
       if (await selLabel.count()) await expect(selLabel).toHaveText(expected);
     });
     }
+
+    test("chip390-b nits (b) press during the entry smooth scroll and release before the next frame, for tap and very short drag, assert the selected code line range matches the line under the pointer (no off-by-one)", async ({ page }) => {
+      test.setTimeout(90_000);
+      await startGenerated(page);
+      await pauseLecture(page);
+
+      const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+      const button = entry(page);
+      const panel = page.locator("[data-ask-panel]");
+
+      const lineAt = (y: number) =>
+        page.evaluate((py) => {
+          for (const ln of document.querySelectorAll<HTMLElement>(".monaco-editor .line-numbers")) {
+            const r = ln.getBoundingClientRect();
+            if (r.height > 0 && py >= r.top && py < r.bottom) {
+              return { line: Number(ln.textContent?.trim()), below: r.bottom - py };
+            }
+          }
+          return null;
+        }, y);
+
+      for (const mode of ["tap", "short-drag"] as const) {
+        for (let run = 0; run < 10; run++) {
+          if (await panel.count()) {
+            await page.keyboard.press("Escape");
+            await page.keyboard.press("Escape");
+            await expect(page.locator("[data-ask-layer]")).toHaveCount(0);
+          } else if (await page.locator("[data-ask-layer]").count()) {
+            await page.keyboard.press("Escape");
+            await expect(page.locator("[data-ask-layer]")).toHaveCount(0);
+          }
+
+          await button.scrollIntoViewIfNeeded();
+          await page.evaluate(() => window.scrollTo({ top: 0, behavior: "auto" }));
+          const y0 = await page.evaluate(() => window.scrollY);
+          await button.click();
+          await expect.poll(() => page.evaluate(() => window.scrollY), { timeout: 3000 }).not.toBe(y0);
+          await page.waitForTimeout(60 + (run % 5) * 20);
+
+          const boxAtDown = (await code.boundingBox())!;
+          const vh = page.viewportSize()!.height;
+          const startX = boxAtDown.x + 60;
+          const startY = Math.round(vh * 0.35);
+
+          await page.mouse.move(startX, startY);
+          if (mode === "tap") {
+            await page.mouse.down();
+            await page.mouse.up();
+          } else {
+            await page.mouse.down();
+            await page.mouse.move(startX + 12, startY);
+            await page.mouse.up();
+          }
+
+          await expect(panel).toBeVisible();
+          const hit = await lineAt(startY);
+          expect(hit).not.toBeNull();
+          const expected = `已选：代码第 ${hit!.line} 行`;
+          await expect(panel.locator("[data-ask-panel-label]")).toHaveText(expected);
+        }
+      }
+    });
 
     test("h. selection fully visible above drawer: record scrollY, open panel, scrollY unchanged", async ({ page }) => {
       // fixme: depends on S4 r4 ask-panel.tsx:181 block:'nearest' (Gavin)

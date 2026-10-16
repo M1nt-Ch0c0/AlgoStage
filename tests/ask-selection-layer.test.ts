@@ -2774,4 +2774,134 @@ describe("resolveAskEscape", () => {
       panel.remove();
     });
   });
+
+  describe("chip390-b nits N1-N3", () => {
+    test("N1: settle rAF is cancelled on pointerup and unmount", async () => {
+      const cancelSpy = vi.spyOn(window, "cancelAnimationFrame");
+      await render();
+      const host = layer();
+
+      // (a) pointerup cancels the scheduled settle rAF
+      await act(async () => {
+        host.dispatchEvent(pointer("pointerdown", { pointerId: 1, clientX: 20, clientY: 20 }));
+        host.dispatchEvent(pointer("pointerup", { pointerId: 1, clientX: 20, clientY: 20 }));
+      });
+      expect(cancelSpy).toHaveBeenCalledTimes(1);
+
+      cancelSpy.mockClear();
+
+      // (b) unmount cancels any pending settle rAF
+      await act(async () => {
+        host.dispatchEvent(pointer("pointerdown", { pointerId: 2, clientX: 30, clientY: 30 }));
+        root.unmount();
+      });
+      expect(cancelSpy).toHaveBeenCalledTimes(1);
+
+      // Re-create root for cleanup in afterEach
+      root = createRoot(container);
+    });
+
+    test("N1: settle rAF is cancelled on pointercancel and before scheduling new one", async () => {
+      const cancelSpy = vi.spyOn(window, "cancelAnimationFrame");
+      await render();
+      const host = layer();
+
+      // (a) pointercancel cancels the scheduled settle rAF
+      await act(async () => {
+        host.dispatchEvent(pointer("pointerdown", { pointerId: 1, clientX: 20, clientY: 20 }));
+        host.dispatchEvent(pointer("pointercancel", { pointerId: 1 }));
+      });
+      expect(cancelSpy).toHaveBeenCalledTimes(1);
+
+      cancelSpy.mockClear();
+
+      // (b) scheduling a new pointerdown cancels the previous pending settle rAF
+      await act(async () => {
+        host.dispatchEvent(pointer("pointerdown", { pointerId: 2, clientX: 20, clientY: 20 }));
+        host.dispatchEvent(pointer("pointerdown", { pointerId: 3, clientX: 40, clientY: 40 }));
+      });
+      expect(cancelSpy).toHaveBeenCalled();
+    });
+
+    test("N2: pointerup before frame commits re-sampled start for tap and drag", async () => {
+      const pointSpy = vi.spyOn(hitTest, "hitTestPoint");
+      const regionSpy = vi.spyOn(hitTest, "hitTest");
+      await render();
+      const host = layer();
+
+      // Tap: pointerdown -> layout shift -> pointerup before rAF runs
+      await act(async () => {
+        host.dispatchEvent(pointer("pointerdown", { pointerId: 1, clientX: 20, clientY: 20 }));
+        // Layout settles before rAF runs (e.g. stage scrolled, rect.top shifted by 15px)
+        stage.getBoundingClientRect = () => domRect(0, -15, 400, 300);
+        host.dispatchEvent(pointer("pointerup", { pointerId: 1, clientX: 20, clientY: 20 }));
+      });
+
+      // Synchronously re-sampled start (y = 20 - (-15) = 35) was passed to hitTestPoint, not the pre-snap y=20
+      expect(pointSpy).toHaveBeenCalledWith(20, 35, expect.anything());
+
+      pointSpy.mockClear();
+      usePlayerStore.getState().clearAskSelection();
+
+      // Drag: pointerdown -> pointermove -> layout shift -> pointerup before rAF runs
+      stage.getBoundingClientRect = () => domRect(0, 0, 400, 300);
+      await act(async () => {
+        host.dispatchEvent(pointer("pointerdown", { pointerId: 2, clientX: 20, clientY: 20 }));
+        host.dispatchEvent(pointer("pointermove", { pointerId: 2, clientX: 60, clientY: 70 }));
+        // Layout settles before rAF
+        stage.getBoundingClientRect = () => domRect(0, -10, 400, 300);
+        host.dispatchEvent(pointer("pointerup", { pointerId: 2, clientX: 60, clientY: 70 }));
+      });
+
+      // Drag bounding box should start at re-sampled y = 20 - (-10) = 30
+      expect(regionSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ x: 20, y: 30 }),
+        expect.anything(),
+      );
+    });
+
+    test("N3: Shift+Enter and Shift+Space on focused chip: layer select-current-code not triggered, selection stays null", async () => {
+      await render();
+      const host = layer();
+      const chip = host.querySelector<HTMLButtonElement>('[data-ask-shortcut="step"]');
+      expect(chip).not.toBeNull();
+      chip!.focus();
+
+      // 1. Shift+Enter
+      const enterEv = new KeyboardEvent("keydown", {
+        key: "Enter",
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      const stopSpyEnter = vi.spyOn(enterEv, "stopPropagation");
+
+      await act(async () => {
+        chip!.dispatchEvent(enterEv);
+      });
+
+      expect(stopSpyEnter).toHaveBeenCalled();
+      expect(usePlayerStore.getState().selection).toBeNull();
+      expect(usePlayerStore.getState().askPhase).toBe("selecting");
+
+      // 2. Shift+Space
+      const spaceEv = new KeyboardEvent("keydown", {
+        key: " ",
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      const stopSpySpace = vi.spyOn(spaceEv, "stopPropagation");
+      const prevDefaultSpySpace = vi.spyOn(spaceEv, "preventDefault");
+
+      await act(async () => {
+        chip!.dispatchEvent(spaceEv);
+      });
+
+      expect(stopSpySpace).toHaveBeenCalled();
+      expect(prevDefaultSpySpace).toHaveBeenCalled();
+      expect(usePlayerStore.getState().selection).toBeNull();
+      expect(usePlayerStore.getState().askPhase).toBe("selecting");
+    });
+  });
 });
