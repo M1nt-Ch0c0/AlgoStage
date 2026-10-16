@@ -1552,6 +1552,67 @@ describe("resolveAskEscape", () => {
       window.matchMedia = originalMatchMedia;
     });
 
+    test("--ask-player-bar-h is 0 while the virtual keyboard is open and returns after it closes", async () => {
+      const originalMatchMedia = window.matchMedia;
+      const originalHeight = window.innerHeight;
+      const originalViewport = window.visualViewport;
+      Object.defineProperty(window, "innerHeight", { configurable: true, value: 844 });
+      window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+        matches: query === "(max-width: 639px)",
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }));
+
+      let viewportHeight = 844;
+      const listeners = new Set<() => void>();
+      Object.defineProperty(window, "visualViewport", {
+        configurable: true,
+        value: {
+          get height() {
+            return viewportHeight;
+          },
+          offsetTop: 0,
+          addEventListener: (_type: string, fn: () => void) => {
+            listeners.add(fn);
+          },
+          removeEventListener: (_type: string, fn: () => void) => {
+            listeners.delete(fn);
+          },
+        },
+      });
+
+      const playerEl = document.createElement("div");
+      playerEl.setAttribute("aria-label", "讲解播放区");
+      playerEl.getBoundingClientRect = () => domRect(0, 682, 390, 162);
+      document.body.appendChild(playerEl);
+
+      const playerVar = () => document.documentElement.style.getPropertyValue("--ask-player-bar-h");
+
+      await render();
+      expect(playerVar()).toBe("162px");
+
+      // Keyboard covers more than 120px of layout viewport.
+      viewportHeight = 400;
+      await act(async () => {
+        for (const listener of listeners) listener();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(playerVar()).toBe("0px");
+
+      viewportHeight = 844;
+      await act(async () => {
+        for (const listener of listeners) listener();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(playerVar()).toBe("162px");
+
+      playerEl.remove();
+      Object.defineProperty(window, "innerHeight", { configurable: true, value: originalHeight });
+      Object.defineProperty(window, "visualViewport", { configurable: true, value: originalViewport });
+      window.matchMedia = originalMatchMedia;
+    });
+
     test("renders exit button inside bottom bar on mobile with data-ask-entry and clicking it exits ask", async () => {
       const originalMatchMedia = window.matchMedia;
       window.matchMedia = vi.fn().mockImplementation((query: string) => ({
