@@ -1935,8 +1935,10 @@ test.describe("390 selection flow", () => {
       await page.mouse.move(startX, startY);
       await page.mouse.down();
 
-      // 按下即停住滚动：之后 scrollY 不再变。
-      const yDown = await page.evaluate(() => window.scrollY);
+      // 按下即停住滚动：落定一帧后 scrollY 不再变（停滚当帧可能回退几像素）。
+      const yDown = await page.evaluate(
+        () => new Promise<number>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(window.scrollY)))),
+      );
       await page.waitForTimeout(150);
       expect(await page.evaluate(() => window.scrollY)).toBe(yDown);
 
