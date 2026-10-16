@@ -267,7 +267,7 @@ test.each(["selecting", "drafting", "error"] as const)("%s 为按下态，文案
   expect(usePlayerStore.getState().askPhase).toBe("idle");
 });
 
-test("on mobile busy/timeout notes sit absolute above the button (no in-flow height growth)", async () => {
+test("on mobile busy notes stay in-flow but invisible (reserve height, no chalk paint)", async () => {
   const original = window.matchMedia;
   window.matchMedia = vi.fn().mockImplementation((query: string) => ({
     matches: query === "(max-width: 639px)",
@@ -280,15 +280,35 @@ test("on mobile busy/timeout notes sit absolute above the button (no in-flow hei
   usePlayerStore.setState({ askPhase: "playing" });
   await render();
 
-  const wrap = container.querySelector("span.relative");
-  expect(wrap).not.toBeNull();
-  expect(wrap?.className).toContain("relative");
   const note = container.querySelector("#ask-entry-reason");
   expect(note).not.toBeNull();
-  expect(note?.className).toContain("absolute");
-  expect(note?.className).toContain("bottom-full");
-  expect(note?.className).toContain("right-0");
+  expect(note?.className).toContain("invisible");
+  expect(note?.className).not.toContain("absolute");
   expect(describedText(entry())).toBe(ASK_REASON_TEXT.busy);
+
+  window.matchMedia = original;
+});
+
+test("on mobile drafting reserves note space under the hidden entry", async () => {
+  const original = window.matchMedia;
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: query === "(max-width: 639px)",
+    media: query,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  }));
+
+  loadReady();
+  usePlayerStore.setState({ askPhase: "drafting", status: "interrupted" });
+  await render();
+
+  const button = container.querySelector<HTMLButtonElement>("button");
+  expect(button?.className).toContain("invisible");
+  const spacer = Array.from(container.querySelectorAll("span")).find(
+    (el) => el.getAttribute("aria-hidden") === "true" && el.textContent === ASK_REASON_TEXT.busy,
+  );
+  expect(spacer).toBeTruthy();
+  expect(spacer?.className).toContain("invisible");
 
   window.matchMedia = original;
 });
