@@ -96,6 +96,39 @@ export function resolveAskEscape(
 }
 
 /**
+ * 比较两次滚动位置快照是否一致。
+ */
+function isSameScrollPositions(
+  a: { windowY: number; ancestorTops: number[] } | null,
+  b: { windowY: number; ancestorTops: number[] },
+): boolean {
+  if (!a) return false;
+  if (a.windowY !== b.windowY) return false;
+  if (a.ancestorTops.length !== b.ancestorTops.length) return false;
+  for (let i = 0; i < a.ancestorTops.length; i++) {
+    if (a.ancestorTops[i] !== b.ancestorTops[i]) return false;
+  }
+  return true;
+}
+
+/**
+ * 实时判断进入滚动是否仍在进行中。
+ * 仅当追踪器激活，且当前滚动位置与上次记录不同或最近一次滚动变化在约 50ms（节流 CPU 下帧间隔可能超过 20ms）以内时，才视为正在滚动。
+ */
+export function isEnteringScrollInFlight(
+  trackerActive: boolean,
+  lastPositions: { windowY: number; ancestorTops: number[] } | null,
+  currentPositions: { windowY: number; ancestorTops: number[] },
+  lastChangeTime: number,
+  now: number,
+): boolean {
+  if (!trackerActive) return false;
+  const posChanged = lastPositions != null && !isSameScrollPositions(lastPositions, currentPositions);
+  const recentChange = now - lastChangeTime <= 50;
+  return posChanged || recentChange;
+}
+
+/**
  * 检查元素是否完全处于视口中（考虑底部栏遮挡）。
  * 视口顶部为 0，可用底部为 innerHeight - bottomBarHeight。
  */
@@ -531,6 +564,8 @@ function AskSelectionLayerActive({
   const enteringSmoothScrollRef = useRef(false);
   const enteringScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const enteringScrollRafRef = useRef<number | null>(null);
+  const enteringScrollPositionsRef = useRef<{ windowY: number; ancestorTops: number[] } | null>(null);
+  const enteringScrollTimestampRef = useRef<number>(0);
   const chipDragCleanupRef = useRef<(() => void) | null>(null);
   const dragStartedRef = useRef(false);
   const suppressClickUntilRef = useRef<number | null>(null);
@@ -556,6 +591,35 @@ function AskSelectionLayerActive({
   const isMobile = useIsMobile();
 
   const getStage = useCallback(() => resolveStage(stage, stageRef), [stage, stageRef]);
+
+  /** 获取当前视口与所有可滚动祖先的垂直滚动位置快照。 */
+  const getScrollPositions = useCallback((): { windowY: number; ancestorTops: number[] } => {
+    if (typeof window === "undefined") return { windowY: 0, ancestorTops: [] };
+    const ancestorTops: number[] = [];
+    let node: HTMLElement | null = getStage()?.parentElement ?? null;
+    while (node && node !== document.body && node !== document.documentElement) {
+      if (node.scrollHeight > node.clientHeight + 1 || node.scrollWidth > node.clientWidth + 1) {
+        ancestorTops.push(node.scrollTop);
+      }
+      node = node.parentElement;
+    }
+    return { windowY: window.scrollY, ancestorTops };
+  }, [getStage]);
+
+  /** 清理进入滚动追踪器（廉价清理，不触发 scrollTo）。 */
+  const clearEnteringScrollTracker = useCallback(() => {
+    if (enteringScrollRafRef.current != null) {
+      cancelAnimationFrame(enteringScrollRafRef.current);
+      enteringScrollRafRef.current = null;
+    }
+    if (enteringScrollTimerRef.current) {
+      clearTimeout(enteringScrollTimerRef.current);
+      enteringScrollTimerRef.current = null;
+    }
+    enteringSmoothScrollRef.current = false;
+    enteringScrollPositionsRef.current = null;
+    enteringScrollTimestampRef.current = 0;
+  }, []);
 
   // 不活动时不查 document：这层在 idle / sending 也挂着，服务端渲染没有 document。
   const visibleShortcuts = !active
@@ -910,7 +974,16 @@ function AskSelectionLayerActive({
     window.addEventListener("orientationchange", onInvalidate);
     window.visualViewport?.addEventListener("resize", onInvalidate);
 
-    const onScroll = () => scheduleUpdate();
+    const onScroll = () => {
+      scheduleUpdate();
+      if (enteringSmoothScrollRef.current) {
+        const current = getScrollPositions();
+        if (!isSameScrollPositions(enteringScrollPositionsRef.current, current)) {
+          enteringScrollPositionsRef.current = current;
+          enteringScrollTimestampRef.current = performance.now();
+        }
+      }
+    };
     window.addEventListener("scroll", onScroll, { passive: true, capture: true });
 
     return () => {
@@ -959,14 +1032,29 @@ function AskSelectionLayerActive({
         const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
         if (!prefersReduced) {
           enteringSmoothScrollRef.current = true;
+          // 记录初始滚动位置和时间戳
+          enteringScrollPositionsRef.current = getScrollPositions();
+          enteringScrollTimestampRef.current = performance.now();
+
+          // 追踪平滑滚动：每帧记录最新滚动位置和变化时间戳
+          const track = () => {
+            const current = getScrollPositions();
+            if (!isSameScrollPositions(enteringScrollPositionsRef.current, current)) {
+              enteringScrollPositionsRef.current = current;
+              enteringScrollTimestampRef.current = performance.now();
+            }
+            enteringScrollRafRef.current = requestAnimationFrame(track);
+          };
+          enteringScrollRafRef.current = requestAnimationFrame(track);
+
           if (enteringScrollTimerRef.current) clearTimeout(enteringScrollTimerRef.current);
           const onScrollEnd = () => {
-            enteringSmoothScrollRef.current = false;
+            clearEnteringScrollTracker();
             window.removeEventListener("scrollend", onScrollEnd);
           };
           window.addEventListener("scrollend", onScrollEnd, { once: true });
           enteringScrollTimerRef.current = setTimeout(() => {
-            enteringSmoothScrollRef.current = false;
+            clearEnteringScrollTracker();
             window.removeEventListener("scrollend", onScrollEnd);
           }, 800);
         }
@@ -975,17 +1063,9 @@ function AskSelectionLayerActive({
     });
 
     return () => {
-      if (enteringScrollRafRef.current != null) {
-        cancelAnimationFrame(enteringScrollRafRef.current);
-        enteringScrollRafRef.current = null;
-      }
-      if (enteringScrollTimerRef.current) {
-        clearTimeout(enteringScrollTimerRef.current);
-        enteringScrollTimerRef.current = null;
-      }
-      enteringSmoothScrollRef.current = false;
+      clearEnteringScrollTracker();
     };
-  }, [askPhase, getStage]);
+  }, [askPhase, getStage, getScrollPositions, clearEnteringScrollTracker]);
 
   useEffect(() => {
     setActiveShortcut((index) => Math.min(index, Math.max(visibleShortcuts.length - 1, 0)));
@@ -1118,15 +1198,7 @@ function AskSelectionLayerActive({
   /** 停住进行中的进入滚动（平滑滚动）。返回是否确实有滚动被停住。 */
   const stopInflightScroll = (): boolean => {
     const wasScrolling = enteringSmoothScrollRef.current;
-    if (enteringScrollRafRef.current != null) {
-      cancelAnimationFrame(enteringScrollRafRef.current);
-      enteringScrollRafRef.current = null;
-    }
-    if (enteringScrollTimerRef.current) {
-      clearTimeout(enteringScrollTimerRef.current);
-      enteringScrollTimerRef.current = null;
-    }
-    enteringSmoothScrollRef.current = false;
+    clearEnteringScrollTracker();
     if (typeof window !== "undefined") {
       // scrollIntoView 的平滑滚动会带上所有可滚动祖先，逐个停在当前位置。
       let node: HTMLElement | null = getStage()?.parentElement ?? null;
@@ -1173,33 +1245,61 @@ function AskSelectionLayerActive({
     }
 
     if (scrollModeRef.current || suppressDrawRef.current) return;
-    // 进入圈选时的平滑滚动可能还在走：按下即停住滚动，再按停住后的位置重新取起点，
-    // 起点和之后的移动都落在同一份文档坐标里（中途手动滚动仍走 scrollDeltaRef）。
-    stopInflightScroll();
-    const start = sampleAt(stageHost, clientX, clientY);
-    pointersRef.current.set(pointerId, start);
-    originRef.current = start;
-    drawingRef.current = true;
-    setRubberBand(bandFrom(start, start));
-    // 停滚后浏览器要到下一帧才把滚动位置落定（可能往回退几像素）。
-    // 下一帧按落定后的布局重取起点，起点就是按下处此后显示的那一行。
-    if (settleRafRef.current != null) {
-      cancelAnimationFrame(settleRafRef.current);
-      settleRafRef.current = null;
-    }
-    downClientRef.current = { clientX, clientY };
-    settleRafRef.current = requestAnimationFrame(() => {
-      settleRafRef.current = null;
+
+    // 根据 pointerdown 时刻的实时状态判断进入滚动是否仍在进行中：
+    // 仅当追踪器激活，且当前滚动位置与上次记录不同或最近一次滚动变化在约 50ms 以内时，才视为正在滚动。
+    const isTrackerActive =
+      enteringSmoothScrollRef.current ||
+      enteringScrollRafRef.current != null ||
+      enteringScrollTimerRef.current != null;
+    const currentPositions = getScrollPositions();
+    const isScrolling = isEnteringScrollInFlight(
+      isTrackerActive,
+      enteringScrollPositionsRef.current,
+      currentPositions,
+      enteringScrollTimestampRef.current,
+      performance.now(),
+    );
+
+    if (isScrolling) {
+      // 正在滚动：停住平滑滚动，并安排落定 rAF 重新校准起点
+      stopInflightScroll();
+      const start = sampleAt(stageHost, clientX, clientY);
+      pointersRef.current.set(pointerId, start);
+      originRef.current = start;
+      drawingRef.current = true;
+      setRubberBand(bandFrom(start, start));
+      if (settleRafRef.current != null) {
+        cancelAnimationFrame(settleRafRef.current);
+        settleRafRef.current = null;
+      }
+      downClientRef.current = { clientX, clientY };
+      settleRafRef.current = requestAnimationFrame(() => {
+        settleRafRef.current = null;
+        downClientRef.current = null;
+        if (originRef.current !== start || !drawingRef.current) return;
+        const settledHost = getStage();
+        if (!settledHost) return;
+        const settled = sampleAt(settledHost, clientX, clientY);
+        originRef.current = settled;
+        const cur = pointersRef.current.get(pointerId);
+        if (cur === start) pointersRef.current.set(pointerId, settled);
+        setRubberBand(bandFrom(settled, cur === start || !cur ? settled : cur));
+      });
+    } else {
+      // 未在滚动：廉价清理可能残留的定时器与状态，不调用 scrollTo，不安排落定 rAF
+      clearEnteringScrollTracker();
+      if (settleRafRef.current != null) {
+        cancelAnimationFrame(settleRafRef.current);
+        settleRafRef.current = null;
+      }
       downClientRef.current = null;
-      if (originRef.current !== start || !drawingRef.current) return;
-      const settledHost = getStage();
-      if (!settledHost) return;
-      const settled = sampleAt(settledHost, clientX, clientY);
-      originRef.current = settled;
-      const cur = pointersRef.current.get(pointerId);
-      if (cur === start) pointersRef.current.set(pointerId, settled);
-      setRubberBand(bandFrom(settled, cur === start || !cur ? settled : cur));
-    });
+      const start = sampleAt(stageHost, clientX, clientY);
+      pointersRef.current.set(pointerId, start);
+      originRef.current = start;
+      drawingRef.current = true;
+      setRubberBand(bandFrom(start, start));
+    }
   };
 
   const isIgnoredTarget = (target: EventTarget | null): boolean => {

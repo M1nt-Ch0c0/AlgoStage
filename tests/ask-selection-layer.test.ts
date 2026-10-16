@@ -15,6 +15,7 @@ import AskSelectionLayer, {
   handlePanelTabNavigation,
   isElementFullyInView,
   isElementTabbable,
+  isEnteringScrollInFlight,
   nextRovingIndex,
   resolveAskEscape,
 } from "../components/board/ask-selection-layer";
@@ -2786,58 +2787,185 @@ describe("resolveAskEscape", () => {
     });
   });
 
+  let fakeNow = 1000;
+  let currentScrollY = 0;
+  let nextRafId = 1;
+  const pendingRafs = new Map<number, FrameRequestCallback>();
+  let cleanupEnteringScroll: (() => void) | null = null;
+
+  function setupEnteringScrollEnv() {
+    fakeNow = 1000;
+    currentScrollY = 0;
+    nextRafId = 1;
+    pendingRafs.clear();
+
+    vi.spyOn(performance, "now").mockImplementation(() => fakeNow);
+
+    const origMatchMedia = window.matchMedia;
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: query === "(max-width: 639px)",
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }));
+
+    Object.defineProperty(window, "scrollY", {
+      get: () => currentScrollY,
+      set: (v: number) => {
+        currentScrollY = v;
+      },
+      configurable: true,
+    });
+
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
+      const id = nextRafId++;
+      pendingRafs.set(id, cb);
+      return id;
+    });
+
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation((id) => {
+      pendingRafs.delete(id as number);
+    });
+
+    cleanupEnteringScroll = () => {
+      pendingRafs.clear();
+      window.matchMedia = origMatchMedia;
+      delete (window as unknown as { scrollY?: number }).scrollY;
+    };
+  }
+
+  function flushPendingRafs() {
+    const entries = Array.from(pendingRafs.entries());
+    pendingRafs.clear();
+    for (const [, cb] of entries) {
+      cb(fakeNow);
+    }
+  }
+
+  function ensureCodeElement() {
+    let codeEl = stage.querySelector<HTMLElement>('[data-ask-target="code"]');
+    if (!codeEl) {
+      codeEl = document.createElement("div");
+      codeEl.setAttribute("data-ask-target", "code");
+      stage.appendChild(codeEl);
+    }
+    codeEl.getBoundingClientRect = () => domRect(0, 900, 390, 200);
+    codeEl.scrollIntoView = vi.fn();
+    return codeEl;
+  }
+
+  async function startEnteringScroll(initialScrollY = 10) {
+    ensureCodeElement();
+    await render();
+    await act(async () => {
+      flushPendingRafs();
+    });
+    if (initialScrollY > 0) {
+      currentScrollY = initialScrollY;
+      window.dispatchEvent(new Event("scroll"));
+    }
+  }
+
+  async function reenterSelectionWithScroll(newScrollY = 20) {
+    ensureCodeElement();
+    await act(async () => {
+      usePlayerStore.setState({ askPhase: "idle" });
+    });
+    await act(async () => {
+      usePlayerStore.setState({ askPhase: "selecting" });
+    });
+    await act(async () => {
+      flushPendingRafs();
+    });
+    currentScrollY = newScrollY;
+    window.dispatchEvent(new Event("scroll"));
+  }
+
   describe("chip390-b nits N1-N3", () => {
+    afterEach(() => {
+      cleanupEnteringScroll?.();
+      cleanupEnteringScroll = null;
+    });
+
     test("N1: settle rAF is cancelled on pointerup and unmount", async () => {
+      setupEnteringScrollEnv();
+      await startEnteringScroll(10);
+      const rafSpy = vi.spyOn(window, "requestAnimationFrame");
       const cancelSpy = vi.spyOn(window, "cancelAnimationFrame");
-      await render();
       const host = layer();
 
       // (a) pointerup cancels the scheduled settle rAF
+      let settleRafId1: number | undefined;
       await act(async () => {
         host.dispatchEvent(pointer("pointerdown", { pointerId: 1, clientX: 20, clientY: 20 }));
+        settleRafId1 = rafSpy.mock.results.at(-1)?.value;
         host.dispatchEvent(pointer("pointerup", { pointerId: 1, clientX: 20, clientY: 20 }));
       });
-      expect(cancelSpy).toHaveBeenCalledTimes(1);
+      expect(settleRafId1).toBeDefined();
+      expect(cancelSpy).toHaveBeenCalledWith(settleRafId1);
 
       cancelSpy.mockClear();
+      rafSpy.mockClear();
 
       // (b) unmount cancels any pending settle rAF
+      await reenterSelectionWithScroll(20);
+      cancelSpy.mockClear();
+      rafSpy.mockClear();
+      const host2 = layer();
+      let settleRafId2: number | undefined;
       await act(async () => {
-        host.dispatchEvent(pointer("pointerdown", { pointerId: 2, clientX: 30, clientY: 30 }));
+        host2.dispatchEvent(pointer("pointerdown", { pointerId: 2, clientX: 30, clientY: 30 }));
+        settleRafId2 = rafSpy.mock.results.at(-1)?.value;
         root.unmount();
       });
-      expect(cancelSpy).toHaveBeenCalledTimes(1);
+      expect(settleRafId2).toBeDefined();
+      expect(cancelSpy).toHaveBeenCalledWith(settleRafId2);
 
       // Re-create root for cleanup in afterEach
       root = createRoot(container);
     });
 
     test("N1: settle rAF is cancelled on pointercancel and before scheduling new one", async () => {
+      setupEnteringScrollEnv();
+      await startEnteringScroll(10);
+      const rafSpy = vi.spyOn(window, "requestAnimationFrame");
       const cancelSpy = vi.spyOn(window, "cancelAnimationFrame");
-      await render();
-      const host = layer();
+      let host = layer();
 
       // (a) pointercancel cancels the scheduled settle rAF
+      let settleRafId1: number | undefined;
       await act(async () => {
         host.dispatchEvent(pointer("pointerdown", { pointerId: 1, clientX: 20, clientY: 20 }));
+        settleRafId1 = rafSpy.mock.results.at(-1)?.value;
         host.dispatchEvent(pointer("pointercancel", { pointerId: 1 }));
       });
-      expect(cancelSpy).toHaveBeenCalledTimes(1);
+      expect(settleRafId1).toBeDefined();
+      expect(cancelSpy).toHaveBeenCalledWith(settleRafId1);
 
       cancelSpy.mockClear();
+      rafSpy.mockClear();
 
       // (b) scheduling a new pointerdown cancels the previous pending settle rAF
+      await reenterSelectionWithScroll(20);
+      host = layer();
+      cancelSpy.mockClear();
+      rafSpy.mockClear();
+
+      let settleRafId2: number | undefined;
       await act(async () => {
         host.dispatchEvent(pointer("pointerdown", { pointerId: 2, clientX: 20, clientY: 20 }));
+        settleRafId2 = rafSpy.mock.results.at(-1)?.value;
         host.dispatchEvent(pointer("pointerdown", { pointerId: 3, clientX: 40, clientY: 40 }));
       });
-      expect(cancelSpy).toHaveBeenCalled();
+      expect(settleRafId2).toBeDefined();
+      expect(cancelSpy).toHaveBeenCalledWith(settleRafId2);
     });
 
     test("N2: pointerup before frame commits re-sampled start for tap and drag", async () => {
       const pointSpy = vi.spyOn(hitTest, "hitTestPoint");
       const regionSpy = vi.spyOn(hitTest, "hitTest");
-      await render();
+      setupEnteringScrollEnv();
+      await startEnteringScroll(10);
       const host = layer();
 
       // Tap: pointerdown -> layout shift -> pointerup before rAF runs
@@ -2856,12 +2984,15 @@ describe("resolveAskEscape", () => {
 
       // Drag: pointerdown -> pointermove -> layout shift -> pointerup before rAF runs
       stage.getBoundingClientRect = () => domRect(0, 0, 400, 300);
+      await reenterSelectionWithScroll(20);
+      const hostDrag = layer();
+
       await act(async () => {
-        host.dispatchEvent(pointer("pointerdown", { pointerId: 2, clientX: 20, clientY: 20 }));
-        host.dispatchEvent(pointer("pointermove", { pointerId: 2, clientX: 60, clientY: 70 }));
+        hostDrag.dispatchEvent(pointer("pointerdown", { pointerId: 2, clientX: 20, clientY: 20 }));
+        hostDrag.dispatchEvent(pointer("pointermove", { pointerId: 2, clientX: 60, clientY: 70 }));
         // Layout settles before rAF
         stage.getBoundingClientRect = () => domRect(0, -10, 400, 300);
-        host.dispatchEvent(pointer("pointerup", { pointerId: 2, clientX: 60, clientY: 70 }));
+        hostDrag.dispatchEvent(pointer("pointerup", { pointerId: 2, clientX: 60, clientY: 70 }));
       });
 
       // Drag bounding box should start at re-sampled y = 20 - (-10) = 30
@@ -2992,6 +3123,129 @@ describe("resolveAskEscape", () => {
       } finally {
         document.removeEventListener("keydown", onDocKeyDown);
       }
+    });
+  });
+
+  describe("entering scroll live detection at pointerdown", () => {
+    afterEach(() => {
+      cleanupEnteringScroll?.();
+      cleanupEnteringScroll = null;
+    });
+
+    test("idle pointerdown -> no rAF and no scrollTo (including stale-true flag with non-moving scroll)", async () => {
+      setupEnteringScrollEnv();
+      const rafSpy = vi.spyOn(window, "requestAnimationFrame");
+      const windowScrollSpy = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+      const scrollerScrollSpy = vi.fn();
+      scroller.scrollTo = scrollerScrollSpy;
+
+      // 1. 完全空闲状态：reduced motion 为 true，不启动平滑滚动追踪器
+      window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+        matches: query === "(prefers-reduced-motion: reduce)" || query === "(max-width: 639px)",
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }));
+
+      await render();
+      await act(async () => {
+        flushPendingRafs();
+      });
+      rafSpy.mockClear();
+      windowScrollSpy.mockClear();
+      scrollerScrollSpy.mockClear();
+
+      let host = layer();
+      await act(async () => {
+        host.dispatchEvent(pointer("pointerdown", { pointerId: 1, clientX: 20, clientY: 20 }));
+      });
+
+      expect(rafSpy).not.toHaveBeenCalled();
+      expect(windowScrollSpy).not.toHaveBeenCalled();
+      expect(scrollerScrollSpy).not.toHaveBeenCalled();
+
+      // 清理指针状态
+      await act(async () => {
+        host.dispatchEvent(pointer("pointerup", { pointerId: 1, clientX: 20, clientY: 20 }));
+      });
+      usePlayerStore.getState().clearAskSelection();
+
+      // 2. 残留 true 标志与静止滚动（stale-true flag with non-moving scroll）：
+      // 追踪器状态激活，但当前位置与上次记录一致且最后变动超过 50ms
+      window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+        matches: query === "(max-width: 639px)",
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }));
+
+      await reenterSelectionWithScroll(0);
+      fakeNow += 100;
+
+      rafSpy.mockClear();
+      windowScrollSpy.mockClear();
+      scrollerScrollSpy.mockClear();
+
+      host = layer();
+      await act(async () => {
+        host.dispatchEvent(pointer("pointerdown", { pointerId: 2, clientX: 30, clientY: 30 }));
+      });
+
+      expect(rafSpy).not.toHaveBeenCalled();
+      expect(windowScrollSpy).not.toHaveBeenCalled();
+      expect(scrollerScrollSpy).not.toHaveBeenCalled();
+
+      await act(async () => {
+        host.dispatchEvent(pointer("pointerup", { pointerId: 2, clientX: 30, clientY: 30 }));
+      });
+    });
+
+    test("scrolling -> rAF scheduled", async () => {
+      setupEnteringScrollEnv();
+      const rafSpy = vi.spyOn(window, "requestAnimationFrame");
+      const windowScrollSpy = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+      const scrollerScrollSpy = vi.fn();
+      scroller.scrollTo = scrollerScrollSpy;
+
+      await render();
+      await reenterSelectionWithScroll(20);
+      rafSpy.mockClear();
+      windowScrollSpy.mockClear();
+      scrollerScrollSpy.mockClear();
+
+      const host = layer();
+      await act(async () => {
+        host.dispatchEvent(pointer("pointerdown", { pointerId: 1, clientX: 20, clientY: 20 }));
+      });
+
+      // 停住进行中的滚动并安排落定 rAF
+      expect(rafSpy).toHaveBeenCalled();
+      expect(windowScrollSpy).toHaveBeenCalled();
+
+      // 清理指针
+      await act(async () => {
+        host.dispatchEvent(pointer("pointerup", { pointerId: 1, clientX: 20, clientY: 20 }));
+      });
+    });
+
+    test("isEnteringScrollInFlight live decisions", () => {
+      const now = 1000;
+      const pos = { windowY: 100, ancestorTops: [50] };
+
+      // 追踪器未激活 -> false
+      expect(isEnteringScrollInFlight(false, pos, pos, now, now)).toBe(false);
+
+      // 追踪器激活，位置未变，且上次变化在 50ms 前 -> false（stale-true flag）
+      expect(isEnteringScrollInFlight(true, pos, pos, now - 100, now)).toBe(false);
+
+      // 追踪器激活，window.scrollY 变动 -> true
+      expect(isEnteringScrollInFlight(true, pos, { windowY: 105, ancestorTops: [50] }, now - 50, now)).toBe(true);
+
+      // 追踪器激活，祖先 scrollTop 变动 -> true
+      expect(isEnteringScrollInFlight(true, pos, { windowY: 100, ancestorTops: [55] }, now - 50, now)).toBe(true);
+
+      // 追踪器激活，位置相同但最后一次变化在 20ms 内 -> true
+      expect(isEnteringScrollInFlight(true, pos, pos, now - 10, now)).toBe(true);
     });
   });
 
