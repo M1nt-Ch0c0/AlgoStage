@@ -209,6 +209,58 @@ const FILTER_REJECT = 2;
 const FILTER_ACCEPT = 1;
 
 /**
+ * A computed background that paints something. "transparent" and rgba alpha 0
+ * do not. Semi-transparent colors still count: the caller uses them as-is.
+ */
+function isPaintedBackground(color: string): boolean {
+  const value = color.trim().toLowerCase();
+  if (value === "" || value === "transparent") return false;
+  const rgba = value.match(/^rgba?\(([^)]+)\)$/);
+  if (!rgba) return true;
+  const parts = rgba[1]!.split(/[\s,/]+/).filter((part) => part.length > 0);
+  if (parts.length < 4) return true;
+  const alpha = Number(parts[3]);
+  // A non-numeric alpha (for example a percentage) is not "alpha 0".
+  if (!Number.isFinite(alpha)) return true;
+  return alpha > 0;
+}
+
+/**
+ * Effective stage background for the screenshot. The cloned subtree often has
+ * no opaque fill of its own (the code area and the stage are transparent), so
+ * the first painted ancestor is what the user actually sees. Walks from `el`
+ * through ancestors, then document.body and document.documentElement. Falls
+ * back to the computed --color-board-950 on documentElement, else "#000".
+ */
+export function resolveStageBackground(el: Element): string {
+  const seen = new Set<Element>();
+  const chain: Element[] = [];
+  for (let node: Element | null = el; node; node = node.parentElement) {
+    chain.push(node);
+    seen.add(node);
+  }
+  const doc = el.ownerDocument;
+  const root = doc?.documentElement ?? null;
+  const body = doc?.body ?? null;
+  if (body && !seen.has(body)) chain.push(body);
+  if (root && !seen.has(root)) chain.push(root);
+
+  const view = doc?.defaultView;
+  if (view && typeof view.getComputedStyle === "function") {
+    for (const node of chain) {
+      const color = view.getComputedStyle(node).backgroundColor;
+      if (typeof color === "string" && isPaintedBackground(color)) return color;
+    }
+  }
+
+  if (root && view && typeof view.getComputedStyle === "function") {
+    const variable = view.getComputedStyle(root).getPropertyValue("--color-board-950").trim();
+    if (variable) return variable;
+  }
+  return "#000";
+}
+
+/**
  * Count elements modern-screenshot would keep. Subtrees whose root is dropped
  * are not entered. Stops once the count passes maxNodes.
  * Returns the dropped roots so the render filter can skip a second layout pass.
@@ -566,6 +618,11 @@ export async function captureStage(
           font: false,
           scale: 1,
           features: { restoreScrollPosition: false },
+          // The stage and the code area are transparent. modern-screenshot
+          // otherwise leaves those pixels clear, so the sent image is almost
+          // entirely alpha 0 once the panel overlay is excluded. Fill with
+          // the background the user sees behind the stage.
+          backgroundColor: resolveStageBackground(container),
           // Exclude only an explicitly marked node and the subtree under it.
           // The pre-walk already drops those roots; this second check covers
           // a node modern-screenshot still visits (the marked node itself).

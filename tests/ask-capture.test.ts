@@ -11,6 +11,7 @@ import {
   decodedBase64Bytes,
   encodeOffThread,
   intersectsBBox,
+  resolveStageBackground,
   toCropRect,
 } from "@/lib/ask/capture";
 import { resetLongTaskEndForTests } from "@/lib/ask/ask-timing";
@@ -194,6 +195,73 @@ describe("lib/ask/capture", () => {
           { x: 10, y: 20, width: 30, height: 40 },
         ),
       ).toBe(false);
+    });
+  });
+
+  describe("resolveStageBackground", () => {
+    function stubComputed(colors: Map<Element, string>, variable = "") {
+      vi.spyOn(window, "getComputedStyle").mockImplementation((el: Element) => {
+        const backgroundColor = colors.get(el) ?? "rgba(0, 0, 0, 0)";
+        return {
+          backgroundColor,
+          getPropertyValue: (name: string) => (name === "--color-board-950" ? variable : ""),
+        } as CSSStyleDeclaration;
+      });
+    }
+
+    it("uses the first opaque ancestor when the stage itself is transparent", () => {
+      const grand = document.createElement("div");
+      const parent = document.createElement("div");
+      const stage = document.createElement("div");
+      grand.append(parent);
+      parent.append(stage);
+      document.body.append(grand);
+      stubComputed(
+        new Map<Element, string>([
+          [stage, "transparent"],
+          [parent, "rgba(0, 0, 0, 0)"],
+          [grand, "rgb(18, 27, 24)"],
+        ]),
+      );
+
+      expect(resolveStageBackground(stage)).toBe("rgb(18, 27, 24)");
+      grand.remove();
+    });
+
+    it("keeps the stage color when it is the first painted background", () => {
+      const parent = document.createElement("div");
+      const stage = document.createElement("div");
+      parent.append(stage);
+      document.body.append(parent);
+      stubComputed(
+        new Map<Element, string>([
+          [stage, "rgb(12, 19, 17)"],
+          [parent, "rgb(255, 0, 0)"],
+        ]),
+      );
+
+      expect(resolveStageBackground(stage)).toBe("rgb(12, 19, 17)");
+      parent.remove();
+    });
+
+    it("accepts a semi-transparent color without compositing it", () => {
+      const stage = document.createElement("div");
+      document.body.append(stage);
+      stubComputed(new Map<Element, string>([[stage, "rgba(18, 27, 24, 0.95)"]]));
+
+      expect(resolveStageBackground(stage)).toBe("rgba(18, 27, 24, 0.95)");
+      stage.remove();
+    });
+
+    it("falls back to --color-board-950, then #000, when every ancestor is transparent", () => {
+      const stage = document.createElement("div");
+      document.body.append(stage);
+      stubComputed(new Map(), "#0c1311");
+      expect(resolveStageBackground(stage)).toBe("#0c1311");
+
+      stubComputed(new Map(), "   ");
+      expect(resolveStageBackground(stage)).toBe("#000");
+      stage.remove();
     });
   });
 
@@ -767,6 +835,7 @@ describe("lib/ask/capture", () => {
       const options = domToCanvasMock.mock.calls[0]?.[1] as {
         font: unknown;
         scale: number;
+        backgroundColor: string;
         features: { restoreScrollPosition: boolean };
         filter: (node: Node) => boolean;
         timeout: number;
@@ -776,6 +845,9 @@ describe("lib/ask/capture", () => {
       expect(options.font).toBe(false);
       expect(options.scale).toBe(1);
       expect(options.features).toEqual({ restoreScrollPosition: false });
+      expect(options.backgroundColor).toBe(resolveStageBackground(container));
+      expect(typeof options.backgroundColor).toBe("string");
+      expect(options.backgroundColor.length).toBeGreaterThan(0);
       expect(options.width).toBe(200);
       expect(options.height).toBe(200);
       expect(options.timeout).toBeLessThanOrEqual(CAPTURE_DEFAULTS.timeoutMs);
