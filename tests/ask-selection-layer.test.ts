@@ -2201,6 +2201,122 @@ describe("resolveAskEscape", () => {
       window.matchMedia = originalMatchMedia;
     });
 
+    test("cancel (drafting→selecting) sync-writes selecting CSS targets in the commit; box and bottom-bar geometry unchanged", async () => {
+      const originalMatchMedia = window.matchMedia;
+      window.matchMedia = mobileMatchMedia();
+
+      const playerEl = document.createElement("div");
+      playerEl.setAttribute("aria-label", "讲解播放区");
+      playerEl.getBoundingClientRect = () => domRect(0, 708, 390, 60);
+      document.body.appendChild(playerEl);
+
+      document.documentElement.style.removeProperty("--ask-bottom-bar-h");
+      document.documentElement.style.removeProperty("--ask-bottom-occlusion");
+
+      const frames = holdAnimationFrames();
+      // The bar remounts inside the cancel commit, before act() returns, so
+      // the layout effect measures whatever getBoundingClientRect returns
+      // at that moment. A prototype stub covers the remounted node.
+      const barRect = domRect(8, 790, 374, 52);
+      const originalRect = HTMLElement.prototype.getBoundingClientRect;
+      vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+        this: HTMLElement,
+      ) {
+        if (this.hasAttribute("data-ask-bottom-bar")) return barRect;
+        if (this.hasAttribute("data-ask-selection")) return domRect(20, 12, 100, 24);
+        return originalRect.call(this);
+      });
+      const selection = {
+        mode: "region" as const,
+        bbox: { x: 20, y: 12, width: 100, height: 24 },
+        targets: [
+          { kind: "subtitle" as const, id: "subtitle:s1", stepId: "s1", text: "字幕内容" },
+          { kind: "step" as const, id: "step:s1", stepId: "s1", text: "步骤内容" },
+        ],
+      };
+      usePlayerStore.setState({ askPhase: "selecting", selection });
+      await render();
+
+      expect(document.querySelector("[data-ask-bottom-bar]")).not.toBeNull();
+
+      // First frame publishes selecting targets: bar 52, player 60 + bar + gap = 120.
+      expect(frames.pending()).toBeGreaterThan(0);
+      await frames.flush();
+      expect(document.documentElement.style.getPropertyValue("--ask-bottom-bar-h")).toBe("52px");
+      expect(document.documentElement.style.getPropertyValue("--ask-bottom-occlusion")).toBe("120px");
+      expect(document.documentElement.style.getPropertyValue("--ask-player-bar-h")).toBe("60px");
+
+      await act(async () => {
+        usePlayerStore.setState({ askPhase: "drafting" });
+      });
+      const panelEl = document.createElement("div");
+      panelEl.setAttribute("data-ask-panel", "");
+      panelEl.getBoundingClientRect = () => domRect(8, 500, 374, 200);
+      document.body.appendChild(panelEl);
+      // Drafting frame: bar unmounted so bar height is 0; occlusion includes the panel.
+      expect(frames.pending()).toBeGreaterThan(0);
+      await frames.flush();
+      expect(document.documentElement.style.getPropertyValue("--ask-bottom-bar-h")).toBe("0px");
+      expect(document.documentElement.style.getPropertyValue("--ask-bottom-occlusion")).toBe("268px");
+
+      const selectingBar = "52px";
+      const selectingOcclusion = `${computeBottomOcclusion({
+        playerHeight: 60,
+        barHeight: 52,
+        panelHeight: 0,
+      })}px`;
+      expect(selectingOcclusion).toBe("120px");
+
+      const setProperty = vi.spyOn(document.documentElement.style, "setProperty");
+      // Panel unmounts before the cancel commit, the way AskPanel does.
+      panelEl.remove();
+      await act(async () => {
+        usePlayerStore.getState().closeAskPanel();
+      });
+
+      expect(usePlayerStore.getState().askPhase).toBe("selecting");
+      // Selecting targets are already on the root. The queued frame has not run.
+      expect(document.documentElement.style.getPropertyValue("--ask-bottom-bar-h")).toBe(selectingBar);
+      expect(document.documentElement.style.getPropertyValue("--ask-bottom-occlusion")).toBe(selectingOcclusion);
+      const duringCommit = setProperty.mock.calls.filter(
+        (call) => call[0] === "--ask-bottom-bar-h" || call[0] === "--ask-bottom-occlusion",
+      );
+      expect(duringCommit).toEqual([
+        ["--ask-bottom-bar-h", selectingBar],
+        ["--ask-bottom-occlusion", selectingOcclusion],
+      ]);
+      expect(frames.pending()).toBeGreaterThan(0);
+
+      const boxOf = (el: Element | null) => {
+        const rect = el?.getBoundingClientRect();
+        return rect
+          ? { top: rect.top, left: rect.left, width: rect.width, height: rect.height }
+          : null;
+      };
+      const selectionEl = document.querySelector("[data-ask-selection]");
+      const barEl = document.querySelector("[data-ask-bottom-bar]");
+      expect(selectionEl).not.toBeNull();
+      expect(barEl).not.toBeNull();
+      const boxBefore = boxOf(selectionEl);
+      const barBefore = boxOf(barEl);
+
+      await frames.flush();
+      expect(document.documentElement.style.getPropertyValue("--ask-bottom-bar-h")).toBe(selectingBar);
+      expect(document.documentElement.style.getPropertyValue("--ask-bottom-occlusion")).toBe(selectingOcclusion);
+      expect(boxOf(document.querySelector("[data-ask-selection]"))).toEqual(boxBefore);
+      expect(boxOf(document.querySelector("[data-ask-bottom-bar]"))).toEqual(barBefore);
+      // The follow-up frame rebinds observers and does not rewrite a matching value.
+      const afterFlush = setProperty.mock.calls.filter(
+        (call) => call[0] === "--ask-bottom-bar-h" || call[0] === "--ask-bottom-occlusion",
+      );
+      expect(afterFlush).toEqual(duringCommit);
+
+      setProperty.mockRestore();
+      frames.restore();
+      playerEl.remove();
+      window.matchMedia = originalMatchMedia;
+    });
+
     test("an update does not rewrite a CSS variable whose inline value is unchanged", async () => {
       const originalMatchMedia = window.matchMedia;
       window.matchMedia = mobileMatchMedia();

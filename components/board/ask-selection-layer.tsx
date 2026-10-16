@@ -242,6 +242,39 @@ export function computeBottomOcclusion(parts: OcclusionParts): number {
 
 export const computeOcclusion = computeBottomOcclusion;
 
+/**
+ * Cancel commit (drafting|error → selecting) on a narrow viewport.
+ * The panel is already gone and the chip bar has just remounted, but the
+ * queued measurement has not run. Write the selecting targets now so the
+ * box and the bar do not sit on waiting/drafting values for one frame.
+ * Panel contribution is 0 — do not query the panel. Player height is the
+ * inline variable AskPlayerBarVar already owns; only read it. The bar is
+ * measured, never written and then remeasured.
+ */
+function applyCancelSelectingChromeTargets(bottomBar: HTMLElement | null): void {
+  if (typeof document === "undefined") return;
+  const rootStyle = document.documentElement.style;
+  const playerRaw = rootStyle.getPropertyValue("--ask-player-bar-h").trim();
+  const parsedPlayer = Number.parseFloat(playerRaw);
+  const playerH =
+    Number.isFinite(parsedPlayer) && parsedPlayer > 0
+      ? Math.ceil(parsedPlayer)
+      : measureAskPlayerBarHeight();
+  const barH = measureAskElementHeight(bottomBar);
+  const nextBar = `${barH}px`;
+  const nextOcclusion = `${computeBottomOcclusion({
+    playerHeight: playerH,
+    barHeight: barH,
+    panelHeight: 0,
+  })}px`;
+  if (rootStyle.getPropertyValue("--ask-bottom-bar-h") !== nextBar) {
+    rootStyle.setProperty("--ask-bottom-bar-h", nextBar);
+  }
+  if (rootStyle.getPropertyValue("--ask-bottom-occlusion") !== nextOcclusion) {
+    rootStyle.setProperty("--ask-bottom-occlusion", nextOcclusion);
+  }
+}
+
 function shortcutId(stepId: string, key: ShortcutKey): string {
   return `${key}:${stepId}`;
 }
@@ -646,15 +679,15 @@ function AskSelectionLayerActive({
     const prev = prevAskPhaseRef.current;
     prevAskPhaseRef.current = askPhase;
 
-    // Phase changes (取消 from waiting unmounts the panel and remounts this
-    // layer in the pointerup commit) must not measure synchronously. One
-    // frame later is the same rAF the ResizeObserver already coalesces on.
-    scheduleUpdate();
-
+    // Non-cancel phase changes stay on the next frame: measuring in the
+    // commit invalidates style for the document. Cancel (drafting|error →
+    // selecting) is the exception — the panel contribution is already 0 and
+    // the remounted bar must not paint one frame on the old occlusion.
     const isMobileDevice = typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches;
     const closingPanel = prev === "drafting" || prev === "error";
+    const cancelling = askPhase === "selecting" && closingPanel;
 
-    if (askPhase === "selecting" && closingPanel) {
+    if (cancelling) {
       const now = typeof performance !== "undefined" ? performance.now() : Date.now();
       const lastUp = lastTouchCancelPointerUpRef.current;
       if (
@@ -678,12 +711,23 @@ function AskSelectionLayerActive({
         currentChip?.focus({ preventScroll: true });
       }
     }
+
+    // Write after this commit's DOM updates (the bar ref is attached, and a
+    // test can stub its rect inside the same act). Non-cancel phases never
+    // reach this write. The queued frame still rebinds ResizeObserver; when
+    // the sync values already match, that frame skips setProperty.
+    if (cancelling && isMobileDevice) {
+      const bar = bottomBarRef.current ?? document.querySelector<HTMLElement>("[data-ask-bottom-bar]");
+      applyCancelSelectingChromeTargets(bar);
+    }
+    scheduleUpdate();
   }, [active, askPhase, scheduleUpdate]);
 
   // 测量底部条高度、播放区高度与抽屉面板高度，并同步 --ask-bottom-bar-h 和 --ask-bottom-occlusion。
   // --ask-player-bar-h 由始终挂载的 AskPlayerBarVar 写。
   // 桌面/inactive/unmount/键盘打开时设为 0px（或 removeProperty）。
-  // 首次测量与阶段变化都走 scheduleUpdate 的 rAF，不在这次提交里同步读写。
+  // 取消（drafting|error → selecting）在这次提交里同步写下 selecting 目标；
+  // 其余阶段变化仍走 scheduleUpdate 的 rAF，不在提交里同步读写。
   useEffect(() => {
     if (typeof document === "undefined") return;
 
