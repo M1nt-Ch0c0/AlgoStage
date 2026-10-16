@@ -177,8 +177,14 @@ export default function AskEntry() {
     chip.focus();
   }
 
+  // Mobile: keep busy/timeout notes out-of-flow ABOVE the button so they cannot
+  // grow the subtitle header during sending|streaming|playing (Uma 390 crop).
+  const noteClass = isMobile
+    ? "pointer-events-none absolute bottom-full right-0 mb-0.5 text-right text-[10px] leading-tight text-chalk-500"
+    : "text-[10px] text-chalk-500";
+
   return (
-    <span className="inline-flex flex-col items-end gap-0.5">
+    <span className="relative inline-flex flex-col items-end gap-0.5">
       <button
         type="button"
         data-ask-entry={hideAtMobileAsk ? undefined : ""}
@@ -218,12 +224,12 @@ export default function AskEntry() {
         {awaitingPending ? <span className="sr-only">{ASK_PENDING_PREPARING_SR}</span> : null}
       </button>
       {reason ? (
-        <span id={REASON_ID} role="note" className="text-[10px] text-chalk-500">
+        <span id={REASON_ID} role="note" className={noteClass}>
           {ASK_REASON_TEXT[reason]}
         </span>
       ) : null}
       {showTimeout ? (
-        <span id={TIMEOUT_ID} role="note" className="text-[10px] text-chalk-500">
+        <span id={TIMEOUT_ID} role="note" className={noteClass}>
           {ASK_PENDING_TIMEOUT}
         </span>
       ) : null}

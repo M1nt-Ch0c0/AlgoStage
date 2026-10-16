@@ -267,6 +267,32 @@ test.each(["selecting", "drafting", "error"] as const)("%s 为按下态，文案
   expect(usePlayerStore.getState().askPhase).toBe("idle");
 });
 
+test("on mobile busy/timeout notes sit absolute above the button (no in-flow height growth)", async () => {
+  const original = window.matchMedia;
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: query === "(max-width: 639px)",
+    media: query,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  }));
+
+  loadReady();
+  usePlayerStore.setState({ askPhase: "playing" });
+  await render();
+
+  const wrap = container.querySelector("span.relative");
+  expect(wrap).not.toBeNull();
+  expect(wrap?.className).toContain("relative");
+  const note = container.querySelector("#ask-entry-reason");
+  expect(note).not.toBeNull();
+  expect(note?.className).toContain("absolute");
+  expect(note?.className).toContain("bottom-full");
+  expect(note?.className).toContain("right-0");
+  expect(describedText(entry())).toBe(ASK_REASON_TEXT.busy);
+
+  window.matchMedia = original;
+});
+
 test("on mobile when in ask mode, entry button in player area is hidden and has no data-ask-entry", async () => {
   const original = window.matchMedia;
   window.matchMedia = vi.fn().mockImplementation((query: string) => ({
