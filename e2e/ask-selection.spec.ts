@@ -2538,6 +2538,33 @@ test.describe("390 selection flow", () => {
       await expect(selLabel).toHaveText("已选：代码第 9 行");
     });
 
+    test("first chip focus ring is not clipped by the bar scroller", async ({ page }) => {
+      await startGenerated(page);
+      await pauseLecture(page);
+      await enterSelection(page);
+      const firstChip = page.locator("[data-ask-bottom-bar] [data-ask-shortcut]").first();
+      await expect(firstChip).toBeVisible();
+      await firstChip.focus();
+      await page.keyboard.press("ArrowRight");
+      await page.keyboard.press("ArrowLeft");
+      await expect(firstChip).toBeFocused();
+      const m = await firstChip.evaluate((el) => {
+        const cs = getComputedStyle(el);
+        const ringW = cs.outlineStyle === "none" ? 0 : parseFloat(cs.outlineWidth) || 0;
+        const ringOff = parseFloat(cs.outlineOffset) || 0;
+        const extent = Math.max(0, ringW + ringOff);
+        let clip: Element | null = el.parentElement;
+        while (clip && !/(auto|scroll|hidden|clip)/.test(getComputedStyle(clip).overflowX)) clip = clip.parentElement;
+        const r = el.getBoundingClientRect();
+        const c = (clip ?? document.documentElement).getBoundingClientRect();
+        return { extent, ringLeft: r.left - extent, clipLeft: c.left, chipLeft: r.left, ringW, ringOff };
+      });
+      console.log(`[chip ring] ${JSON.stringify(m)}`);
+      expect(m.ringLeft).toBeGreaterThanOrEqual(m.clipLeft - 0.5);
+      const barBox = (await page.locator("[data-ask-bottom-bar]").boundingBox())!;
+      expect(barBox.height).toBeLessThanOrEqual(60);
+    });
+
     test("r. exit button inside [data-ask-bottom-bar], row layout, gaps, Tab order, ArrowRight", async ({ page }) => {
       await startGenerated(page);
       await pauseLecture(page);

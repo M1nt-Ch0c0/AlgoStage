@@ -1151,7 +1151,7 @@ function AskSelectionLayerActive({
                 <div
                   role="group"
                   aria-label="快捷选项"
-                  className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto py-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden sm:contents"
+                  className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto py-1 max-sm:px-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden sm:contents"
                 >
                   {visibleShortcuts.map((item, index) => {
                     const isSelected = selectedShortcutIndex === index;
