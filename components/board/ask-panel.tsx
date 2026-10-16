@@ -961,6 +961,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
     <div
       ref={panelRef}
       data-ask-panel
+      {...(waiting ? {} : { "data-ask-capture-exclude": "" })}
       role="dialog"
       aria-modal="false"
       aria-labelledby={labelId}

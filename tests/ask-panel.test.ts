@@ -1051,6 +1051,7 @@ describe("ask panel", () => {
     expect(document.querySelector("[role=alert]")).toBeNull();
     expect(panel().getAttribute("role")).toBe("dialog");
     expect(panel().getAttribute("aria-modal")).toBe("false");
+    expect(panel().hasAttribute("data-ask-capture-exclude")).toBe(true);
     expect(panel().getAttribute("aria-labelledby")).toBe(container.querySelector("[data-ask-panel-label]")?.id);
 
     await act(async () => {

@@ -10,6 +10,7 @@ import {
   isCaptureExcluded,
   decodedBase64Bytes,
   encodeOffThread,
+  CAPTURE_SPACER_HEIGHT_ATTR,
   intersectsBBox,
   resolveStageBackground,
   toCropRect,
@@ -878,7 +879,7 @@ describe("lib/ask/capture", () => {
       expect(probe.captureCanvas).toBe(stored);
     });
 
-    it("calls domToCanvas with font:false, scale:1, and a filter that drops non-intersecting / monaco / iframe / video", async () => {
+    it("calls domToCanvas with font:false, scale:1, and a filter that drops non-intersecting / iframe / video", async () => {
       const hitRect = () =>
         ({ left: 20, top: 30, width: 10, height: 10, right: 30, bottom: 40, x: 20, y: 30, toJSON() {} }) as DOMRect;
       const missRect = () =>
@@ -932,18 +933,98 @@ describe("lib/ask/capture", () => {
       expect(options.filter(outside)).toBe(false);
       expect(options.filter(frame)).toBe(false);
       expect(options.filter(clip)).toBe(false);
-      expect(options.filter(monacoRoot)).toBe(false);
-      // Child is not entered by the walk (REJECT on root) and modern-screenshot
-      // also skips children of filtered roots; the set may not list the child.
+      // Monaco stays in the clone. Dropping it collapses the code-board flex
+      // child. The raster blanks it in place instead (see the visibility test).
+      expect(options.filter(monacoRoot)).toBe(true);
+      expect(options.filter(monacoChild)).toBe(true);
       expect(options.filter(text)).toBe(true);
     });
 
-    it("excludes only explicitly marked nodes; keeps the selection highlight, selection box, and the rest of the panel and layer", async () => {
+    it("hides each .monaco-editor with visibility during the raster and restores it after", async () => {
+      const hitRect = () =>
+        ({ left: 20, top: 30, width: 10, height: 10, right: 30, bottom: 40, x: 20, y: 30, toJSON() {} }) as DOMRect;
+      const monacoRoot = document.createElement("div");
+      monacoRoot.className = "monaco-editor";
+      monacoRoot.style.visibility = "visible";
+      const monacoChild = document.createElement("div");
+      monacoChild.className = "view-lines";
+      monacoRoot.appendChild(monacoChild);
+      monacoRoot.getBoundingClientRect = hitRect;
+      monacoChild.getBoundingClientRect = hitRect;
+      container.append(monacoRoot);
+      // querySelector only sees a connected tree.
+      document.body.append(container);
+
+      let visibilityDuringRaster = "";
+      domToCanvasMock.mockImplementation(async () => {
+        visibilityDuringRaster = monacoRoot.style.visibility;
+        return sourceCanvas;
+      });
+
+      const res = await captureStage(container, baseSel);
+      expect(res.ok).toBe(true);
+      // Hidden while the clone reads computed style, so the box stays and
+      // the glyphs do not paint. Restored once the raster returns.
+      expect(visibilityDuringRaster).toBe("hidden");
+      expect(monacoRoot.style.visibility).toBe("visible");
+      container.remove();
+    });
+
+    it("clears the selection chrome box-shadow during the raster and restores it", async () => {
+      const hitRect = () =>
+        ({ left: 20, top: 30, width: 10, height: 10, right: 30, bottom: 40, x: 20, y: 30, toJSON() {} }) as DOMRect;
+      const layer = document.createElement("div");
+      layer.setAttribute("data-ask-layer", "");
+      const selection = document.createElement("div");
+      selection.setAttribute("data-ask-selection", "");
+      selection.setAttribute("data-ask-capture-exclude", "");
+      selection.style.boxShadow = "0 0 0 9999px rgba(0,0,0,0.4)";
+      selection.getBoundingClientRect = hitRect;
+      layer.append(selection);
+      container.append(layer);
+      document.body.append(container);
+
+      let shadowDuring = "unset";
+      let displayDuring = "unset";
+      domToCanvasMock.mockImplementation(async () => {
+        shadowDuring = selection.style.boxShadow;
+        displayDuring = selection.style.display;
+        return sourceCanvas;
+      });
+
+      const res = await captureStage(container, baseSel);
+      expect(res.ok).toBe(true);
+      // display:none collapses the stage column in the clone. Clearing the
+      // shadow keeps the box and stops the 9999px dim from painting.
+      expect(shadowDuring).toBe("none");
+      expect(displayDuring).toBe("");
+      expect(selection.style.boxShadow).toBe("0 0 0 9999px rgba(0,0,0,0.4)");
+      container.remove();
+    });
+
+    it("restores monaco visibility when the raster throws", async () => {
+      const hitRect = () =>
+        ({ left: 20, top: 30, width: 10, height: 10, right: 30, bottom: 40, x: 20, y: 30, toJSON() {} }) as DOMRect;
+      const monacoRoot = document.createElement("div");
+      monacoRoot.className = "monaco-editor";
+      monacoRoot.getBoundingClientRect = hitRect;
+      container.append(monacoRoot);
+      document.body.append(container);
+
+      domToCanvasMock.mockRejectedValue(new Error("raster"));
+      const res = await captureStage(container, baseSel);
+      expect(res.ok).toBe(false);
+      expect(monacoRoot.style.visibility).toBe("");
+      container.remove();
+    });
+
+    it("excludes the selection layer chrome and the ask panel when they carry data-ask-capture-exclude", async () => {
       const hitRect = () =>
         ({ left: 20, top: 30, width: 10, height: 10, right: 30, bottom: 40, x: 20, y: 30, toJSON() {} }) as DOMRect;
 
       const panel = document.createElement("div");
       panel.setAttribute("data-ask-panel", "");
+      panel.setAttribute("data-ask-capture-exclude", "");
       const preparing = document.createElement("p");
       preparing.setAttribute("data-ask-capture-preparing", "");
       preparing.setAttribute("data-ask-capture-exclude", "");
@@ -964,33 +1045,47 @@ describe("lib/ask/capture", () => {
       question.setAttribute("data-ask-question", "");
       panel.append(preparing, cancel, waiting, chip, question);
 
+      // The layer root is a full-stage overlay and is not itself excluded.
+      // Chrome inside it is. Stage content stacked under that chrome stays.
       const layer = document.createElement("div");
       layer.setAttribute("data-ask-layer", "");
       const highlight = document.createElement("div");
       highlight.setAttribute("data-ask-highlight", "line:1");
+      highlight.setAttribute("data-ask-capture-exclude", "");
       const selectionBox = document.createElement("div");
       selectionBox.setAttribute("data-ask-selection", "");
+      selectionBox.setAttribute("data-ask-capture-exclude", "");
       const hint = document.createElement("p");
+      hint.setAttribute("data-ask-capture-exclude", "");
       hint.textContent = "拖拽圈选";
+      const underChrome = document.createElement("span");
+      underChrome.textContent = "1";
+      selectionBox.append(underChrome);
       layer.append(highlight, selectionBox, hint);
 
-      for (const node of [panel, preparing, cancel, waiting, chip, question, layer, highlight, selectionBox, hint]) {
+      const stageContent = document.createElement("div");
+      stageContent.setAttribute("data-ask-id", "viz:s1");
+      stageContent.textContent = "1";
+
+      for (const node of [panel, preparing, cancel, waiting, chip, question, layer, highlight, selectionBox, hint, underChrome, stageContent]) {
         node.getBoundingClientRect = hitRect;
       }
-      container.append(panel, layer);
+      container.append(stageContent, layer, panel);
 
       expect(CAPTURE_EXCLUDE_SELECTOR).toBe("[data-ask-capture-exclude]");
       expect(isCaptureExcluded(preparing)).toBe(true);
       expect(isCaptureExcluded(preparingText)).toBe(false);
       expect(isCaptureExcluded(cancel)).toBe(true);
       expect(isCaptureExcluded(waiting)).toBe(true);
-      expect(isCaptureExcluded(panel)).toBe(false);
-      expect(isCaptureExcluded(chip)).toBe(false);
-      expect(isCaptureExcluded(question)).toBe(false);
+      expect(isCaptureExcluded(panel)).toBe(true);
+      expect(isCaptureExcluded(chip)).toBe(true);
+      expect(isCaptureExcluded(question)).toBe(true);
       expect(isCaptureExcluded(layer)).toBe(false);
-      expect(isCaptureExcluded(highlight)).toBe(false);
-      expect(isCaptureExcluded(selectionBox)).toBe(false);
-      expect(isCaptureExcluded(hint)).toBe(false);
+      expect(isCaptureExcluded(highlight)).toBe(true);
+      expect(isCaptureExcluded(selectionBox)).toBe(true);
+      expect(isCaptureExcluded(hint)).toBe(true);
+      expect(isCaptureExcluded(underChrome)).toBe(true);
+      expect(isCaptureExcluded(stageContent)).toBe(false);
 
       const res = await captureStage(container, baseSel);
       expect(res.ok).toBe(true);
@@ -1003,13 +1098,185 @@ describe("lib/ask/capture", () => {
       preparing.appendChild(preparingChild);
       preparingChild.getBoundingClientRect = hitRect;
       expect(filter(preparingChild)).toBe(false);
-      expect(filter(panel)).toBe(true);
-      expect(filter(chip)).toBe(true);
-      expect(filter(question)).toBe(true);
+      expect(filter(panel)).toBe(false);
+      expect(filter(chip)).toBe(false);
+      expect(filter(question)).toBe(false);
+      // The layer root is not marked, so it stays. Its marked chrome does not.
       expect(filter(layer)).toBe(true);
-      expect(filter(highlight)).toBe(true);
-      expect(filter(selectionBox)).toBe(true);
-      expect(filter(hint)).toBe(true);
+      expect(filter(highlight)).toBe(false);
+      expect(filter(selectionBox)).toBe(false);
+      expect(filter(hint)).toBe(false);
+      // A node under marked chrome is excluded with that ancestor.
+      expect(filter(underChrome)).toBe(false);
+      // Unmarked stage content that intersects the bbox stays, including when
+      // it is stacked under the overlay. Monaco is kept (blanked in place).
+      expect(filter(stageContent)).toBe(true);
+    });
+
+    it("keeps a column item above the selection and pins its clone height", async () => {
+      const hitRect = () =>
+        ({ left: 20, top: 30, width: 10, height: 10, right: 30, bottom: 40, x: 20, y: 30, toJSON() {} }) as DOMRect;
+      // Ends at y=16. The selection starts at y=20, so this box is entirely above it.
+      const aboveRect = () =>
+        ({ left: 0, top: 0, width: 100, height: 16, right: 100, bottom: 16, x: 0, y: 0, toJSON() {} }) as DOMRect;
+      const column = document.createElement("section");
+      column.getBoundingClientRect = hitRect;
+      const board = document.createElement("div");
+      board.className = "board-surface";
+      board.getBoundingClientRect = aboveRect;
+      const line = document.createElement("span");
+      line.textContent = "code";
+      line.getBoundingClientRect = aboveRect;
+      board.append(line);
+      const viz = document.createElement("div");
+      viz.getBoundingClientRect = hitRect;
+      column.append(board, viz);
+      column.style.display = "flex";
+      column.style.flexDirection = "column";
+      container.append(column);
+      document.body.append(container);
+
+      let pinned = "";
+      let basis = "";
+      let stampDuring = "missing";
+      domToCanvasMock.mockImplementation(async (_node: unknown, options: {
+        filter: (node: Node) => boolean;
+        onCloneEachNode?: (node: Node) => void;
+      }) => {
+        stampDuring = board.getAttribute(CAPTURE_SPACER_HEIGHT_ATTR) ?? "none";
+        expect(options.filter(board)).toBe(true);
+        expect(options.filter(line)).toBe(false);
+        expect(options.filter(viz)).toBe(true);
+        const clone = board.cloneNode(false) as HTMLElement;
+        clone.style.paddingBottom = "6px";
+        options.onCloneEachNode?.(clone);
+        pinned = clone.style.height;
+        basis = clone.style.flexBasis;
+        expect(clone.hasAttribute(CAPTURE_SPACER_HEIGHT_ATTR)).toBe(false);
+        return sourceCanvas;
+      });
+
+      const res = await captureStage(container, baseSel);
+      if (!res.ok) throw new Error(`${res.reason} stamp=${stampDuring}`);
+      // The walk stamps the live box before the clone reads it, then clears it.
+      expect(stampDuring).toBe("16");
+      // Live border box 16 plus the clone's own padding-bottom 6.
+      expect(pinned).toBe("22px");
+      expect(basis).toBe("22px");
+      expect(board.hasAttribute(CAPTURE_SPACER_HEIGHT_ATTR)).toBe(false);
+      container.remove();
+    });
+
+    it("keeps the subtitle header above the selection and skips a flex header of another card", async () => {
+      const hitRect = () =>
+        ({ left: 20, top: 30, width: 10, height: 10, right: 30, bottom: 40, x: 20, y: 30, toJSON() {} }) as DOMRect;
+      const aboveRect = () =>
+        ({ left: 0, top: 0, width: 100, height: 16, right: 100, bottom: 16, x: 0, y: 0, toJSON() {} }) as DOMRect;
+      const card = document.createElement("div");
+      card.setAttribute("data-ask-target", "subtitle");
+      card.getBoundingClientRect = hitRect;
+      card.style.display = "block";
+      const header = document.createElement("div");
+      header.className = "mb-1";
+      header.style.display = "flex";
+      header.getBoundingClientRect = aboveRect;
+      const line = document.createElement("p");
+      line.textContent = "开局";
+      line.getBoundingClientRect = hitRect;
+      const floated = document.createElement("div");
+      floated.style.position = "absolute";
+      floated.getBoundingClientRect = aboveRect;
+      const vizCard = document.createElement("div");
+      vizCard.style.display = "block";
+      vizCard.getBoundingClientRect = hitRect;
+      const vizHeader = document.createElement("div");
+      vizHeader.style.display = "flex";
+      vizHeader.getBoundingClientRect = aboveRect;
+      vizCard.append(vizHeader);
+      const realGetComputedStyle = window.getComputedStyle.bind(window);
+      vi.spyOn(window, "getComputedStyle").mockImplementation((el: Element) => {
+        const computed = realGetComputedStyle(el);
+        if (el === floated) {
+          return new Proxy(computed, {
+            get(target, prop, receiver) {
+              if (prop === "position") return "absolute";
+              return Reflect.get(target, prop, receiver);
+            },
+          });
+        }
+        if (el === header || el === vizHeader) {
+          return new Proxy(computed, {
+            get(target, prop, receiver) {
+              if (prop === "display") return "flex";
+              return Reflect.get(target, prop, receiver);
+            },
+          });
+        }
+        return computed;
+      });
+      card.append(header, line, floated);
+      container.append(card, vizCard);
+      document.body.append(container);
+
+      let pinned = "";
+      domToCanvasMock.mockImplementation(async (_node: unknown, options: {
+        filter: (node: Node) => boolean;
+        onCloneEachNode?: (node: Node) => void;
+      }) => {
+        expect(header.getAttribute(CAPTURE_SPACER_HEIGHT_ATTR)).toBe("16");
+        expect(vizHeader.hasAttribute(CAPTURE_SPACER_HEIGHT_ATTR)).toBe(false);
+        expect(floated.hasAttribute(CAPTURE_SPACER_HEIGHT_ATTR)).toBe(false);
+        expect(options.filter(header)).toBe(true);
+        expect(options.filter(vizHeader)).toBe(false);
+        expect(options.filter(floated)).toBe(false);
+        expect(options.filter(line)).toBe(true);
+        const clone = header.cloneNode(false) as HTMLElement;
+        options.onCloneEachNode?.(clone);
+        pinned = clone.style.height;
+        return sourceCanvas;
+      });
+
+      const res = await captureStage(container, baseSel);
+      expect(res.ok).toBe(true);
+      expect(pinned).toBe("16px");
+      expect(header.hasAttribute(CAPTURE_SPACER_HEIGHT_ATTR)).toBe(false);
+      container.remove();
+    });
+
+    it("adds the tutor section's padding-top when that padding sits above the selection", async () => {
+      const hitRect = () =>
+        ({ left: 20, top: 30, width: 10, height: 10, right: 30, bottom: 40, x: 20, y: 30, toJSON() {} }) as DOMRect;
+      const sectionRect = () =>
+        ({ left: 0, top: 0, width: 100, height: 80, right: 100, bottom: 80, x: 0, y: 0, toJSON() {} }) as DOMRect;
+      const section = document.createElement("section");
+      section.className = "rounded-2xl";
+      section.getBoundingClientRect = sectionRect;
+      section.style.paddingTop = "16px";
+      const line = document.createElement("p");
+      line.getBoundingClientRect = hitRect;
+      section.append(line);
+      container.append(section);
+      document.body.append(container);
+
+      let padding = "";
+      domToCanvasMock.mockImplementation(async (_node: unknown, options: {
+        onCloneEachNode?: (node: Node) => void;
+      }) => {
+        expect(section.getAttribute("data-ask-capture-pad-above")).toBe("16");
+        const clone = section.cloneNode(false) as HTMLElement;
+        clone.style.paddingTop = "16px";
+        options.onCloneEachNode?.(clone);
+        padding = clone.style.paddingTop;
+        expect(clone.hasAttribute("data-ask-capture-pad-above")).toBe(false);
+        return sourceCanvas;
+      });
+
+      const res = await captureStage(container, baseSel);
+      expect(res.ok).toBe(true);
+      // The copied 16px plus the measured 16px that foreignObject drops.
+      expect(padding).toBe("32px");
+      expect(section.hasAttribute("data-ask-capture-pad-above")).toBe(false);
+      container.remove();
     });
 
     it("returns TOO_MANY_NODES when more than maxNodes kept elements intersect the selection", async () => {

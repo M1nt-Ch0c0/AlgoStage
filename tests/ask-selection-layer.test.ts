@@ -635,7 +635,11 @@ describe("AskSelectionLayer", () => {
     });
     await flushFocus();
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
-    expect(container.querySelector("[data-ask-layer]")).not.toBeNull();
+    const layerEl = container.querySelector("[data-ask-layer]");
+    expect(layerEl).not.toBeNull();
+    // The layer root is a full-stage overlay. Chrome inside it is excluded;
+    // the root itself is not, or the stage under it would leave the screenshot.
+    expect(layerEl?.hasAttribute("data-ask-capture-exclude")).toBe(false);
     expect(document.activeElement).toBe(button);
     button.remove();
   });

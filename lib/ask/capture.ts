@@ -172,34 +172,53 @@ function yieldEncodeTurn(): Promise<void> {
 }
 
 /**
- * Only nodes that carry this attribute (and their subtree) leave the screenshot.
- * The ask panel root and the selection layer root do not carry it: the highlight
- * and the selection box stay. The preparing row, the 取消 button, and the
- * waiting text opt out explicitly.
+ * A node that carries this attribute, and the subtree under it, leaves the screenshot.
+ * The selection layer root itself does not: it is a full-stage overlay, and dropping
+ * it would drop the stage nodes stacked under it. The chrome inside it does carry
+ * the attribute (gold selection border, dimming shadow, highlight outlines, rubber
+ * band, hint, bottom bar). modern-screenshot copies a node's own box-shadow onto
+ * the ancestor before the filter can drop the node, so that chrome is hidden on
+ * the live element for the raster and restored in finally. The ask panel root
+ * carries the attribute while the panel is open for capture (drafting, preparing,
+ * error). While the panel is waiting, the root drops the attribute so the waiting
+ * 取消 button has no excluded ancestor. Busy nodes (preparing row, waiting text,
+ * the drafting 取消 button) stay marked too.
  */
 export const CAPTURE_EXCLUDE_SELECTOR = "[data-ask-capture-exclude]";
 
 /**
  * The node or an ancestor carries data-ask-capture-exclude.
- * Text nodes stay; only elements can opt out.
+ * Text nodes stay; only elements can opt out. An ancestor mark covers the
+ * whole layer or panel, so selection chrome is excluded with the root.
  */
 export function isCaptureExcluded(node: Node): boolean {
   return node instanceof Element && node.closest(CAPTURE_EXCLUDE_SELECTOR) !== null;
 }
 
 /**
- * Text nodes stay. iframe/video, the whole .monaco-editor subtree, and
- * data-ask-capture-exclude subtrees are dropped.
- * Other elements must hit the selection. Layout is read only when not already decided.
+ * Text nodes stay. iframe/video and data-ask-capture-exclude subtrees
+ * (selection chrome, panel root, busy nodes) are dropped. Selection chrome
+ * must not appear in the image. Other elements must hit the selection.
+ * Layout is read only when not already decided.
+ *
+ * `.monaco-editor` is not dropped. Rejecting it collapses the code-board
+ * flex child in the clone, so the viz sibling slides to the top of the
+ * stage and the live selection crop lands on an empty band. The raster
+ * hides each editor with visibility:hidden, which keeps the box and blanks
+ * the glyphs. The board surface behind it still paints.
+ *
+ * A marked node returns FILTER_SKIP so the walk still enters its descendants.
+ * FILTER_REJECT would hide every stage node stacked under a full-stage chrome
+ * box (the selection's 9999px dimming shadow covers the stage). The render
+ * filter still drops the marked node itself via isCaptureExcluded.
  */
 function shouldDropCaptureNode(
   node: Node,
   containerRect: ClientRectLike,
   bbox: AskBBox,
-): boolean {
+): boolean | "skip" {
   if (!(node instanceof Element)) return false;
-  if (isCaptureExcluded(node)) return true;
-  if (node.closest(".monaco-editor") !== null) return true;
+  if (isCaptureExcluded(node)) return "skip";
   const tag = node.tagName.toUpperCase();
   if (tag === "IFRAME" || tag === "VIDEO") return true;
   return !intersectsBBox(node.getBoundingClientRect(), containerRect, bbox);
@@ -207,6 +226,54 @@ function shouldDropCaptureNode(
 
 const FILTER_REJECT = 2;
 const FILTER_ACCEPT = 1;
+const FILTER_SKIP = 3;
+
+/**
+ * Live spacer → clone. modern-screenshot clones with cloneNode(false) and
+ * onCloneEachNode only receives the clone, so the height cannot travel on a
+ * Map of live nodes. The attribute is set before the clone and removed in
+ * the same finally as the chrome restore.
+ */
+const SPACER_HEIGHT_ATTR = "data-ask-capture-spacer-h";
+/** Padding-top of a kept box whose top sits above the selection. */
+const PAD_ABOVE_ATTR = "data-ask-capture-pad-above";
+
+/**
+ * Blank Monaco and clear selection-chrome shadows for the raster. Returns
+ * the undo.
+ *
+ * The filter drops chrome, but modern-screenshot reads computed style on the
+ * live node first and paints box-shadow (the selection's 9999px dim) onto
+ * the ancestor. Clearing the inline shadow removes that paint. display:none
+ * would too, and it also collapses the stage column in the clone, so the
+ * viz slides up and the live crop misses it. The panel is not touched here:
+ * the filter drops it.
+ *
+ * Monaco stays in the clone. visibility:hidden blanks the glyphs and keeps
+ * the live box. display:none would collapse the code board.
+ *
+ * Restore runs in finally so a thrown raster still puts both back.
+ */
+function hideCaptureChromeForRaster(container: HTMLElement): () => void {
+  const marked = container.querySelectorAll(`[data-ask-layer] ${CAPTURE_EXCLUDE_SELECTOR}`);
+  const previous: { el: HTMLElement; boxShadow: string }[] = [];
+  for (const node of marked) {
+    if (!(node instanceof HTMLElement)) continue;
+    previous.push({ el: node, boxShadow: node.style.boxShadow });
+    node.style.boxShadow = "none";
+  }
+  const editors = container.querySelectorAll(".monaco-editor");
+  const editorPrevious: { el: HTMLElement; visibility: string }[] = [];
+  for (const node of editors) {
+    if (!(node instanceof HTMLElement)) continue;
+    editorPrevious.push({ el: node, visibility: node.style.visibility });
+    node.style.visibility = "hidden";
+  }
+  return () => {
+    for (const item of previous) item.el.style.boxShadow = item.boxShadow;
+    for (const item of editorPrevious) item.el.style.visibility = item.visibility;
+  };
+}
 
 /**
  * A computed background that paints something. "transparent" and rgba alpha 0
@@ -261,27 +328,105 @@ export function resolveStageBackground(el: Element): string {
 }
 
 /**
+ * A flex/grid item that sits entirely above the selection and whose parent
+ * does hit the selection. Dropping it collapses that column in the clone
+ * (modern-screenshot does not copy used width/height), so the kept sibling
+ * slides up and the live crop lands on an empty band. The code board is the
+ * one that does this: it does not intersect a viz selection, and rejecting
+ * it is what flattened the capture.
+ *
+ * A box beside the selection (the tutor column) overlaps the selection
+ * vertically, so it is not a spacer. A box below the selection is not one
+ * either: it does not move the crop.
+ *
+ * The subtitle card is `display:block`. Its header is a flex row that sits
+ * entirely above a body selection. Rejecting it pulls the narration line up
+ * by the header's height. A flex item of any other block (the viz card
+ * header) is not a spacer: pinning that one shifts the cards down. Absolute
+ * and fixed boxes are not spacers either.
+ */
+function isLayoutSpacer(node: Node, containerRect: ClientRectLike, bbox: AskBBox): boolean {
+  if (!(node instanceof HTMLElement)) return false;
+  const parent = node.parentElement;
+  if (!parent) return false;
+  const view = node.ownerDocument?.defaultView;
+  if (!view || typeof view.getComputedStyle !== "function") return false;
+  const parentStyle = view.getComputedStyle(parent);
+  const ownStyle = view.getComputedStyle(node);
+  // An out-of-flow box does not push the selection's siblings.
+  const position = ownStyle.position || node.style.position;
+  if (position === "absolute" || position === "fixed") return false;
+  // Computed style is authoritative. A test DOM that does not resolve flex
+  // still carries the inline display the page set, and that is enough to
+  // know the parent is a column.
+  const display = parentStyle.display === "flex" || parentStyle.display === "inline-flex" || parentStyle.display === "grid" || parentStyle.display === "inline-grid" || parentStyle.display === "block" || parentStyle.display === "flow-root"
+    ? parentStyle.display
+    : parent.style.display;
+  const flexDirection = parentStyle.flexDirection === "column" || parentStyle.flexDirection === "column-reverse"
+    ? parentStyle.flexDirection
+    : parent.style.flexDirection || parentStyle.flexDirection;
+  const column =
+    (display === "flex" || display === "inline-flex") &&
+    (flexDirection === "column" || flexDirection === "column-reverse");
+  const grid = display === "grid" || display === "inline-grid";
+  // Only the subtitle card. Its header is a flex row, and dropping it pulls
+  // the narration line up. The same shape on the viz card must stay dropped:
+  // pinning that header shifts the cards down by its own height.
+  const subtitleCard =
+    (display === "block" || display === "flow-root") &&
+    parent.getAttribute("data-ask-target") === "subtitle";
+  if (!column && !grid && !subtitleCard) return false;
+  if (!intersectsBBox(parent.getBoundingClientRect(), containerRect, bbox)) return false;
+  const rect = node.getBoundingClientRect();
+  if (rect.width < 1 || rect.height < 1) return false;
+  if (intersectsBBox(rect, containerRect, bbox)) return false;
+  const bottom = rect.top - containerRect.top + rect.height;
+  const norm = normalizeBBox(bbox);
+  return bottom <= norm.y + 1;
+}
+
+/**
  * Count elements modern-screenshot would keep. Subtrees whose root is dropped
  * are not entered. Stops once the count passes maxNodes.
- * Returns the dropped roots so the render filter can skip a second layout pass.
+ * Returns the dropped roots so the render filter can skip a second layout pass,
+ * and the spacer boxes whose clone height has to be pinned.
  */
 function collectDroppedRoots(
   container: HTMLElement,
   containerRect: ClientRectLike,
   bbox: AskBBox,
-): { tooMany: boolean; dropped: Set<Node> } {
+): { tooMany: boolean; dropped: Set<Node>; spacers: Map<Node, number>; pads: Map<Node, number> } {
   const dropped = new Set<Node>();
+  const spacers = new Map<Node, number>();
+  const pads = new Map<Node, number>();
   const limit = CAPTURE_DEFAULTS.maxNodes;
   let kept = 0;
   const doc = container.ownerDocument;
   if (!doc || typeof doc.createTreeWalker !== "function") {
-    return { tooMany: false, dropped };
+    return { tooMany: false, dropped, spacers, pads };
   }
   const walker = doc.createTreeWalker(container, NodeFilter.SHOW_ELEMENT, {
     acceptNode(node: Node) {
-      if (shouldDropCaptureNode(node, containerRect, bbox)) {
+      const drop = shouldDropCaptureNode(node, containerRect, bbox);
+      // "skip" is a marked chrome node. Do not count it and do not reject
+      // the subtree: stage content under the overlay still has to be kept.
+      // The render filter drops the chrome node itself.
+      if (drop === "skip") return FILTER_SKIP;
+      // A column item above the selection stays, as an empty box. Rejecting
+      // it collapses the column. Its descendants still drop.
+      if (drop && isLayoutSpacer(node, containerRect, bbox) && node instanceof HTMLElement) {
+        spacers.set(node, node.getBoundingClientRect().height);
+        kept += 1;
+        if (kept > limit) return FILTER_REJECT;
+        return FILTER_SKIP;
+      }
+      if (drop) {
         dropped.add(node);
         return FILTER_REJECT;
+      }
+      if (node instanceof HTMLElement) {
+        const pad = paddingAboveSelection(node, containerRect, bbox);
+        if (pad > 0) pads.set(node, pad);
       }
       kept += 1;
       if (kept > limit) return FILTER_REJECT;
@@ -292,7 +437,49 @@ function collectDroppedRoots(
   while (walker.nextNode()) {
     if (kept > limit) break;
   }
-  return { tooMany: kept > limit, dropped };
+  return { tooMany: kept > limit, dropped, spacers, pads };
+}
+
+/**
+ * Padding-top of the tutor section when that padding sits above the
+ * selection. On a 390 subtitle crop the section's 16px padding is above the
+ * line, and foreignObject drops the copied value. The viz card has padding
+ * too, and doubling that one shifts the cards, so only this section is
+ * recorded. A section whose top is inside the selection contributes nothing.
+ */
+function paddingAboveSelection(node: HTMLElement, containerRect: ClientRectLike, bbox: AskBBox): number {
+  if (node.tagName !== "SECTION") return 0;
+  if (!node.classList.contains("rounded-2xl")) return 0;
+  const view = node.ownerDocument?.defaultView;
+  if (!view || typeof view.getComputedStyle !== "function") return 0;
+  const paddingTop = Number.parseFloat(view.getComputedStyle(node).paddingTop || "");
+  if (!Number.isFinite(paddingTop) || paddingTop <= 0) return 0;
+  const top = node.getBoundingClientRect().top - containerRect.top;
+  const norm = normalizeBBox(bbox);
+  return Math.max(0, Math.min(paddingTop, norm.y - top));
+}
+
+/** Exported so the capture unit test can pair a live spacer with its clone. */
+export const CAPTURE_SPACER_HEIGHT_ATTR = SPACER_HEIGHT_ATTR;
+
+/**
+ * modern-screenshot copies computed style but ignores width and height, and
+ * a foreignObject lays `height` out as the content box. A content-box height
+ * equal to the live border box put the viz 6px high. Adding the element's
+ * own padding-bottom (the board's 6px) put it on the live crop. flex-basis
+ * matches that content height so the column does not grow the item back.
+ */
+function pinClonedSpacer(cloned: HTMLElement, borderBoxHeight: number): void {
+  const paddingBottom = Number.parseFloat(cloned.style.paddingBottom || "");
+  const extra = Number.isFinite(paddingBottom) ? paddingBottom : 0;
+  const content = Math.max(0, borderBoxHeight + extra);
+  cloned.style.setProperty("box-sizing", "content-box", "important");
+  cloned.style.setProperty("height", `${content}px`, "important");
+  cloned.style.setProperty("min-height", "0px", "important");
+  cloned.style.setProperty("max-height", `${content}px`, "important");
+  cloned.style.setProperty("flex-grow", "0", "important");
+  cloned.style.setProperty("flex-shrink", "0", "important");
+  cloned.style.setProperty("flex-basis", `${content}px`, "important");
 }
 
 type EncodeOk = {
@@ -589,6 +776,8 @@ export async function captureStage(
       if (remaining <= 0) return timeoutResult();
 
       const dropped = walk.dropped;
+      const spacers = walk.spacers;
+      const pads = walk.pads;
       let canvas: HTMLCanvasElement;
       try {
         // Compile-time stall. Next inlines a NEXT_PUBLIC_ value only when it
@@ -649,37 +838,91 @@ export async function captureStage(
         if (probe && typeof probe === "object") {
           probe.captureSourceNodes = container.querySelectorAll("*").length;
         }
-        const rendered = await mod.domToCanvas(container, {
-          font: false,
-          scale: 1,
-          features: { restoreScrollPosition: false },
-          // The stage and the code area are transparent. modern-screenshot
-          // otherwise leaves those pixels clear, so the sent image is almost
-          // entirely alpha 0 once the panel overlay is excluded. Fill with
-          // the background the user sees behind the stage.
-          backgroundColor: resolveStageBackground(container),
-          // Exclude only an explicitly marked node and the subtree under it.
-          // The pre-walk already drops those roots; this second check covers
-          // a node modern-screenshot still visits (the marked node itself).
-          filter: (node) => !dropped.has(node) && !isCaptureExcluded(node),
-          timeout: remaining,
-          width: rect.width,
-          height: rect.height,
-          onCloneEachNode: () => {
-            clonedNodes += 1;
-          },
-          onCloneNode: () => {
-            cloneDoneAt = performance.now();
-            markAskPhase("captureCloneMs", cloneDoneAt - domToCanvasStartedAt);
-          },
-          onEmbedNode: () => {
-            embedDoneAt = performance.now();
-            markAskPhase("captureEmbedMs", embedDoneAt - cloneDoneAt);
-          },
-          onCreateForeignObjectSvg: () => {
-            markAskPhase("captureSvgMs", performance.now() - embedDoneAt);
-          },
-        });
+        // Clear chrome shadows and blank Monaco before the clone reads
+        // computed style. The filter still drops the chrome. Restore in
+        // finally, including when domToCanvas throws, so the selection and
+        // the editor come back.
+        const restoreExcluded = hideCaptureChromeForRaster(container);
+        let rendered: HTMLCanvasElement | null = null;
+        try {
+          // Stamp after chrome is hidden and before the clone reads the node.
+          // The finally below clears it even when the raster throws.
+          for (const [node, height] of spacers) {
+            if (node instanceof Element) node.setAttribute(SPACER_HEIGHT_ATTR, String(height));
+          }
+          for (const [node, pad] of pads) {
+            if (node instanceof Element) node.setAttribute(PAD_ABOVE_ATTR, String(pad));
+          }
+          rendered = await mod.domToCanvas(container, {
+            font: false,
+
+            scale: 1,
+            features: { restoreScrollPosition: false },
+            // The stage and the code area are transparent. modern-screenshot
+            // otherwise leaves those pixels clear, so the sent image is almost
+            // entirely alpha 0 once the panel overlay is excluded. Fill with
+            // the background the user sees behind the stage.
+            backgroundColor: resolveStageBackground(container),
+            // Drop marked chrome (selection border, highlights, rubber band, bar,
+            // panel, busy nodes). The pre-walk skips those nodes without
+            // rejecting the subtree, so this check is what keeps the chrome
+            // itself out. iframe and video stay dropped in the pre-walk.
+            // Monaco is kept and blanked in place (visibility:hidden). A
+            // column item that sits above the selection (the code board on a
+            // viz crop) is also kept: dropping it collapses the column.
+            // Its height is pinned in onCloneEachNode. Descendants of that
+            // item stay dropped, so the board paints as an empty box.
+            filter: (node) =>
+              (node instanceof Element && node.hasAttribute(SPACER_HEIGHT_ATTR)) ||
+              (!dropped.has(node) && !isCaptureExcluded(node)),
+            timeout: remaining,
+            width: rect.width,
+            height: rect.height,
+            onCloneEachNode: (cloned: Node) => {
+              clonedNodes += 1;
+              if (!(cloned instanceof HTMLElement)) return;
+              const padRaw = cloned.getAttribute(PAD_ABOVE_ATTR);
+              if (padRaw !== null) {
+                const pad = Number(padRaw);
+                cloned.removeAttribute(PAD_ABOVE_ATTR);
+                // copyCssStyles already wrote padding-top. foreignObject
+                // ignores that copy on a flex section whose top is above the
+                // crop. Writing the same number again is a no-op. Adding the
+                // measured amount, with priority, is what puts the line back.
+                if (Number.isFinite(pad) && pad > 0) {
+                  const current = Number.parseFloat(cloned.style.paddingTop || "");
+                  const next = (Number.isFinite(current) ? current : 0) + pad;
+                  cloned.style.setProperty("padding-top", `${next}px`, "important");
+                }
+              }
+              const raw = cloned.getAttribute(SPACER_HEIGHT_ATTR);
+              if (raw === null) return;
+              const height = Number(raw);
+              cloned.removeAttribute(SPACER_HEIGHT_ATTR);
+              if (!Number.isFinite(height) || height <= 0) return;
+              pinClonedSpacer(cloned, height);
+            },
+            onCloneNode: () => {
+              cloneDoneAt = performance.now();
+              markAskPhase("captureCloneMs", cloneDoneAt - domToCanvasStartedAt);
+            },
+            onEmbedNode: () => {
+              embedDoneAt = performance.now();
+              markAskPhase("captureEmbedMs", embedDoneAt - cloneDoneAt);
+            },
+            onCreateForeignObjectSvg: () => {
+              markAskPhase("captureSvgMs", performance.now() - embedDoneAt);
+            },
+          });
+        } finally {
+          restoreExcluded();
+          for (const node of spacers.keys()) {
+            if (node instanceof Element) node.removeAttribute(SPACER_HEIGHT_ATTR);
+          }
+          for (const node of pads.keys()) {
+            if (node instanceof Element) node.removeAttribute(PAD_ABOVE_ATTR);
+          }
+        }
         markAskPhase("captureRasterMs", performance.now() - domToCanvasStartedAt);
         if (probe && typeof probe === "object") {
           probe.captureClonedNodes = clonedNodes;

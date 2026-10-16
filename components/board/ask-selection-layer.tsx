@@ -1230,7 +1230,7 @@ function AskSelectionLayerActive({
       onPointerCancel={onPointerCancel}
       onKeyDown={onKeyDown}
     >
-      <div className="pointer-events-none absolute inset-x-0 top-0 max-sm:z-40 sm:z-10 flex flex-col gap-1 p-2">
+      <div data-ask-capture-exclude className="pointer-events-none absolute inset-x-0 top-0 max-sm:z-40 sm:z-10 flex flex-col gap-1 p-2">
         <p className="text-xs text-chalk-100">{hint ?? ASK_LAYER_HINT}</p>
         {showShortcuts ? (
           <div
@@ -1392,6 +1392,7 @@ function AskSelectionLayerActive({
       {band && (band.width > 0 || band.height > 0) ? (
         <div
           data-ask-rubber
+          data-ask-capture-exclude
           className="pointer-events-none absolute border-2 border-dashed border-beam-gold shadow-[0_0_0_9999px_rgba(0,0,0,0.4)]"
           style={{ left: band.x, top: band.y, width: band.width, height: band.height }}
         />
@@ -1400,6 +1401,7 @@ function AskSelectionLayerActive({
       {selectedBox ? (
         <div
           data-ask-selection
+          data-ask-capture-exclude
           className={`pointer-events-none absolute border-2 border-solid border-beam-gold ${
             band ? "" : "shadow-[0_0_0_9999px_rgba(0,0,0,0.4)]"
           }`}
@@ -1457,6 +1459,7 @@ function TargetOutlines({ stage, ids }: { stage: HTMLElement | null; ids: string
         <div
           key={box.id}
           data-ask-highlight={box.id}
+          data-ask-capture-exclude
           className="pointer-events-none absolute border border-beam-gold"
           style={{ left: box.rect.x, top: box.rect.y, width: box.rect.width, height: box.rect.height }}
         />
