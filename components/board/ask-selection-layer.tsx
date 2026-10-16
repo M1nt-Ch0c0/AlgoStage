@@ -38,6 +38,13 @@ const MIN_REGION_SIDE = 24;
 const ACTIVE_PHASES = new Set(["selecting", "drafting", "error"]);
 /** 窗口级 Esc 覆盖的阶段。sending/streaming/playing 仍留给原来的流程，不在这里处理。 */
 const ESCAPE_PHASES = new Set(["selecting", "drafting", "error"]);
+/**
+ * Phases where the mobile bottom offset must stay published. The selection
+ * layer itself unmounts for sending/streaming/playing, but the ask panel is
+ * still fixed to the bottom and its margin reads --ask-player-bar-h. Zeroing
+ * that variable drops 取消 by the player-bar height.
+ */
+const OFFSET_PHASES = new Set(["selecting", "drafting", "error", "sending", "streaming", "playing"]);
 
 export type AskEscapeAction = "close-panel" | "exit" | "ignore";
 
@@ -387,6 +394,7 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
       stage={stage}
       askPhase={askPhase}
       active={ACTIVE_PHASES.has(askPhase)}
+      measureOffset={OFFSET_PHASES.has(askPhase)}
       selection={selection}
       stepId={steps[currentIndex]?.id ?? ""}
       setAskSelection={setAskSelection}
@@ -400,6 +408,7 @@ function AskSelectionLayerActive({
   stage,
   askPhase,
   active,
+  measureOffset,
   selection,
   stepId,
   setAskSelection,
@@ -407,6 +416,8 @@ function AskSelectionLayerActive({
 }: AskSelectionLayerProps & {
   askPhase: string;
   active: boolean;
+  /** Keep the mobile player/bar/occlusion variables published. */
+  measureOffset: boolean;
   selection: AskSelectionSummary | null;
   stepId: string;
   setAskSelection: (selection: AskSelectionSummary) => void;
@@ -558,7 +569,12 @@ function AskSelectionLayerActive({
     const kbOpen = isKeyboardOpen();
     setKeyboardOpen(kbOpen);
 
-    if (!active || !isMobileDevice || kbOpen) {
+    // The selection chrome unmounts for sending/streaming/playing, but the
+    // panel stays and its mobile margin is --ask-player-bar-h. Clearing that
+    // variable drops 取消 by the player-bar height. Keep measuring through
+    // those phases. Keyboard open still clears it: the drawer follows
+    // visualViewport instead.
+    if (!measureOffset || !isMobileDevice || kbOpen) {
       document.documentElement.style.setProperty("--ask-bottom-bar-h", "0px");
       document.documentElement.style.setProperty("--ask-player-bar-h", "0px");
       document.documentElement.style.setProperty("--ask-bottom-occlusion", "0px");
@@ -597,7 +613,7 @@ function AskSelectionLayerActive({
       panelHeight: panelH,
     });
     document.documentElement.style.setProperty("--ask-bottom-occlusion", `${totalOcclusion}px`);
-  }, [active, askPhase]);
+  }, [askPhase, measureOffset]);
 
   const prevAskPhaseRef = useRef(askPhase);
   useIsomorphicLayoutEffect(() => {
@@ -626,6 +642,10 @@ function AskSelectionLayerActive({
         const bar = bottomBarRef.current ?? document.querySelector<HTMLElement>("[data-ask-bottom-bar]");
         const chips = bar?.querySelectorAll<HTMLButtonElement>("[data-ask-shortcut]");
         const currentChip = Array.from(chips ?? []).find((c) => c.tabIndex === 0) ?? chips?.[0];
+        // The button that closed the panel still holds focus on this commit.
+        // Blur it first so the chip can take focus in the same frame.
+        const focused = document.activeElement;
+        if (focused instanceof HTMLElement && focused !== currentChip) focused.blur();
         currentChip?.focus({ preventScroll: true });
       }
     }

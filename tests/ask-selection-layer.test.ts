@@ -1415,6 +1415,16 @@ describe("resolveAskEscape", () => {
       // player 60 + panel 200 + gap 8 = 268px (bar hidden while panel open)
       expect(document.documentElement.style.getPropertyValue("--ask-bottom-occlusion")).toBe("268px");
 
+      // sending unmounts the selection chrome, but the panel is still open.
+      // The player offset must stay, or 取消 drops by the player-bar height.
+      await act(async () => {
+        usePlayerStore.setState({ askPhase: "sending" });
+      });
+      expect(document.querySelector("[data-ask-layer]")).toBeNull();
+      expect(document.documentElement.style.getPropertyValue("--ask-player-bar-h")).toBe("60px");
+      expect(document.documentElement.style.getPropertyValue("--ask-bottom-bar-h")).toBe("0px");
+      expect(document.documentElement.style.getPropertyValue("--ask-bottom-occlusion")).toBe("268px");
+
       panelEl.remove();
       playerEl.remove();
 
@@ -1453,6 +1463,14 @@ describe("resolveAskEscape", () => {
       panelEl.getBoundingClientRect = () => domRect(8, 500, 374, 200);
       document.body.appendChild(panelEl);
 
+      // The button that closed the panel can still be document.activeElement
+      // on the commit that returns to selecting. Chip focus has to win anyway.
+      const lingering = document.createElement("button");
+      lingering.textContent = "取消";
+      document.body.append(lingering);
+      lingering.focus();
+      expect(document.activeElement).toBe(lingering);
+
       // Close panel
       panelEl.remove();
       await act(async () => {
@@ -1472,6 +1490,7 @@ describe("resolveAskEscape", () => {
       expect(activeEl!.hasAttribute("data-ask-shortcut")).toBe(true);
       expect(activeEl!.tabIndex).toBe(0);
 
+      lingering.remove();
       playerEl.remove();
       window.matchMedia = originalMatchMedia;
     });
