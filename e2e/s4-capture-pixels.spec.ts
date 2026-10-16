@@ -168,6 +168,8 @@ async function dragOnSubtitle(page: Page) {
 
 type AskImage = { mime: string; dataBase64: string };
 
+type CropBox = { x: number; y: number; width: number; height: number };
+
 const OUT_DIR = process.env.S4_OUT_DIR ?? path.join("test-results", "s4-pixels");
 const LABEL = process.env.S4_LABEL ?? "pixels";
 /** board-950. The flattened dump is composited onto this opaque base. */
@@ -322,17 +324,91 @@ function pixelDelta(a: PngPixel, b: PngPixel): number {
   );
 }
 
+/**
+ * Crop pixels that overlap a `.monaco-editor` box. Capture blanks that
+ * subtree in place (visibility:hidden), so those pixels are an opaque board
+ * fill and must not be 99%-compared to live code. The current 1280 viz drag
+ * and 390 subtitle drag do not hit monaco; this records the overlap so a
+ * later code crop can split the assert. Returns CSS-pixel rects in the
+ * pre-encode image (origin = crop origin).
+ */
+async function monacoOverlapInCrop(
+  page: Page,
+  crop: CropBox,
+): Promise<{ x: number; y: number; width: number; height: number }[]> {
+  return page.evaluate((box) => {
+    const editors = document.querySelectorAll(".monaco-editor");
+    const hits: { x: number; y: number; width: number; height: number }[] = [];
+    const cropRight = box.x + box.width;
+    const cropBottom = box.y + box.height;
+    for (const editor of editors) {
+      const rect = editor.getBoundingClientRect();
+      const left = Math.max(box.x, rect.left);
+      const top = Math.max(box.y, rect.top);
+      const right = Math.min(cropRight, rect.right);
+      const bottom = Math.min(cropBottom, rect.bottom);
+      const width = right - left;
+      const height = bottom - top;
+      if (width <= 0 || height <= 0) continue;
+      hits.push({
+        x: left - box.x,
+        y: top - box.y,
+        width,
+        height,
+      });
+    }
+    return hits;
+  }, crop);
+}
+
+/**
+ * Code pixels the product blanks: opaque fill, transparency ≤1%, no half
+ * glyphs (no channel spread that would be a leftover stroke or mask edge).
+ * Callers pass only the pixels inside the monaco overlap. A flat gold frame
+ * is not a pass: the non-code 99% assert still covers the rest of the crop.
+ */
+function assertBlankedCodePixels(pixels: PngPixel[]): void {
+  expect(pixels.length, "code-region sample").toBeGreaterThan(0);
+  let transparent = 0;
+  let minR = 255;
+  let maxR = 0;
+  let minG = 255;
+  let maxG = 0;
+  let minB = 255;
+  let maxB = 0;
+  for (const pixel of pixels) {
+    if (pixel.a < 255) transparent += 1;
+    if (pixel.r < minR) minR = pixel.r;
+    if (pixel.r > maxR) maxR = pixel.r;
+    if (pixel.g < minG) minG = pixel.g;
+    if (pixel.g > maxG) maxG = pixel.g;
+    if (pixel.b < minB) minB = pixel.b;
+    if (pixel.b > maxB) maxB = pixel.b;
+  }
+  expect(transparent / pixels.length, "code region transparency").toBeLessThanOrEqual(0.01);
+  // A glyph or a gold stroke spreads a channel by well more than a flat fill.
+  const spread = Math.max(maxR - minR, maxG - minG, maxB - minB);
+  expect(spread, "code region is a flat opaque fill, no half glyphs").toBeLessThanOrEqual(8);
+}
+
 function comparePixels(
   baseline: PngPixel[],
   candidate: PngPixel[],
   width: number,
   height: number,
+  skip?: Uint8Array,
 ): { matchRatio: number; largestBlock: number; diff: PngPixel[] } {
   const total = width * height;
+  let compared = 0;
   let matched = 0;
   const fail = new Uint8Array(total);
   const diff: PngPixel[] = new Array(total);
   for (let i = 0; i < total; i++) {
+    if (skip?.[i]) {
+      diff[i] = { r: 0, g: 40, b: 0, a: 255 };
+      continue;
+    }
+    compared += 1;
     const delta = pixelDelta(baseline[i]!, candidate[i]!);
     if (delta <= CHANNEL_TOLERANCE) {
       matched += 1;
@@ -381,7 +457,7 @@ function comparePixels(
       largestBlock = Math.max(largestBlock, count);
     }
   }
-  return { matchRatio: total === 0 ? 1 : matched / total, largestBlock, diff };
+  return { matchRatio: compared === 0 ? 1 : matched / compared, largestBlock, diff };
 }
 
 function flattenOntoBoard950(png: Buffer): Buffer {
@@ -478,8 +554,6 @@ type CaptureProbe = {
   captureSourceNodes?: number;
   captureClonedNodes?: number;
 };
-
-type CropBox = { x: number; y: number; width: number; height: number };
 
 /**
  * Submit one ask and keep the pre-encode canvas on the timing probe.
@@ -607,7 +681,40 @@ async function assertPreEncodePixels(page: Page, width: number) {
   expect(baseline.width).toBe(candidate.width);
   expect(baseline.height).toBe(candidate.height);
 
-  const { matchRatio, largestBlock, diff } = comparePixels(baseline.pixels, candidate.pixels, candidate.width, candidate.height);
+  // Monaco overlap is in CSS px relative to the crop. The current drags
+  // (1280 viz, 390 subtitle) miss `.monaco-editor`. When a crop does overlap,
+  // those pixels are asserted as a blank opaque fill and left out of the 99%
+  // compare. Every other pixel still has to match the closed-panel crop.
+  const monacoBoxes = await monacoOverlapInCrop(page, crop);
+  const scaleX = candidate.width / crop.width;
+  const scaleY = candidate.height / crop.height;
+  const skip = new Uint8Array(candidate.width * candidate.height);
+  const codePixels: PngPixel[] = [];
+  for (const box of monacoBoxes) {
+    const x0 = Math.max(0, Math.floor(box.x * scaleX));
+    const y0 = Math.max(0, Math.floor(box.y * scaleY));
+    const x1 = Math.min(candidate.width, Math.ceil((box.x + box.width) * scaleX));
+    const y1 = Math.min(candidate.height, Math.ceil((box.y + box.height) * scaleY));
+    for (let y = y0; y < y1; y++) {
+      for (let x = x0; x < x1; x++) {
+        const index = y * candidate.width + x;
+        if (skip[index]) continue;
+        skip[index] = 1;
+        codePixels.push(candidate.pixels[index]!);
+      }
+    }
+  }
+  if (codePixels.length > 0) {
+    assertBlankedCodePixels(codePixels);
+  }
+
+  const { matchRatio, largestBlock, diff } = comparePixels(
+    baseline.pixels,
+    candidate.pixels,
+    candidate.width,
+    candidate.height,
+    skip,
+  );
   mkdirSync(OUT_DIR, { recursive: true });
   const baselineFile = path.join(OUT_DIR, `${LABEL}-${width}-baseline.png`);
   const candidateFile = path.join(OUT_DIR, `${LABEL}-${width}-preencode.png`);
@@ -620,6 +727,7 @@ async function assertPreEncodePixels(page: Page, width: number) {
       width,
       matchRatio,
       largestBlock,
+      monacoOverlapPx: codePixels.length,
       baselineFile,
       candidateFile,
       diffFile,
