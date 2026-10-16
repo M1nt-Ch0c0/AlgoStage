@@ -278,6 +278,18 @@ function AskPanelActive({ stage }: AskPanelProps) {
    */
   const captureEpochRef = useRef(0);
   /**
+   * Ask session whose cancel already closed the panel and noted the paint.
+   * The settle-frame close and the submit() cancel paths can both run for
+   * one release. Only the first of them closes and notes.
+   */
+  const cancelClosedSessionRef = useRef<number | null>(null);
+  const closeCancelledOnce = (session: number) => {
+    if (cancelClosedSessionRef.current === session) return;
+    cancelClosedSessionRef.current = session;
+    usePlayerStore.getState().closeAskPanel();
+    noteCancelPaintAfterRelease();
+  };
+  /**
    * True once the post-capture macrotask has run and the 120ms settle is
    * still open. A release in that window closes on the next frame. A release
    * that landed earlier is the 390 path: the macrotask itself closes.
@@ -586,12 +598,12 @@ function AskPanelActive({ stage }: AskPanelProps) {
       holdWaitingRef.current = false;
       if (holdResult === "cancel" || (capture?.ok === false && capture.reason === "ABORTED")) {
         setPreparing(false);
-        usePlayerStore.getState().closeAskPanel();
         // The panel unmounts on this path, so the paint mark cannot wait
         // for an effect. React flushes this commit before the task yields;
         // the next frame, and only that frame, is the paint mark. The
         // yield and the hold wait have already resolved by here.
-        noteCancelPaintAfterRelease();
+        // A settle-time release may already have closed this session.
+        closeCancelledOnce(session);
         sendingRef.current = false;
         return;
       }
@@ -614,12 +626,18 @@ function AskPanelActive({ stage }: AskPanelProps) {
         return;
       }
       // The hold wait sits between capture resolving and this send. A cancel
-      // decided in that gap (release on 取消, the abort, or the hold latch)
-      // bumped the epoch. The screenshot is stale and is not submitted.
-      if (captureEpochRef.current !== captureEpoch || captureAbort.signal.aborted) {
+      // released on 取消 in that window no longer has captureAbortRef (it is
+      // cleared when capture returns), so the epoch is not bumped and the
+      // signal is not aborted. The release flag and the hold latch are that
+      // decision. An earlier abort still shows up as a bumped epoch.
+      if (
+        captureEpochRef.current !== captureEpoch ||
+        captureAbort.signal.aborted ||
+        releasedOnCancelRef.current ||
+        holdRef.current.latched(session) === "cancel"
+      ) {
         setPreparing(false);
-        usePlayerStore.getState().closeAskPanel();
-        noteCancelPaintAfterRelease();
+        closeCancelledOnce(session);
         sendingRef.current = false;
         return;
       }
@@ -803,8 +821,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
           inSettleRef.current = false;
           const closeSettled = () => {
             setPreparing(false);
-            usePlayerStore.getState().closeAskPanel();
-            noteCancelPaintAfterRelease();
+            closeCancelledOnce(askSessionRef.current);
           };
           const raf = globalThis.requestAnimationFrame;
           if (typeof raf === "function") raf(() => closeSettled());
