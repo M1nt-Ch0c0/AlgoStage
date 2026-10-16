@@ -12,6 +12,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -53,6 +54,16 @@ import { ASK_LIMITS, type AskSelectionSummary, type AskTarget } from "@/lib/ask/
 import { usePlayerStore } from "@/lib/player/store";
 
 const PANEL_PHASES = new Set(["drafting", "sending", "streaming", "error"]);
+const EXIT_PHASES = new Set(["selecting", "idle"]);
+const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
+
+function hideAskPanelNow(panel: HTMLElement | null): void {
+  if (!panel) return;
+  panel.style.display = "none";
+  panel.setAttribute("aria-hidden", "true");
+  panel.setAttribute("inert", "");
+}
+
 const DESKTOP_QUERY = "(min-width: 1024px)";
 const PANEL_WIDTH = 320;
 const GAP = 8;
@@ -210,14 +221,49 @@ function CaptureFallbackNotice() {
 export default function AskPanel({ stage }: AskPanelProps) {
   const askPhase = usePlayerStore((s) => s.askPhase);
   const captureFailed = usePlayerStore((s) => s.askCaptureFallback);
-  // playing / done 不挂草稿面板：选区已被清空，再挂会显示「已选：无」。
-  // streaming 还留着选区，面板要留到 start 之后、result 之前（Esc 仍不关它）。
-  // 截图失败提示从回答文字出现留到下一次提问，或仍在圈选时退出。不跟 phase 一起卸。
-  if (askPhase === "playing" || askPhase === "done") {
+  const prevPhaseRef = useRef(askPhase);
+  /** True for one frame after cancel/exit so AskPanelActive stays mounted (already hidden). */
+  const exitHoldRef = useRef(false);
+  const [, setExitTick] = useState(0);
+
+  const prev = prevPhaseRef.current;
+  if (prev !== askPhase) {
+    prevPhaseRef.current = askPhase;
+    if (PANEL_PHASES.has(prev) && EXIT_PHASES.has(askPhase)) {
+      exitHoldRef.current = true;
+    } else if (
+      askPhase === "playing" ||
+      askPhase === "done" ||
+      PANEL_PHASES.has(askPhase)
+    ) {
+      exitHoldRef.current = false;
+    }
+  }
+
+  const inPanelPhase = PANEL_PHASES.has(askPhase);
+  const answerPhase = askPhase === "playing" || askPhase === "done";
+
+  useIsomorphicLayoutEffect(() => {
+    if (!exitHoldRef.current || inPanelPhase) return;
+    hideAskPanelNow(document.querySelector<HTMLElement>("[data-ask-panel]"));
+    const raf = globalThis.requestAnimationFrame;
+    if (typeof raf !== "function") {
+      exitHoldRef.current = false;
+      setExitTick((n) => n + 1);
+      return;
+    }
+    const id = raf(() => {
+      exitHoldRef.current = false;
+      setExitTick((n) => n + 1);
+    });
+    return () => globalThis.cancelAnimationFrame?.(id);
+  }, [askPhase, inPanelPhase]);
+
+  if (answerPhase) {
     if (!captureFailed) return null;
     return <CaptureFallbackNotice />;
   }
-  if (!PANEL_PHASES.has(askPhase)) return null;
+  if (!inPanelPhase && !exitHoldRef.current) return null;
   return <AskPanelActive stage={stage} />;
 }
 
@@ -287,6 +333,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
   const closeCancelledOnce = (session: number) => {
     if (cancelClosedSessionRef.current === session) return;
     cancelClosedSessionRef.current = session;
+    hideAskPanelNow(panelRef.current);
     usePlayerStore.getState().closeAskPanel();
     noteCancelPaintAfterRelease();
   };
@@ -724,6 +771,9 @@ function AskPanelActive({ stage }: AskPanelProps) {
   });
   const cancelDraft = usePointerActivate(() => {
     if (holdWaitingRef.current || heldAfterSendRef.current) return;
+    // Hide in this pointerup / keyboard commit, before React paints the
+    // one-frame exit hold. removeChild of the panel waits until the next frame.
+    hideAskPanelNow(panelRef.current);
     closeAskPanel();
   });
 

@@ -214,6 +214,23 @@ async function drainPaintFrames() {
   });
 }
 
+/**
+ * PANEL → selecting keeps the panel mounted for one frame, already hidden.
+ * happy-dom's requestAnimationFrame is setImmediate, and React's awaited
+ * act flushes that frame before it resolves, so the hidden node is only
+ * observable inside the act that closed the panel. Call this there, then
+ * drainPaintFrames in the same act to unmount.
+ */
+function expectPanelHiddenSelecting() {
+  const held = container.querySelector<HTMLElement>("[data-ask-panel]");
+  expect(held).not.toBeNull();
+  expect(held?.style.display).toBe("none");
+  expect(held?.getAttribute("aria-hidden")).toBe("true");
+  expect(held?.hasAttribute("inert")).toBe(true);
+  expect(held?.inert).toBe(true);
+  expect(usePlayerStore.getState().askPhase).toBe("selecting");
+}
+
 /** Drain the pre-capture paint, then the post-capture macrotask and settle. */
 async function finishCaptureTurn() {
   await Promise.resolve();
@@ -723,6 +740,11 @@ describe("ask panel", () => {
 
     await act(async () => {
       usePlayerStore.getState().closeAskPanel();
+      // Let the selecting commit paint the hidden hold before the exit rAF
+      // (happy-dom setImmediate) unmounts it at the end of this act.
+      await Promise.resolve();
+      expectPanelHiddenSelecting();
+      await drainPaintFrames();
     });
     expect(container.querySelector("[data-ask-panel]")).toBeNull();
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
@@ -755,6 +777,8 @@ describe("ask panel", () => {
     await act(async () => {
       const cancel = container.querySelector<HTMLButtonElement>("[data-ask-cancel]");
       if (cancel) activateButton(cancel);
+      expectPanelHiddenSelecting();
+      await drainPaintFrames();
     });
     expect(container.querySelector("[data-ask-panel]")).toBeNull();
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
@@ -911,12 +935,40 @@ describe("ask panel", () => {
     await act(async () => {
       const cancel = container.querySelector<HTMLButtonElement>("[data-ask-cancel]");
       if (cancel) activateButton(cancel);
+      expectPanelHiddenSelecting();
+      expect(usePlayerStore.getState().draftQuestion).toBe("下次还在");
+      expect(usePlayerStore.getState().selection).toBe(kept);
+      await drainPaintFrames();
     });
-    const state = usePlayerStore.getState();
-    expect(state.askPhase).toBe("selecting");
-    expect(state.draftQuestion).toBe("下次还在");
-    expect(state.selection).toBe(kept);
     expect(container.querySelector("[data-ask-panel]")).toBeNull();
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
+    expect(usePlayerStore.getState().draftQuestion).toBe("下次还在");
+    expect(usePlayerStore.getState().selection).toBe(kept);
+  });
+
+  test("b2. cancel hides panel in commit then unmounts next frame", async () => {
+    const kept = selection();
+    draft("drafting", { draftQuestion: "下次还在", selection: kept });
+    await render();
+    const cancel = container.querySelector<HTMLButtonElement>("[data-ask-cancel]");
+    if (!cancel) throw new Error("cancel missing");
+    await act(async () => {
+      activateButton(cancel);
+      expectPanelHiddenSelecting();
+      // aria-hidden and inert are set for the hold frame. happy-dom refuses
+      // focus() on an inert element, so a programmatic focus cannot land here.
+      const held = container.querySelector<HTMLElement>("[data-ask-panel]");
+      const before = document.activeElement;
+      held?.querySelector<HTMLElement>("button, textarea")?.focus();
+      expect(document.activeElement).toBe(before);
+      expect(usePlayerStore.getState().draftQuestion).toBe("下次还在");
+      expect(usePlayerStore.getState().selection).toBe(kept);
+      await drainPaintFrames();
+    });
+    expect(container.querySelector("[data-ask-panel]")).toBeNull();
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
+    expect(usePlayerStore.getState().draftQuestion).toBe("下次还在");
+    expect(usePlayerStore.getState().selection).toBe(kept);
   });
 
   test("29. 全页只有一个 role=status，role=alert 只在 error", async () => {
@@ -1041,18 +1093,24 @@ describe("ask panel", () => {
     await render();
 
     const heldYields: Array<() => void> = [];
-    vi.stubGlobal("setTimeout", (callback: TimerHandler) => {
+    const nativeSetTimeout = globalThis.setTimeout;
+    vi.stubGlobal("setTimeout", (callback: TimerHandler, delay?: number, ...args: unknown[]) => {
       // The post-capture yield is a macrotask and then the input settle.
       // Both use askInputMacrotask. The pre-capture paint's setTimeout(0)
       // is a different callback, and this stub runs that one immediately.
+      // Other timers (happy-dom's async-task bookkeeping) stay native:
+      // running them inline nests act() and drops the exit-hold frame.
       if (typeof callback === "function" && callback.toString().includes("askInputMacrotask")) {
         heldYields.push(() => {
           callback();
         });
         return heldYields.length;
       }
-      if (typeof callback === "function") callback();
-      return 0;
+      if (typeof callback === "function" && callback.toString().includes("setTimeout(resolve, 0)")) {
+        callback();
+        return 0;
+      }
+      return nativeSetTimeout(callback as (...cbArgs: unknown[]) => void, delay, ...args);
     });
 
     const pendingSubmit = act(async () => {
@@ -1068,15 +1126,18 @@ describe("ask panel", () => {
     await act(async () => {
       const cancel = container.querySelector<HTMLButtonElement>("[data-ask-cancel]");
       if (cancel) activateButton(cancel);
+      expectPanelHiddenSelecting();
+    });
+    // The held askInputMacrotask blocks the exit-hold frame. Releasing it
+    // lets submit finish (and drop the send) and lets the next rAF unmount.
+    const queued = heldYields.splice(0);
+    await act(async () => {
+      queued.forEach((release) => release());
+      await pendingSubmit;
+      await drainPaintFrames();
     });
     expect(container.querySelector("[data-ask-panel]")).toBeNull();
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
-
-    const queued = heldYields.splice(0);
-    queued.forEach((release) => release());
-    await act(async () => {
-      await pendingSubmit;
-    });
     expect(sendAsk).toHaveBeenCalledTimes(1);
     expect(vi.mocked(sendAsk).mock.calls[0]?.[1]?.isCurrent?.()).toBe(false);
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
