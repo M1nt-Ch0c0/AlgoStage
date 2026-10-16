@@ -169,6 +169,18 @@ async function gesture(fromX: number, fromY: number, toX: number, toY: number, p
   });
 }
 
+async function flushMeasureFrame() {
+  await act(async () => {
+    await new Promise<void>((resolve) => {
+      if (typeof requestAnimationFrame === "function") {
+        requestAnimationFrame(() => resolve());
+      } else {
+        resolve();
+      }
+    });
+  });
+}
+
 describe("AskSelectionLayer", () => {
   test("idle 不渲染层", async () => {
     usePlayerStore.setState({ askPhase: "idle" });
@@ -776,6 +788,7 @@ describe("AskSelectionLayer", () => {
     // 移除芯片以模拟芯片已不在 DOM 中的情况
     document.querySelectorAll('[data-ask-shortcut="subtitle"]').forEach((el) => el.remove());
 
+    await flushMeasureFrame();
     await flushFocus();
     expect(document.activeElement).toBe(entry);
 
@@ -1591,6 +1604,7 @@ describe("resolveAskEscape", () => {
       await act(async () => {
         window.dispatchEvent(new Event("resize"));
       });
+      await flushMeasureFrame();
 
       expect(document.documentElement.style.getPropertyValue("--ask-bottom-bar-h")).toBe("52px");
 
@@ -1639,6 +1653,7 @@ describe("resolveAskEscape", () => {
       await act(async () => {
         flushPendingRafs();
       });
+      await flushMeasureFrame();
       expect(document.documentElement.style.getPropertyValue("--ask-bottom-bar-h")).not.toBe("");
 
       await act(async () => {
@@ -1736,6 +1751,7 @@ describe("resolveAskEscape", () => {
       await act(async () => {
         window.dispatchEvent(new Event("resize"));
       });
+      await flushMeasureFrame();
 
       // player 60 + bar 52 + gap 8 = 120px
       expect(document.documentElement.style.getPropertyValue("--ask-bottom-occlusion")).toBe("120px");
@@ -1749,6 +1765,7 @@ describe("resolveAskEscape", () => {
       await act(async () => {
         window.dispatchEvent(new Event("resize"));
       });
+      await flushMeasureFrame();
 
       // player 60 + panel 200 + gap 8 = 268px (bar hidden while panel open)
       expect(document.documentElement.style.getPropertyValue("--ask-bottom-occlusion")).toBe("268px");
