@@ -1819,50 +1819,84 @@ test.describe("390 selection flow", () => {
       expect(exitBox!.height).toBeGreaterThanOrEqual(44);
     });
 
-    // drag start drifts while the entering scroll is still in progress; fix in chip390-b
-    test.fixme("(B) immediate touch drag over lines 2–4 without waiting", async ({ page }) => {
+    // chip390-b：进入圈选的平滑滚动还在走时按下，起点要落在按下那一刻停住后的行上。
+    for (const reduced of [false, true]) {
+    test(`(B) drag pressed 100ms into the entering scroll covers the lines actually dragged${reduced ? " (reduced motion)" : ""}`, async ({ page }) => {
+      if (reduced) await page.emulateMedia({ reducedMotion: "reduce" });
       await startGenerated(page);
       await pauseLecture(page);
 
+      const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
       const button = entry(page);
       await button.scrollIntoViewIfNeeded();
+      // 让代码区先不在视口内，确保进入时会触发平滑滚动。
+      await page.evaluate(() => window.scrollTo({ top: 0, behavior: "auto" }));
+      const y0 = await page.evaluate(() => window.scrollY);
       await button.click();
+      if (!reduced) {
+        await expect.poll(() => page.evaluate(() => window.scrollY), { timeout: 3000 }).not.toBe(y0);
+      }
+      await page.waitForTimeout(100);
 
-      const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
-      await expect(code).toBeVisible();
-
-      // Ensure line 2 is within viewport during entering scroll
-      await expect.poll(async () => {
-        try {
-          const l2 = await getMonacoLineBox(page, 2);
-          const vh = page.viewportSize()?.height ?? 800;
-          return l2.top >= 0 && l2.bottom <= vh;
-        } catch {
-          return false;
-        }
-      }, { timeout: 3000 }).toBe(true);
+      const lineAt = (y: number) =>
+        page.evaluate((py) => {
+          for (const ln of document.querySelectorAll<HTMLElement>(".monaco-editor .line-numbers")) {
+            const r = ln.getBoundingClientRect();
+            if (r.height > 0 && py >= r.top && py < r.bottom) {
+              return { line: Number(ln.textContent?.trim()), below: r.bottom - py };
+            }
+          }
+          return null;
+        }, y);
 
       const boxAtDown = (await code.boundingBox())!;
-      const line2 = await getMonacoLineBox(page, 2);
+      const vh = page.viewportSize()!.height;
       const startX = boxAtDown.x + 60;
-      const startY = (line2.top + line2.bottom) / 2;
-
+      const startY = Math.round(vh * 0.35);
       await page.mouse.move(startX, startY);
       await page.mouse.down();
 
-      // Pointerdown cancels in-flight smooth scroll; sample fresh rects for line 4
-      const boxAtUp = (await code.boundingBox())!;
-      const line4 = await getMonacoLineBox(page, 4);
-      const endX = boxAtUp.x + 160;
-      const endY = (line4.top + line4.bottom) / 2;
+      // 按下即停住滚动：之后 scrollY 不再变。
+      const yDown = await page.evaluate(() => window.scrollY);
+      await page.waitForTimeout(150);
+      expect(await page.evaluate(() => window.scrollY)).toBe(yDown);
 
-      await page.mouse.move(endX, endY, { steps: 5 });
+      const hitAtDown = await lineAt(startY);
+      expect(hitAtDown).not.toBeNull();
+      // 框只擦过起点那一行底部 ≤2px 时，命中按死区不算这一行（同 mid-drag 用例的 2px 规则）。
+      const startLine = hitAtDown!.below <= 2 ? hitAtDown!.line + 1 : hitAtDown!.line;
+      const endLine = startLine + 2;
+      const endBox = await getMonacoLineBox(page, endLine);
+      await page.mouse.move(boxAtDown.x + 160, (endBox.top + endBox.bottom) / 2, { steps: 5 });
       await page.mouse.up();
 
       const panel = page.locator("[data-ask-panel]");
       await expect(panel).toBeVisible();
-      await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：代码第 2–4 行");
+      const expected = `已选：代码第 ${startLine}–${endLine} 行`;
+      await expect(panel.locator("[data-ask-panel-label]")).toHaveText(expected);
+
+      // 滚动停住后：选框、高亮、标签三者都指向按下的那一行，不能框在一行、高亮在另一行。
+      const startBox = await getMonacoLineBox(page, startLine);
+      const lastBox = await getMonacoLineBox(page, endLine);
+      const sel = (await page.locator("[data-ask-selection]").boundingBox())!;
+      expect(sel).not.toBeNull();
+      // 开面板后页面可能再滚一次，所以按行比：选框上沿落在起始行内，下沿落在末行内。
+      expect(sel.y).toBeGreaterThanOrEqual(startBox.top - 3);
+      expect(sel.y).toBeLessThanOrEqual(startBox.bottom);
+      expect(sel.y + sel.height).toBeGreaterThanOrEqual(lastBox.top);
+      expect(sel.y + sel.height).toBeLessThanOrEqual(lastBox.bottom + 3);
+      const hl = page.locator("[data-ask-highlight]");
+      expect(await hl.count()).toBeGreaterThan(0);
+      for (let i = 0; i < (await hl.count()); i++) {
+        const h = (await hl.nth(i).boundingBox())!;
+        // 高亮必须覆盖起始行和末行，和选框同一处。
+        expect(h.y).toBeLessThanOrEqual(startBox.bottom - 2);
+        expect(h.y + h.height).toBeGreaterThanOrEqual(lastBox.top + 2);
+      }
+      const selLabel = page.locator("[data-ask-selection-label]");
+      if (await selLabel.count()) await expect(selLabel).toHaveText(expected);
     });
+    }
 
     test("h. selection fully visible above drawer: record scrollY, open panel, scrollY unchanged", async ({ page }) => {
       // fixme: depends on S4 r4 ask-panel.tsx:181 block:'nearest' (Gavin)

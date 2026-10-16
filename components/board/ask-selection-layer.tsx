@@ -971,6 +971,32 @@ function AskSelectionLayerActive({
     [getStage, setAskSelection],
   );
 
+  /** 停住进行中的进入滚动（平滑滚动）。返回是否确实有滚动被停住。 */
+  const stopInflightScroll = (): boolean => {
+    const wasScrolling = enteringSmoothScrollRef.current;
+    if (enteringScrollRafRef.current != null) {
+      cancelAnimationFrame(enteringScrollRafRef.current);
+      enteringScrollRafRef.current = null;
+    }
+    if (enteringScrollTimerRef.current) {
+      clearTimeout(enteringScrollTimerRef.current);
+      enteringScrollTimerRef.current = null;
+    }
+    enteringSmoothScrollRef.current = false;
+    if (typeof window !== "undefined") {
+      // scrollIntoView 的平滑滚动会带上所有可滚动祖先，逐个停在当前位置。
+      let node: HTMLElement | null = getStage()?.parentElement ?? null;
+      while (node && node !== document.body && node !== document.documentElement) {
+        if (node.scrollHeight > node.clientHeight + 1 || node.scrollWidth > node.clientWidth + 1) {
+          node.scrollTo({ top: node.scrollTop, left: node.scrollLeft, behavior: "auto" });
+        }
+        node = node.parentElement;
+      }
+      window.scrollTo({ top: window.scrollY, left: window.scrollX, behavior: "auto" });
+    }
+    return wasScrolling;
+  };
+
   const beginPointer = (
     hostEl: HTMLElement,
     pointerId: number,
@@ -998,9 +1024,26 @@ function AskSelectionLayerActive({
     }
 
     if (scrollModeRef.current || suppressDrawRef.current) return;
-    originRef.current = sample;
+    // 进入圈选时的平滑滚动可能还在走：按下即停住滚动，再按停住后的位置重新取起点，
+    // 起点和之后的移动都落在同一份文档坐标里（中途手动滚动仍走 scrollDeltaRef）。
+    stopInflightScroll();
+    const start = sampleAt(stageHost, clientX, clientY);
+    pointersRef.current.set(pointerId, start);
+    originRef.current = start;
     drawingRef.current = true;
-    setRubberBand(bandFrom(sample, sample));
+    setRubberBand(bandFrom(start, start));
+    // 停滚后浏览器要到下一帧才把滚动位置落定（可能往回退几像素）。
+    // 下一帧按落定后的布局重取起点，起点就是按下处此后显示的那一行。
+    requestAnimationFrame(() => {
+      if (originRef.current !== start || !drawingRef.current) return;
+      const settledHost = getStage();
+      if (!settledHost) return;
+      const settled = sampleAt(settledHost, clientX, clientY);
+      originRef.current = settled;
+      const cur = pointersRef.current.get(pointerId);
+      if (cur === start) pointersRef.current.set(pointerId, settled);
+      setRubberBand(bandFrom(settled, cur === start || !cur ? settled : cur));
+    });
   };
 
   const isIgnoredTarget = (target: EventTarget | null): boolean => {
