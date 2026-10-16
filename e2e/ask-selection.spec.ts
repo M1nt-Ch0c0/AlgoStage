@@ -2425,14 +2425,23 @@ test.describe("390 selection flow", () => {
       const line9 = await getMonacoLineBox(page, 9);
       const codeBox = (await code.boundingBox())!;
 
-      await installPointerdownClock(page);
-      await page.touchscreen.tap(codeBox.x + 80, (line9.top + line9.bottom) / 2);
+      const tapX = codeBox.x + 80;
+      const tapY = (line9.top + line9.bottom) / 2;
       // Bar is hidden while the panel is open (option B); the visible subtitle chip lives in the panel.
-      const chip = page
-        .locator("[data-ask-panel] [data-ask-shortcut='subtitle'], [data-ask-bottom-bar] [data-ask-shortcut='subtitle']")
-        .locator("visible=true")
-        .first();
+      const chipSel =
+        "[data-ask-panel] [data-ask-shortcut='subtitle'], [data-ask-bottom-bar] [data-ask-shortcut='subtitle']";
+      const chip = page.locator(chipSel).locator("visible=true").first();
+
+      // Warm-up: learn where the chip renders once the panel is open, then cancel back to selecting.
+      await page.touchscreen.tap(tapX, tapY);
       const chipBox = (await chip.boundingBox())!;
+      const cancelBtn = page.locator("[data-ask-panel] [data-ask-cancel]");
+      await cancelBtn.click();
+      await expect(page.locator("[data-ask-panel]")).toHaveCount(0);
+
+      await installPointerdownClock(page);
+      await page.touchscreen.tap(tapX, tapY);
+      await page.waitForSelector("[data-ask-panel] [data-ask-shortcut='subtitle']");
       await page.touchscreen.tap(chipBox.x + chipBox.width / 2, chipBox.y + chipBox.height / 2);
       const downs = await readPointerdownClock(page);
       expect(downs.length).toBeGreaterThanOrEqual(2);
