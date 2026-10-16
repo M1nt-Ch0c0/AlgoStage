@@ -131,14 +131,15 @@ export function isEnteringScrollInFlight(
 }
 
 /**
- * 检查元素是否完全处于视口中（考虑底部栏遮挡）。
- * 视口顶部为 0，可用底部为 innerHeight - bottomBarHeight。
+ * 检查元素是否完全处于视口中（考虑底部栏遮挡和顶部吸顶栏）。
+ * 视口顶部为 topInset（默认 0），可用底部为 innerHeight - bottomBarHeight。
  */
 export function isElementFullyInView(
   rect: { top: number; bottom: number },
   viewport: { innerHeight: number; bottomBarHeight: number },
+  topInset = 0,
 ): boolean {
-  if (rect.top < 0) return false;
+  if (rect.top < topInset) return false;
   if (rect.bottom > viewport.innerHeight - viewport.bottomBarHeight) return false;
   return true;
 }
@@ -626,6 +627,16 @@ function AskSelectionLayerActive({
   // getBoundingClientRect after a root custom-property write each force a
   // full-document recalc. Focus is owned by finishAskCancelSync.
 
+  const [voidCount, setVoidCount] = useState(0);
+  const voidCountRef = useRef(0);
+  const incrementVoid = useCallback(() => {
+    voidCountRef.current += 1;
+    setVoidCount(voidCountRef.current);
+    if (rootRef.current) {
+      rootRef.current.setAttribute("data-ask-void-count", String(voidCountRef.current));
+    }
+  }, []);
+
   const [rubberBand, setRubberBand] = useState<RubberBand | null>(null);
   const [hint, setHint] = useState<string | null>(null);
   const [activeShortcut, setActiveShortcut] = useState(0);
@@ -1078,12 +1089,23 @@ function AskSelectionLayerActive({
       const barObstacle = getAskBottomObstacle(barEl);
       const codeRect = codeEl.getBoundingClientRect();
 
+      const headerEl = typeof document !== "undefined" ? document.querySelector<HTMLElement>("header") : null;
+      let headerBottom = 0;
+      if (headerEl && typeof window !== "undefined") {
+        const headerPos = window.getComputedStyle(headerEl).position;
+        if (headerPos === "fixed" || headerPos === "sticky") {
+          headerBottom = headerEl.getBoundingClientRect().bottom;
+        }
+      }
+
       const inView = isElementFullyInView(
         { top: codeRect.top, bottom: codeRect.bottom },
         { innerHeight: window.innerHeight, bottomBarHeight: barObstacle },
+        headerBottom,
       );
 
       if (!inView) {
+        codeEl.style.scrollMarginTop = `${headerBottom + 8}px`;
         const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
         if (!prefersReduced) {
           enteringSmoothScrollRef.current = true;
@@ -1271,6 +1293,7 @@ function AskSelectionLayerActive({
             setHint(ASK_EMPTY_HIT);
           }
           setAskCodeMissNotice(null);
+          incrementVoid();
           return false;
         }
       }
@@ -1283,6 +1306,7 @@ function AskSelectionLayerActive({
           setHint(ASK_EMPTY_HIT);
         }
         setAskCodeMissNotice(null);
+        incrementVoid();
         return false;
       }
 
@@ -1296,7 +1320,7 @@ function AskSelectionLayerActive({
       setAskSelection({ mode: hit.mode, bbox: box, targets: hit.targets });
       return true;
     },
-    [getStage, setAskSelection],
+    [getStage, incrementVoid, setAskSelection],
   );
 
   /** 停住进行中的进入滚动（平滑滚动）。返回是否确实有滚动被停住。 */
@@ -1412,6 +1436,23 @@ function AskSelectionLayerActive({
         downClientRef.current = null;
         const pending = pendingReleaseRef.current;
         pendingReleaseRef.current = null;
+
+        if (sameFrames < 2) {
+          pointersRef.current.delete(pointerId);
+          if (pending) {
+            pointersRef.current.delete(pending.pointerId);
+          }
+          drawingRef.current = false;
+          originRef.current = null;
+          suppressDrawRef.current = false;
+          setRubberBand(null);
+          if (pending && pending.pointerType === "touch") {
+            suppressClickUntilRef.current = null;
+            touchCompletedSelectionRef.current = false;
+          }
+          incrementVoid();
+          return;
+        }
 
         if (originRef.current !== start || !drawingRef.current) {
           if (pending && pending.pointerType === "touch") {
@@ -1700,6 +1741,7 @@ function AskSelectionLayerActive({
     <div
       ref={rootRef}
       data-ask-layer
+      data-ask-void-count={voidCount}
       role="application"
       aria-label="圈选区域"
       tabIndex={-1}

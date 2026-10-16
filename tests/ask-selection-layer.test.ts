@@ -1656,6 +1656,27 @@ describe("resolveAskEscape", () => {
       expect(isElementFullyInView({ top: -100, bottom: 900 }, viewport)).toBe(false);
     });
 
+    test("isElementFullyInView with topInset", () => {
+      const viewport = { innerHeight: 844, bottomBarHeight: 60 };
+      const topInset = 50;
+
+      // rect.top >= topInset and bottom within available viewport height
+      expect(isElementFullyInView({ top: 50, bottom: 500 }, viewport, topInset)).toBe(true);
+      expect(isElementFullyInView({ top: 100, bottom: 784 }, viewport, topInset)).toBe(true);
+
+      // rect.top < topInset treats element as not fully in view (under fixed header)
+      expect(isElementFullyInView({ top: 49, bottom: 500 }, viewport, topInset)).toBe(false);
+      expect(isElementFullyInView({ top: 0, bottom: 500 }, viewport, topInset)).toBe(false);
+      expect(isElementFullyInView({ top: -10, bottom: 500 }, viewport, topInset)).toBe(false);
+
+      // rect.bottom exceeds available height (below bottom bar)
+      expect(isElementFullyInView({ top: 50, bottom: 785 }, viewport, topInset)).toBe(false);
+
+      // Default topInset is 0 (backward-compatible)
+      expect(isElementFullyInView({ top: 0, bottom: 500 }, viewport)).toBe(true);
+      expect(isElementFullyInView({ top: -1, bottom: 500 }, viewport)).toBe(false);
+    });
+
     test("computeBottomOcclusion / computeOcclusion pure helper computes total occlusion with gaps", () => {
       expect(computeBottomOcclusion({})).toBe(0);
       expect(computeOcclusion({ playerHeight: 0, barHeight: 0, panelHeight: 0 })).toBe(0);
@@ -3560,6 +3581,253 @@ describe("resolveAskEscape", () => {
 
       // empty-hit hint shown (code miss hint for code hit or ASK_EMPTY_HIT)
       expect(layer().textContent).toContain(ASK_CODE_MISS_HINT);
+    });
+
+    test("press after scroll (press during scroll, scroll stops, commit uses settled line, void count unchanged)", async () => {
+      setupEnteringScrollEnv();
+      await startEnteringScroll(10);
+      const host = layer();
+      const codeEl = stage.querySelector<HTMLElement>('[data-ask-target="code"]')!;
+      codeEl.setAttribute("data-ask-id", "code:main");
+      codeEl.setAttribute("data-ask-step-id", "s1");
+      codeEl.getBoundingClientRect = () => domRect(0, 0, 300, 400);
+
+      const mockHandle: CodeEditorHandle = {
+        getLineRangeForClientBox: vi.fn((top: number, bottom: number) => {
+          if (top < 0 || bottom > 200) return null;
+          const startLine = Math.floor(top / 20) + 1;
+          const endLine = Math.floor((bottom - 1) / 20) + 1;
+          if (startLine > 10 || endLine > 10) return null;
+          return { startLine, endLine };
+        }),
+        getLinesText: vi.fn((start, end) => `line ${start} to ${end}`),
+        getFullText: vi.fn(() => "code full text"),
+      };
+      registerCodeEditor(codeEl, mockHandle);
+
+      expect(host.getAttribute("data-ask-void-count")).toBe("0");
+
+      // Press during scroll at clientX=50, clientY=50
+      await act(async () => {
+        host.dispatchEvent(pointer("pointerdown", { pointerId: 1, clientX: 50, clientY: 50 }));
+        host.dispatchEvent(pointer("pointerup", { pointerId: 1, clientX: 50, clientY: 50 }));
+      });
+
+      // Frame 1: scroll position changes (scrollY 10 -> 20)
+      await act(async () => {
+        currentScrollY = 20;
+        flushPendingRafs(1);
+      });
+      // Frame 2: scroll position changes again (scrollY 20 -> 30)
+      await act(async () => {
+        currentScrollY = 30;
+        flushPendingRafs(1);
+      });
+
+      // Scroll stops at scrollY = 30: stage top shifted by -20
+      stage.getBoundingClientRect = () => domRect(0, -20, 400, 300);
+
+      // Frame 3: scroll position unchanged (sameFrames = 1 < 2)
+      await act(async () => {
+        flushPendingRafs(1);
+      });
+      // Frame 4: scroll position unchanged again (sameFrames = 2 -> settles)
+      await act(async () => {
+        flushPendingRafs(1);
+      });
+
+      const sel = usePlayerStore.getState().selection;
+      expect(sel).not.toBeNull();
+      expect(sel?.targets[0].codeRange).toEqual({ startLine: 3, endLine: 3 });
+      expect(usePlayerStore.getState().askPhase).toBe("drafting");
+      // Void count unchanged
+      expect(host.getAttribute("data-ask-void-count")).toBe("0");
+    });
+
+    test("empty range voided (settled point maps to empty range -> no panel, no rubber band, prior selection kept, data-ask-void-count +1)", async () => {
+      setupEnteringScrollEnv();
+      await startEnteringScroll(10);
+      const host = layer();
+      const codeEl = stage.querySelector<HTMLElement>('[data-ask-target="code"]')!;
+      codeEl.setAttribute("data-ask-id", "code:main");
+      codeEl.setAttribute("data-ask-step-id", "s1");
+      codeEl.getBoundingClientRect = () => domRect(0, 0, 300, 400);
+
+      const mockHandle: CodeEditorHandle = {
+        getLineRangeForClientBox: vi.fn((top: number, bottom: number) => {
+          if (top < 0 || bottom > 100) return null;
+          const startLine = Math.floor(top / 20) + 1;
+          const endLine = Math.floor((bottom - 1) / 20) + 1;
+          return { startLine, endLine };
+        }),
+        getLinesText: vi.fn((start, end) => `line ${start} to ${end}`),
+        getFullText: vi.fn(() => "code full text"),
+      };
+      registerCodeEditor(codeEl, mockHandle);
+
+      const priorSelection = {
+        mode: "single" as const,
+        bbox: { x: 5, y: 5, width: 50, height: 20 },
+        targets: [{ id: "step:s1", kind: "step" as const, text: "步骤 1" }],
+      };
+      usePlayerStore.setState({ selection: priorSelection, askPhase: "selecting" });
+      const initialVoidCount = Number(host.getAttribute("data-ask-void-count") ?? "0");
+
+      // Tap at clientX=50, clientY=150 (outside valid code lines 0..100)
+      await act(async () => {
+        host.dispatchEvent(pointer("pointerdown", { pointerId: 1, clientX: 50, clientY: 150 }));
+        host.dispatchEvent(pointer("pointerup", { pointerId: 1, clientX: 50, clientY: 150 }));
+      });
+
+      // Flush settle rAFs to let it settle
+      await act(async () => {
+        flushPendingRafs();
+      });
+
+      // commitBand returned false: prior selection kept, no panel
+      expect(usePlayerStore.getState().selection).toEqual(priorSelection);
+      expect(usePlayerStore.getState().askPhase).toBe("selecting");
+
+      // No rubber band left
+      expect(host.querySelector("[data-ask-rubber]")).toBeNull();
+
+      // data-ask-void-count incremented by 1
+      expect(host.getAttribute("data-ask-void-count")).toBe(String(initialVoidCount + 1));
+    });
+
+    test("continuous scrolling voids after 12 frames (positions change every frame -> no selection change, void count +1)", async () => {
+      setupEnteringScrollEnv();
+      await startEnteringScroll(10);
+      const host = layer();
+      const codeEl = stage.querySelector<HTMLElement>('[data-ask-target="code"]')!;
+      codeEl.setAttribute("data-ask-id", "code:main");
+      codeEl.setAttribute("data-ask-step-id", "s1");
+      codeEl.getBoundingClientRect = () => domRect(0, 0, 300, 400);
+
+      const mockHandle: CodeEditorHandle = {
+        getLineRangeForClientBox: vi.fn((top: number, bottom: number) => {
+          if (top < 0 || bottom > 200) return null;
+          const startLine = Math.floor(top / 20) + 1;
+          const endLine = Math.floor((bottom - 1) / 20) + 1;
+          return { startLine, endLine };
+        }),
+        getLinesText: vi.fn((start, end) => `line ${start} to ${end}`),
+        getFullText: vi.fn(() => "code full text"),
+      };
+      registerCodeEditor(codeEl, mockHandle);
+
+      const priorSelection = {
+        mode: "single" as const,
+        bbox: { x: 5, y: 5, width: 50, height: 20 },
+        targets: [{ id: "step:s1", kind: "step" as const, text: "步骤 1" }],
+      };
+      usePlayerStore.setState({ selection: priorSelection, askPhase: "selecting" });
+      const initialVoidCount = Number(host.getAttribute("data-ask-void-count") ?? "0");
+
+      // Press during scroll
+      await act(async () => {
+        host.dispatchEvent(pointer("pointerdown", { pointerId: 1, clientX: 50, clientY: 50 }));
+        host.dispatchEvent(pointer("pointerup", { pointerId: 1, clientX: 50, clientY: 50 }));
+      });
+
+      // Scroll position changes every frame for 12 frames
+      for (let frame = 1; frame <= 12; frame++) {
+        await act(async () => {
+          currentScrollY += 10;
+          flushPendingRafs(1);
+        });
+      }
+
+      // 12-frame void: prior selection kept, no panel
+      expect(usePlayerStore.getState().selection).toEqual(priorSelection);
+      expect(usePlayerStore.getState().askPhase).toBe("selecting");
+
+      // No rubber band left
+      expect(host.querySelector("[data-ask-rubber]")).toBeNull();
+
+      // data-ask-void-count incremented by 1
+      expect(host.getAttribute("data-ask-void-count")).toBe(String(initialVoidCount + 1));
+    });
+
+    test("stable at frame 12 proceeds normally to commit", async () => {
+      setupEnteringScrollEnv();
+      await startEnteringScroll(10);
+      const host = layer();
+      const codeEl = stage.querySelector<HTMLElement>('[data-ask-target="code"]')!;
+      codeEl.setAttribute("data-ask-id", "code:main");
+      codeEl.setAttribute("data-ask-step-id", "s1");
+      codeEl.getBoundingClientRect = () => domRect(0, 0, 300, 400);
+
+      const mockHandle: CodeEditorHandle = {
+        getLineRangeForClientBox: vi.fn((top: number, bottom: number) => {
+          if (top < 0 || bottom > 200) return null;
+          const startLine = Math.floor(top / 20) + 1;
+          const endLine = Math.floor((bottom - 1) / 20) + 1;
+          return { startLine, endLine };
+        }),
+        getLinesText: vi.fn((start, end) => `line ${start} to ${end}`),
+        getFullText: vi.fn(() => "code full text"),
+      };
+      registerCodeEditor(codeEl, mockHandle);
+
+      expect(host.getAttribute("data-ask-void-count")).toBe("0");
+
+      await act(async () => {
+        host.dispatchEvent(pointer("pointerdown", { pointerId: 1, clientX: 50, clientY: 50 }));
+        host.dispatchEvent(pointer("pointerup", { pointerId: 1, clientX: 50, clientY: 50 }));
+      });
+
+      // Frames 1..10: position changes
+      for (let frame = 1; frame <= 10; frame++) {
+        await act(async () => {
+          currentScrollY += 10;
+          flushPendingRafs(1);
+        });
+      }
+
+      // Frame 11: scroll stops, position stays at currentScrollY (sameFrames = 1)
+      await act(async () => {
+        flushPendingRafs(1);
+      });
+
+      // Frame 12: position still same (sameFrames = 2 -> stable at frame 12!)
+      await act(async () => {
+        flushPendingRafs(1);
+      });
+
+      // Stable at frame 12: proceeds normally, panel opens, void count remains 0
+      expect(usePlayerStore.getState().selection).not.toBeNull();
+      expect(usePlayerStore.getState().askPhase).toBe("drafting");
+      expect(host.getAttribute("data-ask-void-count")).toBe("0");
+    });
+
+    test("entering scroll sets codeEl.style.scrollMarginTop to headerBottom + 8px when header is fixed or sticky", async () => {
+      setupEnteringScrollEnv();
+      const header = document.createElement("header");
+      header.getBoundingClientRect = () => domRect(0, 0, 400, 56);
+      document.body.appendChild(header);
+
+      const origGetComputedStyle = window.getComputedStyle;
+      vi.spyOn(window, "getComputedStyle").mockImplementation((el: Element) => {
+        if (el === header) {
+          return { position: "fixed" } as CSSStyleDeclaration;
+        }
+        return origGetComputedStyle(el);
+      });
+
+      const codeEl = ensureCodeElement();
+      // rect.top is 40: > 0, but < headerBottom (56), so isElementFullyInView treats as not fully in view
+      codeEl.getBoundingClientRect = () => domRect(0, 40, 390, 200);
+
+      await render();
+      await act(async () => {
+        flushPendingRafs();
+      });
+
+      expect(codeEl.style.scrollMarginTop).toBe("64px");
+      expect(codeEl.scrollIntoView).toHaveBeenCalled();
+
+      header.remove();
     });
 
     test("STEP 2: in hasValidCode, if no matching element is found treat code as invalid instead of falling back to codeElements[0]", async () => {
