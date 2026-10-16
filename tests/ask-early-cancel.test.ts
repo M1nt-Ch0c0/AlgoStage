@@ -497,6 +497,73 @@ describe("early 取消 press", () => {
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
   });
 
+  test("a capture timeout whose abort is queued behind the timer never submits", async () => {
+    const { cancel, submit } = await renderPanel();
+    vi.spyOn(cancel, "getBoundingClientRect").mockReturnValue(BUTTON_BOX);
+    // The real timeout is the 3s capture budget. It yields one macrotask,
+    // then resolves. The mock holds that callback so the test can fire it
+    // and then register 取消 behind it with setTimeout(0). Real timers own
+    // the pre-capture paint; only the 3s timeout is held.
+    let fireTimeout: (() => void) | undefined;
+    vi.mocked(captureStage).mockImplementation((_stageEl, _selection, opts) => {
+      const signal = opts?.signal;
+      return new Promise((resolve) => {
+        fireTimeout = () => {
+          void (async () => {
+            // Same shape as captureStage's timeout: one macrotask, then a
+            // second when the signal is still live. A cancel queued behind
+            // the timer is that second macrotask.
+            await new Promise<void>((yielded) => {
+              setTimeout(yielded, 0);
+            });
+            if (!signal?.aborted) {
+              await new Promise<void>((yielded) => {
+                setTimeout(yielded, 0);
+              });
+            }
+            if (signal?.aborted) {
+              resolve({ ok: false, reason: "ABORTED", fallbackText: "" });
+              return;
+            }
+            resolve({ ok: false, reason: "TIMEOUT", fallbackText: "步骤内容" });
+          })();
+        };
+      });
+    });
+
+    await act(async () => {
+      submit.click();
+      await drainPaint();
+    });
+    await vi.waitFor(() => {
+      expect(fireTimeout).toBeTypeOf("function");
+    });
+    expect(sendAsk).not.toHaveBeenCalled();
+
+    // The timeout timer is due. Its callback yields one macrotask before it
+    // resolves. Register 取消 after that callback has started, so the abort
+    // is the timer behind the yield and runs before TIMEOUT is committed.
+    fireTimeout?.();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    setTimeout(() => {
+      cancel.dispatchEvent(pointer("pointerdown", 3000, 12, 10));
+      cancel.dispatchEvent(pointer("pointerup", 3001, 14, 12));
+    }, 0);
+    await act(async () => {
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 0);
+      });
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 0);
+      });
+    });
+    expect(sendAsk).not.toHaveBeenCalled();
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
+    expect(container.querySelector("[data-ask-panel]")).toBeNull();
+  });
+
   test("a capture TIMEOUT after the release on 取消 does not send", async () => {
     const { cancel, submit } = await renderPanel();
     // The 3s timer can still beat the queued press and return TIMEOUT.

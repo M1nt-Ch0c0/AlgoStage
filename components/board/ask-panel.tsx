@@ -528,6 +528,15 @@ function AskPanelActive({ stage }: AskPanelProps) {
             });
           };
       let capture: CaptureResult | null;
+      // The capture timeout yields one macrotask, then resolves. A 取消
+      // registered after that timer (setTimeout(0) queued once the timer is
+      // due) aborts during the yield, before captureStage returns. The
+      // listener is attached for that window only. The epoch bump is what
+      // the checks below read, including a screenshot that encodes later.
+      const onTimeoutQueuedAbort = () => {
+        if (captureEpochRef.current === captureEpoch) captureEpochRef.current += 1;
+      };
+      captureAbort.signal.addEventListener("abort", onTimeoutQueuedAbort);
       try {
         // captureStage calls beforeEncode after domToCanvas and awaits it
         // before encode, so this is the only yield. It replaces the earlier
@@ -539,6 +548,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
       } catch {
         capture = null;
       } finally {
+        captureAbort.signal.removeEventListener("abort", onTimeoutQueuedAbort);
         captureAbortRef.current = null;
       }
       // Cancel was decided while this capture was in flight. The release on
@@ -546,22 +556,6 @@ function AskPanelActive({ stage }: AskPanelProps) {
       // a screenshot that encode finished after the decision is stale.
       if (captureEpochRef.current !== captureEpoch || captureAbort.signal.aborted) {
         capture = { ok: false, reason: "ABORTED", fallbackText: "" };
-      } else if (capture?.ok === false && capture.reason === "TIMEOUT") {
-        // The capture timeout yields, then resolves. A cancel registered
-        // after that timer aborts on the macrotask the yield just ran, which
-        // is after captureStage returned. One more macrotask lets that abort
-        // land before the result is submitted.
-        await new Promise<void>((resolve) => {
-          setTimeout(resolve, 0);
-        });
-        if (!captureAbort.signal.aborted) {
-          await new Promise<void>((resolve) => {
-            setTimeout(resolve, 0);
-          });
-        }
-        if (captureEpochRef.current !== captureEpoch || captureAbort.signal.aborted) {
-          capture = { ok: false, reason: "ABORTED", fallbackText: "" };
-        }
       }
       if (askAb("noSettle") || yieldStarted === 0) {
         markAskPhase("settleMs", 0);

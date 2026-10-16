@@ -474,6 +474,9 @@ export async function captureStage(
           // this turn wins Promise.race and the ask is sent. The same
           // input settle encode uses lets that press abort first. No
           // signal means nothing can abort, so the timeout stands.
+          // The real fallback a caller sees is this 3s budget plus up to
+          // 120ms: the settle below is ASK_INPUT_SETTLE_MS, the same wait
+          // encode uses before it continues.
           if (signal) {
             await yieldMacrotask({ done: () => signal.aborted });
             // The yield returns when the macrotask runs or when the signal
