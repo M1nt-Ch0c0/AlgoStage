@@ -652,6 +652,22 @@ test.describe("1280 selection flow", () => {
     await expect(entry).toBeFocused();
   });
 
+  for (const key of ["Enter", " "] as const) {
+    const name = key === " " ? "Space" : key;
+    test(`chip390-b 1280: ${name} on a focused chip selects that chip`, async ({ page }) => {
+      await startGenerated(page);
+      await pauseLecture(page);
+      await enterSelection(page);
+      const chip = page.locator('[data-ask-bottom-bar] [data-ask-shortcut="step"]');
+      await chip.focus();
+      await expect(chip).toBeFocused();
+      await page.keyboard.press(key);
+      const panel = page.locator("[data-ask-panel]");
+      await expect(panel).toBeVisible();
+      await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：当前步骤");
+    });
+  }
+
   test("S5-chip390 1280: chip row position unchanged", async ({ page }) => {
     await startGenerated(page);
     await pauseLecture(page);
@@ -1608,6 +1624,22 @@ test.describe("390 selection flow", () => {
   });
 
   test.describe("S5-chip390", () => {
+    for (const key of ["Enter", " "] as const) {
+      const name = key === " " ? "Space" : key;
+      test(`chip390-b 390: ${name} on a focused chip selects that chip`, async ({ page }) => {
+        await startGenerated(page);
+        await pauseLecture(page);
+        await enterSelection(page);
+        const chip = page.locator('[data-ask-bottom-bar] [data-ask-shortcut="subtitle"]');
+        await chip.focus();
+        await expect(chip).toBeFocused();
+        await page.keyboard.press(key);
+        const panel = page.locator("[data-ask-panel]");
+        await expect(panel).toBeVisible();
+        await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：当前字幕");
+      });
+    }
+
     test("a. tap code line 1 -> panel label 已选：代码第 1 行", async ({ page }) => {
       await startGenerated(page);
       await pauseLecture(page);

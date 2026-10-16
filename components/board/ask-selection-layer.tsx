@@ -1296,6 +1296,21 @@ function AskSelectionLayerActive({
                         }}
                         onKeyDown={(event) => {
                           // 1280：从芯片组 Shift+Tab 回到入口按钮（和入口 Tab 进来对称）。
+                          // 焦点在芯片上：Enter / 空格选中这个芯片本身，不交给图层的 Enter（会选当前代码）。
+                          if (
+                            (event.key === "Enter" || event.key === " ") &&
+                            !event.altKey &&
+                            !event.ctrlKey &&
+                            !event.metaKey &&
+                            !event.shiftKey
+                          ) {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            if (event.repeat) return;
+                            setActiveShortcut(index);
+                            pickShortcut(item.key);
+                            return;
+                          }
                           if (event.key === "Tab" && event.shiftKey && !isMobile) {
                             const entry = document.querySelector<HTMLElement>(
                               "[data-ask-entry]:not([data-ask-bottom-bar] [data-ask-entry])",
