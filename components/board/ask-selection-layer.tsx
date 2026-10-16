@@ -1098,56 +1098,49 @@ function AskSelectionLayerActive({
         }
       }
 
-      const inView = isElementFullyInView(
-        { top: codeRect.top, bottom: codeRect.bottom },
-        { innerHeight: window.innerHeight, bottomBarHeight: barObstacle },
-        headerBottom,
-      );
-
-      if (!inView) {
-        const desiredTop = headerBottom + 8;
-        const deltaY = codeRect.top - desiredTop;
-        // Tall block already clear of header: nothing to do (bottom may still clip).
-        if (Math.abs(deltaY) < 1 && codeRect.top >= headerBottom) {
-          return;
-        }
-        if (Math.abs(deltaY) < 1) {
-          return;
-        }
-        const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-        const scroller = findScrollable(host);
-        if (!prefersReduced) {
-          enteringSmoothScrollRef.current = true;
-          enteringScrollAncestorsRef.current = getScrollableAncestors(host);
-          enteringScrollStartTimeRef.current = performance.now();
-          enteringScrollPositionsRef.current = getScrollPositions();
-          enteringScrollTimestampRef.current = enteringScrollStartTimeRef.current;
-          const track = () => {
-            const current = getScrollPositions();
-            if (!isSameScrollPositions(enteringScrollPositionsRef.current, current)) {
-              enteringScrollPositionsRef.current = current;
-              enteringScrollTimestampRef.current = performance.now();
-            }
-            enteringScrollRafRef.current = requestAnimationFrame(track);
-          };
-          enteringScrollRafRef.current = requestAnimationFrame(track);
-          if (enteringScrollTimerRef.current) clearTimeout(enteringScrollTimerRef.current);
-          const onScrollEnd = () => {
-            if (enteringScrollTimestampRef.current === enteringScrollStartTimeRef.current) {
-              window.addEventListener("scrollend", onScrollEnd, { once: true });
-              return;
-            }
-            clearEnteringScrollTracker();
-            window.removeEventListener("scrollend", onScrollEnd);
-          };
-          window.addEventListener("scrollend", onScrollEnd, { once: true });
-          enteringScrollTimerRef.current = setTimeout(() => {
-            clearEnteringScrollTracker();
-            window.removeEventListener("scrollend", onScrollEnd);
-          }, 800);
-        }
-        scroller.scrollBy({ top: deltaY, left: 0, behavior: prefersReduced ? "auto" : "smooth" });
+      const desiredTop = headerBottom + 8;
+      const availableBottom = window.innerHeight - barObstacle;
+      if (codeRect.top >= desiredTop - 1 && codeRect.top < availableBottom) {
+        return;
       }
+
+      const scrolling = document.scrollingElement ?? document.documentElement;
+      const absoluteTop = codeRect.top + scrolling.scrollTop;
+      const targetScrollTop = Math.max(0, Math.round(absoluteTop - desiredTop));
+      if (Math.abs(scrolling.scrollTop - targetScrollTop) < 1) return;
+
+      const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (!prefersReduced) {
+        enteringSmoothScrollRef.current = true;
+        enteringScrollAncestorsRef.current = getScrollableAncestors(host);
+        enteringScrollStartTimeRef.current = performance.now();
+        enteringScrollPositionsRef.current = getScrollPositions();
+        enteringScrollTimestampRef.current = enteringScrollStartTimeRef.current;
+        const track = () => {
+          const current = getScrollPositions();
+          if (!isSameScrollPositions(enteringScrollPositionsRef.current, current)) {
+            enteringScrollPositionsRef.current = current;
+            enteringScrollTimestampRef.current = performance.now();
+          }
+          enteringScrollRafRef.current = requestAnimationFrame(track);
+        };
+        enteringScrollRafRef.current = requestAnimationFrame(track);
+        if (enteringScrollTimerRef.current) clearTimeout(enteringScrollTimerRef.current);
+        const onScrollEnd = () => {
+          if (enteringScrollTimestampRef.current === enteringScrollStartTimeRef.current) {
+            window.addEventListener("scrollend", onScrollEnd, { once: true });
+            return;
+          }
+          clearEnteringScrollTracker();
+          window.removeEventListener("scrollend", onScrollEnd);
+        };
+        window.addEventListener("scrollend", onScrollEnd, { once: true });
+        enteringScrollTimerRef.current = setTimeout(() => {
+          clearEnteringScrollTracker();
+          window.removeEventListener("scrollend", onScrollEnd);
+        }, 800);
+      }
+      scrolling.scrollTo({ top: targetScrollTop, left: scrolling.scrollLeft, behavior: prefersReduced ? "auto" : "smooth" });
     });
 
     return () => {

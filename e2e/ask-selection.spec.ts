@@ -435,6 +435,57 @@ async function readPointerdownClock(page: Page): Promise<number[]> {
 test.describe("1280 selection flow", () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
+  test("after the entry scroll settles, code line 1 is not under the fixed header", async ({ page }) => {
+    await startGenerated(page);
+    await pauseLecture(page);
+    await entry(page).scrollIntoViewIfNeeded();
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: "auto" }));
+    await entry(page).click();
+    await expect(page.locator("[data-ask-layer]")).toBeVisible();
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          let lastY = window.scrollY;
+          let unchangedCount = 0;
+          const start = performance.now();
+          const check = () => {
+            if (window.scrollY === lastY) {
+              unchangedCount++;
+              if (unchangedCount >= 6) {
+                resolve();
+                return;
+              }
+            } else {
+              unchangedCount = 0;
+              lastY = window.scrollY;
+            }
+            if (performance.now() - start >= 3000) {
+              resolve();
+              return;
+            }
+            requestAnimationFrame(check);
+          };
+          requestAnimationFrame(check);
+        }),
+    );
+    const { headerBottom, fixed, line1Top } = await page.evaluate(() => {
+      const header = document.querySelector("header");
+      const fixed = header ? ["fixed", "sticky"].includes(getComputedStyle(header).position) : false;
+      const headerBottom = header ? header.getBoundingClientRect().bottom : 0;
+      let line1Top = 0;
+      for (const el of document.querySelectorAll<HTMLElement>("[data-ask-stage] .monaco-editor .line-numbers")) {
+        if (el.textContent?.trim() === "1") {
+          line1Top = el.getBoundingClientRect().top;
+          break;
+        }
+      }
+      return { headerBottom, fixed, line1Top };
+    });
+    if (fixed) {
+      expect(line1Top).toBeGreaterThanOrEqual(headerBottom);
+    }
+  });
+
   test("31. drag on stage, ask, answer expands, currentIndex stays", async ({ page }) => {
     await mockAsk(page, async (route) => {
       await route.fulfill({
@@ -1859,6 +1910,57 @@ test.describe("390 selection flow", () => {
   // 与 autoplay e2e 同一套粗指针：播放中「点「下一步」继续」独占一行，基线 4 行。
   test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
 
+  test("after the entry scroll settles, code line 1 is not under the fixed header", async ({ page }) => {
+    await startGenerated(page);
+    await pauseLecture(page);
+    await entry(page).scrollIntoViewIfNeeded();
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: "auto" }));
+    await entry(page).click();
+    await expect(page.locator("[data-ask-layer]")).toBeVisible();
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          let lastY = window.scrollY;
+          let unchangedCount = 0;
+          const start = performance.now();
+          const check = () => {
+            if (window.scrollY === lastY) {
+              unchangedCount++;
+              if (unchangedCount >= 6) {
+                resolve();
+                return;
+              }
+            } else {
+              unchangedCount = 0;
+              lastY = window.scrollY;
+            }
+            if (performance.now() - start >= 3000) {
+              resolve();
+              return;
+            }
+            requestAnimationFrame(check);
+          };
+          requestAnimationFrame(check);
+        }),
+    );
+    const { headerBottom, fixed, line1Top } = await page.evaluate(() => {
+      const header = document.querySelector("header");
+      const fixed = header ? ["fixed", "sticky"].includes(getComputedStyle(header).position) : false;
+      const headerBottom = header ? header.getBoundingClientRect().bottom : 0;
+      let line1Top = 0;
+      for (const el of document.querySelectorAll<HTMLElement>("[data-ask-stage] .monaco-editor .line-numbers")) {
+        if (el.textContent?.trim() === "1") {
+          line1Top = el.getBoundingClientRect().top;
+          break;
+        }
+      }
+      return { headerBottom, fixed, line1Top };
+    });
+    if (fixed) {
+      expect(line1Top).toBeGreaterThanOrEqual(headerBottom);
+    }
+  });
+
   test.describe("390 mobile tap", () => {
     test("F2 390: panel open, Tab never focuses hidden bottom bar", async ({ page }) => {
       await startGenerated(page);
@@ -2683,14 +2785,22 @@ test.describe("390 selection flow", () => {
       expect(hitAtDown).not.toBeNull();
       // 框只擦过起点那一行底部 ≤2px 时，命中按死区不算这一行（同 mid-drag 用例的 2px 规则）。
       const startLine = hitAtDown!.below <= 2 ? hitAtDown!.line + 1 : hitAtDown!.line;
-      const endLine = startLine + 2;
+      const lineCount = await page.evaluate(() =>
+        Math.max(
+          0,
+          ...Array.from(
+            document.querySelectorAll<HTMLElement>("[data-ask-stage] .monaco-editor .line-numbers"),
+          ).map((e) => Number(e.textContent?.trim()) || 0),
+        ),
+      );
+      const endLine = Math.min(startLine + 2, lineCount);
       const endBox = await getMonacoLineBox(page, endLine);
       await page.mouse.move(boxAtDown.x + 160, (endBox.top + endBox.bottom) / 2, { steps: 5 });
       await page.mouse.up();
 
       const panel = page.locator("[data-ask-panel]");
       await expect(panel).toBeVisible();
-      const expected = `已选：代码第 ${startLine}–${endLine} 行`;
+      const expected = endLine === startLine ? `已选：代码第 ${startLine} 行` : `已选：代码第 ${startLine}–${endLine} 行`;
       await expect(panel.locator("[data-ask-panel-label]")).toHaveText(expected);
 
       // 滚动停住后：选框、高亮、标签三者都指向按下的那一行，不能框在一行、高亮在另一行。

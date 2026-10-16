@@ -66,6 +66,8 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   invalidateAskMeasureCache(sharedAskMeasureCache);
   setAskOpenSource(null);
+  const scrolling = document.scrollingElement ?? document.documentElement;
+  scrolling.scrollTop = 0;
   usePlayerStore.getState().reset();
   usePlayerStore.getState().loadScript(script);
   usePlayerStore.setState({ askPhase: "selecting", status: "interrupted", draftQuestion: "保留的问题" });
@@ -3804,8 +3806,16 @@ describe("resolveAskEscape", () => {
     });
 
     test("entering scroll uses measured scrollBy so code top sits at headerBottom+8 (no scrollMarginTop)", async () => {
-      const scrollBySpy = vi.spyOn(scroller, "scrollBy").mockImplementation(() => {});
+      const scrolling = document.scrollingElement ?? document.documentElement;
+      scrolling.scrollTop = 0;
+      if (typeof scrolling.scrollTo !== "function") {
+        scrolling.scrollTo = vi.fn();
+      }
+      const scrollToSpy = vi.spyOn(scrolling, "scrollTo").mockImplementation(() => {});
       setupEnteringScrollEnv();
+      const origInnerHeight = window.innerHeight;
+      Object.defineProperty(window, "innerHeight", { value: 200, configurable: true, writable: true });
+
       const header = document.createElement("header");
       header.getBoundingClientRect = () => domRect(0, 0, 400, 56);
       document.body.appendChild(header);
@@ -3821,8 +3831,7 @@ describe("resolveAskEscape", () => {
       });
 
       const codeEl = ensureCodeElement();
-      // rect.top is 40: > 0, but < headerBottom (56), so isElementFullyInView treats as not fully in view
-      codeEl.getBoundingClientRect = () => domRect(0, 40, 390, 200);
+      codeEl.getBoundingClientRect = () => domRect(0, 200, 390, 200);
 
       await render();
       await act(async () => {
@@ -3831,13 +3840,14 @@ describe("resolveAskEscape", () => {
 
       expect(codeEl.style.scrollMarginTop).toBe("");
       expect(codeEl.scrollIntoView).not.toHaveBeenCalled();
-      expect(scrollBySpy).toHaveBeenCalled();
-      const scrollCall = scrollBySpy.mock.calls[0]?.[0];
+      expect(scrollToSpy).toHaveBeenCalled();
+      const scrollCall = scrollToSpy.mock.calls[0]?.[0];
       expect(typeof scrollCall === "object" && scrollCall !== null).toBe(true);
-      expect((scrollCall as ScrollToOptions).top).toBeCloseTo(40 - (56 + 8));
+      expect((scrollCall as ScrollToOptions).top).toBeCloseTo(200 - (56 + 8));
 
       header.remove();
-      scrollBySpy.mockRestore();
+      scrollToSpy.mockRestore();
+      Object.defineProperty(window, "innerHeight", { value: origInnerHeight, configurable: true, writable: true });
     });
 
     test("STEP 2: in hasValidCode, if no matching element is found treat code as invalid instead of falling back to codeElements[0]", async () => {
