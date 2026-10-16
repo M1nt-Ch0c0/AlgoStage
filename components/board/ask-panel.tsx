@@ -125,6 +125,21 @@ function clampQuestion(value: string): string {
 }
 
 /**
+ * Waiting-phase pointer cancel, called with no DOM hit.
+ * The request is already out and the first token is not in yet. Abort that
+ * fetch and close the panel. A press that is still inside submit's own hold
+ * (holdWaiting) or a 2s send-while-held belongs to those paths, not this one.
+ * Keyboard Enter/Space stays on cancelAsk, which returns to drafting.
+ */
+export function cancelWaitingAsk(state: {
+  holdWaiting: boolean;
+  heldAfterSend: boolean;
+}): void {
+  if (state.holdWaiting || state.heldAfterSend) return;
+  retroCancelAsk();
+}
+
+/**
  * Probe mark. Call after the cancelled or idle state is committed, in the
  * same turn as that setState. React 19 flushes the update before the task
  * yields, so the next animation frame is the paint of that state.
@@ -596,8 +611,9 @@ function AskPanelActive({ stage }: AskPanelProps) {
   };
 
   const cancelWaiting = usePointerActivate(() => {
-    // Keyboard Enter/Space. A pointer release in the waiting phase is handled
-    // on pointerup, which aborts the fetch and closes the panel.
+    // Keyboard Enter/Space aborts the fetch and returns to drafting, which
+    // keeps the draft. A pointer release uses cancelWaitingAsk: that one
+    // closes the panel.
     if (holdWaitingRef.current || heldAfterSendRef.current) return;
     cancelAsk();
   });
@@ -707,7 +723,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
         cancelHitRef.current = false;
         pointerDownIdRef.current = null;
         stopEarlyPress();
-        retroCancelAsk();
+        cancelWaitingAsk({ holdWaiting: holdWaitingRef.current, heldAfterSend: sentWhileHeld });
         noteCancelPaintAfterRelease();
         return;
       }
