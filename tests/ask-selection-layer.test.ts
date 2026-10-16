@@ -1887,6 +1887,70 @@ describe("resolveAskEscape", () => {
       if (panel.parentNode) panel.remove();
     });
 
+    test("ghost mousedown after a touch cancel does not move focus off the chip", async () => {
+      const originalMatchMedia = window.matchMedia;
+      window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+        matches: query === "(max-width: 639px)",
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }));
+
+      await render();
+      await act(async () => {
+        usePlayerStore.setState({ askPhase: "drafting" });
+      });
+
+      const panel = document.createElement("div");
+      panel.setAttribute("data-ask-panel", "");
+      const cancelBtn = document.createElement("button");
+      cancelBtn.setAttribute("data-ask-cancel", "");
+      cancelBtn.textContent = "取消";
+      panel.append(cancelBtn);
+      document.body.append(panel);
+
+      const down = new PointerEvent("pointerdown", {
+        bubbles: true,
+        cancelable: true,
+        pointerId: 1,
+        pointerType: "touch",
+      });
+      const up = new PointerEvent("pointerup", {
+        bubbles: true,
+        cancelable: true,
+        pointerId: 1,
+        pointerType: "touch",
+      });
+
+      await act(async () => {
+        cancelBtn.dispatchEvent(down);
+        cancelBtn.dispatchEvent(up);
+        usePlayerStore.getState().closeAskPanel();
+        panel.remove();
+      });
+
+      const chip = document.querySelector<HTMLElement>("[data-ask-shortcut]");
+      expect(chip).not.toBeNull();
+      expect(document.activeElement).toBe(chip);
+
+      const layerEl = document.querySelector<HTMLElement>("[data-ask-layer]");
+      expect(layerEl).not.toBeNull();
+
+      const ghostDown = new MouseEvent("mousedown", { bubbles: true, cancelable: true, detail: 1 });
+      Object.defineProperty(ghostDown, "timeStamp", { value: up.timeStamp + 50 });
+
+      await act(async () => {
+        layerEl!.dispatchEvent(ghostDown);
+        if (!ghostDown.defaultPrevented) layerEl!.focus();
+      });
+
+      expect(ghostDown.defaultPrevented).toBe(true);
+      expect(document.activeElement).toBe(chip);
+      expect(document.activeElement).not.toBe(layerEl);
+
+      window.matchMedia = originalMatchMedia;
+    });
+
     test("touch pointerup on cancel followed by new pointerdown clears suppression", async () => {
       await render();
 

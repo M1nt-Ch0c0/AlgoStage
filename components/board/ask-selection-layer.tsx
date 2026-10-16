@@ -489,31 +489,43 @@ function AskSelectionLayerActive({
         cancelClickSeenRef.current = false;
       }
     };
+    const ghostMouse = (event: globalThis.MouseEvent) => {
+      if (event.detail === 0) return false;
+      if (lastPointerTypeRef.current !== "touch") return false;
+      if (!touchCompletedSelectionRef.current) return false;
+      return (
+        suppressClickUntilRef.current != null &&
+        event.timeStamp <= suppressClickUntilRef.current
+      );
+    };
+    // The compatibility mousedown that follows a touch cancel lands after the
+    // panel has unmounted, so it hits the layer and focuses it. preventDefault
+    // on that mousedown keeps the chip focus the layout effect just set.
+    const onDocMouseDown = (event: globalThis.MouseEvent) => {
+      if (!ghostMouse(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+    };
     const onDocClick = (event: globalThis.MouseEvent) => {
       cancelClickSeenRef.current = true;
       const target = event.target as Element | null;
       if (target?.closest?.("[data-ask-panel] [data-ask-cancel], [data-ask-cancel]")) {
         return;
       }
-      if (event.detail === 0) return;
-      if (lastPointerTypeRef.current !== "touch") return;
-      if (!touchCompletedSelectionRef.current) return;
-      if (
-        suppressClickUntilRef.current != null &&
-        event.timeStamp <= suppressClickUntilRef.current
-      ) {
-        event.preventDefault();
-        event.stopPropagation();
-        suppressClickUntilRef.current = null;
-        touchCompletedSelectionRef.current = false;
-      }
+      if (!ghostMouse(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      suppressClickUntilRef.current = null;
+      touchCompletedSelectionRef.current = false;
     };
     document.addEventListener("pointerdown", onDocPointerDown, true);
     document.addEventListener("pointerup", onDocPointerUp, true);
+    document.addEventListener("mousedown", onDocMouseDown, true);
     document.addEventListener("click", onDocClick, true);
     return () => {
       document.removeEventListener("pointerdown", onDocPointerDown, true);
       document.removeEventListener("pointerup", onDocPointerUp, true);
+      document.removeEventListener("mousedown", onDocMouseDown, true);
       document.removeEventListener("click", onDocClick, true);
     };
   }, []);
