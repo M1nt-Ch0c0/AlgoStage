@@ -171,9 +171,6 @@ export function isElementTabbable(el: HTMLElement): boolean {
   if ("disabled" in el && (el as HTMLButtonElement | HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).disabled) {
     return false;
   }
-  if (el.getAttribute("aria-disabled") === "true") {
-    // Note: aria-disabled alone does not prevent tab focus in native HTML, but check if required
-  }
   if (el.offsetParent === null && el.offsetWidth === 0 && el.offsetHeight === 0) {
     return false;
   }
@@ -490,10 +487,11 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
   // entry -> panel chips (roving) -> textarea -> cancel -> submit -> next after entry
   useEffect(() => {
     if (askPhase !== "drafting" && askPhase !== "error") return;
-    const isMobileDevice = typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches;
-    if (isMobileDevice) return;
 
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      const isMobileDevice = typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches;
+      if (isMobileDevice) return;
+
       const moved = handlePanelTabNavigation(event);
       if (moved) {
         event.preventDefault();
@@ -1002,7 +1000,7 @@ function AskSelectionLayerActive({
       document.documentElement.style.setProperty("--ask-bottom-bar-h", "0px");
       document.documentElement.style.setProperty("--ask-bottom-occlusion", "0px");
     };
-  }, [scheduleUpdate]);
+  }, [scheduleUpdate, getScrollPositions]);
 
   // 当进入 ask 模式（selecting）在移动端时，确保代码区域可见。
   useEffect(() => {

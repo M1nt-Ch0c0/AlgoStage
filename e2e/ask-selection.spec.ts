@@ -1017,6 +1017,189 @@ test.describe("1280 selection flow", () => {
     await expect(entryBtn).toBeFocused();
   });
 
+  test("F2 1280: Shift+Tab from step list back to entry walks exact reverse", async ({ page }) => {
+    await startGenerated(page);
+    await pauseLecture(page);
+    await enterSelection(page);
+
+    // Open panel by clicking subtitle shortcut chip
+    const subtitleChip = page.locator('[data-ask-bottom-bar] [data-ask-shortcut="subtitle"]');
+    await subtitleChip.click();
+    const panel = page.locator("[data-ask-panel]");
+    await expect(panel).toBeVisible();
+
+    // Type text into textarea so submit button is enabled (not disabled)
+    await panel.locator("[data-ask-question]").fill("请问这行代码的意思");
+
+    const getElementId = () =>
+      page.evaluate(() => {
+        const el = document.activeElement;
+        if (!el) return "none";
+        if (el.hasAttribute("data-ask-entry") || el.closest("[data-ask-entry]")) return "entry";
+        const shortcut = el.getAttribute("data-ask-shortcut");
+        const chip = el.getAttribute("data-ask-chip");
+        const isQuestion = el.tagName.toLowerCase() === "textarea" && el.hasAttribute("data-ask-question");
+        const isCancel = el.hasAttribute("data-ask-cancel");
+        const isSubmit = el.hasAttribute("data-ask-submit");
+        if (shortcut) return `shortcut:${shortcut}`;
+        if (chip) return `chip:${chip}`;
+        if (isQuestion) return "textarea[data-ask-question]";
+        if (isCancel) return "[data-ask-cancel]";
+        if (isSubmit) return "[data-ask-submit]";
+        return el.id ? `#${el.id}` : el.tagName.toLowerCase();
+      });
+
+    // Focus entry
+    const entryBtn = entry(page).first();
+    await entryBtn.focus();
+    await expect(entryBtn).toBeFocused();
+
+    // Tab from entry forward recording each focused element id until reaching the element after entry (the step list / first in-panel element)
+    const forwardToFirst: string[] = [await getElementId()];
+    await page.keyboard.press("Tab");
+    const firstInPanelId = await getElementId();
+    forwardToFirst.push(firstInPanelId);
+
+    // Verify it reached the element after entry (the first in-panel element)
+    const isFirstInPanel = await page.evaluate(() => {
+      const el = document.activeElement;
+      const first = document.querySelector("[data-ask-panel] [data-ask-shortcut]");
+      return el !== null && el === first;
+    });
+    expect(isFirstInPanel).toBe(true);
+
+    // then press Shift+Tab from that element and assert it lands exactly on the entry button in one step with no loop
+    await page.keyboard.press("Shift+Tab");
+    await expect(entryBtn).toBeFocused();
+    expect(await getElementId()).toBe("entry");
+
+    // also record a full forward walk entry->...->submit and full Shift+Tab walk back and assert exact reverse, ending on entry with no extra wrap
+    const fullForwardWalk: string[] = ["entry"];
+    let currentId = "entry";
+    for (let i = 0; i < 30; i++) {
+      await page.keyboard.press("Tab");
+      currentId = await getElementId();
+      fullForwardWalk.push(currentId);
+      if (currentId === "[data-ask-submit]") {
+        break;
+      }
+    }
+    expect(currentId).toBe("[data-ask-submit]");
+
+    const fullReverseWalk: string[] = [currentId];
+    for (let i = 0; i < 30; i++) {
+      await page.keyboard.press("Shift+Tab");
+      currentId = await getElementId();
+      fullReverseWalk.push(currentId);
+      if (currentId === "entry") {
+        break;
+      }
+    }
+    expect(currentId).toBe("entry");
+
+    // assert exact reverse
+    expect(fullReverseWalk).toEqual([...fullForwardWalk].reverse());
+
+    // ending on entry with no extra wrap
+    await expect(entryBtn).toBeFocused();
+  });
+
+  test("F2 1280: panel closed Tab order unchanged", async ({ page }) => {
+    await startGenerated(page);
+    await pauseLecture(page);
+    await enterSelection(page);
+
+    // In selecting mode with panel closed
+    const entryBtn = entry(page).first();
+    await entryBtn.focus();
+    await expect(entryBtn).toBeFocused();
+
+    // Compute expected order based on:
+    // stop 0: entry
+    // stop 1: first chip in chip group (by '1280: Tab from the entry lands on the chip group first' convention)
+    // stops 2..14: next natural focusables in DOM order after that first chip
+    const expectedOrder = await page.evaluate(() => {
+      const identify = (el: Element | null): string => {
+        if (!el) return "none";
+        if (el.hasAttribute("data-ask-entry") && !el.closest("[data-ask-bottom-bar]")) return "entry";
+        const shortcut = el.getAttribute("data-ask-shortcut");
+        if (shortcut) return `shortcut:${shortcut}`;
+        const chip = el.getAttribute("data-ask-chip");
+        if (chip) return `chip:${chip}`;
+        if (el.id) return `#${el.id}`;
+        const ariaLabel = el.getAttribute("aria-label");
+        if (ariaLabel) return `[aria-label="${ariaLabel}"]`;
+        const title = el.getAttribute("title");
+        if (title) return `[title="${title}"]`;
+        const text = el.textContent?.trim().slice(0, 30);
+        return `${el.tagName.toLowerCase()}${text ? `:${text}` : ""}`;
+      };
+
+      const isTabbable = (el: HTMLElement) => {
+        if (el.tabIndex < 0) return false;
+        if ("disabled" in el && (el as HTMLButtonElement).disabled) return false;
+        const style = window.getComputedStyle(el);
+        if (style.display === "none" || style.visibility === "hidden") return false;
+        if (el.offsetParent === null && el.offsetWidth === 0 && el.offsetHeight === 0 && el.getClientRects().length === 0) return false;
+        return true;
+      };
+
+      const entryEl = document.querySelector<HTMLElement>("[data-ask-entry]:not([data-ask-bottom-bar] [data-ask-entry])")!;
+      const firstChip = document.querySelector<HTMLElement>('[data-ask-bottom-bar] [data-ask-shortcut][tabindex="0"]')!;
+
+      const all = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter(isTabbable);
+
+      const chipIdx = all.indexOf(firstChip);
+      const naturalAfterChip: HTMLElement[] = [];
+      for (let i = chipIdx + 1; i < all.length && naturalAfterChip.length < 13; i++) {
+        naturalAfterChip.push(all[i]);
+      }
+      for (let i = 0; i < all.length && naturalAfterChip.length < 13; i++) {
+        naturalAfterChip.push(all[i]);
+      }
+
+      const stops = [entryEl, firstChip, ...naturalAfterChip.slice(0, 13)];
+      return stops.map(identify);
+    });
+
+    // Record the actual Tab order of the first 15 focus stops starting from the entry button
+    const actualOrder: string[] = [];
+    const getActive = () =>
+      page.evaluate(() => {
+        const el = document.activeElement;
+        if (!el) return "none";
+        if (el.hasAttribute("data-ask-entry") && !el.closest("[data-ask-bottom-bar]")) return "entry";
+        const shortcut = el.getAttribute("data-ask-shortcut");
+        if (shortcut) return `shortcut:${shortcut}`;
+        const chip = el.getAttribute("data-ask-chip");
+        if (chip) return `chip:${chip}`;
+        if (el.id) return `#${el.id}`;
+        const ariaLabel = el.getAttribute("aria-label");
+        if (ariaLabel) return `[aria-label="${ariaLabel}"]`;
+        const title = el.getAttribute("title");
+        if (title) return `[title="${title}"]`;
+        const text = el.textContent?.trim().slice(0, 30);
+        return `${el.tagName.toLowerCase()}${text ? `:${text}` : ""}`;
+      });
+
+    actualOrder.push(await getActive());
+    expect(actualOrder[0]).toBe("entry");
+
+    for (let step = 1; step < 15; step++) {
+      await page.keyboard.press("Tab");
+      actualOrder.push(await getActive());
+    }
+
+    expect(actualOrder.length).toBe(15);
+    expect(actualOrder[0]).toBe("entry");
+    expect(actualOrder[1]).toMatch(/^shortcut:/);
+    expect(actualOrder).toEqual(expectedOrder);
+  });
+
   test("S5-chip390 1280: chip row position unchanged", async ({ page }) => {
     await startGenerated(page);
     await pauseLecture(page);
@@ -1632,6 +1815,18 @@ test.describe("390 selection flow", () => {
 
       // Assert none is inside [data-ask-bottom-bar]
       expect(activeElementsInsideBottomBar.some(Boolean)).toBe(false);
+
+      // Additionally press Shift+Tab 12 times from the panel and assert focus never lands inside [data-ask-bottom-bar]
+      const activeElementsInsideBottomBarShift: boolean[] = [];
+      for (let i = 0; i < 12; i++) {
+        await page.keyboard.press("Shift+Tab");
+        const inBottomBar = await page.evaluate(() => {
+          const el = document.activeElement;
+          return Boolean(el && el.closest("[data-ask-bottom-bar]"));
+        });
+        activeElementsInsideBottomBarShift.push(inBottomBar);
+      }
+      expect(activeElementsInsideBottomBarShift.some(Boolean)).toBe(false);
     });
 
     test("S2. 390: kbd hidden, exit >=44, title row single line", async ({ page }) => {

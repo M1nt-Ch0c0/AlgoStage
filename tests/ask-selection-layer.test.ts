@@ -3413,5 +3413,61 @@ describe("resolveAskEscape", () => {
       expect(handlePanelTabNavigation({ key: "Tab", shiftKey: false, altKey: false, ctrlKey: false, metaKey: true, target: entry })).toBe(false);
       expect(handlePanelTabNavigation({ key: "Enter", shiftKey: false, altKey: false, ctrlKey: false, metaKey: false, target: entry })).toBe(false);
     });
+
+    test("panel open at desktop width, then matchMedia switches to mobile (resize) while open -> Tab is NOT intercepted; and switching back to desktop -> Tab is intercepted again", async () => {
+      let isMobile = false;
+      const originalMatchMedia = window.matchMedia;
+      window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+        matches: query === "(max-width: 639px)" ? isMobile : false,
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }));
+
+      try {
+        usePlayerStore.setState({ askPhase: "drafting" });
+        await render();
+
+        const entry = getDesktopAskEntry()!;
+        const firstPanelTabbable = mockDom.querySelector<HTMLElement>('[data-ask-shortcut="subtitle"]')!;
+
+        // 1. Desktop width: Tab from entry is intercepted and moves focus to panel
+        entry.focus();
+        const desktopEvent1 = new KeyboardEvent("keydown", {
+          key: "Tab",
+          bubbles: true,
+          cancelable: true,
+        });
+        entry.dispatchEvent(desktopEvent1);
+        expect(desktopEvent1.defaultPrevented).toBe(true);
+        expect(document.activeElement).toBe(firstPanelTabbable);
+
+        // 2. Resize to mobile width while panel is open: Tab is NOT intercepted
+        isMobile = true;
+        entry.focus();
+        const mobileEvent = new KeyboardEvent("keydown", {
+          key: "Tab",
+          bubbles: true,
+          cancelable: true,
+        });
+        entry.dispatchEvent(mobileEvent);
+        expect(mobileEvent.defaultPrevented).toBe(false);
+        expect(document.activeElement).toBe(entry);
+
+        // 3. Switch back to desktop width: Tab is intercepted again
+        isMobile = false;
+        entry.focus();
+        const desktopEvent2 = new KeyboardEvent("keydown", {
+          key: "Tab",
+          bubbles: true,
+          cancelable: true,
+        });
+        entry.dispatchEvent(desktopEvent2);
+        expect(desktopEvent2.defaultPrevented).toBe(true);
+        expect(document.activeElement).toBe(firstPanelTabbable);
+      } finally {
+        window.matchMedia = originalMatchMedia;
+      }
+    });
   });
 });
