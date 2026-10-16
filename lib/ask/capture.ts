@@ -259,6 +259,56 @@ const PAD_ABOVE_ATTR = "data-ask-capture-pad-above";
 const CHROME_BORDER_CLEAR = "0px none transparent";
 const CHROME_OUTLINE_CLEAR = "0px none transparent";
 
+/**
+ * The narration chalk caret (inline-block ~2×16 gold bar under the subtitle).
+ * Class match first; computed width/height when Tailwind classes are absent.
+ */
+function isSubtitleChalkCaret(node: HTMLElement): boolean {
+  const classes = node.classList;
+  if (classes.contains("h-4") && classes.contains("w-[2px]")) return true;
+  const view = node.ownerDocument?.defaultView;
+  if (!view || typeof view.getComputedStyle !== "function") return false;
+  const style = view.getComputedStyle(node);
+  const width = Number.parseFloat(style.width);
+  const height = Number.parseFloat(style.height);
+  return (
+    Number.isFinite(width) &&
+    Number.isFinite(height) &&
+    Math.abs(width - 2) <= 0.5 &&
+    Math.abs(height - 16) <= 1
+  );
+}
+
+/**
+ * Uma 390 — caret sits 2 CSS px high vs closed-panel crop (caret-hop / FO);
+ * freeze hop and nudge +2 so gold bar shares y with baseline.
+ * Returns the undo. Called beside hideCaptureChromeForRaster and restored
+ * in the same finally.
+ */
+function freezeSubtitleCaretForRaster(container: HTMLElement): () => void {
+  const spans = container.querySelectorAll('[data-ask-target="subtitle"] span');
+  const previous: { el: HTMLElement; animation: string; transform: string; filter: string }[] = [];
+  for (const node of spans) {
+    if (!(node instanceof HTMLElement)) continue;
+    if (!isSubtitleChalkCaret(node)) continue;
+    previous.push({
+      el: node,
+      animation: node.style.animation,
+      transform: node.style.transform,
+      filter: node.style.filter,
+    });
+    node.style.animation = "none";
+    node.style.transform = "translateY(2px)";
+  }
+  return () => {
+    for (const item of previous) {
+      item.el.style.animation = item.animation;
+      item.el.style.transform = item.transform;
+      item.el.style.filter = item.filter;
+    }
+  };
+}
+
 function hideCaptureChromeForRaster(container: HTMLElement): () => void {
   const marked = container.querySelectorAll(`[data-ask-layer] ${CAPTURE_EXCLUDE_SELECTOR}`);
   const previous: { el: HTMLElement; boxShadow: string; border: string; outline: string }[] = [];
@@ -866,8 +916,12 @@ export async function captureStage(
         // Restore in finally, including when domToCanvas throws, so the
         // selection and the editor come back.
         const restoreExcluded = hideCaptureChromeForRaster(container);
+        let restoreCaret: () => void = () => {};
         let rendered: HTMLCanvasElement | null = null;
         try {
+          // Uma 390: freeze the chalk caret beside the chrome clear, before
+          // the clone reads computed style. Same finally restores it.
+          restoreCaret = freezeSubtitleCaretForRaster(container);
           // Stamp after chrome is hidden and before the clone reads the node.
           // The finally below clears it even when the raster throws.
           for (const [node, height] of spacers) {
@@ -919,11 +973,15 @@ export async function captureStage(
                 }
               }
               const raw = cloned.getAttribute(SPACER_HEIGHT_ATTR);
-              if (raw === null) return;
-              const height = Number(raw);
-              cloned.removeAttribute(SPACER_HEIGHT_ATTR);
-              if (!Number.isFinite(height) || height <= 0) return;
-              pinClonedSpacer(cloned, height);
+              if (raw !== null) {
+                const height = Number(raw);
+                cloned.removeAttribute(SPACER_HEIGHT_ATTR);
+                if (Number.isFinite(height) && height > 0) pinClonedSpacer(cloned, height);
+              }
+              // Match live antialiased body; FO otherwise softens glyph edges past tol=4.
+              cloned.style.setProperty("-webkit-font-smoothing", "antialiased");
+              cloned.style.setProperty("-moz-osx-font-smoothing", "grayscale");
+              cloned.style.setProperty("text-rendering", "geometricPrecision");
             },
             onCloneNode: () => {
               cloneDoneAt = performance.now();
@@ -938,6 +996,7 @@ export async function captureStage(
             },
           });
         } finally {
+          restoreCaret();
           restoreExcluded();
           for (const node of spacers.keys()) {
             if (node instanceof Element) node.removeAttribute(SPACER_HEIGHT_ATTR);
