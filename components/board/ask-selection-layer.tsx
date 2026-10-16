@@ -27,6 +27,7 @@ import {
 } from "@/lib/ask/ask-ui-text";
 import { ASK_LIMITS, type AskBBox, type AskSelectionSummary, type AskTarget } from "@/lib/ask/types";
 import { setAskCodeMissNotice } from "@/lib/ask/code-editor-registry";
+import { getAskBottomObstacle, measureAskElementHeight } from "@/lib/ask/ask-occlusion";
 import { usePlayerStore } from "@/lib/player/store";
 import { useIsMobile } from "./use-is-mobile";
 
@@ -570,18 +571,14 @@ function AskSelectionLayerActive({
     let panelH = 0;
     const panelEl = document.querySelector<HTMLElement>("[data-ask-panel]");
     if (panelEl) {
-      const rect = panelEl.getBoundingClientRect();
-      panelH = Math.ceil(rect.height || 0);
+      panelH = measureAskElementHeight(panelEl);
     }
 
     let barH = 0;
     const panelOpen = panelH > 0 || askPhase !== "selecting";
     if (!panelOpen) {
       const barEl = bottomBarRef.current ?? document.querySelector<HTMLElement>("[data-ask-bottom-bar]");
-      if (barEl) {
-        const rect = barEl.getBoundingClientRect();
-        barH = Math.ceil(rect.height || 0);
-      }
+      barH = measureAskElementHeight(barEl);
     }
     document.documentElement.style.setProperty("--ask-bottom-bar-h", `${barH}px`);
 
@@ -740,8 +737,7 @@ function AskSelectionLayerActive({
       if (!codeEl) return;
 
       const barEl = bottomBarRef.current ?? document.querySelector<HTMLElement>("[data-ask-bottom-bar]");
-      const barRect = barEl?.getBoundingClientRect();
-      const barObstacle = barRect && barRect.top > 0 ? (window.innerHeight - barRect.top) : (barEl?.getBoundingClientRect().height ?? 0);
+      const barObstacle = getAskBottomObstacle(barEl);
       const codeRect = codeEl.getBoundingClientRect();
 
       const inView = isElementFullyInView(

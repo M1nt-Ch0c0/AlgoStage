@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { getAskBottomOcclusion } from "../lib/ask/ask-occlusion";
+import { getAskBottomObstacle, getAskBottomOcclusion, measureAskElementHeight } from "../lib/ask/ask-occlusion";
 
 describe("getAskBottomOcclusion", () => {
   afterEach(() => {
@@ -160,5 +160,32 @@ describe("getAskBottomOcclusion", () => {
         globalThis.window = originalWin;
       }
     });
+  });
+});
+
+describe("measureAskElementHeight / getAskBottomObstacle", () => {
+  function fakeEl(height: number): HTMLElement {
+    const el = document.createElement("div");
+    el.getBoundingClientRect = () => ({ height, width: 0, top: 0, left: 0, right: 0, bottom: height, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+    return el;
+  }
+
+  test("measure rounds up and treats missing/zero as 0", () => {
+    expect(measureAskElementHeight(fakeEl(59.2))).toBe(60);
+    expect(measureAskElementHeight(fakeEl(0))).toBe(0);
+    expect(measureAskElementHeight(null)).toBe(0);
+  });
+
+  test("obstacle uses the published occlusion when present", () => {
+    const root = document.createElement("div");
+    root.style.setProperty("--ask-bottom-occlusion", "230px");
+    expect(getAskBottomObstacle(fakeEl(60), root)).toBe(230);
+  });
+
+  test("obstacle falls back to the bar height before occlusion is published", () => {
+    const root = document.createElement("div");
+    root.style.setProperty("--ask-bottom-occlusion", "0px");
+    expect(getAskBottomObstacle(fakeEl(60), root)).toBe(60);
+    expect(getAskBottomObstacle(null, root)).toBe(0);
   });
 });
