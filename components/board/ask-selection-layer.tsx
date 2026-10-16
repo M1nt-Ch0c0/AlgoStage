@@ -386,6 +386,19 @@ export function findScrollable(start: HTMLElement | null): HTMLElement {
   return document.documentElement;
 }
 
+/** 所有真正可滚动的祖先元素列表（不含 document.body 与 document.documentElement）。 */
+export function getScrollableAncestors(start: HTMLElement | null): HTMLElement[] {
+  const ancestors: HTMLElement[] = [];
+  let node: HTMLElement | null = start?.parentElement ?? null;
+  while (node && node !== document.body && node !== document.documentElement) {
+    if (node.scrollHeight > node.clientHeight + 1 || node.scrollWidth > node.clientWidth + 1) {
+      ancestors.push(node);
+    }
+    node = node.parentElement;
+  }
+  return ancestors;
+}
+
 const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
 export { computeBottomOcclusion, type OcclusionParts };
@@ -564,6 +577,7 @@ function AskSelectionLayerActive({
   const enteringScrollRafRef = useRef<number | null>(null);
   const enteringScrollPositionsRef = useRef<{ windowY: number; ancestorTops: number[] } | null>(null);
   const enteringScrollTimestampRef = useRef<number>(0);
+  const enteringScrollAncestorsRef = useRef<HTMLElement[] | null>(null);
   const chipDragCleanupRef = useRef<(() => void) | null>(null);
   const dragStartedRef = useRef(false);
   const suppressClickUntilRef = useRef<number | null>(null);
@@ -590,19 +604,19 @@ function AskSelectionLayerActive({
 
   const getStage = useCallback(() => resolveStage(stage, stageRef), [stage, stageRef]);
 
-  /** 获取当前视口与所有可滚动祖先的垂直滚动位置快照。 */
+  /** 获取当前视口与进入滚动缓存的祖先的垂直滚动位置快照（不读取 scrollHeight/clientHeight）。 */
   const getScrollPositions = useCallback((): { windowY: number; ancestorTops: number[] } => {
     if (typeof window === "undefined") return { windowY: 0, ancestorTops: [] };
-    const ancestorTops: number[] = [];
-    let node: HTMLElement | null = getStage()?.parentElement ?? null;
-    while (node && node !== document.body && node !== document.documentElement) {
-      if (node.scrollHeight > node.clientHeight + 1 || node.scrollWidth > node.clientWidth + 1) {
-        ancestorTops.push(node.scrollTop);
-      }
-      node = node.parentElement;
+    const ancestors = enteringScrollAncestorsRef.current;
+    if (!ancestors || ancestors.length === 0) {
+      return { windowY: window.scrollY, ancestorTops: [] };
+    }
+    const ancestorTops: number[] = new Array(ancestors.length);
+    for (let i = 0; i < ancestors.length; i++) {
+      ancestorTops[i] = ancestors[i].scrollTop;
     }
     return { windowY: window.scrollY, ancestorTops };
-  }, [getStage]);
+  }, []);
 
   /** 清理进入滚动追踪器（廉价清理，不触发 scrollTo）。 */
   const clearEnteringScrollTracker = useCallback(() => {
@@ -617,6 +631,7 @@ function AskSelectionLayerActive({
     enteringSmoothScrollRef.current = false;
     enteringScrollPositionsRef.current = null;
     enteringScrollTimestampRef.current = 0;
+    enteringScrollAncestorsRef.current = null;
   }, []);
 
   // 不活动时不查 document：这层在 idle / sending 也挂着，服务端渲染没有 document。
@@ -1030,6 +1045,8 @@ function AskSelectionLayerActive({
         const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
         if (!prefersReduced) {
           enteringSmoothScrollRef.current = true;
+          // 一次性计算并缓存可滚动祖先元素列表，避免平滑滚动期间在 rAF / scroll 监听中强制重排
+          enteringScrollAncestorsRef.current = getScrollableAncestors(host);
           // 记录初始滚动位置和时间戳
           enteringScrollPositionsRef.current = getScrollPositions();
           enteringScrollTimestampRef.current = performance.now();
@@ -1196,15 +1213,22 @@ function AskSelectionLayerActive({
   /** 停住进行中的进入滚动（平滑滚动）。返回是否确实有滚动被停住。 */
   const stopInflightScroll = (): boolean => {
     const wasScrolling = enteringSmoothScrollRef.current;
+    const ancestors = enteringScrollAncestorsRef.current;
     clearEnteringScrollTracker();
     if (typeof window !== "undefined") {
       // scrollIntoView 的平滑滚动会带上所有可滚动祖先，逐个停在当前位置。
-      let node: HTMLElement | null = getStage()?.parentElement ?? null;
-      while (node && node !== document.body && node !== document.documentElement) {
-        if (node.scrollHeight > node.clientHeight + 1 || node.scrollWidth > node.clientWidth + 1) {
+      if (ancestors && ancestors.length > 0) {
+        for (const node of ancestors) {
           node.scrollTo({ top: node.scrollTop, left: node.scrollLeft, behavior: "auto" });
         }
-        node = node.parentElement;
+      } else {
+        let node: HTMLElement | null = getStage()?.parentElement ?? null;
+        while (node && node !== document.body && node !== document.documentElement) {
+          if (node.scrollHeight > node.clientHeight + 1 || node.scrollWidth > node.clientWidth + 1) {
+            node.scrollTo({ top: node.scrollTop, left: node.scrollLeft, behavior: "auto" });
+          }
+          node = node.parentElement;
+        }
       }
       window.scrollTo({ top: window.scrollY, left: window.scrollX, behavior: "auto" });
     }

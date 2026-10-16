@@ -11,6 +11,7 @@ import AskSelectionLayer, {
   computeOcclusion,
   getDesktopAskEntry,
   getNextTabbableAfterEntry,
+  getScrollableAncestors,
   getTabbableElements,
   handlePanelTabNavigation,
   isElementFullyInView,
@@ -3253,6 +3254,74 @@ describe("resolveAskEscape", () => {
       await act(async () => {
         host.dispatchEvent(pointer("pointerup", { pointerId: 1, clientX: 20, clientY: 20 }));
       });
+    });
+
+    test("enteringSmoothScrollRef/tracker still active but scroll position static for >50ms -> pointerdown takes idle path: no window.scrollTo / element scrollTo and no settle rAF", async () => {
+      setupEnteringScrollEnv();
+      const rafSpy = vi.spyOn(window, "requestAnimationFrame");
+      const windowScrollSpy = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+      const scrollerScrollSpy = vi.fn();
+      scroller.scrollTo = scrollerScrollSpy;
+
+      await render();
+      // 触发进入平滑滚动，并将滚动位置初始化 (scrollY = 20)
+      await reenterSelectionWithScroll(20);
+
+      // tracker 仍处于激活状态（enteringSmoothScrollRef === true，800ms timer 未触发）
+      // 推进 performance.now 超过 50ms（此处增加 60ms），但滚动位置保持不变
+      fakeNow += 60;
+
+      rafSpy.mockClear();
+      windowScrollSpy.mockClear();
+      scrollerScrollSpy.mockClear();
+
+      const host = layer();
+      await act(async () => {
+        host.dispatchEvent(pointer("pointerdown", { pointerId: 1, clientX: 30, clientY: 30 }));
+      });
+
+      // 应当走空闲路径：不调用 window.scrollTo / element scrollTo，不调度落定 rAF
+      expect(windowScrollSpy).not.toHaveBeenCalled();
+      expect(scrollerScrollSpy).not.toHaveBeenCalled();
+      expect(rafSpy).not.toHaveBeenCalled();
+
+      await act(async () => {
+        host.dispatchEvent(pointer("pointerup", { pointerId: 1, clientX: 30, clientY: 30 }));
+      });
+    });
+
+    test("onScroll during entering scroll does not read scrollHeight on ancestors", async () => {
+      setupEnteringScrollEnv();
+      await render();
+      await reenterSelectionWithScroll(20);
+
+      // 进入平滑滚动进行中，可滚动祖先已缓存。
+      // 在祖先元素上设置 getter 间谍，统计 scrollHeight 读取次数
+      let scrollHeightReadCount = 0;
+      Object.defineProperty(scroller, "scrollHeight", {
+        get() {
+          scrollHeightReadCount++;
+          return 2000;
+        },
+        configurable: true,
+      });
+
+      try {
+        // 在进入平滑滚动期间触发 scroll 事件
+        currentScrollY = 25;
+        window.dispatchEvent(new Event("scroll"));
+        scroller.dispatchEvent(new Event("scroll"));
+
+        // onScroll 期间仅读取 window.scrollY 和已缓存祖先的 scrollTop，不应读取 scrollHeight
+        expect(scrollHeightReadCount).toBe(0);
+      } finally {
+        delete (scroller as unknown as Record<string, unknown>).scrollHeight;
+      }
+    });
+
+    test("getScrollableAncestors returns scrollable ancestors and skips body/documentElement", () => {
+      const ancestors = getScrollableAncestors(stage);
+      expect(ancestors).toEqual([scroller]);
     });
 
     test("isEnteringScrollInFlight live decisions", () => {
