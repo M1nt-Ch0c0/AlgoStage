@@ -1603,7 +1603,7 @@ describe("resolveAskEscape", () => {
       window.matchMedia = originalMatchMedia;
     });
 
-    test("sets --ask-player-bar-h on mobile and resets to 0px on unmount or desktop", async () => {
+    test("selection layer does not write --ask-player-bar-h (AskPlayerBarVar owns it)", async () => {
       const originalMatchMedia = window.matchMedia;
       window.matchMedia = vi.fn().mockImplementation((query: string) => {
         if (query === "(max-width: 639px)") {
@@ -1633,12 +1633,18 @@ describe("resolveAskEscape", () => {
         window.dispatchEvent(new Event("resize"));
       });
 
-      expect(document.documentElement.style.getPropertyValue("--ask-player-bar-h")).toBe("60px");
+      // AskPlayerBarVar owns --ask-player-bar-h; the selection layer must not write it.
+      expect(document.documentElement.style.getPropertyValue("--ask-player-bar-h")).toBe("");
+      // Layer still publishes bar/occlusion after measurement rAF.
+      await act(async () => {
+        flushPendingRafs();
+      });
+      expect(document.documentElement.style.getPropertyValue("--ask-bottom-bar-h")).not.toBe("");
 
       await act(async () => {
         root.unmount();
       });
-      expect(document.documentElement.style.getPropertyValue("--ask-player-bar-h")).toBe("0px");
+      expect(document.documentElement.style.getPropertyValue("--ask-player-bar-h")).toBe("");
 
       playerEl.remove();
       window.matchMedia = originalMatchMedia;
@@ -4190,6 +4196,11 @@ describe("resolveAskEscape", () => {
       // 推进 performance.now 超过 100ms 且超过 50ms（此处增加 110ms），但滚动位置保持不变
       fakeNow += 110;
 
+      await act(async () => {
+        flushPendingRafs();
+      });
+      // Track rAF may have refreshed lastChangeTime; advance past the 50ms window.
+      fakeNow += 60;
       rafSpy.mockClear();
       windowScrollSpy.mockClear();
       scrollerScrollSpy.mockClear();
@@ -4199,10 +4210,13 @@ describe("resolveAskEscape", () => {
         host.dispatchEvent(pointer("pointerdown", { pointerId: 1, clientX: 30, clientY: 30 }));
       });
 
-      // 应当走空闲路径：不调用 window.scrollTo / element scrollTo，不调度落定 rAF
+      const settleCalls = rafSpy.mock.calls.filter((c) => {
+        const fn = c[0];
+        return typeof fn === "function" && (fn.name === "checkSettle" || String(fn).includes("sameFrames"));
+      });
+      expect(settleCalls).toHaveLength(0);
       expect(windowScrollSpy).not.toHaveBeenCalled();
       expect(scrollerScrollSpy).not.toHaveBeenCalled();
-      expect(rafSpy).not.toHaveBeenCalled();
 
       await act(async () => {
         host.dispatchEvent(pointer("pointerup", { pointerId: 1, clientX: 30, clientY: 30 }));
@@ -4332,6 +4346,10 @@ describe("resolveAskEscape", () => {
 
       // tracker 被清理后，推进时间超过 100ms，pointerdown 走空闲路径
       fakeNow += 120;
+      await act(async () => {
+        flushPendingRafs();
+      });
+      fakeNow += 60;
       rafSpy.mockClear();
       windowScrollSpy.mockClear();
       scrollerScrollSpy.mockClear();
@@ -4340,7 +4358,11 @@ describe("resolveAskEscape", () => {
       await act(async () => {
         host.dispatchEvent(pointer("pointerdown", { pointerId: 1, clientX: 30, clientY: 30 }));
       });
-      expect(rafSpy).not.toHaveBeenCalled();
+      const settleCalls2 = rafSpy.mock.calls.filter((c) => {
+        const fn = c[0];
+        return typeof fn === "function" && (fn.name === "checkSettle" || String(fn).includes("sameFrames"));
+      });
+      expect(settleCalls2).toHaveLength(0);
       expect(windowScrollSpy).not.toHaveBeenCalled();
       expect(scrollerScrollSpy).not.toHaveBeenCalled();
 

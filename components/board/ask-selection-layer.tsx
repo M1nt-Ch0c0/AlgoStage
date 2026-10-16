@@ -407,6 +407,40 @@ const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffec
 export { computeBottomOcclusion, type OcclusionParts };
 export const computeOcclusion = computeBottomOcclusion;
 
+/**
+ * Cancel commit (drafting|error → selecting) on a narrow viewport.
+ * The panel is already gone and the chip bar has just remounted, but the
+ * queued measurement has not run. Write the selecting targets now so the
+ * box and the bar do not sit on waiting/drafting values for one frame.
+ * Panel contribution is 0 — do not query the panel. Player height is the
+ * inline variable AskPlayerBarVar already owns; only read it. The bar is
+ * measured, never written and then remeasured.
+ */
+function applyCancelSelectingChromeTargets(bottomBar: HTMLElement | null): void {
+  if (typeof document === "undefined") return;
+  const rootStyle = document.documentElement.style;
+  const playerRaw = rootStyle.getPropertyValue("--ask-player-bar-h").trim();
+  const parsedPlayer = Number.parseFloat(playerRaw);
+  const playerH =
+    Number.isFinite(parsedPlayer) && parsedPlayer > 0
+      ? Math.ceil(parsedPlayer)
+      : measureAskPlayerBarHeight();
+  const barH = measureAskElementHeight(bottomBar);
+  const nextBar = `${barH}px`;
+  const nextOcclusion = `${computeBottomOcclusion({
+    playerHeight: playerH,
+    barHeight: barH,
+    panelHeight: 0,
+  })}px`;
+  if (rootStyle.getPropertyValue("--ask-bottom-bar-h") !== nextBar) {
+    rootStyle.setProperty("--ask-bottom-bar-h", nextBar);
+  }
+  if (rootStyle.getPropertyValue("--ask-bottom-occlusion") !== nextOcclusion) {
+    rootStyle.setProperty("--ask-bottom-occlusion", nextOcclusion);
+  }
+}
+
+
 function shortcutId(stepId: string, key: ShortcutKey): string {
   return `${key}:${stepId}`;
 }
@@ -930,7 +964,7 @@ function AskSelectionLayerActive({
       prev === "drafting" || prev === "error" || prev === "sending" || prev === "streaming";
     const cancelToSelecting = askPhase === "selecting" && prev !== "selecting" && prev !== "idle";
 
-    if (askPhase === "selecting" && closingPanel) {
+    if (cancelling) {
       const now = typeof performance !== "undefined" ? performance.now() : Date.now();
       const lastUp = lastTouchCancelPointerUpRef.current;
       if (
@@ -1040,16 +1074,7 @@ function AskSelectionLayerActive({
     window.addEventListener("orientationchange", onInvalidate);
     window.visualViewport?.addEventListener("resize", onInvalidate);
 
-    const onScroll = () => {
-      scheduleUpdate();
-      if (enteringSmoothScrollRef.current) {
-        const current = getScrollPositions();
-        if (!isSameScrollPositions(enteringScrollPositionsRef.current, current)) {
-          enteringScrollPositionsRef.current = current;
-          enteringScrollTimestampRef.current = performance.now();
-        }
-      }
-    };
+    const onScroll = () => scheduleUpdate();
     window.addEventListener("scroll", onScroll, { passive: true, capture: true });
 
     return () => {
@@ -1081,7 +1106,7 @@ function AskSelectionLayerActive({
     }
     enteringScrollRafRef.current = requestAnimationFrame(() => {
       enteringScrollRafRef.current = null;
-      const host = getStage();
+      const host = getStageRef.current();
       const codeEl = host?.querySelector<HTMLElement>('[data-ask-target="code"]');
       if (!codeEl) return;
 
@@ -1116,10 +1141,10 @@ function AskSelectionLayerActive({
         enteringSmoothScrollRef.current = true;
         enteringScrollAncestorsRef.current = getScrollableAncestors(host);
         enteringScrollStartTimeRef.current = performance.now();
-        enteringScrollPositionsRef.current = getScrollPositions();
+        enteringScrollPositionsRef.current = getScrollPositionsRef.current();
         enteringScrollTimestampRef.current = enteringScrollStartTimeRef.current;
         const track = () => {
-          const current = getScrollPositions();
+          const current = getScrollPositionsRef.current();
           if (!isSameScrollPositions(enteringScrollPositionsRef.current, current)) {
             enteringScrollPositionsRef.current = current;
             enteringScrollTimestampRef.current = performance.now();
@@ -1133,12 +1158,12 @@ function AskSelectionLayerActive({
             window.addEventListener("scrollend", onScrollEnd, { once: true });
             return;
           }
-          clearEnteringScrollTracker();
+          clearEnteringScrollTrackerRef.current();
           window.removeEventListener("scrollend", onScrollEnd);
         };
         window.addEventListener("scrollend", onScrollEnd, { once: true });
         enteringScrollTimerRef.current = setTimeout(() => {
-          clearEnteringScrollTracker();
+          clearEnteringScrollTrackerRef.current();
           window.removeEventListener("scrollend", onScrollEnd);
         }, 800);
       }
@@ -1146,9 +1171,9 @@ function AskSelectionLayerActive({
     });
 
     return () => {
-      clearEnteringScrollTracker();
+      clearEnteringScrollTrackerRef.current();
     };
-  }, [askPhase, getStage, getScrollPositions, clearEnteringScrollTracker]);
+  }, [askPhase]);
 
   useEffect(() => {
     setActiveShortcut((index) => Math.min(index, Math.max(visibleShortcuts.length - 1, 0)));
