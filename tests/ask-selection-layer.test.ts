@@ -2214,9 +2214,8 @@ describe("resolveAskEscape", () => {
       document.documentElement.style.removeProperty("--ask-bottom-occlusion");
 
       const frames = holdAnimationFrames();
-      // The bar remounts inside the cancel commit, before act() returns, so
-      // the layout effect measures whatever getBoundingClientRect returns
-      // at that moment. A prototype stub covers the remounted node.
+      // Stable rects. Cancel reuses the bar height measured while selecting,
+      // so the remounted node does not have to be measured in that commit.
       const barRect = domRect(8, 790, 374, 52);
       const originalRect = HTMLElement.prototype.getBoundingClientRect;
       vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
