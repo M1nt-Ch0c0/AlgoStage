@@ -148,9 +148,11 @@ export function noteCancelPaintAfterRelease(): void {
 }
 
 /**
- * Two animation frames so setPreparing(true) paints the busy 取消 row and
- * the button is pressable before captureStage stalls the main thread.
- * When requestAnimationFrame is missing, one macrotask stands in for both.
+ * One animation frame, then one macrotask, so setPreparing(true) paints the
+ * busy 取消 row and the button is pressable before captureStage stalls the
+ * main thread. The macrotask is setTimeout(0): the frame callback only
+ * schedules the paint, and the timeout lets that paint run before capture.
+ * When requestAnimationFrame is missing, the macrotask stands in alone.
  */
 export function yieldPaintFrames(): Promise<void> {
   const raf = globalThis.requestAnimationFrame;
@@ -161,9 +163,7 @@ export function yieldPaintFrames(): Promise<void> {
   }
   return new Promise((resolve) => {
     raf(() => {
-      raf(() => {
-        resolve();
-      });
+      setTimeout(resolve, 0);
     });
   });
 }
@@ -441,7 +441,8 @@ function AskPanelActive({ stage }: AskPanelProps) {
     try {
       // Paint the busy 取消 row before captureStage stalls the main thread,
       // so a press during the stall has a live button to hit.
-      // A/B noDoubleRaf skips the two frames and captures in this turn.
+      // One animation frame, then one macrotask, after setPreparing(true).
+      // A/B noDoubleRaf skips that paint and captures in this turn.
       if (!askAb("noDoubleRaf")) await yieldPaintFrames();
       // One macrotask after domToCanvas returns and before encode or fetch.
       // captureStage calls beforeEncode at that point and awaits it, so this

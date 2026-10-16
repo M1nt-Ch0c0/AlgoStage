@@ -204,13 +204,13 @@ function activateButton(button: HTMLButtonElement) {
   button.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 0 }));
 }
 
-/** Let the two pre-capture animation frames run so captureStage can start. */
+/** Let the pre-capture frame and its macrotask run so captureStage can start. */
 async function drainPaintFrames() {
   await new Promise<void>((resolve) => {
     requestAnimationFrame(() => resolve());
   });
   await new Promise<void>((resolve) => {
-    requestAnimationFrame(() => resolve());
+    setTimeout(resolve, 0);
   });
 }
 
@@ -537,11 +537,16 @@ describe("ask panel", () => {
     }
   });
 
-  test("yieldPaintFrames resolves after two animation frames", async () => {
+  test("yieldPaintFrames paints one animation frame before its macrotask", async () => {
     const frames: FrameRequestCallback[] = [];
+    const jobs: Array<() => void> = [];
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
       frames.push(callback);
       return frames.length;
+    });
+    vi.stubGlobal("setTimeout", (callback: () => void) => {
+      jobs.push(callback);
+      return jobs.length;
     });
     try {
       let settled = false;
@@ -551,11 +556,13 @@ describe("ask panel", () => {
       await Promise.resolve();
       expect(settled).toBe(false);
       expect(frames).toHaveLength(1);
+      expect(jobs).toHaveLength(0);
       frames[0]?.(0);
       await Promise.resolve();
       expect(settled).toBe(false);
-      expect(frames).toHaveLength(2);
-      frames[1]?.(0);
+      expect(frames).toHaveLength(1);
+      expect(jobs).toHaveLength(1);
+      jobs[0]?.();
       await pending;
       expect(settled).toBe(true);
     } finally {
@@ -1027,8 +1034,8 @@ describe("ask panel", () => {
 
     let releaseYield: (() => void) | undefined;
     vi.stubGlobal("setTimeout", (callback: TimerHandler, delay?: number) => {
-      // The post-capture yield. The paint frames are requestAnimationFrame,
-      // which this stub leaves on the real timer.
+      // The post-capture yield. The pre-capture paint's setTimeout(0) is a
+      // different callback, and this stub runs that one immediately.
       if (delay === 0 && typeof callback === "function" && callback.toString().includes("askInputMacrotask")) {
         releaseYield = () => {
           callback();

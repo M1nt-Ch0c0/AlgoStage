@@ -488,10 +488,11 @@ export async function captureStage(
       markAskTiming("captureStart");
       notePreCapture();
       // The busy 取消 row is painted by yieldPaintFrames() in the submit
-      // handler: exactly two animation frames, and then capture starts.
-      // A second pair here would run in the same turn as domToCanvas when
-      // the outer frames have already flushed, which folds worker setup and
-      // this listener turn into the long task the probe attributes to render.
+      // handler: one animation frame, then one macrotask, and then capture
+      // starts. A second paint here would run in the same turn as
+      // domToCanvas when the outer frame has already flushed, which folds
+      // worker setup and this listener turn into the long task the probe
+      // attributes to render.
       if (timedOut) return timeoutResult();
 
       let mod: typeof import("modern-screenshot");

@@ -1,13 +1,14 @@
 /**
  * Test-only A/B toggles for the capture setup. Read from window.__ASK_AB__.
  * Production never sets that object, and every flag is then off: prewarm,
- * the two pre-capture frames, and the post-capture input yield all run.
+ * the pre-capture paint (one frame, then one macrotask), and the
+ * post-capture input yield all run.
  */
 
 export type AskAbFlags = {
   /** Skip the idle prewarm. The encode worker is created on demand. */
   noPrewarm?: boolean;
-  /** Skip the two animation frames that paint the busy row before capture. */
+  /** Skip the frame and macrotask that paint the busy row before capture. */
   noDoubleRaf?: boolean;
   /** Skip the post-capture input yield. */
   noSettle?: boolean;

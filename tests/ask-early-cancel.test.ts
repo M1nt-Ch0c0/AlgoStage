@@ -106,20 +106,20 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-/** The pre-capture paint is two animation frames. */
+/** The pre-capture paint is one animation frame, then one macrotask. */
 async function drainPaint() {
   await new Promise<void>((resolve) => {
     requestAnimationFrame(() => resolve());
   });
   await new Promise<void>((resolve) => {
-    requestAnimationFrame(() => resolve());
+    setTimeout(resolve, 0);
   });
 }
 
 /**
  * Run the submit until the post-capture macrotask is pending, which is the
  * gap after domToCanvas and before encode or fetch. The pre-capture paint
- * uses its own setTimeout(0); this holds only yieldMacrotask's callback.
+ * also uses setTimeout(0); this holds only yieldMacrotask's callback.
  */
 async function reachBeforeEncode(submit: HTMLButtonElement): Promise<() => void> {
   let releaseEncode: (() => void) | undefined;

@@ -56,7 +56,7 @@ export type AskTimingProbe = {
   /** Release → cancelPaintAt. See cancelPaintAt for which release clock. */
   cancelPaintAfterReleaseMs?: number;
   firstPointerDownTs?: number;
-  /** submitAt → captureStart, which includes the pre-capture double rAF. */
+  /** submitAt → captureStart, which includes the pre-capture paint (one frame, then one macrotask). */
   preCaptureMs?: number;
   domToCanvasMs?: number;
   postToWorkerMs?: number;
@@ -139,7 +139,7 @@ export function markAskPhase(phase: AskTimingPhase, durationMs: number): void {
 
 /**
  * submitAt is the submit handler entry. captureStart is the start of
- * captureStage. The gap includes the double rAF that paints the busy 取消 row.
+ * captureStage. The gap includes the frame and macrotask that paint the busy 取消 row.
  * No-op until both marks exist, and a later call does not overwrite it.
  */
 export function notePreCapture(): void {

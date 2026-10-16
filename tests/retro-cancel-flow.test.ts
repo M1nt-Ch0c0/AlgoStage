@@ -162,13 +162,11 @@ async function drainUntilFetch(fetchStarted: Promise<void>) {
       setTimeout(resolve, 1500);
     }),
   ]);
-  for (let frame = 0; frame < 2; frame += 1) {
-    await act(async () => {
-      await new Promise<void>((resolve) => {
-        requestAnimationFrame(() => resolve());
-      });
+  await act(async () => {
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => resolve());
     });
-  }
+  });
   await act(async () => {
     await new Promise<void>((resolve) => {
       setTimeout(resolve, 0);

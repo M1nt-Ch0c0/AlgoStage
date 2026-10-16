@@ -265,7 +265,7 @@ type StallArm = {
 
 /**
  * Install before submit. The observer runs in the mutation task, which is
- * before the double rAF and the compile-time stall, and stores the preparing
+ * before the pre-capture paint and the compile-time stall, and stores the preparing
  * row's text. The returned promise is that one evaluate: it resolves when the
  * row attaches, without a later renderer round-trip that would wait out the stall.
  */
@@ -781,7 +781,7 @@ function installStatusStability(width: number, touch: boolean) {
           await pressAt(page, submitAt.x, submitAt.y, touch);
           const preparing = page.locator("[data-ask-capture-preparing]");
           // The observer resolves on the mutation that attaches the row, before
-          // the double rAF and the hook stall. A locator round-trip here would
+          // the pre-capture paint and the hook stall. A locator round-trip here would
           // block until the stall ended, and the press would miss it.
           await waitArmed(attached);
           await page.waitForTimeout(200);
