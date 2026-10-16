@@ -1311,7 +1311,14 @@ function AskSelectionLayerActive({
                             pickShortcut(item.key);
                             return;
                           }
-                          if (event.key === "Tab" && event.shiftKey && !isMobile) {
+                          if (
+                            event.key === "Tab" &&
+                            event.shiftKey &&
+                            !event.altKey &&
+                            !event.ctrlKey &&
+                            !event.metaKey &&
+                            !isMobile
+                          ) {
                             const entry = document.querySelector<HTMLElement>(
                               "[data-ask-entry]:not([data-ask-bottom-bar] [data-ask-entry])",
                             );

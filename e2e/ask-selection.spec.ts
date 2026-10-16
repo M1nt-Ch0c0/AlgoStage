@@ -690,6 +690,31 @@ test.describe("1280 selection flow", () => {
     await expect(entryBtn).toBeFocused();
   });
 
+  test("chip390-b 1280: Alt/Ctrl/Meta+Shift+Tab on a chip does not jump to the entry", async ({ page }) => {
+    await startGenerated(page);
+    await pauseLecture(page);
+    await enterSelection(page);
+    const chip = page.locator('[data-ask-bottom-bar] [data-ask-shortcut][tabindex="0"]');
+    for (const mod of ["Alt", "Control", "Meta"]) {
+      await chip.focus();
+      const prevented = await chip.evaluate((el, m) => {
+        const ev = new KeyboardEvent("keydown", {
+          key: "Tab",
+          shiftKey: true,
+          altKey: m === "Alt",
+          ctrlKey: m === "Control",
+          metaKey: m === "Meta",
+          bubbles: true,
+          cancelable: true,
+        });
+        el.dispatchEvent(ev);
+        return ev.defaultPrevented;
+      }, mod);
+      expect(prevented, mod).toBe(false);
+      await expect(entry(page).first(), mod).not.toBeFocused();
+    }
+  });
+
   test("S5-chip390 1280: chip row position unchanged", async ({ page }) => {
     await startGenerated(page);
     await pauseLecture(page);
