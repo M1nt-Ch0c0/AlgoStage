@@ -12,6 +12,11 @@ if ! command -v rg >/dev/null 2>&1; then
   exit 2
 fi
 
+if [[ ! -d .next/static || ! -d .next/server ]]; then
+  printf 'error: .next/static and .next/server must both exist\n' >&2
+  exit 2
+fi
+
 hits="$(rg -l -g '*.js' -g '!*.map' ASK_TEST_STALL_HOOK .next/static .next/server || true)"
 if [[ -n "$hits" ]]; then
   printf '%s\n' "$hits"
