@@ -320,18 +320,31 @@ async function readCopyBeforePress(page: Page): Promise<string> {
 }
 
 /**
- * The press must be inside the hook stall: its event time is before the
- * long task that contains the busy loop and domToCanvas.
+ * Date.now() captured before the pointer goes down. That is the issue time.
+ * A read taken after down() awaits the stall and is not the issue time.
+ * Kept on the test annotation so it does not round-trip to the renderer
+ * while the main thread is inside the stall. Not compared with longTaskEnd
+ * or sentAt.
  */
-async function expectPressInsideStall(page: Page) {
-  const timing = await page.evaluate(() => {
-    const probe = (window as unknown as { __ASK_TIMING__?: { firstPointerDownTs?: number; longTaskEnd?: number } })
-      .__ASK_TIMING__;
-    return probe && typeof probe === "object" ? probe : null;
-  });
-  expect(timing?.firstPointerDownTs).toEqual(expect.any(Number));
-  expect(timing?.longTaskEnd).toEqual(expect.any(Number));
-  expect(timing!.firstPointerDownTs!).toBeLessThan(timing!.longTaskEnd!);
+function notePressedAt(pressedAt: number) {
+  test.info().annotations.push({ type: "pressedAt", description: String(pressedAt) });
+}
+
+/**
+ * The press hit 取消. CDP stamps pointerdown.timeStamp when the renderer
+ * dequeues the event, which is after the stall, so the decision is the hit
+ * and not firstPointerDownTs compared with longTaskEnd. A hit that cancelled
+ * before send leaves the panel closed and no ask. A hit that landed after
+ * the fetch aborted the request.
+ */
+async function expectCancelHit(page: Page, askRequests: () => number, failed: () => string[]) {
+  await expect
+    .poll(() => (askRequests() === 0 || failed().length > 0 ? "settled" : "pending"), { timeout: 10_000 })
+    .toBe("settled");
+  await expect(page.getByText("播放回答")).toHaveCount(0);
+  if (askRequests() > 0) {
+    expect(failed().some((text) => /abort/i.test(text))).toBe(true);
+  }
 }
 
 /**
@@ -558,9 +571,9 @@ function installStatusStability(width: number, touch: boolean) {
           await page.waitForTimeout(200);
           await pressAt(page, cancelAt.x, cancelAt.y, touch);
           await waitStallEnd(page);
-          await expectPressInsideStall(page);
           await page.waitForTimeout(3000);
           expect(askRequests).toBe(0);
+          await expectCancelHit(page, () => askRequests, () => []);
         });
       });
     }
@@ -772,16 +785,18 @@ function installStatusStability(width: number, touch: boolean) {
           // block until the stall ended, and the press would miss it.
           await waitArmed(attached);
           await page.waitForTimeout(200);
+          const pressedAt = Date.now();
           await down(page, client, cancelAt.x, cancelAt.y, touch);
+          notePressedAt(pressedAt);
           await waitStallEnd(page);
           const copyBeforePress = await readCopyBeforePress(page);
-          await expectPressInsideStall(page);
           await expect(page.locator("[data-ask-cancel]")).toHaveAttribute("data-pressed", "");
           await expect(preparing).toHaveText(copyBeforePress);
           await page.waitForTimeout(150);
           await up(page, client, cancelAt.x, cancelAt.y, touch);
           await page.waitForTimeout(2500);
           expect(askRequests).toBe(0);
+          await expectCancelHit(page, () => askRequests, () => []);
           await expect(page.locator("[data-ask-waiting]")).toHaveCount(0);
         });
       });
@@ -813,9 +828,10 @@ function installStatusStability(width: number, touch: boolean) {
         await pressAt(page, submitAt.x, submitAt.y, touch);
         await waitArmed(attached);
         await page.waitForTimeout(200);
+        const pressedAt = Date.now();
         await down(page, client, cancelAt.x, cancelAt.y, touch);
+        notePressedAt(pressedAt);
         await waitStallEnd(page);
-        await expectPressInsideStall(page);
         await moveTo(page, client, cancelAt.x, slideY, touch);
         await up(page, client, cancelAt.x, slideY, touch);
       });
@@ -867,10 +883,11 @@ function installStatusStability(width: number, touch: boolean) {
           const preparing = page.locator("[data-ask-capture-preparing]");
           await waitArmed(attached);
           await page.waitForTimeout(200);
+          const pressedAt = Date.now();
           await down(page, client, cancelAt.x, cancelAt.y, touch);
+          notePressedAt(pressedAt);
           await waitStallEnd(page);
           const copyBeforePress = await readCopyBeforePress(page);
-          await expectPressInsideStall(page);
           await page.waitForTimeout(2600);
           expect(askRequests).toBe(1);
           // ask-panel.tsx has no answer-dot marker. Waiting is [data-ask-waiting];
@@ -931,13 +948,15 @@ function installStatusStability(width: number, touch: boolean) {
           // observer installed before submit; no renderer round-trip follows it.
           await waitArmed(attached);
           await page.waitForTimeout(200);
+          const pressedAt = Date.now();
           await down(page, client, cancelAt.x, cancelAt.y, touch);
+          notePressedAt(pressedAt);
           await page.waitForTimeout(150);
           await up(page, client, cancelAt.x, cancelAt.y, touch);
           await waitStallEnd(page);
-          await expectPressInsideStall(page);
         });
 
+        await expectCancelHit(page, () => askRequests, () => failedTexts);
         await expect.poll(
           () => (askRequests === 0 || failedTexts.length > 0 ? "closed" : "pending"),
           { timeout: 10_000 },
@@ -1017,8 +1036,8 @@ function installNaturalCancel(width: number, touch: boolean) {
         // remove from here is a flicker. The observer ignores a removal
         // that is the whole panel unmounting on a successful cancel.
         await installChipHintObserver(page);
-        await down(page, client, cancelAt.x, cancelAt.y, touch);
         const pressedAt = Date.now();
+        await down(page, client, cancelAt.x, cancelAt.y, touch);
         expect(pressedAt - submittedAt).toBeLessThanOrEqual(150);
         await up(page, client, cancelAt.x, cancelAt.y, touch);
 
