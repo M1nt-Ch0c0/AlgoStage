@@ -1195,3 +1195,118 @@ installWaitingPhaseCancel(1280, false, 1);
 installWaitingPhaseCancel(390, true, 1);
 installWaitingPhaseCancel(1280, false, 4);
 installWaitingPhaseCancel(390, true, 4);
+
+/**
+ * 取消 must not move from the ask press through preparing, sending, and
+ * waiting. The window ends when the answer starts streaming and the panel
+ * closes; --ask-player-bar-h resets with that close.
+ */
+function installCancelStaysPut(width: number, touch: boolean) {
+  const label = width === 1280 ? "Desktop" : "390";
+
+  test.describe(`取消 stays put ${label} ${width}`, () => {
+    test.use(
+      width === 1280
+        ? { viewport: { width: 1280, height: 800 } }
+        : {
+            hasTouch: true,
+            isMobile: true,
+            deviceScaleFactor: 3,
+            viewport: { width: 390, height: 844 },
+          },
+    );
+
+    test("取消 y stays within 1px from the ask press until the answer streams", async ({ page }) => {
+      test.setTimeout(60_000);
+      let releaseHold = () => {};
+      const hold = new Promise<void>((resolve) => {
+        releaseHold = resolve;
+      });
+      await page.route("**/api/lecture/ask", async (route) => {
+        await hold;
+        await route.fulfill({
+          status: 200,
+          contentType: "application/x-ndjson",
+          body: askStream("s1"),
+        });
+      });
+
+      await openAskPanel(page);
+      // Stamp 取消's y on the ask pointerdown, and keep a frame-by-frame
+      // record from that press until the answer is released.
+      await page.evaluate(() => {
+        const win = window as unknown as {
+          __cancelYAtAskPress?: number;
+          __cancelYs?: number[];
+          __cancelRaf?: number;
+        };
+        win.__cancelYs = [];
+        const sample = () => {
+          const box = document.querySelector("[data-ask-panel] [data-ask-cancel]")?.getBoundingClientRect();
+          if (box && box.height > 0) win.__cancelYs?.push(box.y);
+        };
+        document.addEventListener(
+          "pointerdown",
+          (event) => {
+            const target = event.target;
+            if (!(target instanceof Element) || !target.closest("[data-ask-submit]")) return;
+            const box = document.querySelector("[data-ask-cancel]")?.getBoundingClientRect();
+            if (box) win.__cancelYAtAskPress = box.y;
+          },
+          true,
+        );
+        const tick = () => {
+          sample();
+          win.__cancelRaf = requestAnimationFrame(tick);
+        };
+        win.__cancelRaf = requestAnimationFrame(tick);
+      });
+
+      const client = await page.context().newCDPSession(page);
+      const submitAt = await boxCenter(page, "[data-ask-submit]");
+      // 4× keeps the preparing row on screen long enough to sample. The y
+      // check itself does not depend on the throttle.
+      await client.send("Emulation.setCPUThrottlingRate", { rate: 4 });
+      try {
+        await down(page, client, submitAt.x, submitAt.y, touch);
+        await up(page, client, submitAt.x, submitAt.y, touch);
+
+        const yAtPress = await page.evaluate(
+          () => (window as unknown as { __cancelYAtAskPress?: number }).__cancelYAtAskPress,
+        );
+        expect(yAtPress).toEqual(expect.any(Number));
+
+        await expect(page.locator("[data-ask-capture-preparing]")).toBeVisible();
+        await expect(page.locator("[data-ask-waiting]")).toBeVisible({ timeout: 15_000 });
+        // Still waiting: the response is held, so no token has streamed.
+        await page.waitForTimeout(200);
+
+        const samples = await page.evaluate(() => {
+          const win = window as unknown as { __cancelRaf?: number; __cancelYs?: number[] };
+          if (win.__cancelRaf != null) cancelAnimationFrame(win.__cancelRaf);
+          return win.__cancelYs ?? [];
+        });
+        expect(samples.length).toBeGreaterThan(0);
+        const off = samples.filter((y) => Math.abs(y - (yAtPress as number)) > 1);
+        expect(off, `取消 y left ${yAtPress} by more than 1px`).toEqual([]);
+
+        const playerWhileOpen = await page.evaluate(() =>
+          document.documentElement.style.getPropertyValue("--ask-player-bar-h").trim(),
+        );
+        if (width === 390) expect(Number.parseFloat(playerWhileOpen)).toBeGreaterThan(0);
+      } finally {
+        await client.send("Emulation.setCPUThrottlingRate", { rate: 1 }).catch(() => {});
+      }
+
+      releaseHold();
+      await expect(page.locator("[data-ask-panel]")).toHaveCount(0, { timeout: 15_000 });
+      const playerAfter = await page.evaluate(() =>
+        document.documentElement.style.getPropertyValue("--ask-player-bar-h").trim(),
+      );
+      expect(playerAfter === "0px" || playerAfter === "").toBe(true);
+    });
+  });
+}
+
+installCancelStaysPut(1280, false);
+installCancelStaysPut(390, true);
