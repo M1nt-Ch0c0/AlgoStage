@@ -449,14 +449,22 @@ async function measureCancelPaint(page: Page, width: number) {
   const preparing = page.locator("[data-ask-capture-preparing]");
   await expect(preparing).toBeAttached({ timeout: 15_000 });
 
-  const cancel = page.locator("[data-ask-cancel]");
+  // One 取消 exists. At 390 it is the panel button; the bottom bar is hidden
+  // while the panel is open and does not carry a cancel. Wait until that
+  // button has a box before the press, so a capture stall is not the thing
+  // that hides it.
+  const cancel = page.locator("[data-ask-panel] [data-ask-cancel]");
+  await expect(cancel).toBeVisible({ timeout: 15_000 });
   const box = await cancel.boundingBox();
-  if (!box) throw new Error("取消 has no box while preparing");
+  if (!box || box.width <= 0 || box.height <= 0) throw new Error("取消 has no box while preparing");
   const x = box.x + box.width / 2;
   const y = box.y + box.height / 2;
-  await page.mouse.move(x, y);
-  await page.mouse.down();
-  await page.mouse.up();
+  if (width === 390) await page.touchscreen.tap(x, y);
+  else {
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.up();
+  }
 
   await expect(page.locator("[data-ask-panel]")).toHaveCount(0, { timeout: 15_000 });
   await page.waitForTimeout(50);
