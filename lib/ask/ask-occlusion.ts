@@ -42,15 +42,54 @@ export function measureAskElementHeight(el: Element | null | undefined): number 
   return Number.isFinite(h) && h > 0 ? Math.ceil(h) : 0;
 }
 
+const PLAYER_AREA_SELECTOR = '[aria-label="讲解播放区"]';
+
 /**
- * Bottom obstacle used to decide whether content is in view above the ask bar.
+ * Visible player-bar height on a narrow viewport: from the player area's top
+ * edge to the bottom of the viewport. 0 when the area is missing, off-screen,
+ * or the viewport is not narrow. --ask-player-bar-h is this number.
+ */
+export function measureAskPlayerBarHeight(root?: ParentNode | null): number {
+  if (typeof window === "undefined" || typeof document === "undefined") return 0;
+  if (!window.matchMedia("(max-width: 639px)").matches) return 0;
+  const scope = root ?? document;
+  const playerEl = scope.querySelector<HTMLElement>(PLAYER_AREA_SELECTOR);
+  if (!playerEl) return 0;
+  const rect = playerEl.getBoundingClientRect();
+  const vh = window.innerHeight;
+  const visible = rect.height > 0 && rect.bottom > 0 && rect.top < vh;
+  if (!visible) return 0;
+  return Math.max(0, Math.ceil(vh - rect.top));
+}
+
+/**
+ * Obstacle the chip390 entering-scroll check uses.
  * Prefers the published --ask-bottom-occlusion (player + bar + gap); falls back to
  * the bar's own height before the variable has been written.
  */
-export function getAskBottomObstacle(
+export function getAskPublishedObstacle(
   barEl: Element | null | undefined,
   root?: HTMLElement,
 ): number {
   const occlusion = root ? getAskBottomOcclusion(root) : getAskBottomOcclusion();
   return occlusion > 0 ? occlusion : measureAskElementHeight(barEl);
+}
+
+/**
+ * Value published as --ask-player-bar-h.
+ * On a narrow viewport this is the player area's visible height, including 0
+ * when that area is missing: falling through to the occlusion total would
+ * republish the bar and the panel as the player height. Otherwise it prefers
+ * the published occlusion, then the bar's own height.
+ */
+export function getAskBottomObstacle(
+  barEl: Element | null | undefined,
+  root?: HTMLElement,
+): number {
+  if (typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches) {
+    // The player area lives in the document, not inside the style root a
+    // caller passes for the occlusion variable.
+    return measureAskPlayerBarHeight(typeof document !== "undefined" ? document : null);
+  }
+  return getAskPublishedObstacle(barEl, root);
 }

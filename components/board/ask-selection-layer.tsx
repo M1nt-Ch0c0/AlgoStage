@@ -27,7 +27,7 @@ import {
 } from "@/lib/ask/ask-ui-text";
 import { ASK_LIMITS, type AskBBox, type AskSelectionSummary, type AskTarget } from "@/lib/ask/types";
 import { setAskCodeMissNotice } from "@/lib/ask/code-editor-registry";
-import { getAskBottomObstacle, measureAskElementHeight } from "@/lib/ask/ask-occlusion";
+import { getAskBottomObstacle, getAskPublishedObstacle, measureAskElementHeight } from "@/lib/ask/ask-occlusion";
 import { scheduleEncodeWorkerPrewarm } from "@/lib/ask/capture-worker";
 import { usePlayerStore } from "@/lib/player/store";
 import { useIsMobile } from "./use-is-mobile";
@@ -38,13 +38,6 @@ const MIN_REGION_SIDE = 24;
 const ACTIVE_PHASES = new Set(["selecting", "drafting", "error"]);
 /** 窗口级 Esc 覆盖的阶段。sending/streaming/playing 仍留给原来的流程，不在这里处理。 */
 const ESCAPE_PHASES = new Set(["selecting", "drafting", "error"]);
-/**
- * Phases where the mobile bottom offset must stay published. The selection
- * layer itself unmounts for sending/streaming/playing, but the ask panel is
- * still fixed to the bottom and its margin reads --ask-player-bar-h. Zeroing
- * that variable drops 取消 by the player-bar height.
- */
-const OFFSET_PHASES = new Set(["selecting", "drafting", "error", "sending", "streaming", "playing"]);
 
 export type AskEscapeAction = "close-panel" | "exit" | "ignore";
 
@@ -394,7 +387,6 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
       stage={stage}
       askPhase={askPhase}
       active={ACTIVE_PHASES.has(askPhase)}
-      measureOffset={OFFSET_PHASES.has(askPhase)}
       selection={selection}
       stepId={steps[currentIndex]?.id ?? ""}
       setAskSelection={setAskSelection}
@@ -408,7 +400,6 @@ function AskSelectionLayerActive({
   stage,
   askPhase,
   active,
-  measureOffset,
   selection,
   stepId,
   setAskSelection,
@@ -416,8 +407,6 @@ function AskSelectionLayerActive({
 }: AskSelectionLayerProps & {
   askPhase: string;
   active: boolean;
-  /** Keep the mobile player/bar/occlusion variables published. */
-  measureOffset: boolean;
   selection: AskSelectionSummary | null;
   stepId: string;
   setAskSelection: (selection: AskSelectionSummary) => void;
@@ -581,29 +570,16 @@ function AskSelectionLayerActive({
     const kbOpen = isKeyboardOpen();
     setKeyboardOpen(kbOpen);
 
-    // The selection chrome unmounts for sending/streaming/playing, but the
-    // panel stays and its mobile margin is --ask-player-bar-h. Clearing that
-    // variable drops 取消 by the player-bar height. Keep measuring through
-    // those phases. Keyboard open still clears it: the drawer follows
-    // visualViewport instead.
-    if (!measureOffset || !isMobileDevice || kbOpen) {
+    // --ask-player-bar-h is owned by AskPlayerBarVar, which stays mounted
+    // after this chrome unmounts. This effect only publishes the chip bar
+    // and the occlusion total, and only while the chrome is up.
+    if (!active || !isMobileDevice || kbOpen) {
       document.documentElement.style.setProperty("--ask-bottom-bar-h", "0px");
-      document.documentElement.style.setProperty("--ask-player-bar-h", "0px");
       document.documentElement.style.setProperty("--ask-bottom-occlusion", "0px");
       return;
     }
 
-    let playerH = 0;
-    const playerEl = document.querySelector<HTMLElement>('[aria-label="讲解播放区"]');
-    if (playerEl) {
-      const playerRect = playerEl.getBoundingClientRect();
-      const vh = typeof window !== "undefined" ? window.innerHeight : 0;
-      const isVisible = playerRect.height > 0 && playerRect.bottom > 0 && playerRect.top < vh;
-      if (isVisible) {
-        playerH = Math.max(0, Math.ceil(vh - playerRect.top));
-      }
-    }
-    document.documentElement.style.setProperty("--ask-player-bar-h", `${playerH}px`);
+    const playerH = getAskBottomObstacle(null);
 
     let panelH = 0;
     const panelEl = document.querySelector<HTMLElement>("[data-ask-panel]");
@@ -625,7 +601,7 @@ function AskSelectionLayerActive({
       panelHeight: panelH,
     });
     document.documentElement.style.setProperty("--ask-bottom-occlusion", `${totalOcclusion}px`);
-  }, [askPhase, measureOffset]);
+  }, [active, askPhase]);
 
   const prevAskPhaseRef = useRef(askPhase);
   useIsomorphicLayoutEffect(() => {
@@ -663,7 +639,8 @@ function AskSelectionLayerActive({
     }
   }, [active, askPhase, updateMeasurements]);
 
-  // 测量底部条高度、播放区高度与抽屉面板高度，并同步 --ask-bottom-bar-h、--ask-player-bar-h 和 --ask-bottom-occlusion。
+  // 测量底部条高度、播放区高度与抽屉面板高度，并同步 --ask-bottom-bar-h 和 --ask-bottom-occlusion。
+  // --ask-player-bar-h 由始终挂载的 AskPlayerBarVar 写。
   // 桌面/inactive/unmount/键盘打开时设为 0px（或 removeProperty）。
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -757,7 +734,6 @@ function AskSelectionLayerActive({
       window.visualViewport?.removeEventListener("resize", onResize);
       window.removeEventListener("scroll", onScroll, { capture: true } as EventListenerOptions);
       document.documentElement.style.setProperty("--ask-bottom-bar-h", "0px");
-      document.documentElement.style.setProperty("--ask-player-bar-h", "0px");
       document.documentElement.style.setProperty("--ask-bottom-occlusion", "0px");
     };
   }, [updateMeasurements]);
@@ -778,7 +754,7 @@ function AskSelectionLayerActive({
       if (!codeEl) return;
 
       const barEl = bottomBarRef.current ?? document.querySelector<HTMLElement>("[data-ask-bottom-bar]");
-      const barObstacle = getAskBottomObstacle(barEl);
+      const barObstacle = getAskPublishedObstacle(barEl);
       const codeRect = codeEl.getBoundingClientRect();
 
       const inView = isElementFullyInView(

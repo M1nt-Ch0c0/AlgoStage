@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { getAskBottomObstacle, getAskBottomOcclusion, measureAskElementHeight } from "../lib/ask/ask-occlusion";
+import { getAskBottomObstacle, getAskBottomOcclusion, getAskPublishedObstacle, measureAskElementHeight, measureAskPlayerBarHeight } from "../lib/ask/ask-occlusion";
 
 describe("getAskBottomOcclusion", () => {
   afterEach(() => {
@@ -176,9 +176,11 @@ describe("measureAskElementHeight / getAskBottomObstacle", () => {
     expect(measureAskElementHeight(null)).toBe(0);
   });
 
-  test("obstacle uses the published occlusion when present", () => {
+  test("published obstacle uses the published occlusion when present", () => {
     const root = document.createElement("div");
     root.style.setProperty("--ask-bottom-occlusion", "230px");
+    expect(getAskPublishedObstacle(fakeEl(60), root)).toBe(230);
+    // Desktop has no player bar, so the obstacle is the published occlusion.
     expect(getAskBottomObstacle(fakeEl(60), root)).toBe(230);
   });
 
@@ -187,5 +189,32 @@ describe("measureAskElementHeight / getAskBottomObstacle", () => {
     root.style.setProperty("--ask-bottom-occlusion", "0px");
     expect(getAskBottomObstacle(fakeEl(60), root)).toBe(60);
     expect(getAskBottomObstacle(null, root)).toBe(0);
+  });
+
+  test("obstacle is the player-bar height when the player area is on screen", () => {
+    const originalMatchMedia = window.matchMedia;
+    const originalHeight = window.innerHeight;
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 844 });
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: query === "(max-width: 639px)",
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })) as unknown as typeof window.matchMedia;
+
+    const player = document.createElement("div");
+    player.setAttribute("aria-label", "讲解播放区");
+    player.getBoundingClientRect = () =>
+      ({ height: 162, width: 390, top: 682, left: 0, right: 390, bottom: 844, x: 0, y: 682, toJSON: () => ({}) }) as DOMRect;
+    document.body.appendChild(player);
+
+    const root = document.createElement("div");
+    root.style.setProperty("--ask-bottom-occlusion", "230px");
+    expect(measureAskPlayerBarHeight()).toBe(162);
+    expect(getAskBottomObstacle(fakeEl(60), root)).toBe(162);
+
+    player.remove();
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: originalHeight });
+    window.matchMedia = originalMatchMedia;
   });
 });

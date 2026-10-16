@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { scrollHeight, clientHeight, scrollWidth, clientWidth } from "happy-dom/lib/PropertySymbol.js";
 import AskEntry from "../components/board/ask-entry";
+import AskPlayerBarVar from "../components/board/ask-player-bar-var";
 import AskSelectionLayer, { computeBottomOcclusion, computeOcclusion, isElementFullyInView, nextRovingIndex, resolveAskEscape } from "../components/board/ask-selection-layer";
 import { ASK_CODE_MISS_HINT, ASK_EMPTY_HIT, ASK_ENTERED_STATUS, ASK_RESIZE_HINT } from "../lib/ask/ask-ui-text";
 import { type CodeEditorHandle, getAskCodeMissNotice, registerCodeEditor, resetCodeEditorRegistry } from "../lib/ask/code-editor-registry";
@@ -103,7 +104,14 @@ afterEach(async () => {
 
 async function render() {
   await act(async () => {
-    root.render(createElement(AskSelectionLayer, { stage }));
+    root.render(
+      createElement(
+        "div",
+        null,
+        createElement(AskPlayerBarVar),
+        createElement(AskSelectionLayer, { stage }),
+      ),
+    );
   });
 }
 
@@ -1415,15 +1423,15 @@ describe("resolveAskEscape", () => {
       // player 60 + panel 200 + gap 8 = 268px (bar hidden while panel open)
       expect(document.documentElement.style.getPropertyValue("--ask-bottom-occlusion")).toBe("268px");
 
-      // sending unmounts the selection chrome, but the panel is still open.
-      // The player offset must stay, or 取消 drops by the player-bar height.
+      // sending unmounts the selection chrome. The player offset is owned by
+      // the layer that stays mounted, so 取消 does not drop.
       await act(async () => {
         usePlayerStore.setState({ askPhase: "sending" });
       });
       expect(document.querySelector("[data-ask-layer]")).toBeNull();
       expect(document.documentElement.style.getPropertyValue("--ask-player-bar-h")).toBe("60px");
       expect(document.documentElement.style.getPropertyValue("--ask-bottom-bar-h")).toBe("0px");
-      expect(document.documentElement.style.getPropertyValue("--ask-bottom-occlusion")).toBe("268px");
+      expect(document.documentElement.style.getPropertyValue("--ask-bottom-occlusion")).toBe("0px");
 
       panelEl.remove();
       playerEl.remove();
@@ -1492,6 +1500,55 @@ describe("resolveAskEscape", () => {
 
       lingering.remove();
       playerEl.remove();
+      window.matchMedia = originalMatchMedia;
+    });
+
+    test("owns --ask-player-bar-h from selecting through sending and streaming, and resets only when the panel closes", async () => {
+      const originalMatchMedia = window.matchMedia;
+      const originalHeight = window.innerHeight;
+      Object.defineProperty(window, "innerHeight", { configurable: true, value: 844 });
+      window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+        matches: query === "(max-width: 639px)",
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }));
+
+      const playerEl = document.createElement("div");
+      playerEl.setAttribute("aria-label", "讲解播放区");
+      playerEl.getBoundingClientRect = () => domRect(0, 682, 390, 162);
+      document.body.appendChild(playerEl);
+
+      const playerVar = () => document.documentElement.style.getPropertyValue("--ask-player-bar-h");
+
+      await render();
+      expect(usePlayerStore.getState().askPhase).toBe("selecting");
+      expect(document.querySelector("[data-ask-layer]")).not.toBeNull();
+      expect(playerVar()).toBe("162px");
+
+      await act(async () => {
+        usePlayerStore.setState({ askPhase: "sending" });
+      });
+      expect(document.querySelector("[data-ask-layer]")).toBeNull();
+      expect(playerVar()).toBe("162px");
+
+      await act(async () => {
+        usePlayerStore.setState({ askPhase: "streaming" });
+      });
+      expect(playerVar()).toBe("162px");
+
+      await act(async () => {
+        usePlayerStore.setState({ askPhase: "selecting" });
+      });
+      expect(playerVar()).toBe("162px");
+
+      await act(async () => {
+        usePlayerStore.setState({ askPhase: "idle" });
+      });
+      expect(playerVar()).toBe("0px");
+
+      playerEl.remove();
+      Object.defineProperty(window, "innerHeight", { configurable: true, value: originalHeight });
       window.matchMedia = originalMatchMedia;
     });
 

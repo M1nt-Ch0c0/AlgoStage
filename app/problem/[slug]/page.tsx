@@ -58,6 +58,7 @@ import { endPanelShowing, selectAskPresentation, usePlayerStore, type LectureAns
 import type { TeachingScript, TeachingStep } from "@/lib/teaching/types";
 import EffectStage from "@/components/effects/effect-stage";
 import AskPanel from "@/components/board/ask-panel";
+import AskPlayerBarVar from "@/components/board/ask-player-bar-var";
 import AskSelectionLayer from "@/components/board/ask-selection-layer";
 import CodeEditor from "@/components/board/code-editor";
 import NarrationBar from "@/components/board/narration-bar";
@@ -1167,6 +1168,7 @@ export default function ProblemPage() {
 
           <HintLadder slug={slug} userCode={practice ? code : undefined} />
         </aside>
+        <AskPlayerBarVar />
         <AskSelectionLayer stageRef={askStageRef} />
         <AskPanel />
         </div>
