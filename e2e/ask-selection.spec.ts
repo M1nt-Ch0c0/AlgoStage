@@ -2444,6 +2444,81 @@ test.describe("390 selection flow", () => {
       }
     });
 
+    test("chip390-b nits (b) no scroll in flight: press and release before next frame, for tap and very short drag, assert panel label matches the line under the pointer", async ({ page }) => {
+      test.setTimeout(90_000);
+      await startGenerated(page);
+      await pauseLecture(page);
+
+      const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+      const button = entry(page);
+      const panel = page.locator("[data-ask-panel]");
+
+      const lineAt = (y: number) =>
+        page.evaluate((py) => {
+          for (const ln of document.querySelectorAll<HTMLElement>(".monaco-editor .line-numbers")) {
+            const r = ln.getBoundingClientRect();
+            if (r.height > 0 && py >= r.top && py < r.bottom) {
+              return { line: Number(ln.textContent?.trim()), below: r.bottom - py };
+            }
+          }
+          return null;
+        }, y);
+
+      for (const mode of ["tap", "short-drag"] as const) {
+        for (let run = 0; run < 10; run++) {
+          if (await panel.count()) {
+            await page.keyboard.press("Escape");
+            await page.keyboard.press("Escape");
+            await expect(page.locator("[data-ask-layer]")).toHaveCount(0);
+          } else if (await page.locator("[data-ask-layer]").count()) {
+            await page.keyboard.press("Escape");
+            await expect(page.locator("[data-ask-layer]")).toHaveCount(0);
+          }
+
+          await button.scrollIntoViewIfNeeded();
+          await page.evaluate(() => window.scrollTo({ top: 0, behavior: "auto" }));
+          await button.click();
+
+          // 等待 scrollY 稳定 3 帧（确保无进入滚动进行中）
+          await page.evaluate(async () => {
+            let lastY = window.scrollY;
+            let stableFrames = 0;
+            while (stableFrames < 3) {
+              await new Promise<void>((r) => requestAnimationFrame(() => r()));
+              const curY = window.scrollY;
+              if (curY === lastY) {
+                stableFrames++;
+              } else {
+                stableFrames = 0;
+                lastY = curY;
+              }
+            }
+          });
+
+          const boxAtDown = (await code.boundingBox())!;
+          const vh = page.viewportSize()!.height;
+          const startX = boxAtDown.x + 60;
+          const startY = Math.round(vh * 0.35);
+
+          await page.mouse.move(startX, startY);
+          if (mode === "tap") {
+            await page.mouse.down();
+            await page.mouse.up();
+          } else {
+            await page.mouse.down();
+            await page.mouse.move(startX + 12, startY);
+            await page.mouse.up();
+          }
+
+          await expect(panel).toBeVisible();
+          const hit = await lineAt(startY);
+          expect(hit).not.toBeNull();
+          const expected = `已选：代码第 ${hit!.line} 行`;
+          await expect(panel.locator("[data-ask-panel-label]")).toHaveText(expected);
+        }
+      }
+    });
+
     test("h. selection fully visible above drawer: record scrollY, open panel, scrollY unchanged", async ({ page }) => {
       // fixme: depends on S4 r4 ask-panel.tsx:181 block:'nearest' (Gavin)
       test.fixme(true, "depends on S4 r4 ask-panel.tsx:181 block:'nearest' (Gavin)");
