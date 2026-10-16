@@ -1590,6 +1590,8 @@ function AskSelectionLayerActive({
                         className="min-h-11 min-w-11 pointer-coarse:min-h-11 pointer-coarse:min-w-11 inline-flex shrink-0 items-center justify-center rounded-full border border-board-600 bg-board-900/80 px-3 py-1 text-xs sm:px-2 sm:py-0.5 sm:text-[10px] sm:min-h-0 sm:min-w-0 sm:pointer-coarse:min-h-11 sm:pointer-coarse:min-w-11 text-chalk-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beam-gold focus-visible:ring-inset"
                         onClick={(event) => {
                           event.stopPropagation();
+                          // 键盘带修饰键触发的合成 click（detail===0）不选芯片；鼠标 Shift+点击照常选中。
+                          if (event.detail === 0 && (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey)) return;
                           // 拖过阈值后的 click 只留下框选，不再把捷径当成点选。
                           if (dragStartedRef.current) {
                             dragStartedRef.current = false;
