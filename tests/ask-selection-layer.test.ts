@@ -2971,7 +2971,7 @@ describe("resolveAskEscape", () => {
       expect(settleRafId2).toBeDefined();
       expect(cancelSpy).toHaveBeenCalledWith(settleRafId2);
 
-      // (c) pointercancel after pointerup drops pending release and cancels settle rAF
+      // (c) pointercancel after pointerup does NOT cancel settle rAF and does not drop pending release
       await reenterSelectionWithScroll(30);
       host = layer();
       cancelSpy.mockClear();
@@ -2984,11 +2984,11 @@ describe("resolveAskEscape", () => {
         host.dispatchEvent(pointer("pointercancel", { pointerId: 4 }));
       });
       expect(settleRafId3).toBeDefined();
-      expect(cancelSpy).toHaveBeenCalledWith(settleRafId3);
+      expect(cancelSpy).not.toHaveBeenCalledWith(settleRafId3);
       await act(async () => {
         flushPendingRafs();
       });
-      expect(usePlayerStore.getState().selection).toBeNull();
+      expect(usePlayerStore.getState().selection).not.toBeNull();
     });
 
     test("N2: pointerup before frame -> selection committed only after the rAF with settled coordinates", async () => {
@@ -3115,6 +3115,69 @@ describe("resolveAskEscape", () => {
       expect(layer().querySelector("[data-ask-selection]")).toBeNull();
       expect(layer().querySelector("[data-ask-selection-label]")).toBeNull();
       expect(usePlayerStore.getState().selection).toBeNull();
+    });
+
+    test("N2: deferred touch pointerup immediately arms click suppression before settle rAF, reverts on failed commit", async () => {
+      setupEnteringScrollEnv();
+      await startEnteringScroll(10);
+      const host = layer();
+
+      const upTime = performance.now();
+      await act(async () => {
+        host.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 1, clientX: 20, clientY: 20, pointerType: "touch" }));
+        const up = new PointerEvent("pointerup", { bubbles: true, cancelable: true, pointerId: 1, clientX: 20, clientY: 20, pointerType: "touch" });
+        Object.defineProperty(up, "timeStamp", { value: upTime });
+        host.dispatchEvent(up);
+      });
+
+      // Before rAF: ghost click arrives before settle rAF and is suppressed immediately
+      const clickEvent = new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 });
+      Object.defineProperty(clickEvent, "timeStamp", { value: upTime + 50 });
+      await act(async () => {
+        document.dispatchEvent(clickEvent);
+      });
+      expect(clickEvent.defaultPrevented).toBe(true);
+
+      // Settle rAF runs and commits selection
+      await act(async () => {
+        flushPendingRafs();
+      });
+      expect(usePlayerStore.getState().selection).not.toBeNull();
+    });
+
+    test("STEP 2: in hasValidCode, if no matching element is found treat code as invalid instead of falling back to codeElements[0]", async () => {
+      await render();
+      const host = layer();
+      const codeEl = document.createElement("div");
+      codeEl.setAttribute("data-ask-target", "code");
+      codeEl.setAttribute("data-ask-id", "code:existing");
+      codeEl.setAttribute("data-ask-step-id", "s1");
+      codeEl.getBoundingClientRect = () => domRect(10, 10, 200, 200);
+      stage.append(codeEl);
+
+      const mockHandle: CodeEditorHandle = {
+        getLineRangeForClientBox: vi.fn(() => null),
+        getLinesText: vi.fn(() => ""),
+        getFullText: vi.fn(() => "full text"),
+      };
+      registerCodeEditor(codeEl, mockHandle);
+
+      // Mock hitTest to return a code target whose id does not match codeEl's data-ask-id
+      vi.spyOn(hitTest, "hitTest").mockReturnValue({
+        mode: "single",
+        targets: [{ kind: "code", id: "code:nonexistent" }],
+      });
+
+      await act(async () => {
+        // Drag over (10, 10) to (210, 210) which completely covers codeEl
+        host.dispatchEvent(pointer("pointerdown", { pointerId: 1, clientX: 10, clientY: 10 }));
+        host.dispatchEvent(pointer("pointermove", { pointerId: 1, clientX: 210, clientY: 210 }));
+        host.dispatchEvent(pointer("pointerup", { pointerId: 1, clientX: 210, clientY: 210 }));
+      });
+
+      // Because id doesn't match and there's no fallback to codeElements[0], hasValidCode is false => no selection
+      expect(usePlayerStore.getState().selection).toBeNull();
+      expect(layer().querySelector("[data-ask-selection]")).toBeNull();
     });
 
     test("N3: modified Enter/Space on focused chip: no selection / existing selection unchanged, panel phase unchanged, Ctrl+Enter and Meta+Enter reach document", async () => {

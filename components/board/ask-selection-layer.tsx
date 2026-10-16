@@ -1219,7 +1219,7 @@ function AskSelectionLayerActive({
           const codeEl = codeElements.find((el) => {
             const id = el.getAttribute("data-ask-id");
             return id === t.id;
-          }) ?? codeElements[0];
+          });
           if (codeEl) {
             const handle = getCodeEditorHandle(codeEl);
             if (!handle) return true;
@@ -1372,6 +1372,10 @@ function AskSelectionLayerActive({
             originRef.current = null;
             suppressDrawRef.current = false;
             setRubberBand(null);
+            if (pending.pointerType === "touch") {
+              suppressClickUntilRef.current = null;
+              touchCompletedSelectionRef.current = false;
+            }
           }
           return;
         }
@@ -1387,9 +1391,9 @@ function AskSelectionLayerActive({
           suppressDrawRef.current = false;
           setRubberBand(null);
           const selected = commitBand(settled, settledEnd);
-          if (selected && pending.pointerType === "touch") {
-            suppressClickUntilRef.current = pending.timeStamp + 400;
-            touchCompletedSelectionRef.current = true;
+          if (!selected && pending.pointerType === "touch") {
+            suppressClickUntilRef.current = null;
+            touchCompletedSelectionRef.current = false;
           }
           return;
         }
@@ -1470,6 +1474,10 @@ function AskSelectionLayerActive({
         pointerType: event.pointerType,
         timeStamp: event.timeStamp,
       };
+      if (event.pointerType === "touch") {
+        suppressClickUntilRef.current = event.timeStamp + 400;
+        touchCompletedSelectionRef.current = true;
+      }
       return;
     }
     if (isIgnoredTarget(event.target)) return;
@@ -1518,6 +1526,10 @@ function AskSelectionLayerActive({
   };
 
   const onPointerCancel = (event: PointerEvent<HTMLDivElement>) => {
+    if (pendingReleaseRef.current != null) {
+      pointersRef.current.delete(event.pointerId);
+      return;
+    }
     if (settleRafRef.current != null) {
       cancelAnimationFrame(settleRafRef.current);
       settleRafRef.current = null;
