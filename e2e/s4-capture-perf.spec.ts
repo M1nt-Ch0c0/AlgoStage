@@ -237,6 +237,8 @@ function abScript(): string {
 
 const OUT_DIR = process.env.S4_OUT_DIR ?? "/workspace/logs/gavin-s4-capture";
 const LABEL = process.env.S4_LABEL ?? "run";
+/** CPU throttle for the capture window. Default 4. */
+const S4_RATE = Number(process.env.S4_RATE ?? "4");
 
 async function installLongTaskObserver(page: Page) {
   if (AB_FLAGS.length > 0) await page.addInitScript(abScript());
@@ -250,6 +252,20 @@ async function installLongTaskObserver(page: Page) {
       }
     });
     observer.observe({ type: "longtask", buffered: true });
+    // t0 is the ask/submit pointerdown. Capture phase runs before the click
+    // handler, so requestElapsedMs starts at the press that issues the fetch.
+    document.addEventListener(
+      "pointerdown",
+      (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        if (!target.closest("[data-ask-submit]")) return;
+        window.__s4Marks = window.__s4Marks ?? {};
+        if (window.__s4Marks.t0 != null) return;
+        window.__s4Marks.t0 = event.timeStamp;
+      },
+      true,
+    );
   });
 }
 
@@ -289,7 +305,7 @@ async function measureCapture(page: Page, width: number) {
   await panel.locator("[data-ask-question]").fill(QUESTION);
 
   const client = await page.context().newCDPSession(page);
-  await client.send("Emulation.setCPUThrottlingRate", { rate: 4 });
+  await client.send("Emulation.setCPUThrottlingRate", { rate: S4_RATE });
 
   mkdirSync(OUT_DIR, { recursive: true });
   const tracePath = path.join(OUT_DIR, `${LABEL}-${width}.trace.zip`);
@@ -305,8 +321,9 @@ async function measureCapture(page: Page, width: number) {
   try {
     await page.evaluate(() => {
       window.__s4LongTasks = [];
+      // Keep t0 for the ask pointerdown. Clear only a stamp from an earlier press.
       window.__s4Marks = window.__s4Marks ?? {};
-      window.__s4Marks.t0 = performance.now();
+      window.__s4Marks.t0 = undefined;
     });
 
     await panel.locator("[data-ask-submit]").click();
