@@ -463,10 +463,12 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
     key?: string;
     element?: HTMLElement | null;
   } | null>(null);
+  const closedByCancelRef = useRef(false);
 
   useEffect(() => {
     if (askPhase === "idle") {
       openingChipRef.current = null;
+      closedByCancelRef.current = false;
     }
   }, [askPhase]);
 
@@ -487,6 +489,7 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
     const onKey = (event: globalThis.KeyboardEvent) => {
       if (event.key !== "Escape") return;
       if (event.repeat) return;
+      closedByCancelRef.current = false;
       const action = resolveAskEscape(usePlayerStore.getState().askPhase, event.target, {
         composing: event.isComposing,
         defaultPrevented: event.defaultPrevented,
@@ -553,6 +556,7 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
       setAskSelection={setAskSelection}
       clearAskSelection={clearAskSelection}
       openingChipRef={openingChipRef}
+      closedByCancelRef={closedByCancelRef}
     />
   );
 }
@@ -567,6 +571,7 @@ function AskSelectionLayerActive({
   setAskSelection,
   clearAskSelection,
   openingChipRef,
+  closedByCancelRef,
 }: AskSelectionLayerProps & {
   askPhase: string;
   active: boolean;
@@ -578,6 +583,7 @@ function AskSelectionLayerActive({
     key?: string;
     element?: HTMLElement | null;
   } | null>;
+  closedByCancelRef?: React.MutableRefObject<boolean>;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const pointersRef = useRef<Map<number, PointerSample>>(new Map());
@@ -696,6 +702,12 @@ function AskSelectionLayerActive({
       touchCompletedSelectionRef.current = false;
       lastTouchCancelPointerUpRef.current = null;
       cancelClickSeenRef.current = false;
+      const target = event.target as Element | null;
+      if (target?.closest?.("[data-ask-panel] [data-ask-cancel], [data-ask-cancel]")) {
+        if (closedByCancelRef) closedByCancelRef.current = true;
+      } else if (closedByCancelRef) {
+        closedByCancelRef.current = false;
+      }
     };
     const onDocPointerUp = (event: globalThis.PointerEvent) => {
       if (event.pointerType !== "touch") return;
@@ -726,6 +738,7 @@ function AskSelectionLayerActive({
       cancelClickSeenRef.current = true;
       const target = event.target as Element | null;
       if (target?.closest?.("[data-ask-panel] [data-ask-cancel], [data-ask-cancel]")) {
+        if (closedByCancelRef) closedByCancelRef.current = true;
         return;
       }
       if (!ghostMouse(event)) return;
@@ -744,7 +757,7 @@ function AskSelectionLayerActive({
       document.removeEventListener("mousedown", onDocMouseDown, true);
       document.removeEventListener("click", onDocClick, true);
     };
-  }, []);
+  }, [closedByCancelRef]);
 
   // 处于 selecting 且无选区时播报（含首次进入与再次进入）。优先写入页面已有的 role=status。
   useEffect(() => {

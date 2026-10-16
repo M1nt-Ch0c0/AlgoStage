@@ -657,6 +657,84 @@ describe("AskSelectionLayer", () => {
     panel.remove();
   });
 
+  test("chip opens panel, Esc closes -> focus on the selection target, not the chip", async () => {
+    await render();
+    const chip = layer().querySelector<HTMLButtonElement>('[data-ask-shortcut="subtitle"]');
+    expect(chip).not.toBeNull();
+
+    await act(async () => {
+      chip!.click();
+    });
+    expect(usePlayerStore.getState().askPhase).toBe("drafting");
+
+    const panel = document.createElement("div");
+    panel.setAttribute("data-ask-panel", "");
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.setAttribute("data-ask-cancel", "");
+    cancel.textContent = "取消";
+    cancel.addEventListener("click", () => {
+      usePlayerStore.getState().closeAskPanel();
+    });
+    panel.append(cancel);
+    document.body.append(panel);
+
+    try {
+      const close = await act(async () => pressEscape(document.body));
+      expect(close.defaultPrevented).toBe(true);
+      expect(usePlayerStore.getState().askPhase).toBe("selecting");
+      await flushFocus();
+
+      const target = stage.querySelector<HTMLElement>('[data-ask-id="subtitle:s1"]');
+      expect(target).not.toBeNull();
+      expect(document.activeElement).toBe(target);
+      expect(document.activeElement).not.toBe(chip);
+    } finally {
+      panel.remove();
+    }
+  });
+
+  test("chip opens panel, Cancel click -> focus on chip", async () => {
+    await render();
+    const chip = layer().querySelector<HTMLButtonElement>('[data-ask-shortcut="subtitle"]');
+    expect(chip).not.toBeNull();
+
+    await act(async () => {
+      chip!.click();
+    });
+    expect(usePlayerStore.getState().askPhase).toBe("drafting");
+
+    const panel = document.createElement("div");
+    panel.setAttribute("data-ask-panel", "");
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.setAttribute("data-ask-cancel", "");
+    cancel.textContent = "取消";
+    cancel.addEventListener("click", () => {
+      usePlayerStore.getState().closeAskPanel();
+    });
+    panel.append(cancel);
+    document.body.append(panel);
+
+    try {
+      cancel.focus();
+      expect(document.activeElement).toBe(cancel);
+
+      await act(async () => {
+        cancel.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
+        cancel.click();
+      });
+      expect(usePlayerStore.getState().askPhase).toBe("selecting");
+      await flushFocus();
+
+      const restoredChip = document.querySelector<HTMLElement>('[data-ask-shortcut="subtitle"]');
+      expect(restoredChip).not.toBeNull();
+      expect(document.activeElement).toBe(restoredChip);
+    } finally {
+      panel.remove();
+    }
+  });
+
   test("1280 桌面端：在提问面板按取消后，若打开面板的芯片已不在 DOM 中，焦点落到入口按钮（chip removed -> entry focused）", async () => {
     const entry = document.createElement("button");
     entry.type = "button";
