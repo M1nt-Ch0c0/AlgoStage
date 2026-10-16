@@ -124,6 +124,47 @@ async function pauseLecture(page: Page) {
   await expect(resume).toBeVisible();
 }
 
+/**
+ * Scroll and the stage's top edge must stay put for 2 animation frames
+ * before a box is measured and a drag starts. A layout shift between the
+ * measure and the gesture lands the drag on the wrong pixels.
+ */
+async function waitScrollStill(page: Page) {
+  // Predicate must return a boolean. A promise is truthy, so waitForFunction
+  // would resolve on the first poll. polling: "raf" is the frame clock.
+  await page.evaluate(() => {
+    delete (window as unknown as { __askScrollStill?: unknown }).__askScrollStill;
+  });
+  await page.waitForFunction(
+    () => {
+      const win = window as unknown as {
+        __askScrollStill?: { y: number; top: number; stable: number };
+      };
+      const stage = document.querySelector("[data-ask-stage]");
+      if (!stage) {
+        delete win.__askScrollStill;
+        return false;
+      }
+      const y = window.scrollY;
+      const top = stage.getBoundingClientRect().top;
+      const prev = win.__askScrollStill;
+      if (!prev) {
+        win.__askScrollStill = { y, top, stable: 0 };
+        return false;
+      }
+      const stable = y === prev.y && top === prev.top ? prev.stable + 1 : 0;
+      win.__askScrollStill = { y, top, stable };
+      if (stable >= 2) {
+        delete win.__askScrollStill;
+        return true;
+      }
+      return false;
+    },
+    undefined,
+    { timeout: 3000, polling: "raf" },
+  );
+}
+
 async function enterSelection(page: Page) {
   const button = entry(page);
   await expect(button).toBeVisible();
@@ -132,12 +173,14 @@ async function enterSelection(page: Page) {
   await button.click();
   await expect(page.locator("[data-ask-layer]")).toBeVisible();
   await expect(button).toHaveAttribute("aria-pressed", "true");
+  await waitScrollStill(page);
 }
 
 async function dragOnStage(page: Page) {
   const stage = page.locator("[data-ask-stage]");
   const viz = stage.locator('[data-ask-id="viz:s1"]').first();
   await expect(viz).toBeVisible();
+  await waitScrollStill(page);
   const box = await viz.boundingBox();
   if (!box) throw new Error("viz target has no box");
   const startX = box.x + 8;
@@ -1112,7 +1155,8 @@ function installNaturalCancel(width: number, touch: boolean) {
           );
           const notePanel = (node: Node, type: "add" | "remove") => {
             if (!(node instanceof Element)) return;
-            if (node.matches("[data-ask-panel]")) {
+            // The panel itself, or the panel inside a removed/added ancestor.
+            if (node.matches("[data-ask-panel]") || node.querySelector("[data-ask-panel]")) {
               events.push({ type, t: performance.now() });
             }
             node.querySelectorAll("[data-ask-panel]").forEach(() => {
@@ -1122,10 +1166,13 @@ function installNaturalCancel(width: number, touch: boolean) {
           const observer = new MutationObserver((records) => {
             for (const record of records) {
               for (const node of record.removedNodes) notePanel(node, "remove");
-              if (win.__askPanelGoneAt == null && document.querySelector("[data-ask-panel]") == null) {
-                win.__askPanelGoneAt = performance.now();
-              }
               for (const node of record.addedNodes) notePanel(node, "add");
+            }
+            // Once per callback, after every record in the batch: stamp the
+            // first time the panel is gone, whether it was the removed node
+            // or a descendant of one.
+            if (win.__askPanelGoneAt == null && document.querySelector("[data-ask-panel]") == null) {
+              win.__askPanelGoneAt = performance.now();
             }
           });
           observer.observe(document.body, { childList: true, subtree: true });
@@ -1197,6 +1244,18 @@ function installNaturalCancel(width: number, touch: boolean) {
         }
 
         if (width === 390) {
+          // The removal observer stamps __askPanelGoneAt when the panel
+          // leaves. Wait for that number before reading it. A timeout means
+          // the panel never left; the assertion below then fails.
+          await page
+            .waitForFunction(
+              () =>
+                typeof (window as unknown as { __askPanelGoneAt?: unknown }).__askPanelGoneAt ===
+                "number",
+              undefined,
+              { timeout: 2000, polling: "raf" },
+            )
+            .catch(() => {});
           const stamp = await page.evaluate(() => {
             const marks = performance.getEntriesByName("ASK_TEST_STALL_HOOK", "mark");
             const measures = performance.getEntriesByName("ASK_TEST_STALL_HOOK", "measure");
