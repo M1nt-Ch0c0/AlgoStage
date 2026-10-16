@@ -531,9 +531,16 @@ function AskPanelActive({ stage }: AskPanelProps) {
       try {
         await sendAsk(failed ? null : capture, {
           isCurrent: () => {
-            // A press on 取消 that landed before this check aborts with no
-            // fetch. The button's release still closes the panel.
-            if (cancelHitRef.current && !sentSessionsRef.current.has(session)) return false;
+            // A press that already went up on 取消 aborts with no fetch.
+            // A press that is still down is the 2s hold: this send is the
+            // timeout, and the later release aborts it.
+            if (
+              cancelHitRef.current &&
+              !holdRef.current.isPending(session) &&
+              !sentSessionsRef.current.has(session)
+            ) {
+              return false;
+            }
             return askSessionRef.current === session;
           },
           onFetch: (_sentAt) => {
