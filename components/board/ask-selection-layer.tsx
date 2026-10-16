@@ -121,8 +121,10 @@ export function isEnteringScrollInFlight(
   currentPositions: { windowY: number; ancestorTops: number[] },
   lastChangeTime: number,
   now: number,
+  startTime?: number,
 ): boolean {
   if (!trackerActive) return false;
+  if (startTime !== undefined && startTime > 0 && now - startTime < 100) return true;
   const posChanged = lastPositions != null && !isSameScrollPositions(lastPositions, currentPositions);
   const recentChange = now - lastChangeTime <= 50;
   return posChanged || recentChange;
@@ -577,6 +579,7 @@ function AskSelectionLayerActive({
   const enteringScrollRafRef = useRef<number | null>(null);
   const enteringScrollPositionsRef = useRef<{ windowY: number; ancestorTops: number[] } | null>(null);
   const enteringScrollTimestampRef = useRef<number>(0);
+  const enteringScrollStartTimeRef = useRef<number>(0);
   const enteringScrollAncestorsRef = useRef<HTMLElement[] | null>(null);
   const chipDragCleanupRef = useRef<(() => void) | null>(null);
   const dragStartedRef = useRef(false);
@@ -631,6 +634,7 @@ function AskSelectionLayerActive({
     enteringSmoothScrollRef.current = false;
     enteringScrollPositionsRef.current = null;
     enteringScrollTimestampRef.current = 0;
+    enteringScrollStartTimeRef.current = 0;
     enteringScrollAncestorsRef.current = null;
   }, []);
 
@@ -1048,8 +1052,9 @@ function AskSelectionLayerActive({
           // 一次性计算并缓存可滚动祖先元素列表，避免平滑滚动期间在 rAF / scroll 监听中强制重排
           enteringScrollAncestorsRef.current = getScrollableAncestors(host);
           // 记录初始滚动位置和时间戳
+          enteringScrollStartTimeRef.current = performance.now();
           enteringScrollPositionsRef.current = getScrollPositions();
-          enteringScrollTimestampRef.current = performance.now();
+          enteringScrollTimestampRef.current = enteringScrollStartTimeRef.current;
 
           // 追踪平滑滚动：每帧记录最新滚动位置和变化时间戳
           const track = () => {
@@ -1064,6 +1069,10 @@ function AskSelectionLayerActive({
 
           if (enteringScrollTimerRef.current) clearTimeout(enteringScrollTimerRef.current);
           const onScrollEnd = () => {
+            if (enteringScrollTimestampRef.current === enteringScrollStartTimeRef.current) {
+              window.addEventListener("scrollend", onScrollEnd, { once: true });
+              return;
+            }
             clearEnteringScrollTracker();
             window.removeEventListener("scrollend", onScrollEnd);
           };
@@ -1281,6 +1290,7 @@ function AskSelectionLayerActive({
       currentPositions,
       enteringScrollTimestampRef.current,
       performance.now(),
+      enteringScrollStartTimeRef.current,
     );
 
     if (isScrolling) {

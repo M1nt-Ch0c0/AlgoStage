@@ -3141,6 +3141,7 @@ describe("resolveAskEscape", () => {
         const clickEv = new MouseEvent("click", {
           bubbles: true,
           cancelable: true,
+          detail: 1,
           ...mod,
         });
         await act(async () => {
@@ -3151,6 +3152,40 @@ describe("resolveAskEscape", () => {
         expect(selection?.targets[0]?.id).toBe("subtitle:s1");
         expect(usePlayerStore.getState().askPhase).toBe("drafting");
       }
+    });
+
+    test("synthetic click with detail 0 + ctrlKey does not select; click with detail 1 + shiftKey selects", async () => {
+      await render();
+      const chip = layer().querySelector<HTMLButtonElement>('[data-ask-shortcut="subtitle"]');
+      expect(chip).not.toBeNull();
+
+      // Synthetic click with detail 0 + ctrlKey does not select
+      const syntheticClick = new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+        detail: 0,
+        ctrlKey: true,
+      });
+      await act(async () => {
+        chip!.dispatchEvent(syntheticClick);
+      });
+      expect(usePlayerStore.getState().selection).toBeNull();
+      expect(usePlayerStore.getState().askPhase).toBe("selecting");
+
+      // Click with detail 1 + shiftKey selects
+      const realClick = new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+        detail: 1,
+        shiftKey: true,
+      });
+      await act(async () => {
+        chip!.dispatchEvent(realClick);
+      });
+      const selection = usePlayerStore.getState().selection;
+      expect(selection?.mode).toBe("single");
+      expect(selection?.targets[0]?.id).toBe("subtitle:s1");
+      expect(usePlayerStore.getState().askPhase).toBe("drafting");
     });
   });
 
@@ -3268,8 +3303,8 @@ describe("resolveAskEscape", () => {
       await reenterSelectionWithScroll(20);
 
       // tracker 仍处于激活状态（enteringSmoothScrollRef === true，800ms timer 未触发）
-      // 推进 performance.now 超过 50ms（此处增加 60ms），但滚动位置保持不变
-      fakeNow += 60;
+      // 推进 performance.now 超过 100ms 且超过 50ms（此处增加 110ms），但滚动位置保持不变
+      fakeNow += 110;
 
       rafSpy.mockClear();
       windowScrollSpy.mockClear();
@@ -3342,6 +3377,92 @@ describe("resolveAskEscape", () => {
 
       // 追踪器激活，位置相同但最后一次变化在 20ms 内 -> true
       expect(isEnteringScrollInFlight(true, pos, pos, now - 10, now)).toBe(true);
+
+      // 新分支：trackerActive && startTime > 0 && now - startTime < 100 -> true
+      expect(isEnteringScrollInFlight(true, pos, pos, now - 200, now, now - 50)).toBe(true);
+      expect(isEnteringScrollInFlight(true, pos, pos, now - 200, now, now - 99)).toBe(true);
+      // startTime 过期（>= 100ms），且位置未变、上次变化 > 50ms -> false
+      expect(isEnteringScrollInFlight(true, pos, pos, now - 200, now, now - 100)).toBe(false);
+      // trackerActive 为 false，即使 startTime 处于 100ms 内也为 false
+      expect(isEnteringScrollInFlight(false, pos, pos, now - 200, now, now - 50)).toBe(false);
+      // startTime 为 0 或未传，不触发新分支
+      expect(isEnteringScrollInFlight(true, pos, pos, now - 200, now, 0)).toBe(false);
+      expect(isEnteringScrollInFlight(true, pos, pos, now - 200, now)).toBe(false);
+    });
+
+    test("stale scrollend arriving before position change is ignored and tracker keeps listening", async () => {
+      setupEnteringScrollEnv();
+      const rafSpy = vi.spyOn(window, "requestAnimationFrame");
+      const windowScrollSpy = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+      const scrollerScrollSpy = vi.fn();
+      scroller.scrollTo = scrollerScrollSpy;
+
+      await render();
+      // 触发进入平滑滚动，此时未发生位置变化，enteringScrollTimestampRef === enteringScrollStartTimeRef
+      ensureCodeElement();
+      await act(async () => {
+        usePlayerStore.setState({ askPhase: "idle" });
+      });
+      await act(async () => {
+        usePlayerStore.setState({ askPhase: "selecting" });
+      });
+      await act(async () => {
+        flushPendingRafs();
+      });
+
+      // 派发先于位置变化的 stale scrollend
+      await act(async () => {
+        window.dispatchEvent(new Event("scrollend"));
+      });
+
+      // tracker 未被清理：在 100ms 内 pointerdown 仍会判定为滚动中，调用 scrollTo 并安排落定 rAF
+      rafSpy.mockClear();
+      windowScrollSpy.mockClear();
+      const host = layer();
+      await act(async () => {
+        host.dispatchEvent(pointer("pointerdown", { pointerId: 1, clientX: 20, clientY: 20 }));
+      });
+      expect(rafSpy).toHaveBeenCalled();
+      expect(windowScrollSpy).toHaveBeenCalled();
+
+      await act(async () => {
+        host.dispatchEvent(pointer("pointerup", { pointerId: 1, clientX: 20, clientY: 20 }));
+      });
+    });
+
+    test("scrollend after position change clears tracker and subsequent pointerdown takes idle path", async () => {
+      setupEnteringScrollEnv();
+      const rafSpy = vi.spyOn(window, "requestAnimationFrame");
+      const windowScrollSpy = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+      const scrollerScrollSpy = vi.fn();
+      scroller.scrollTo = scrollerScrollSpy;
+
+      await render();
+      // 触发进入平滑滚动并改变滚动位置
+      await reenterSelectionWithScroll(20);
+
+      // 观察到位置变动后（timestamp 已由 onScroll 更新，> startTime），此时 scrollend 应正常清理 tracker
+      await act(async () => {
+        window.dispatchEvent(new Event("scrollend"));
+      });
+
+      // tracker 被清理后，推进时间超过 100ms，pointerdown 走空闲路径
+      fakeNow += 120;
+      rafSpy.mockClear();
+      windowScrollSpy.mockClear();
+      scrollerScrollSpy.mockClear();
+
+      const host = layer();
+      await act(async () => {
+        host.dispatchEvent(pointer("pointerdown", { pointerId: 1, clientX: 30, clientY: 30 }));
+      });
+      expect(rafSpy).not.toHaveBeenCalled();
+      expect(windowScrollSpy).not.toHaveBeenCalled();
+      expect(scrollerScrollSpy).not.toHaveBeenCalled();
+
+      await act(async () => {
+        host.dispatchEvent(pointer("pointerup", { pointerId: 1, clientX: 30, clientY: 30 }));
+      });
     });
   });
 
