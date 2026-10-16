@@ -588,6 +588,8 @@ function AskPanelActive({ stage }: AskPanelProps) {
   };
 
   const cancelWaiting = usePointerActivate(() => {
+    // Keyboard Enter/Space. A pointer release in the waiting phase is handled
+    // on pointerup, which aborts the fetch and closes the panel.
     if (holdWaitingRef.current || heldAfterSendRef.current) return;
     cancelAsk();
   });
@@ -665,7 +667,12 @@ function AskPanelActive({ stage }: AskPanelProps) {
       // during the capture long task, timeStamp is inside that task and
       // dispatch is when the thread became free. The paint delta uses the
       // later of the two, so the queued stall is not charged to the paint.
-      if (inside && sendingRef.current) {
+      // The waiting phase (request already out, first token not in yet) is
+      // not inside submit, so sendingRef is false. Stamp that release too:
+      // the paint delta is the same clock.
+      const waitingPhase =
+        askPhase === "sending" || askPhase === "streaming";
+      if (inside && (sendingRef.current || waitingPhase)) {
         markAskTiming("cancelPointerUpAt", event.timeStamp);
         markAskTiming("cancelPointerUpDispatchAt");
       }
@@ -680,6 +687,22 @@ function AskPanelActive({ stage }: AskPanelProps) {
         captureAbortRef.current?.abort();
       }
       if (!sentWhileHeld) retroCancel(inside);
+      // Waiting phase: the request is already out (or askSent has shown the
+      // waiting row) and submit is still awaiting it, so sendingRef is true
+      // and this press armed the capture hold. That hold's wait() already
+      // resolved, so release() only latches. The hit flag aborts only after
+      // onFetch recorded the session, which is later than the waiting row.
+      // Abort here too, including that gap, and close the panel. A slide-off
+      // does not. send-held still aborts once, in onLateCancel. The capture
+      // hold's own wait (holdWaitingRef) is drafting, not this phase.
+      if (inside && waitingPhase && !sentWhileHeld && !holdWaitingRef.current) {
+        cancelHitRef.current = false;
+        pointerDownIdRef.current = null;
+        stopEarlyPress();
+        retroCancelAsk();
+        noteCancelPaintAfterRelease();
+        return;
+      }
       if ((held || sentWhileHeld) && inside) return;
       activate.onPointerUp(event);
     },
@@ -799,7 +822,6 @@ function AskPanelActive({ stage }: AskPanelProps) {
           <button
             type="button"
             data-ask-cancel
-            data-ask-capture-exclude
             data-pressed={cancelPressed ? "" : undefined}
             className={cancelClassName}
             onPointerDown={cancelWaitingHold.onPointerDown}

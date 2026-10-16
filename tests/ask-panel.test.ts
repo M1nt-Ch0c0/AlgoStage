@@ -832,6 +832,10 @@ describe("ask panel", () => {
       if (cancel) activateButton(cancel);
     });
     expect(cancelAsk).toHaveBeenCalledTimes(1);
+    const waitingCancel = container.querySelector<HTMLButtonElement>("[data-ask-cancel]");
+    expect(waitingCancel?.hasAttribute("data-ask-cancel")).toBe(true);
+    expect(waitingCancel?.closest("[data-ask-capture-exclude]")).toBeNull();
+    expect(waitingCancel?.className).not.toContain("pointer-events-none");
     expect(usePlayerStore.getState().draftQuestion).toBe("老师在想的问题");
     expect(usePlayerStore.getState().selection).toBe(kept);
 

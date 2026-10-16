@@ -274,4 +274,86 @@ describe("retro-cancelled ask", () => {
     expect(container.querySelector("[data-answer-mark]")).toBeNull();
     expect(captureStage).toHaveBeenCalledTimes(1);
   });
+
+  test("a press on 取消 while waiting for the first token aborts the fetch and closes the panel", async () => {
+    let askSignal: AbortSignal | undefined;
+    let fetchStarted: () => void = () => {};
+    const fetchSeen = new Promise<void>((resolve) => {
+      fetchStarted = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (!url.includes("/api/lecture/ask")) {
+          return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+        }
+        askSignal = init?.signal ?? undefined;
+        fetchStarted();
+        // No bytes. The waiting row is up and nothing has streamed.
+        return new Promise<Response>((_resolve, reject) => {
+          const fail = () => {
+            const error = new Error("The operation was aborted.");
+            error.name = "AbortError";
+            reject(error);
+          };
+          if (init?.signal?.aborted) {
+            fail();
+            return;
+          }
+          init?.signal?.addEventListener("abort", fail, { once: true });
+        });
+      }),
+    );
+
+    await render();
+    const submit = container.querySelector<HTMLButtonElement>("[data-ask-submit]");
+    if (!submit) throw new Error("submit missing");
+    await act(async () => {
+      submit.click();
+    });
+    await drainUntilFetch(fetchSeen);
+    await act(async () => {
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 20);
+      });
+    });
+
+    expect(usePlayerStore.getState().askPhase).toBe("sending");
+    expect(usePlayerStore.getState().previewSegments).toEqual([]);
+
+    const cancel = container.querySelector<HTMLButtonElement>("[data-ask-cancel]");
+    if (!cancel) throw new Error("cancel missing");
+    // The waiting button is the hit target. No capture-exclude ancestor and
+    // no pointer-events:none layer sits over it.
+    expect(cancel.hasAttribute("data-ask-cancel")).toBe(true);
+    expect(cancel.closest("[data-ask-capture-exclude]")).toBeNull();
+    let node: HTMLElement | null = cancel;
+    while (node) {
+      expect(node.className).not.toContain("pointer-events-none");
+      node = node.parentElement;
+    }
+    vi.spyOn(cancel, "setPointerCapture").mockImplementation(() => {});
+    vi.spyOn(cancel, "getBoundingClientRect").mockReturnValue(box());
+
+    await act(async () => {
+      cancel.dispatchEvent(pointer("pointerdown", 10, 10, 8));
+      cancel.dispatchEvent(pointer("pointerup", 20, 12, 9));
+    });
+
+    expect(askSignal?.aborted).toBe(true);
+    const after = usePlayerStore.getState();
+    expect(after.askPhase).toBe("selecting");
+    expect(after.answers.s1 ?? []).toEqual([]);
+    expect(after.previewSegments).toEqual([]);
+    expect(after.askErrorCode).toBeNull();
+    expect(after.expandedAnswerIds.size).toBe(0);
+    expect(window.localStorage.getItem(answersStorageKey("ck-retro", "v-retro"))).toBeNull();
+    expect(container.querySelector("[data-ask-panel]")).toBeNull();
+    expect(container.querySelector("[data-ask-error]")).toBeNull();
+    expect(container.querySelector("[data-testid='ask-preview']")).toBeNull();
+    expect(container.querySelector("[data-answer-mark]")).toBeNull();
+    expect(container.textContent ?? "").not.toContain("这段不该留下来");
+    expect(container.textContent ?? "").not.toContain("播放回答");
+  });
 });
