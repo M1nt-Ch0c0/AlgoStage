@@ -121,6 +121,19 @@ afterEach(async () => {
   resetCodeEditorRegistry();
   container.remove();
   scroller.remove();
+  // Clear body-appended ask chrome so later suites (F2 / occlusion) stay isolated.
+  for (const sel of [
+    "[data-ask-entry]",
+    "[data-ask-panel]",
+    '[aria-label="讲解播放区"]',
+    "[data-ask-layer]",
+    "[data-ask-bottom-bar]",
+  ]) {
+    document.querySelectorAll(sel).forEach((el) => el.remove());
+  }
+  document.documentElement.style.removeProperty("--ask-bottom-bar-h");
+  document.documentElement.style.removeProperty("--ask-bottom-occlusion");
+  document.documentElement.style.removeProperty("--ask-player-bar-h");
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -780,16 +793,24 @@ describe("AskSelectionLayer", () => {
     cancel.focus();
     expect(document.activeElement).toBe(cancel);
 
+    // Selecting chrome remounts chips with the same shortcut key. Stub the key
+    // lookup so openingChipRef cannot recover a remounted chip and must fall
+    // through to the desktop entry (the case this test names).
+    const realQuery = document.querySelector.bind(document);
+    const querySpy = vi.spyOn(document, "querySelector").mockImplementation((selectors) => {
+      if (typeof selectors === "string" && selectors.includes("[data-ask-shortcut=")) {
+        return null;
+      }
+      return realQuery(selectors);
+    });
+
     await act(async () => {
       cancel.click();
     });
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
 
-    // 移除芯片以模拟芯片已不在 DOM 中的情况
-    document.querySelectorAll('[data-ask-shortcut="subtitle"]').forEach((el) => el.remove());
-
-    await flushMeasureFrame();
     await flushFocus();
+    querySpy.mockRestore();
     expect(document.activeElement).toBe(entry);
 
     panel.remove();
@@ -1761,6 +1782,9 @@ describe("resolveAskEscape", () => {
       panelEl.setAttribute("data-ask-panel", "");
       panelEl.getBoundingClientRect = () => domRect(8, 500, 374, 200);
       document.body.appendChild(panelEl);
+      // Drain MutationObserver-scheduled measure first so resize is not dropped
+      // by measureRafRef early-return coalescing.
+      await flushMeasureFrame();
 
       await act(async () => {
         window.dispatchEvent(new Event("resize"));
