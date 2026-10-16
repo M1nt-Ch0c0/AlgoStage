@@ -5,7 +5,7 @@
  */
 "use client";
 
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent } from "react";
 import { Loader2 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import {
@@ -167,6 +167,16 @@ export default function AskEntry() {
     activate();
   }
 
+  // 1280：芯片组在 DOM 里离入口很远。圈选中从入口按 Tab，第一下直接落到芯片组（roving 的那一个）。
+  function onEntryKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
+    if (event.key !== "Tab" || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (!inAsk || isMobile) return;
+    const chip = document.querySelector<HTMLElement>('[data-ask-bottom-bar] [data-ask-shortcut][tabindex="0"]');
+    if (!chip) return;
+    event.preventDefault();
+    chip.focus();
+  }
+
   return (
     <span className="inline-flex flex-col items-end gap-0.5">
       <button
@@ -186,6 +196,7 @@ export default function AskEntry() {
           hideAtMobileAsk ? " invisible pointer-events-none" : ""
         }`}
         onClick={onClick}
+        onKeyDown={onEntryKeyDown}
       >
         <span className="inline-flex h-3 w-3 shrink-0 items-center justify-center" aria-hidden>
           {awaitingPending ? (

@@ -1175,6 +1175,18 @@ function AskSelectionLayerActive({
                           pickShortcut(item.key);
                         }}
                         onKeyDown={(event) => {
+                          // 1280：从芯片组 Shift+Tab 回到入口按钮（和入口 Tab 进来对称）。
+                          if (event.key === "Tab" && event.shiftKey && !isMobile) {
+                            const entry = document.querySelector<HTMLElement>(
+                              "[data-ask-entry]:not([data-ask-bottom-bar] [data-ask-entry])",
+                            );
+                            if (entry) {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              entry.focus();
+                              return;
+                            }
+                          }
                           if (
                             event.key === "ArrowRight" ||
                             event.key === "ArrowLeft" ||

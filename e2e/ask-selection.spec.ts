@@ -630,6 +630,28 @@ test.describe("1280 selection flow", () => {
     await expectCaptureFallbackThroughPlayback(page);
   });
 
+  test("1280: Tab from the entry lands on the chip group first; Shift+Tab returns", async ({ page }) => {
+    await startGenerated(page);
+    await pauseLecture(page);
+    await enterSelection(page);
+    const entry = page.locator("[data-ask-entry]").first();
+    await entry.focus();
+    await page.keyboard.press("Tab");
+    const active = await page.evaluate(() => {
+      const el = document.activeElement as HTMLElement | null;
+      return {
+        shortcut: el?.getAttribute("data-ask-shortcut") ?? null,
+        tabIndex: el?.tabIndex ?? null,
+        inBar: Boolean(el && document.querySelector("[data-ask-bottom-bar]")?.contains(el)),
+      };
+    });
+    expect(active.shortcut).not.toBeNull();
+    expect(active.tabIndex).toBe(0);
+    expect(active.inBar).toBe(true);
+    await page.keyboard.press("Shift+Tab");
+    await expect(entry).toBeFocused();
+  });
+
   test("S5-chip390 1280: chip row position unchanged", async ({ page }) => {
     await startGenerated(page);
     await pauseLecture(page);
