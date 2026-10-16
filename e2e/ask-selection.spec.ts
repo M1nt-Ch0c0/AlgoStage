@@ -2273,7 +2273,7 @@ test.describe("390 selection flow", () => {
       await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：当前字幕");
     });
 
-    test("cancel keeps selecting, focus on chip, exit within 100ms", async ({ page }) => {
+    test("cancel keeps selecting, focus on chip, occlusion restored", async ({ page }) => {
       await startGenerated(page);
       await pauseLecture(page);
       await enterSelection(page);
@@ -2335,12 +2335,45 @@ test.describe("390 selection flow", () => {
         return parseFloat(raw) || 0;
       });
       expect(Math.abs(occlusionAfter - occlusionBefore)).toBeLessThanOrEqual(1);
+    });
 
-      // within 100ms touchscreen.tap the exit button and assert ask exits normally
+    test("cancel then exit within 100ms exits ask mode", async ({ page }) => {
+      await startGenerated(page);
+      await pauseLecture(page);
+      await enterSelection(page);
+
+      const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+      await code.scrollIntoViewIfNeeded();
+      await expect(code).toBeVisible();
+
+      // Measure the bar exit button during selecting (bar is hidden while the panel is open;
+      // option B restores the same layout on cancel).
+      const bar = page.locator("[data-ask-bottom-bar]");
+      const barExit = bar.locator("[data-ask-entry]");
+      await expect(barExit).toBeVisible();
       const exitBox = (await barExit.boundingBox())!;
-      await page.touchscreen.tap(exitBox.x + exitBox.width / 2, exitBox.y + exitBox.height / 2);
+      const exitX = exitBox.x + exitBox.width / 2;
+      const exitY = exitBox.y + exitBox.height / 2;
 
-      await expect(layer).toHaveCount(0);
+      const line9 = await getMonacoLineBox(page, 9);
+      const codeBox = (await code.boundingBox())!;
+      await page.touchscreen.tap(codeBox.x + 80, (line9.top + line9.bottom) / 2);
+
+      const panel = page.locator("[data-ask-panel]");
+      await expect(panel).toBeVisible();
+      const cancelBtn = page.locator("[data-ask-panel] [data-ask-cancel]");
+      await expect(cancelBtn).toBeVisible();
+      const cancelBox = (await cancelBtn.boundingBox())!;
+
+      await page.touchscreen.tap(cancelBox.x + cancelBox.width / 2, cancelBox.y + cancelBox.height / 2);
+      const tCancel = performance.now();
+      await page.touchscreen.tap(exitX, exitY);
+      const tExit = performance.now();
+      const gap = tExit - tCancel;
+      console.log(`[cancel->exit gap] ${gap.toFixed(1)}ms`);
+      expect(gap).toBeLessThan(100);
+
+      await expect(page.locator("[data-ask-layer]")).toHaveCount(0);
       await expect(page.locator("[data-ask-entry]")).not.toHaveAttribute("aria-pressed", "true");
     });
 
