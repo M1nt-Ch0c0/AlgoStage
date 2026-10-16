@@ -280,8 +280,9 @@ function isSubtitleChalkCaret(node: HTMLElement): boolean {
 }
 
 /**
- * Uma 390 — caret sits 2 CSS px high vs closed-panel crop (caret-hop / FO);
- * freeze hop and nudge +2 so gold bar shares y with baseline.
+ * Uma 390 — stop caret-hop before the clone reads computed style so the gold
+ * bar stays at rest (transform none). Do not nudge translateY: a +2px shift
+ * lands the caret below the closed-panel baseline. Filter (drop-shadow) stays.
  * Returns the undo. Called beside hideCaptureChromeForRaster and restored
  * in the same finally.
  */
@@ -298,7 +299,7 @@ function freezeSubtitleCaretForRaster(container: HTMLElement): () => void {
       filter: node.style.filter,
     });
     node.style.animation = "none";
-    node.style.transform = "translateY(2px)";
+    node.style.transform = "none";
   }
   return () => {
     for (const item of previous) {
@@ -978,10 +979,6 @@ export async function captureStage(
                 cloned.removeAttribute(SPACER_HEIGHT_ATTR);
                 if (Number.isFinite(height) && height > 0) pinClonedSpacer(cloned, height);
               }
-              // Match live antialiased body; FO otherwise softens glyph edges past tol=4.
-              cloned.style.setProperty("-webkit-font-smoothing", "antialiased");
-              cloned.style.setProperty("-moz-osx-font-smoothing", "grayscale");
-              cloned.style.setProperty("text-rendering", "geometricPrecision");
             },
             onCloneNode: () => {
               cloneDoneAt = performance.now();

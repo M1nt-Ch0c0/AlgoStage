@@ -1,7 +1,7 @@
 /**
  * NarrationBar · 板书打字机字幕条（docs/02 §4.6）
  * 逐字出现（约 24 字/秒 × 语速），内联 code 金色 mono 高亮；
- * 光标是发光粉笔小竖线，句毕轻跳（globals.css caret-hop）。
+ * 光标是发光粉笔小竖线。打字中随 beam-breathe 呼吸；句毕停在原位。
  * 与播放器同步：字幕打完后，awaitNarration 为 false 立刻下一步；
  * 否则仅 autoAdvance 时 dwellMs 停留后自动推进，关闭时停在本步等用户继续。
  * 等待继续时细指针在这里提示「按空格继续」；粗指针的「点「下一步」继续」在播放控制条。
@@ -138,9 +138,8 @@ export default function NarrationBar({ lectureBusy = false }: { lectureBusy?: bo
             style={{
               background: "var(--color-beam-gold)",
               filter: "drop-shadow(0 0 4px var(--color-beam-gold))",
-              animation: done
-                ? "caret-hop 0.5s ease-in-out 2"
-                : "beam-breathe 1.2s ease-in-out infinite",
+              // 句毕不再 caret-hop：translateY(-2px) 会让截图与合上面板的基线差 2px。
+              animation: done ? "none" : "beam-breathe 1.2s ease-in-out infinite",
             }}
           />
         </p>
