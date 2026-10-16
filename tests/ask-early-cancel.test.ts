@@ -790,15 +790,15 @@ describe("early 取消 press", () => {
     vi.stubGlobal("clearTimeout", realClearTimeout);
   });
 
-  test("cancel after capture returns and before send: sendAsk is never called", async () => {
+  test("release during the hold wait after capture returns ends as cancel", async () => {
     const { cancel, submit } = await renderPanel();
     // Capture resolves ok and does not abort. The press is already down when
     // that return starts the hold wait, which is what arms the 2s timer.
-    // pointerup lands inside the button in that window. captureAbortRef is
-    // already null, so the release neither bumps the epoch nor aborts the
-    // signal. The pre-send check has to read the release flag and the hold
-    // latch. A check that only looks at the epoch and the aborted signal
-    // still sends.
+    // pointerup lands inside the button in that window, so wait() resolves
+    // "cancel" and submit returns on the hold-cancel branch. That return is
+    // before the pre-send backstop, so dropping releasedOnCancel and the
+    // hold latch from shouldDropBeforeSend does not fail this test. Those
+    // two inputs are covered by tests/ask-presend.test.ts.
     let releaseHold: (() => void) | undefined;
     const realSetTimeout = setTimeout;
     const realClearTimeout = clearTimeout;

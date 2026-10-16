@@ -34,6 +34,7 @@ import {
 import { listenCancelPress } from "@/lib/ask/cancel-press";
 import { captureStage, type CaptureResult } from "@/lib/ask/capture";
 import { createCancelHold } from "@/lib/ask/cancel-hold";
+import { shouldDropBeforeSend } from "@/lib/ask/presend";
 import { shouldRetroCancel } from "@/lib/ask/retro-cancel";
 import { yieldMacrotask } from "@/lib/ask/yield-macrotask";
 import { usePointerActivate } from "@/lib/ask/use-pointer-activate";
@@ -631,10 +632,13 @@ function AskPanelActive({ stage }: AskPanelProps) {
       // signal is not aborted. The release flag and the hold latch are that
       // decision. An earlier abort still shows up as a bumped epoch.
       if (
-        captureEpochRef.current !== captureEpoch ||
-        captureAbort.signal.aborted ||
-        releasedOnCancelRef.current ||
-        holdRef.current.latched(session) === "cancel"
+        shouldDropBeforeSend({
+          epochNow: captureEpochRef.current,
+          epochAtCapture: captureEpoch,
+          aborted: captureAbort.signal.aborted,
+          releasedOnCancel: releasedOnCancelRef.current,
+          latched: holdRef.current.latched(session),
+        })
       ) {
         setPreparing(false);
         closeCancelledOnce(session);
