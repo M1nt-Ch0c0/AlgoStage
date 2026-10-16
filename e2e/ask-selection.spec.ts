@@ -709,11 +709,22 @@ test.describe("1280 selection flow", () => {
       await expect(chip).toBeFocused();
     }
 
+    for (const mod of modifiers) {
+      await page.keyboard.press(`${mod}+Space`);
+      await expect(page.locator("[data-ask-panel]")).toHaveCount(0);
+      await expect(page.locator("[data-ask-selection]")).toHaveCount(0);
+      await expect(page.locator("[data-ask-layer]")).toBeVisible();
+      await expect(page.locator("[role=status]").first()).not.toHaveText(/已选：/);
+      await expect(chip).toBeFocused();
+    }
+
     let seen = await page.evaluate(
       () => (window as unknown as { __f1Seen: Array<{ key: string; ctrlKey: boolean; metaKey: boolean }> }).__f1Seen,
     );
     expect(seen.some((e) => e.key === "Enter" && e.ctrlKey)).toBe(true);
     expect(seen.some((e) => e.key === "Enter" && e.metaKey)).toBe(true);
+    expect(seen.some((e) => e.key === " " && e.ctrlKey)).toBe(true);
+    expect(seen.some((e) => e.key === " " && e.metaKey)).toBe(true);
 
     // Run 2: with a prior 当前字幕 selection via chip tap/click then cancel
     const subtitleChip = page.locator('[data-ask-bottom-bar] [data-ask-shortcut="subtitle"]');
@@ -748,11 +759,22 @@ test.describe("1280 selection flow", () => {
       await expect(chip).toBeFocused();
     }
 
+    for (const mod of modifiers) {
+      await page.keyboard.press(`${mod}+Space`);
+      await expect(page.locator("[data-ask-panel]")).toHaveCount(0);
+      await expect(selLabel).toHaveText("已选：当前字幕");
+      await expect(page.locator("[role=status]").first()).toHaveText("已选：当前字幕");
+      await expect(page.locator("[data-ask-selection]")).toBeVisible();
+      await expect(chip).toBeFocused();
+    }
+
     seen = await page.evaluate(
       () => (window as unknown as { __f1Seen: Array<{ key: string; ctrlKey: boolean; metaKey: boolean }> }).__f1Seen,
     );
     expect(seen.some((e) => e.key === "Enter" && e.ctrlKey)).toBe(true);
     expect(seen.some((e) => e.key === "Enter" && e.metaKey)).toBe(true);
+    expect(seen.some((e) => e.key === " " && e.ctrlKey)).toBe(true);
+    expect(seen.some((e) => e.key === " " && e.metaKey)).toBe(true);
   });
 
   test("F1 1280: Shift+click on chip selects it as normal", async ({ page }) => {
@@ -2251,11 +2273,22 @@ test.describe("390 selection flow", () => {
         await expect(chip).toBeFocused();
       }
 
+      for (const mod of modifiers) {
+        await page.keyboard.press(`${mod}+Space`);
+        await expect(page.locator("[data-ask-panel]")).toHaveCount(0);
+        await expect(page.locator("[data-ask-selection]")).toHaveCount(0);
+        await expect(page.locator("[data-ask-layer]")).toBeVisible();
+        await expect(page.locator("[role=status]").first()).not.toHaveText(/已选：/);
+        await expect(chip).toBeFocused();
+      }
+
       let seen = await page.evaluate(
         () => (window as unknown as { __f1Seen: Array<{ key: string; ctrlKey: boolean; metaKey: boolean }> }).__f1Seen,
       );
       expect(seen.some((e) => e.key === "Enter" && e.ctrlKey)).toBe(true);
       expect(seen.some((e) => e.key === "Enter" && e.metaKey)).toBe(true);
+      expect(seen.some((e) => e.key === " " && e.ctrlKey)).toBe(true);
+      expect(seen.some((e) => e.key === " " && e.metaKey)).toBe(true);
 
       // Run 2: with a prior 当前字幕 selection via chip tap/click then cancel
       const subtitleChip = page.locator('[data-ask-bottom-bar] [data-ask-shortcut="subtitle"]');
@@ -2290,11 +2323,22 @@ test.describe("390 selection flow", () => {
         await expect(chip).toBeFocused();
       }
 
+      for (const mod of modifiers) {
+        await page.keyboard.press(`${mod}+Space`);
+        await expect(page.locator("[data-ask-panel]")).toHaveCount(0);
+        await expect(selLabel).toHaveText("已选：当前字幕");
+        await expect(page.locator("[role=status]").first()).toHaveText("已选：当前字幕");
+        await expect(page.locator("[data-ask-selection]")).toBeVisible();
+        await expect(chip).toBeFocused();
+      }
+
       seen = await page.evaluate(
         () => (window as unknown as { __f1Seen: Array<{ key: string; ctrlKey: boolean; metaKey: boolean }> }).__f1Seen,
       );
       expect(seen.some((e) => e.key === "Enter" && e.ctrlKey)).toBe(true);
       expect(seen.some((e) => e.key === "Enter" && e.metaKey)).toBe(true);
+      expect(seen.some((e) => e.key === " " && e.ctrlKey)).toBe(true);
+      expect(seen.some((e) => e.key === " " && e.metaKey)).toBe(true);
     });
 
     test("F1 390: Shift+click on chip selects it as normal", async ({ page }) => {
