@@ -515,7 +515,13 @@ function AskPanelActive({ stage }: AskPanelProps) {
         releasedOnCancelRef.current ||
         captureAbort.signal.aborted ||
         holdRef.current.latched(session) === "cancel";
-      if (cancelledBeforeEncode && (capture == null || capture.ok)) {
+      // TIMEOUT is a failed capture and would still send. A 取消 that the
+      // 3s timer beat (the stall outlasted the budget, and the press was
+      // still queued) is a cancel, same as an abort that capture itself saw.
+      if (
+        cancelledBeforeEncode &&
+        (capture == null || capture.ok || (capture.ok === false && capture.reason === "TIMEOUT"))
+      ) {
         capture = { ok: false, reason: "ABORTED", fallbackText: "" };
       }
       holdWaitingRef.current = true;

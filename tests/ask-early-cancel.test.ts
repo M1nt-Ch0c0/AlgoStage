@@ -368,6 +368,50 @@ describe("early 取消 press", () => {
     vi.stubGlobal("setTimeout", realSetTimeout);
   });
 
+  test("a capture TIMEOUT after the release on 取消 does not send", async () => {
+    const { cancel, submit } = await renderPanel();
+    // The 3s timer can still beat the queued press and return TIMEOUT.
+    // The release latch is the decision: that result must not send.
+    vi.mocked(captureStage).mockImplementation(async (_container, _selection, opts) => {
+      await opts?.beforeEncode?.();
+      return { ok: false, reason: "TIMEOUT", fallbackText: "步骤内容" };
+    });
+    const realSetTimeout = setTimeout;
+    const held: Array<{ delay: number; run: () => void }> = [];
+    vi.stubGlobal(
+      "setTimeout",
+      ((callback: TimerHandler, delay?: number, ...args: unknown[]) => {
+        const source = typeof callback === "function" ? callback.toString() : "";
+        if (source.includes("askInputMacrotask") && typeof callback === "function") {
+          held.push({ delay: delay ?? 0, run: () => callback(...args) });
+          return held.length;
+        }
+        return realSetTimeout(callback as never, delay, ...args);
+      }) as typeof setTimeout,
+    );
+
+    await act(async () => {
+      submit.click();
+      await drainPaint();
+    });
+    await act(async () => {
+      cancel.dispatchEvent(pointer("pointerdown", 10, 12, 10));
+      cancel.dispatchEvent(pointer("pointerup", 20, 14, 12));
+    });
+    const macrotask = held.find((entry) => entry.delay === 0);
+    await act(async () => {
+      macrotask?.run();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
+    expect(container.querySelector("[data-ask-panel]")).toBeNull();
+    expect(sendAsk).not.toHaveBeenCalled();
+    expect(container.querySelector("[data-ask-capture-fallback]")).toBeNull();
+    vi.stubGlobal("setTimeout", realSetTimeout);
+  });
+
   test("a press that lands after the fetch aborts and leaves no answer", async () => {
     const { cancel, submit } = await renderPanel();
 

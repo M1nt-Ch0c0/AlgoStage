@@ -1146,6 +1146,28 @@ describe("lib/ask/capture", () => {
       vi.useRealTimers();
     });
 
+    it("a stall longer than timeoutMs returns ABORTED when 取消 aborts on the macrotask after the timer", async () => {
+      vi.useFakeTimers();
+      const controller = new AbortController();
+      domToCanvasMock.mockImplementation(() => new Promise(() => {}));
+
+      const pending = captureStage(container, baseSel, { timeoutMs: 1000, signal: controller.signal });
+      // The 1000ms timer yields one macrotask before it commits. That
+      // macrotask is not inside this advance. The press queued behind the
+      // stall aborts in the gap, then the next tick commits ABORTED.
+      await vi.advanceTimersByTimeAsync(1000);
+      controller.abort();
+      await vi.advanceTimersByTimeAsync(1);
+      const res = await pending;
+
+      expect(res).toEqual({
+        ok: false,
+        reason: "ABORTED",
+        fallbackText: "Code target",
+      });
+      vi.useRealTimers();
+    });
+
     it("yields once after domToCanvas and before encode, and an abort there skips encode", async () => {
       const order: string[] = [];
       let releaseYield: (() => void) | undefined;

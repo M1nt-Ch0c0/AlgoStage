@@ -467,16 +467,23 @@ export async function captureStage(
 
     const timeoutPromise = new Promise<CaptureResult>((resolve) => {
       timer = setTimeout(() => {
-        // The hook stall is one synchronous task, so this timer can fire
-        // before the task ends. A 取消 that landed during that task has
-        // already aborted. Returning TIMEOUT here would win the race and
-        // send the ask; the abort is the result that race should keep.
-        if (signal?.aborted) {
-          resolve(abortedResult());
-          return;
-        }
-        timedOut = true;
-        resolve({ ok: false, reason: "TIMEOUT", fallbackText });
+        void (async () => {
+          // The hook stall is one synchronous task. This timer runs when
+          // that task ends, and a 取消 issued during the stall is still
+          // 34–97ms from the renderer under 4× CPU. Resolving TIMEOUT on
+          // this turn wins Promise.race and the ask is sent. The same
+          // input settle encode uses lets that press abort first. No
+          // signal means nothing can abort, so the timeout stands.
+          if (signal) {
+            await yieldMacrotask({ done: () => signal.aborted });
+            if (signal.aborted) {
+              resolve(abortedResult());
+              return;
+            }
+          }
+          timedOut = true;
+          resolve({ ok: false, reason: "TIMEOUT", fallbackText });
+        })();
       }, timeoutMs);
     });
 
