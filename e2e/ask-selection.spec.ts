@@ -3525,7 +3525,46 @@ test.describe("390 selection flow", () => {
       const cancelBtn = page.locator("[data-ask-panel] [data-ask-cancel]");
       await expect(cancelBtn).toBeVisible();
       const cancelBox = (await cancelBtn.boundingBox())!;
+
+      await page.evaluate(() => {
+        const w = window as unknown as { __cancelOnlySnap?: { barPresent: boolean; boxPresent: boolean; activeIsChip: boolean } };
+        w.__cancelOnlySnap = undefined;
+        const mo = new MutationObserver(() => {
+          if (!document.querySelector("[data-ask-panel]")) {
+            const snap = () => {
+              const bar = document.querySelector<HTMLElement>("[data-ask-bottom-bar]");
+              const ae = document.activeElement as HTMLElement | null;
+              w.__cancelOnlySnap = {
+                barPresent: !!bar && bar.offsetHeight > 0,
+                boxPresent: !!document.querySelector("[data-ask-selection]"),
+                activeIsChip: !!ae?.hasAttribute("data-ask-shortcut"),
+              };
+            };
+            snap();
+            requestAnimationFrame(snap);
+            mo.disconnect();
+          }
+        });
+        mo.observe(document.body, { childList: true, subtree: true });
+      });
+
       await page.touchscreen.tap(cancelBox.x + cancelBox.width / 2, cancelBox.y + cancelBox.height / 2);
+
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () => (window as unknown as { __cancelOnlySnap?: unknown }).__cancelOnlySnap,
+          ),
+        )
+        .toBeDefined();
+      const cancelOnlySnap = await page.evaluate(() => {
+        return (window as unknown as {
+          __cancelOnlySnap?: { barPresent: boolean; boxPresent: boolean; activeIsChip: boolean };
+        }).__cancelOnlySnap!;
+      });
+      expect(cancelOnlySnap.barPresent).toBe(true);
+      expect(cancelOnlySnap.boxPresent).toBe(true);
+      expect(cancelOnlySnap.activeIsChip).toBe(true);
 
       // Assert still selecting (layer visible, entry aria-pressed true)
       const layer = page.locator("[data-ask-layer]");
@@ -3585,6 +3624,9 @@ test.describe("390 selection flow", () => {
 
       const panel = page.locator("[data-ask-panel]");
       await expect(panel).toBeVisible();
+      const question = page.locator("[data-ask-panel] [data-ask-question]");
+      await expect(question).toBeVisible();
+      await question.fill("preserve-me-chip390b");
       const cancelBtn = page.locator("[data-ask-panel] [data-ask-cancel]");
       await expect(cancelBtn).toBeVisible();
       const cancelBox = (await cancelBtn.boundingBox())!;
@@ -3660,6 +3702,37 @@ test.describe("390 selection flow", () => {
       await expect(page.locator("[data-ask-layer]")).toHaveCount(0);
       await expect(page.locator("[data-ask-entry]")).not.toHaveAttribute("aria-pressed", "true");
       expect(askRequests).toEqual([]);
+
+      await expect(page.locator("[data-ask-selection]")).toHaveCount(0);
+      const afterExit = await page.evaluate(() => {
+        const entry = document.querySelector<HTMLElement>("[data-ask-entry]");
+        const bar = document.querySelector<HTMLElement>("[data-ask-bottom-bar]");
+        const ae = document.activeElement;
+        return {
+          entryFocused: ae === entry || !!ae?.closest?.("[data-ask-entry]"),
+          barCollapsed: !bar || bar.offsetHeight === 0 || entry?.getAttribute("aria-pressed") !== "true",
+        };
+      });
+      expect(afterExit.entryFocused).toBe(true);
+      expect(afterExit.barCollapsed).toBe(true);
+      expect(askRequests).toEqual([]);
+
+      // Re-enter via Q: must not auto-open panel
+      await page.keyboard.press("q");
+      await expect(page.locator("[data-ask-layer]")).toBeVisible();
+      await expect(page.locator("[data-ask-entry]")).toHaveAttribute("aria-pressed", "true");
+      await page.waitForTimeout(300);
+      const autoOpened = await page.locator("[data-ask-panel]").count();
+      console.log(`[cancel-exit re-enter] panelAutoOpen=${autoOpened}`);
+      expect(autoOpened).toBe(0); // if this fails, report — do not change product code
+
+      // S5-exit-clear: typed text preserved after re-open via subtitle chip
+      const chip = page.locator("[data-ask-bottom-bar] [data-ask-shortcut='subtitle']");
+      await expect(chip).toBeVisible();
+      const chipBox = (await chip.boundingBox())!;
+      await page.touchscreen.tap(chipBox.x + chipBox.width / 2, chipBox.y + chipBox.height / 2);
+      await expect(page.locator("[data-ask-panel]")).toBeVisible();
+      await expect(page.locator("[data-ask-panel] [data-ask-question]")).toHaveValue("preserve-me-chip390b");
     }
 
     test("cancel then exit within 100ms exits ask mode", async ({ page }) => {
