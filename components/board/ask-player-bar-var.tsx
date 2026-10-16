@@ -9,8 +9,16 @@ const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffec
 
 /**
  * Phases where something still reads --ask-player-bar-h: the chip bar during
- * selecting, and the panel margin while the drawer is open. playing/done/idle
- * have neither, so the variable resets only once the panel is fully gone.
+ * selecting, and the panel margin while the drawer is open.
+ *
+ * playing is omitted on purpose. AskPanel returns null for playing and done
+ * (components/board/ask-panel.tsx), so [data-ask-panel] and its 取消 are gone
+ * before the answer plays. The answer itself is StepAnswers, in normal flow
+ * under the lesson step, and it does not read --ask-player-bar-h. The chip
+ * bar is AskSelectionLayer, which renders only for selecting/drafting/error
+ * (ACTIVE_PHASES). globals.css applies the variable only to
+ * [data-ask-bottom-bar] and [data-ask-panel]. Both are absent in playing, so
+ * publishing the offset there would not hold any panel or 取消 in place.
  */
 const ASK_OPEN_PHASES = new Set(["selecting", "drafting", "error", "sending", "streaming"]);
 
