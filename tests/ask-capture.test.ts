@@ -1168,6 +1168,30 @@ describe("lib/ask/capture", () => {
       vi.useRealTimers();
     });
 
+    it("returns ABORTED when the timeout timer fires and a cancel is queued behind it with setTimeout(0)", async () => {
+      vi.useFakeTimers();
+      const controller = new AbortController();
+      domToCanvasMock.mockImplementation(() => new Promise(() => {}));
+
+      const pending = captureStage(container, baseSel, { timeoutMs: 1000, signal: controller.signal });
+      // The timeout callback is queued. The cancel is registered after it,
+      // also as a timer, so it runs only once that callback has started and
+      // yielded its macrotask.
+      await vi.advanceTimersByTimeAsync(1000);
+      setTimeout(() => {
+        controller.abort();
+      }, 0);
+      await vi.advanceTimersByTimeAsync(1);
+      const res = await pending;
+
+      expect(res).toEqual({
+        ok: false,
+        reason: "ABORTED",
+        fallbackText: "Code target",
+      });
+      vi.useRealTimers();
+    });
+
     it("yields once after domToCanvas and before encode, and an abort there skips encode", async () => {
       const order: string[] = [];
       let releaseYield: (() => void) | undefined;
