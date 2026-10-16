@@ -166,7 +166,7 @@ async function dragOnSubtitle(page: Page) {
 
 type AskImage = { mime: string; dataBase64: string };
 
-const OUT_DIR = process.env.S4_OUT_DIR ?? "/workspace/logs/gavin-s4-capture";
+const OUT_DIR = process.env.S4_OUT_DIR ?? path.join("test-results", "s4-pixels");
 const LABEL = process.env.S4_LABEL ?? "pixels";
 
 /** Decode the ask image payload to PNG bytes. WebP and JPEG both go through a canvas. */
