@@ -258,6 +258,82 @@ async function waitStallEnd(page: Page) {
   await page.evaluate(() => 0);
 }
 
+type StallArm = {
+  __copyBeforePress?: string;
+  __stallAttached?: boolean;
+};
+
+/**
+ * Install before submit. The observer runs in the mutation task, which is
+ * before the double rAF and the compile-time stall, and stores the preparing
+ * row's text. The returned promise is that one evaluate: it resolves when the
+ * row attaches, without a later renderer round-trip that would wait out the stall.
+ */
+async function armedForStall(page: Page): Promise<void> {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        const win = window as unknown as StallArm;
+        delete win.__copyBeforePress;
+        win.__stallAttached = false;
+        const existing = document.querySelector("[data-ask-capture-preparing]");
+        const remember = (node: Element) => {
+          if (win.__stallAttached) return;
+          win.__stallAttached = true;
+          win.__copyBeforePress = node.textContent ?? "";
+          resolve();
+        };
+        if (existing) {
+          remember(existing);
+          return;
+        }
+        const observer = new MutationObserver(() => {
+          const node = document.querySelector("[data-ask-capture-preparing]");
+          if (!node) return;
+          observer.disconnect();
+          remember(node);
+        });
+        observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+      }),
+  );
+}
+
+/** The observer promise, bounded like the old toBeAttached({ timeout: 15_000 }). */
+async function waitArmed(attached: Promise<void>) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error("[data-ask-capture-preparing] did not attach")),
+      15_000,
+    );
+  });
+  try {
+    await Promise.race([attached, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Copy captured at attach time. Read only after the stall has ended. */
+async function readCopyBeforePress(page: Page): Promise<string> {
+  return page.evaluate(() => (window as unknown as StallArm).__copyBeforePress ?? "");
+}
+
+/**
+ * The press must be inside the hook stall: its event time is before the
+ * long task that contains the busy loop and domToCanvas.
+ */
+async function expectPressInsideStall(page: Page) {
+  const timing = await page.evaluate(() => {
+    const probe = (window as unknown as { __ASK_TIMING__?: { firstPointerDownTs?: number; longTaskEnd?: number } })
+      .__ASK_TIMING__;
+    return probe && typeof probe === "object" ? probe : null;
+  });
+  expect(timing?.firstPointerDownTs).toEqual(expect.any(Number));
+  expect(timing?.longTaskEnd).toEqual(expect.any(Number));
+  expect(timing!.firstPointerDownTs!).toBeLessThan(timing!.longTaskEnd!);
+}
+
 /**
  * Records any flash of ask chips, code-miss hint, waiting row, or error
  * (panel role=alert / data-ask-error, or the step-answer role=alert).
@@ -370,6 +446,7 @@ async function expectClosedLikeCancel(page: Page) {
 }
 
 const STALL_TITLES = [
+  "coordinate 取消 during capture stall",
   "held through capture stall",
   "press 取消 during stall",
   "hold 取消 past 2s",
@@ -470,10 +547,18 @@ function installStatusStability(width: number, touch: boolean) {
 
         const cancelAt = await boxCenter(page, "[data-ask-cancel]");
         const submitAt = await boxCenter(page, "[data-ask-submit]");
+        // Already on the button, so the press is not a second trip across the page.
+        if (!touch) await page.mouse.move(cancelAt.x, cancelAt.y);
+        const attached = armedForStall(page);
         await withCpuThrottle(page, 4, async () => {
           await pressAt(page, submitAt.x, submitAt.y, touch);
-          await expect(page.locator("[data-ask-capture-preparing]")).toBeVisible();
+          await waitArmed(attached);
+          // Node-side wait: the press lands inside the hook stall, after the
+          // preparing row is on screen and before the main thread is free.
+          await page.waitForTimeout(200);
           await pressAt(page, cancelAt.x, cancelAt.y, touch);
+          await waitStallEnd(page);
+          await expectPressInsideStall(page);
           await page.waitForTimeout(3000);
           expect(askRequests).toBe(0);
         });
@@ -678,18 +763,19 @@ function installStatusStability(width: number, touch: boolean) {
         const submitAt = await boxCenter(page, "[data-ask-submit]");
         // Already on the button, so down()'s move is not a second trip across the page.
         if (!touch) await page.mouse.move(cancelAt.x, cancelAt.y);
+        const attached = armedForStall(page);
         await withStallSession(page, async (client) => {
           await pressAt(page, submitAt.x, submitAt.y, touch);
           const preparing = page.locator("[data-ask-capture-preparing]");
-          // toBeVisible waits for box stability and can return only after the
-          // post-stall yield, which is too late to press. Attached resolves on
-          // the frame that paints the row, while capture is still running.
-          await expect(preparing).toBeAttached({ timeout: 15_000 });
-          const copyBeforePress = await page.evaluate(
-            () => document.querySelector("[data-ask-capture-preparing]")?.textContent ?? "",
-          );
+          // The observer resolves on the mutation that attaches the row, before
+          // the double rAF and the hook stall. A locator round-trip here would
+          // block until the stall ended, and the press would miss it.
+          await waitArmed(attached);
+          await page.waitForTimeout(200);
           await down(page, client, cancelAt.x, cancelAt.y, touch);
           await waitStallEnd(page);
+          const copyBeforePress = await readCopyBeforePress(page);
+          await expectPressInsideStall(page);
           await expect(page.locator("[data-ask-cancel]")).toHaveAttribute("data-pressed", "");
           await expect(preparing).toHaveText(copyBeforePress);
           await page.waitForTimeout(150);
@@ -720,12 +806,16 @@ function installStatusStability(width: number, touch: boolean) {
       const slideY = cancelAt.y - 120;
       expect(slideY).toBeGreaterThanOrEqual(1);
       expect(slideY).toBeLessThan(cancelAt.top);
+      if (!touch) await page.mouse.move(cancelAt.x, cancelAt.y);
 
+      const attached = armedForStall(page);
       await withStallSession(page, async (client) => {
         await pressAt(page, submitAt.x, submitAt.y, touch);
-        await expect(page.locator("[data-ask-capture-preparing]")).toBeAttached({ timeout: 15_000 });
+        await waitArmed(attached);
+        await page.waitForTimeout(200);
         await down(page, client, cancelAt.x, cancelAt.y, touch);
         await waitStallEnd(page);
+        await expectPressInsideStall(page);
         await moveTo(page, client, cancelAt.x, slideY, touch);
         await up(page, client, cancelAt.x, slideY, touch);
       });
@@ -769,14 +859,18 @@ function installStatusStability(width: number, touch: boolean) {
         await openAskPanel(page);
         const cancelAt = await boxCenter(page, "[data-ask-cancel]");
         const submitAt = await boxCenter(page, "[data-ask-submit]");
+        if (!touch) await page.mouse.move(cancelAt.x, cancelAt.y);
 
+        const attached = armedForStall(page);
         await withStallSession(page, async (client) => {
           await pressAt(page, submitAt.x, submitAt.y, touch);
           const preparing = page.locator("[data-ask-capture-preparing]");
-          await expect(preparing).toBeAttached({ timeout: 15_000 });
-          const copyBeforePress = (await preparing.textContent()) ?? "";
+          await waitArmed(attached);
+          await page.waitForTimeout(200);
           await down(page, client, cancelAt.x, cancelAt.y, touch);
           await waitStallEnd(page);
+          const copyBeforePress = await readCopyBeforePress(page);
+          await expectPressInsideStall(page);
           await page.waitForTimeout(2600);
           expect(askRequests).toBe(1);
           // ask-panel.tsx has no answer-dot marker. Waiting is [data-ask-waiting];
@@ -829,14 +923,19 @@ function installStatusStability(width: number, touch: boolean) {
         const cancelAt = await boxCenter(page, "[data-ask-cancel]");
         const submitAt = await boxCenter(page, "[data-ask-submit]");
         if (!touch) await page.mouse.move(cancelAt.x, cancelAt.y);
+        const attached = armedForStall(page);
         await withStallSession(page, async (client) => {
           await pressAt(page, submitAt.x, submitAt.y, touch);
-          await expect(page.locator("[data-ask-capture-preparing]")).toBeAttached({ timeout: 15_000 });
           // The press lands inside the compile-time stall (ASK_TEST_STALL_HOOK),
-          // which runs in the same task as domToCanvas. No page.evaluate busy-wait.
+          // which runs in the same task as domToCanvas. The attach wait is the
+          // observer installed before submit; no renderer round-trip follows it.
+          await waitArmed(attached);
+          await page.waitForTimeout(200);
           await down(page, client, cancelAt.x, cancelAt.y, touch);
           await page.waitForTimeout(150);
           await up(page, client, cancelAt.x, cancelAt.y, touch);
+          await waitStallEnd(page);
+          await expectPressInsideStall(page);
         });
 
         await expect.poll(
