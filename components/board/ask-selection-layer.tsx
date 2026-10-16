@@ -1211,6 +1211,12 @@ function AskSelectionLayerActive({
     const key = event.key;
     // Esc 只由窗口级监听处理，避免和这里重复退出。
     if (key === "Escape") return;
+    if (
+      (key === "Enter" || key === " ") &&
+      (event.shiftKey || event.ctrlKey || event.altKey || event.metaKey)
+    ) {
+      return;
+    }
     const blocked = key === " " || key === "ArrowLeft" || key === "ArrowRight" || key === "ArrowUp" || key === "ArrowDown";
     if (blocked || key === "Enter") {
       event.stopPropagation();
@@ -1329,6 +1335,9 @@ function AskSelectionLayerActive({
                         className="min-h-11 min-w-11 pointer-coarse:min-h-11 pointer-coarse:min-w-11 inline-flex shrink-0 items-center justify-center rounded-full border border-board-600 bg-board-900/80 px-3 py-1 text-xs sm:px-2 sm:py-0.5 sm:text-[10px] sm:min-h-0 sm:min-w-0 sm:pointer-coarse:min-h-11 sm:pointer-coarse:min-w-11 text-chalk-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beam-gold focus-visible:ring-inset"
                         onClick={(event) => {
                           event.stopPropagation();
+                          if (event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) {
+                            return;
+                          }
                           // 拖过阈值后的 click 只留下框选，不再把捷径当成点选。
                           if (dragStartedRef.current) {
                             dragStartedRef.current = false;
@@ -1341,16 +1350,9 @@ function AskSelectionLayerActive({
                           // 1280：从芯片组 Shift+Tab 回到入口按钮（和入口 Tab 进来对称）。
                           // 焦点在芯片上：Enter / 空格选中这个芯片本身，不交给图层的 Enter（会选当前代码）。
                           if (
-                            (event.key === "Enter" || event.key === " ") &&
-                            event.shiftKey &&
-                            !event.altKey &&
-                            !event.ctrlKey &&
-                            !event.metaKey
+                            (event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) &&
+                            (event.key === "Enter" || event.key === " ")
                           ) {
-                            if (event.key === " ") {
-                              event.preventDefault();
-                            }
-                            event.stopPropagation();
                             return;
                           }
                           if (

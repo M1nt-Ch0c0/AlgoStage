@@ -668,22 +668,91 @@ test.describe("1280 selection flow", () => {
     });
   }
 
-  test("chip390-b nits (a) 1280: Shift+Enter and Shift+Space on a focused chip does not select current code (no selection summary / still selecting)", async ({ page }) => {
+  test("F1 1280: modifier+Enter on focused chip", async ({ page }) => {
     await startGenerated(page);
     await pauseLecture(page);
     await enterSelection(page);
+
+    await page.evaluate(() => {
+      type F1Event = {
+        key: string;
+        ctrlKey: boolean;
+        metaKey: boolean;
+        shiftKey: boolean;
+        altKey: boolean;
+      };
+      (window as unknown as { __f1Seen: F1Event[] }).__f1Seen = [];
+      document.addEventListener("keydown", (e) => {
+        (window as unknown as { __f1Seen: F1Event[] }).__f1Seen.push({
+          key: e.key,
+          ctrlKey: e.ctrlKey,
+          metaKey: e.metaKey,
+          shiftKey: e.shiftKey,
+          altKey: e.altKey,
+        });
+      });
+    });
+
     const chip = page.locator('[data-ask-bottom-bar] [data-ask-shortcut="step"]');
     await chip.focus();
     await expect(chip).toBeFocused();
 
-    for (const combo of ["Shift+Enter", "Shift+Space"]) {
-      await page.keyboard.press(combo);
+    const modifiers = ["Shift", "Control", "Alt", "Meta"] as const;
+
+    // Run 1: with no selection
+    for (const mod of modifiers) {
+      await page.keyboard.press(`${mod}+Enter`);
       await expect(page.locator("[data-ask-panel]")).toHaveCount(0);
       await expect(page.locator("[data-ask-selection]")).toHaveCount(0);
       await expect(page.locator("[data-ask-layer]")).toBeVisible();
-      await expect(page.locator("[role=status]")).not.toHaveText(/已选：/);
+      await expect(page.locator("[role=status]").first()).not.toHaveText(/已选：/);
       await expect(chip).toBeFocused();
     }
+
+    let seen = await page.evaluate(
+      () => (window as unknown as { __f1Seen: Array<{ key: string; ctrlKey: boolean; metaKey: boolean }> }).__f1Seen,
+    );
+    expect(seen.some((e) => e.key === "Enter" && e.ctrlKey)).toBe(true);
+    expect(seen.some((e) => e.key === "Enter" && e.metaKey)).toBe(true);
+
+    // Run 2: with a prior 当前字幕 selection via chip tap/click then cancel
+    const subtitleChip = page.locator('[data-ask-bottom-bar] [data-ask-shortcut="subtitle"]');
+    await subtitleChip.click();
+    const panel = page.locator("[data-ask-panel]");
+    await expect(panel).toBeVisible();
+    await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：当前字幕");
+
+    const cancelBtn = panel.locator("[data-ask-cancel]");
+    await cancelBtn.click();
+    await expect(panel).toHaveCount(0);
+
+    const selLabel = page.locator("[data-ask-selection-label]");
+    await expect(selLabel).toHaveText("已选：当前字幕");
+    await expect(page.locator("[role=status]").first()).toHaveText("已选：当前字幕");
+
+    // Clear window.__f1Seen to re-verify for Run 2
+    await page.evaluate(() => {
+      (window as unknown as { __f1Seen: unknown[] }).__f1Seen = [];
+    });
+
+    // Focusing a chip: use locator.focus() on the bar chip while panel is closed
+    await chip.focus();
+    await expect(chip).toBeFocused();
+
+    for (const mod of modifiers) {
+      await page.keyboard.press(`${mod}+Enter`);
+      await expect(page.locator("[data-ask-panel]")).toHaveCount(0);
+      await expect(selLabel).toHaveText("已选：当前字幕");
+      await expect(page.locator("[role=status]").first()).toHaveText("已选：当前字幕");
+      await expect(page.locator("[data-ask-selection]")).toBeVisible();
+      await expect(chip).toBeFocused();
+    }
+
+    seen = await page.evaluate(
+      () => (window as unknown as { __f1Seen: Array<{ key: string; ctrlKey: boolean; metaKey: boolean }> }).__f1Seen,
+    );
+    expect(seen.some((e) => e.key === "Enter" && e.ctrlKey)).toBe(true);
+    expect(seen.some((e) => e.key === "Enter" && e.metaKey)).toBe(true);
   });
 
   test("chip390-b 1280 plan panel open: Tab from entry skips the 8 plan buttons to the chips; Shift+Tab returns", async ({ page }) => {
@@ -1704,6 +1773,93 @@ test.describe("390 selection flow", () => {
         await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：当前字幕");
       });
     }
+
+    test("F1 390: modifier+Enter on focused chip", async ({ page }) => {
+      await startGenerated(page);
+      await pauseLecture(page);
+      await enterSelection(page);
+
+      await page.evaluate(() => {
+        type F1Event = {
+          key: string;
+          ctrlKey: boolean;
+          metaKey: boolean;
+          shiftKey: boolean;
+          altKey: boolean;
+        };
+        (window as unknown as { __f1Seen: F1Event[] }).__f1Seen = [];
+        document.addEventListener("keydown", (e) => {
+          (window as unknown as { __f1Seen: F1Event[] }).__f1Seen.push({
+            key: e.key,
+            ctrlKey: e.ctrlKey,
+            metaKey: e.metaKey,
+            shiftKey: e.shiftKey,
+            altKey: e.altKey,
+          });
+        });
+      });
+
+      const chip = page.locator('[data-ask-bottom-bar] [data-ask-shortcut="step"]');
+      await chip.focus();
+      await expect(chip).toBeFocused();
+
+      const modifiers = ["Shift", "Control", "Alt", "Meta"] as const;
+
+      // Run 1: with no selection
+      for (const mod of modifiers) {
+        await page.keyboard.press(`${mod}+Enter`);
+        await expect(page.locator("[data-ask-panel]")).toHaveCount(0);
+        await expect(page.locator("[data-ask-selection]")).toHaveCount(0);
+        await expect(page.locator("[data-ask-layer]")).toBeVisible();
+        await expect(page.locator("[role=status]").first()).not.toHaveText(/已选：/);
+        await expect(chip).toBeFocused();
+      }
+
+      let seen = await page.evaluate(
+        () => (window as unknown as { __f1Seen: Array<{ key: string; ctrlKey: boolean; metaKey: boolean }> }).__f1Seen,
+      );
+      expect(seen.some((e) => e.key === "Enter" && e.ctrlKey)).toBe(true);
+      expect(seen.some((e) => e.key === "Enter" && e.metaKey)).toBe(true);
+
+      // Run 2: with a prior 当前字幕 selection via chip tap/click then cancel
+      const subtitleChip = page.locator('[data-ask-bottom-bar] [data-ask-shortcut="subtitle"]');
+      await subtitleChip.click();
+      const panel = page.locator("[data-ask-panel]");
+      await expect(panel).toBeVisible();
+      await expect(panel.locator("[data-ask-panel-label]")).toHaveText("已选：当前字幕");
+
+      const cancelBtn = panel.locator("[data-ask-cancel]");
+      await cancelBtn.click();
+      await expect(panel).toHaveCount(0);
+
+      const selLabel = page.locator("[data-ask-selection-label]");
+      await expect(selLabel).toHaveText("已选：当前字幕");
+      await expect(page.locator("[role=status]").first()).toHaveText("已选：当前字幕");
+
+      // Clear window.__f1Seen to re-verify for Run 2
+      await page.evaluate(() => {
+        (window as unknown as { __f1Seen: unknown[] }).__f1Seen = [];
+      });
+
+      // Focusing a chip: use locator.focus() on the bar chip while panel is closed
+      await chip.focus();
+      await expect(chip).toBeFocused();
+
+      for (const mod of modifiers) {
+        await page.keyboard.press(`${mod}+Enter`);
+        await expect(page.locator("[data-ask-panel]")).toHaveCount(0);
+        await expect(selLabel).toHaveText("已选：当前字幕");
+        await expect(page.locator("[role=status]").first()).toHaveText("已选：当前字幕");
+        await expect(page.locator("[data-ask-selection]")).toBeVisible();
+        await expect(chip).toBeFocused();
+      }
+
+      seen = await page.evaluate(
+        () => (window as unknown as { __f1Seen: Array<{ key: string; ctrlKey: boolean; metaKey: boolean }> }).__f1Seen,
+      );
+      expect(seen.some((e) => e.key === "Enter" && e.ctrlKey)).toBe(true);
+      expect(seen.some((e) => e.key === "Enter" && e.metaKey)).toBe(true);
+    });
 
     test("a. tap code line 1 -> panel label 已选：代码第 1 行", async ({ page }) => {
       await startGenerated(page);

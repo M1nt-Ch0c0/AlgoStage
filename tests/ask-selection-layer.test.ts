@@ -2860,48 +2860,127 @@ describe("resolveAskEscape", () => {
       );
     });
 
-    test("N3: Shift+Enter and Shift+Space on focused chip: layer select-current-code not triggered, selection stays null", async () => {
+    test("N3: modified Enter/Space on focused chip: no selection / existing selection unchanged, panel phase unchanged, Ctrl+Enter and Meta+Enter reach document", async () => {
       await render();
       const host = layer();
       const chip = host.querySelector<HTMLButtonElement>('[data-ask-shortcut="step"]');
       expect(chip).not.toBeNull();
       chip!.focus();
 
-      // 1. Shift+Enter
-      const enterEv = new KeyboardEvent("keydown", {
-        key: "Enter",
-        shiftKey: true,
-        bubbles: true,
-        cancelable: true,
-      });
-      const stopSpyEnter = vi.spyOn(enterEv, "stopPropagation");
+      const docSeen: KeyboardEvent[] = [];
+      const onDocKeyDown = (e: KeyboardEvent) => {
+        docSeen.push(e);
+      };
+      document.addEventListener("keydown", onDocKeyDown);
 
-      await act(async () => {
-        chip!.dispatchEvent(enterEv);
-      });
+      try {
+        // 1. Shift+Enter
+        const enterEv = new KeyboardEvent("keydown", {
+          key: "Enter",
+          shiftKey: true,
+          bubbles: true,
+          cancelable: true,
+        });
+        const stopSpyEnter = vi.spyOn(enterEv, "stopPropagation");
 
-      expect(stopSpyEnter).toHaveBeenCalled();
-      expect(usePlayerStore.getState().selection).toBeNull();
-      expect(usePlayerStore.getState().askPhase).toBe("selecting");
+        await act(async () => {
+          chip!.dispatchEvent(enterEv);
+        });
 
-      // 2. Shift+Space
-      const spaceEv = new KeyboardEvent("keydown", {
-        key: " ",
-        shiftKey: true,
-        bubbles: true,
-        cancelable: true,
-      });
-      const stopSpySpace = vi.spyOn(spaceEv, "stopPropagation");
-      const prevDefaultSpySpace = vi.spyOn(spaceEv, "preventDefault");
+        expect(stopSpyEnter).not.toHaveBeenCalled();
+        expect(usePlayerStore.getState().selection).toBeNull();
+        expect(usePlayerStore.getState().askPhase).toBe("selecting");
 
-      await act(async () => {
-        chip!.dispatchEvent(spaceEv);
-      });
+        // 2. Shift+Space
+        const spaceEv = new KeyboardEvent("keydown", {
+          key: " ",
+          shiftKey: true,
+          bubbles: true,
+          cancelable: true,
+        });
+        const stopSpySpace = vi.spyOn(spaceEv, "stopPropagation");
+        const prevDefaultSpySpace = vi.spyOn(spaceEv, "preventDefault");
 
-      expect(stopSpySpace).toHaveBeenCalled();
-      expect(prevDefaultSpySpace).toHaveBeenCalled();
-      expect(usePlayerStore.getState().selection).toBeNull();
-      expect(usePlayerStore.getState().askPhase).toBe("selecting");
+        await act(async () => {
+          chip!.dispatchEvent(spaceEv);
+        });
+
+        expect(stopSpySpace).not.toHaveBeenCalled();
+        expect(prevDefaultSpySpace).not.toHaveBeenCalled();
+        expect(usePlayerStore.getState().selection).toBeNull();
+        expect(usePlayerStore.getState().askPhase).toBe("selecting");
+
+        // 3. Ctrl+Enter & Meta+Enter reach document listener
+        const ctrlEnterEv = new KeyboardEvent("keydown", {
+          key: "Enter",
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        });
+        const stopSpyCtrl = vi.spyOn(ctrlEnterEv, "stopPropagation");
+
+        await act(async () => {
+          chip!.dispatchEvent(ctrlEnterEv);
+        });
+
+        expect(stopSpyCtrl).not.toHaveBeenCalled();
+        expect(usePlayerStore.getState().selection).toBeNull();
+        expect(usePlayerStore.getState().askPhase).toBe("selecting");
+
+        const metaEnterEv = new KeyboardEvent("keydown", {
+          key: "Enter",
+          metaKey: true,
+          bubbles: true,
+          cancelable: true,
+        });
+        const stopSpyMeta = vi.spyOn(metaEnterEv, "stopPropagation");
+
+        await act(async () => {
+          chip!.dispatchEvent(metaEnterEv);
+        });
+
+        expect(stopSpyMeta).not.toHaveBeenCalled();
+        expect(usePlayerStore.getState().selection).toBeNull();
+        expect(usePlayerStore.getState().askPhase).toBe("selecting");
+
+        expect(docSeen).toContain(ctrlEnterEv);
+        expect(docSeen).toContain(metaEnterEv);
+
+        // 4. Existing selection unchanged & panel phase unchanged (selecting)
+        const priorSelection = {
+          mode: "single" as const,
+          bbox: { x: 10, y: 10, width: 50, height: 20 },
+          targets: [{ id: "subtitle:s1", kind: "subtitle" as const, text: "字幕文本" }],
+        };
+        usePlayerStore.setState({ selection: priorSelection, askPhase: "selecting" });
+
+        for (const [key, mod] of [
+          ["Enter", { shiftKey: true }],
+          ["Enter", { ctrlKey: true }],
+          ["Enter", { metaKey: true }],
+          ["Enter", { altKey: true }],
+          [" ", { shiftKey: true }],
+          [" ", { ctrlKey: true }],
+          [" ", { metaKey: true }],
+          [" ", { altKey: true }],
+        ] as const) {
+          const ev = new KeyboardEvent("keydown", {
+            key,
+            ...mod,
+            bubbles: true,
+            cancelable: true,
+          });
+          const stopSpy = vi.spyOn(ev, "stopPropagation");
+          await act(async () => {
+            chip!.dispatchEvent(ev);
+          });
+          expect(stopSpy).not.toHaveBeenCalled();
+          expect(usePlayerStore.getState().selection).toEqual(priorSelection);
+          expect(usePlayerStore.getState().askPhase).toBe("selecting");
+        }
+      } finally {
+        document.removeEventListener("keydown", onDocKeyDown);
+      }
     });
   });
 });
