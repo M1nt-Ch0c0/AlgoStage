@@ -980,6 +980,9 @@ function installStatusStability(width: number, touch: boolean) {
 installStatusStability(1280, false);
 installStatusStability(390, true);
 
+/** Capture-phase pointerdown record. ts is the renderer clock (event.timeStamp). */
+type AskPointerDown = { ts: number; pointerType: string; inCancel: boolean };
+
 /**
  * Prod path (no stall hook). Press 取消 within 150ms of submit and release
  * on the button. Either cancel wins before send, or the request is aborted
@@ -1040,16 +1043,22 @@ function installNaturalCancel(width: number, touch: boolean) {
         const client = await page.context().newCDPSession(page);
         if (!touch) await page.mouse.move(cancelAt.x, cancelAt.y);
 
-        // Capture-phase stamps for both pointerdowns. event.timeStamp is the
-        // renderer clock, which is what the stall marks use. The listener
-        // is installed before either gesture so the submit press is included.
+        // Capture-phase records for both pointerdowns. event.timeStamp is the
+        // renderer clock, which is what the stall marks use. pointerType and
+        // inCancel (target inside [data-ask-cancel]) distinguish the cancel
+        // press from the submit press. The listener is installed before
+        // either gesture so the submit press is included.
         await page.evaluate(() => {
-          const win = window as unknown as { __askPointerDownTs?: number[] };
+          const win = window as unknown as { __askPointerDownTs?: AskPointerDown[] };
           win.__askPointerDownTs = [];
           document.addEventListener(
             "pointerdown",
             (event) => {
-              win.__askPointerDownTs?.push(event.timeStamp);
+              win.__askPointerDownTs?.push({
+                ts: event.timeStamp,
+                pointerType: event.pointerType,
+                inCancel: !!(event.target instanceof Element && event.target.closest("[data-ask-cancel]")),
+              });
             },
             true,
           );
@@ -1059,13 +1068,63 @@ function installNaturalCancel(width: number, touch: boolean) {
         // unmounting on a successful cancel.
         await installChipHintObserver(page);
 
-        // Do not await the submit before the cancel. On 390, pressAt is
-        // touchscreen.tap and returns only after the renderer dequeues it,
-        // which is after the capture stall. The cancel mouse.down() is fired
-        // in the same turn, so its pointerdown lands inside the stall.
+        // Do not await the submit before the cancel, and do not use a fixed
+        // delay. On 390, pressAt is touchscreen.tap and returns only after
+        // the renderer dequeues it, which is after the capture stall. The
+        // stall is a synchronous busy loop that marks ASK_TEST_STALL_HOOK at
+        // its start, so an in-page read cannot see that mark until the loop
+        // ends. A Node-side evaluate that loses a 40ms race means the main
+        // thread is blocked and the stall is in progress: touchStart (then
+        // up()'s touchEnd) is dispatched then, still without awaiting
+        // submit. 1280 keeps mouse.down() in this turn and releases later.
         const submitted = pressAt(page, submitAt.x, submitAt.y, touch);
-        const cancelDown = page.mouse.down();
-        await Promise.all([submitted, cancelDown]);
+        if (width === 390) {
+          const deadline = Date.now() + 5_000;
+          let touchStarted: Promise<unknown> | undefined;
+          let touchEnded: Promise<unknown> | undefined;
+          while (Date.now() < deadline && !touchStarted) {
+            const pending = page.evaluate(
+              () => performance.getEntriesByName("ASK_TEST_STALL_HOOK", "mark").length,
+            );
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            const blocked = new Promise<"blocked">((resolve) => {
+              timer = setTimeout(() => resolve("blocked"), 40);
+            });
+            const raced = await Promise.race([
+              pending.then((length) => ({ kind: "eval" as const, length })),
+              blocked.then(() => ({ kind: "blocked" as const })),
+            ]);
+            clearTimeout(timer);
+            if (raced.kind === "eval") {
+              if (raced.length > 0) {
+                await submitted.catch(() => {});
+                throw new Error(
+                  `stall already ended before the cancel touchStart (ASK_TEST_STALL_HOOK mark count ${raced.length}); the 390 press missed the stall`,
+                );
+              }
+              continue;
+            }
+            // 40ms won: the renderer main thread is blocked (stall in
+            // progress). Dispatch the touch before awaiting the evaluate
+            // that is still queued behind the busy loop. up() is the
+            // touchEnd the rest of the file uses, so the press releases on
+            // 取消 during the stall (the later up() is that release on 1280).
+            touchStarted = client.send("Input.dispatchTouchEvent", {
+              type: "touchStart",
+              touchPoints: touchPoint(cancelAt.x, cancelAt.y),
+            });
+            touchEnded = up(page, client, cancelAt.x, cancelAt.y, true);
+            await pending;
+          }
+          if (!touchStarted || !touchEnded) {
+            await submitted.catch(() => {});
+            throw new Error("renderer did not block on ASK_TEST_STALL_HOOK within 5s");
+          }
+          await Promise.all([submitted, touchStarted, touchEnded]);
+        } else {
+          const cancelDown = page.mouse.down();
+          await Promise.all([submitted, cancelDown]);
+        }
 
         if (width === 390) {
           const stamp = await page.evaluate(() => {
@@ -1073,13 +1132,17 @@ function installNaturalCancel(width: number, touch: boolean) {
             const measures = performance.getEntriesByName("ASK_TEST_STALL_HOOK", "measure");
             const start = marks[0]?.startTime;
             const duration = measures[0]?.duration;
-            const downs = (window as unknown as { __askPointerDownTs?: number[] }).__askPointerDownTs ?? [];
+            const downs =
+              (window as unknown as { __askPointerDownTs?: AskPointerDown[] }).__askPointerDownTs ?? [];
             return { start, duration, downs };
           });
           expect(stamp.start, "stall mark").toEqual(expect.any(Number));
           expect(stamp.duration, "stall measure").toBeGreaterThan(0);
           // downs[0] is the submit pointerdown, downs[1] is the cancel.
-          const cancelTs = stamp.downs[1];
+          const downs = stamp.downs;
+          expect(downs[1].pointerType, "cancel pointerType").toBe("touch");
+          expect(downs[1].inCancel, "cancel target").toBe(true);
+          const cancelTs = downs[1].ts;
           expect(cancelTs, "cancel pointerdown timeStamp").toEqual(expect.any(Number));
           const stallStart = stamp.start as number;
           const stallEnd = stallStart + (stamp.duration as number);
@@ -1115,7 +1178,9 @@ function installNaturalCancel(width: number, touch: boolean) {
           await expect(page.locator("[data-ask-panel]")).toHaveCount(0);
         }
 
-        await up(page, client, cancelAt.x, cancelAt.y, touch);
+        // 390 already released via touchEnd while the stall was in progress.
+        // A second touchEnd has no active point. 1280 is still mouse-down.
+        if (width !== 390) await up(page, client, cancelAt.x, cancelAt.y, touch);
 
         // Either the press cancelled before send, or the request went out and
         // was aborted. A request that stays in flight is neither.
