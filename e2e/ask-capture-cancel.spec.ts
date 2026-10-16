@@ -1310,3 +1310,112 @@ function installCancelStaysPut(width: number, touch: boolean) {
 
 installCancelStaysPut(1280, false);
 installCancelStaysPut(390, true);
+
+/**
+ * 390 only. When the answer finishes and playing starts, 取消 (if it is
+ * still on screen) and [data-ask-bottom-bar] (if it is still on screen)
+ * each keep their y within 1px. The panel unmounts at playing, so the
+ * closed state is what this asserts: no 取消, no bottom bar.
+ */
+function installPlayingTransitionStable() {
+  test.describe("390 playing transition", () => {
+    test.use({
+      hasTouch: true,
+      isMobile: true,
+      deviceScaleFactor: 3,
+      viewport: { width: 390, height: 844 },
+    });
+
+    test("取消 and the bottom bar keep their y when the answer finishes", async ({ page }) => {
+      test.setTimeout(60_000);
+      let releaseAnswer = () => {};
+      const answer = new Promise<void>((resolve) => {
+        releaseAnswer = resolve;
+      });
+      await page.route("**/api/lecture/ask", async (route) => {
+        await answer;
+        await route.fulfill({
+          status: 200,
+          contentType: "application/x-ndjson",
+          body: askStream("s1"),
+        });
+      });
+
+      await openAskPanel(page);
+      const client = await page.context().newCDPSession(page);
+      const submitAt = await boxCenter(page, "[data-ask-submit]");
+      await down(page, client, submitAt.x, submitAt.y, true);
+      await up(page, client, submitAt.x, submitAt.y, true);
+      await expect(page.locator("[data-ask-waiting]")).toBeVisible({ timeout: 15_000 });
+
+      // The answer has not been released. Stamp both boxes, then sample
+      // every frame across the release.
+      await page.evaluate(() => {
+        const win = window as unknown as {
+          __playYs?: { cancel: Array<number | null>; bar: Array<number | null> };
+          __playRaf?: number;
+        };
+        win.__playYs = { cancel: [], bar: [] };
+        const yOf = (selector: string) => {
+          const box = document.querySelector(selector)?.getBoundingClientRect();
+          if (!box || box.height <= 0) return null;
+          return box.y;
+        };
+        const tick = () => {
+          win.__playYs?.cancel.push(yOf("[data-ask-cancel]"));
+          win.__playYs?.bar.push(yOf("[data-ask-bottom-bar]"));
+          win.__playRaf = requestAnimationFrame(tick);
+        };
+        tick();
+      });
+
+      const before = await page.evaluate(() => {
+        const yOf = (selector: string) => {
+          const box = document.querySelector(selector)?.getBoundingClientRect();
+          if (!box || box.height <= 0) return null;
+          return box.y;
+        };
+        return { cancel: yOf("[data-ask-cancel]"), bar: yOf("[data-ask-bottom-bar]") };
+      });
+
+      releaseAnswer();
+      await expect(page.getByText(ANSWER_NARRATION)).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByText("播放回答")).toBeVisible({ timeout: 15_000 });
+
+      const samples = await page.evaluate(() => {
+        const win = window as unknown as {
+          __playRaf?: number;
+          __playYs?: { cancel: Array<number | null>; bar: Array<number | null> };
+        };
+        if (win.__playRaf != null) cancelAnimationFrame(win.__playRaf);
+        return win.__playYs ?? { cancel: [], bar: [] };
+      });
+
+      // The panel is gone once playing starts, and the chip bar only exists
+      // during selecting/drafting/error. Both stay absent through the
+      // transition, so there is no y to hold. playing stays out of
+      // ASK_OPEN_PHASES for that reason (see ask-player-bar-var.tsx).
+      const present = (values: Array<number | null>) => values.filter((value) => value != null);
+      const drifted = (values: number[], origin: number) =>
+        values.filter((value) => Math.abs(value - origin) > 1);
+
+      if (before.cancel == null) {
+        expect(present(samples.cancel), "取消 appeared during playing").toEqual([]);
+        await expect(page.locator("[data-ask-cancel]")).toHaveCount(0);
+      } else {
+        expect(present(samples.cancel).length).toBeGreaterThan(0);
+        expect(drifted(present(samples.cancel), before.cancel)).toEqual([]);
+      }
+
+      if (before.bar == null) {
+        expect(present(samples.bar), "bottom bar appeared during playing").toEqual([]);
+        await expect(page.locator("[data-ask-bottom-bar]")).toHaveCount(0);
+      } else {
+        expect(present(samples.bar).length).toBeGreaterThan(0);
+        expect(drifted(present(samples.bar), before.bar)).toEqual([]);
+      }
+    });
+  });
+}
+
+installPlayingTransitionStable();
