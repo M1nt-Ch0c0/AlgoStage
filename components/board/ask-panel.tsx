@@ -446,12 +446,12 @@ function AskPanelActive({ stage }: AskPanelProps) {
       // One animation frame, then one macrotask, after setPreparing(true).
       // A/B noDoubleRaf skips that paint and captures in this turn.
       if (!askAb("noDoubleRaf")) await yieldPaintFrames();
-      // One macrotask after domToCanvas returns and before encode or fetch.
-      // captureStage calls beforeEncode at that point and awaits it, so this
-      // is the only yield: it replaces the earlier 50ms settle and the extra
-      // yield rounds. The macrotask is started after the long task, so a
-      // pointerdown queued during it is dispatched and sets the hit flag
-      // before encode. scheduler.yield when it exists, otherwise setTimeout(0).
+      // One yield after domToCanvas returns and before encode or fetch.
+      // captureStage calls beforeEncode at that point and awaits it.
+      // yieldMacrotask is scheduler.yield when it exists, otherwise
+      // setTimeout(0), and it always finishes with one macrotask: yield
+      // alone can resume before a pointerdown queued during the stall
+      // reaches this thread. That macrotask sets the hit flag before encode.
       // A/B noSettle skips it.
       let yieldStarted = 0;
       const beforeEncode = askAb("noSettle")

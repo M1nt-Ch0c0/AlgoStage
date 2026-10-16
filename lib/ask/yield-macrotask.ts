@@ -43,7 +43,11 @@ export function yieldMacrotask(): Promise<void> {
   const host = globalThis as typeof globalThis & SchedulerYieldHost;
   const yieldTurn = host.scheduler?.yield;
   if (typeof yieldTurn === "function") {
-    return Promise.resolve(yieldTurn.call(host.scheduler)).then(() => undefined);
+    // scheduler.yield can resume before a pointer event that was issued
+    // during the stall reaches this thread. A real macrotask after it lets
+    // that pointerdown run, so a 取消 held across the stall is seen before
+    // encode and send.
+    return Promise.resolve(yieldTurn.call(host.scheduler)).then(() => nextMacrotask());
   }
   return nextMacrotask();
 }

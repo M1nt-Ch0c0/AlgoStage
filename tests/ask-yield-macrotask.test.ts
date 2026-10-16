@@ -7,7 +7,8 @@ describe("yieldMacrotask", () => {
     vi.unstubAllGlobals();
   });
 
-  test("uses scheduler.yield when it is a function", async () => {
+  test("uses scheduler.yield when it is a function, then one macrotask", async () => {
+    vi.useFakeTimers();
     let release: () => void = () => {};
     const gate = new Promise<void>((resolve) => {
       release = resolve;
@@ -24,6 +25,11 @@ describe("yieldMacrotask", () => {
     expect(settled).toBe(false);
 
     release();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(0);
     await pending;
     expect(settled).toBe(true);
   });

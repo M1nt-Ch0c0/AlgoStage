@@ -181,10 +181,15 @@ describe("yieldMacrotask", () => {
     vi.unstubAllGlobals();
   });
 
-  test("stays exported for existing callers", async () => {
+  test("stays exported for existing callers and follows scheduler.yield with one macrotask", async () => {
+    vi.useFakeTimers();
     const yieldFn = vi.fn(() => Promise.resolve());
     vi.stubGlobal("scheduler", { yield: yieldFn });
-    await yieldMacrotask();
+    const pending = yieldMacrotask();
+    await Promise.resolve();
+    await Promise.resolve();
     expect(yieldFn).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(0);
+    await pending;
   });
 });
