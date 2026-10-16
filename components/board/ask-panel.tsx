@@ -271,6 +271,18 @@ function AskPanelActive({ stage }: AskPanelProps) {
    * can happen before captureStage is awaiting the signal.
    */
   const releasedOnCancelRef = useRef(false);
+  /**
+   * Token for the capture this submit started. A cancel decision bumps it.
+   * A capture or encode that resolves after that bump still carries the old
+   * token, so its screenshot is discarded and never submitted.
+   */
+  const captureEpochRef = useRef(0);
+  /**
+   * True once the post-capture macrotask has run and the 120ms settle is
+   * still open. A release in that window closes on the next frame. A release
+   * that landed earlier is the 390 path: the macrotask itself closes.
+   */
+  const inSettleRef = useRef(false);
   const heldAfterSendRef = useRef(false);
   const [holdPressed, setHoldPressed] = useState(false);
   const [heldAfterSend, setHeldAfterSend] = useState(false);
@@ -424,6 +436,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
     holdRef.current.reset();
     cancelHitRef.current = false;
     releasedOnCancelRef.current = false;
+    inSettleRef.current = false;
     pointerDownIdRef.current = null;
     // 新的一次截图开始：上一轮「没截到图」先清掉，这次失败再写回。
     usePlayerStore.setState({ askCaptureFallback: false });
@@ -439,6 +452,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
     // A press that lands during domToCanvas aborts capture before encode.
     const captureAbort = new AbortController();
     captureAbortRef.current = captureAbort;
+    const captureEpoch = (captureEpochRef.current += 1);
     const stopCancelPress = listenCancelPress(document, {
       onDown: (event) => {
         if (event.button !== 0) return;
@@ -482,8 +496,35 @@ function AskPanelActive({ stage }: AskPanelProps) {
         : () => {
             yieldStarted = performance.now();
             return yieldMacrotask({
-              done: () =>
-                releasedOnCancelRef.current || holdRef.current.latched(session) === "cancel",
+              signal: captureAbort.signal,
+              done: () => {
+                const decided =
+                  releasedOnCancelRef.current || holdRef.current.latched(session) === "cancel";
+                // The macrotask has run and the 120ms settle is still open.
+                // A release in that window closes on the next frame. A
+                // release that already happened is the 390 path, which
+                // closes when this yield returns.
+                if (!decided) inSettleRef.current = true;
+                return decided;
+              },
+            }).then(() => {
+              // The settle can end early because 取消 released during it.
+              // That decision has to kill this capture before encode: the
+              // epoch check below only runs after captureStage returns, and
+              // a screenshot that resolves later would otherwise be submitted.
+              // A release that already bumped the epoch (the pointerup
+              // handler) must not bump it again: the second bump looks like
+              // a new capture and the stale result is submitted.
+              const alreadyInvalid = captureEpochRef.current !== captureEpoch;
+              if (
+                !alreadyInvalid &&
+                (releasedOnCancelRef.current ||
+                  captureAbort.signal.aborted ||
+                  holdRef.current.latched(session) === "cancel")
+              ) {
+                captureEpochRef.current += 1;
+                captureAbort.abort();
+              }
             });
           };
       let capture: CaptureResult | null;
@@ -499,6 +540,28 @@ function AskPanelActive({ stage }: AskPanelProps) {
         capture = null;
       } finally {
         captureAbortRef.current = null;
+      }
+      // Cancel was decided while this capture was in flight. The release on
+      // 取消, the abort signal, and the hold latch each bump the epoch, so
+      // a screenshot that encode finished after the decision is stale.
+      if (captureEpochRef.current !== captureEpoch || captureAbort.signal.aborted) {
+        capture = { ok: false, reason: "ABORTED", fallbackText: "" };
+      } else if (capture?.ok === false && capture.reason === "TIMEOUT") {
+        // The capture timeout yields, then resolves. A cancel registered
+        // after that timer aborts on the macrotask the yield just ran, which
+        // is after captureStage returned. One more macrotask lets that abort
+        // land before the result is submitted.
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 0);
+        });
+        if (!captureAbort.signal.aborted) {
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, 0);
+          });
+        }
+        if (captureEpochRef.current !== captureEpoch || captureAbort.signal.aborted) {
+          capture = { ok: false, reason: "ABORTED", fallbackText: "" };
+        }
       }
       if (askAb("noSettle") || yieldStarted === 0) {
         markAskPhase("settleMs", 0);
@@ -553,6 +616,16 @@ function AskPanelActive({ stage }: AskPanelProps) {
       const latest = usePlayerStore.getState();
       const latestStepId = latest.steps[latest.currentIndex]?.id ?? "";
       if (latestStepId !== startStepId || latest.selection !== startSelection) {
+        sendingRef.current = false;
+        return;
+      }
+      // The hold wait sits between capture resolving and this send. A cancel
+      // decided in that gap (release on 取消, the abort, or the hold latch)
+      // bumped the epoch. The screenshot is stale and is not submitted.
+      if (captureEpochRef.current !== captureEpoch || captureAbort.signal.aborted) {
+        setPreparing(false);
+        usePlayerStore.getState().closeAskPanel();
+        noteCancelPaintAfterRelease();
         sendingRef.current = false;
         return;
       }
@@ -725,6 +798,24 @@ function AskPanelActive({ stage }: AskPanelProps) {
       if (inside) {
         releasedOnCancelRef.current = true;
         captureAbortRef.current?.abort();
+        // The capture that is in flight, if any, now belongs to a dead
+        // epoch. A result that resolves after this release is discarded.
+        if (captureAbortRef.current) captureEpochRef.current += 1;
+        // A release during the 120ms settle has already decided. The commit
+        // waits for the next frame, which is the paint of this cancel.
+        // A release that landed before the settle still closes when the
+        // post-capture macrotask returns (the 390 path).
+        if (inSettleRef.current) {
+          inSettleRef.current = false;
+          const closeSettled = () => {
+            setPreparing(false);
+            usePlayerStore.getState().closeAskPanel();
+            noteCancelPaintAfterRelease();
+          };
+          const raf = globalThis.requestAnimationFrame;
+          if (typeof raf === "function") raf(() => closeSettled());
+          else closeSettled();
+        }
       }
       if (!sentWhileHeld) retroCancel(inside);
       // Waiting phase: the request is already out (or askSent has shown the

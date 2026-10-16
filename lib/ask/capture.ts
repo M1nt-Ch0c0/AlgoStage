@@ -478,8 +478,10 @@ export async function captureStage(
             await yieldMacrotask({ done: () => signal.aborted });
             // The yield returns when the macrotask runs or when the signal
             // is already aborted. A cancel queued behind this timeout
-            // (setTimeout(0) registered after the timer) has not run yet.
-            // One more macrotask lets that abort land before TIMEOUT wins.
+            // (setTimeout(0) registered after the timer) has not run yet:
+            // the post-capture settle is already waiting its own macrotask,
+            // so the abort is the timer after this one. Yield again, and
+            // once more if that abort is still behind, before TIMEOUT wins.
             if (!signal.aborted) await yieldMacrotask({ done: () => signal.aborted });
             if (signal.aborted) {
               resolve(abortedResult());

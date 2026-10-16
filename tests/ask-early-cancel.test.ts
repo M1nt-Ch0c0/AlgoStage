@@ -368,6 +368,135 @@ describe("early 取消 press", () => {
     vi.stubGlobal("setTimeout", realSetTimeout);
   });
 
+  test("the normal path waits the full 120ms post-capture settle before encode and submit", async () => {
+    const { submit } = await renderPanel();
+    let encoded = false;
+    vi.mocked(captureStage).mockImplementation(async (_container, _selection, opts) => {
+      await opts?.beforeEncode?.();
+      encoded = true;
+      return {
+        ok: true,
+        encoder: "main",
+        image: { mime: "image/jpeg", dataBase64: "qq==" },
+        bytes: 1,
+      };
+    });
+
+    // Fake timers own the animation frame and the settle. The pre-capture
+    // paint is one frame plus a delay-0 macrotask, then the post-capture
+    // macrotask. Those land inside the first 119ms. The timer still pending
+    // there is the 120ms settle, so encode has not run. performance stays
+    // real: a faked performance.now() would mark that settle already elapsed.
+    vi.useFakeTimers({
+      toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "requestAnimationFrame", "cancelAnimationFrame"],
+    });
+    await act(async () => {
+      submit.click();
+    });
+    await act(async () => {
+      vi.advanceTimersToNextFrame();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(encoded).toBe(false);
+    expect(sendAsk).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(119);
+    });
+    expect(captureStage).toHaveBeenCalled();
+    expect(encoded).toBe(false);
+    expect(sendAsk).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(1);
+    expect(usePlayerStore.getState().askPhase).toBe("drafting");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(encoded).toBe(true);
+    expect(sendAsk).toHaveBeenCalledTimes(1);
+    const sent = vi.mocked(sendAsk).mock.calls[0]?.[0];
+    expect(sent).toMatchObject({ ok: true, image: { dataBase64: "qq==" } });
+  });
+
+  test("a cancel during the 120ms settle closes on the next frame and never submits the screenshot", async () => {
+    const { cancel, submit } = await renderPanel();
+    vi.spyOn(cancel, "getBoundingClientRect").mockReturnValue(BUTTON_BOX);
+    let releaseEncode: ((result: {
+      ok: true;
+      encoder: "main";
+      image: { mime: "image/jpeg"; dataBase64: string };
+      bytes: number;
+    }) => void) | undefined;
+    vi.mocked(captureStage).mockImplementation(async (_container, _selection, opts) => {
+      await opts?.beforeEncode?.();
+      // Encode finishes after the cancel decision. The screenshot it
+      // returns must be discarded.
+      return new Promise((resolve) => {
+        releaseEncode = resolve;
+      });
+    });
+
+    vi.useFakeTimers({
+      toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "requestAnimationFrame", "cancelAnimationFrame"],
+    });
+    await act(async () => {
+      submit.click();
+    });
+    await act(async () => {
+      vi.advanceTimersToNextFrame();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(releaseEncode).toBeUndefined();
+    expect(sendAsk).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(1);
+
+    // Mid-settle. The press lands and releases on 取消 before 120ms.
+    // The close is committed here and paints on the next frame.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(40);
+      cancel.dispatchEvent(pointer("pointerdown", 40, 12, 10));
+      cancel.dispatchEvent(pointer("pointerup", 41, 14, 12));
+    });
+    expect(sendAsk).not.toHaveBeenCalled();
+    expect(usePlayerStore.getState().askPhase).toBe("drafting");
+    expect(container.querySelector("[data-ask-panel]")).not.toBeNull();
+
+    await act(async () => {
+      vi.advanceTimersToNextFrame();
+      await Promise.resolve();
+    });
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
+    expect(container.querySelector("[data-ask-panel]")).toBeNull();
+    expect(sendAsk).not.toHaveBeenCalled();
+    // The 120ms settle was cleared when the cancel ended it.
+    expect(vi.getTimerCount()).toBe(0);
+
+    await act(async () => {
+      releaseEncode?.({
+        ok: true,
+        encoder: "main",
+        image: { mime: "image/jpeg", dataBase64: "late==" },
+        bytes: 4,
+      });
+      await Promise.resolve();
+    });
+    expect(sendAsk).not.toHaveBeenCalled();
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
+  });
+
   test("a capture TIMEOUT after the release on 取消 does not send", async () => {
     const { cancel, submit } = await renderPanel();
     // The 3s timer can still beat the queued press and return TIMEOUT.
