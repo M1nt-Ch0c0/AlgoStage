@@ -169,6 +169,60 @@ async function pauseLecture(page: Page) {
   await expect(resume).toBeVisible();
 }
 
+
+async function scrollSubtitleIntoSafeBand(page: Page) {
+  const subtitle = page.locator('[data-ask-target="subtitle"]').first();
+  await subtitle.scrollIntoViewIfNeeded();
+  await page.evaluate(() => {
+    const host = document.querySelector<HTMLElement>('[data-ask-target="subtitle"]');
+    if (!host) return;
+    const header = document.querySelector<HTMLElement>("header");
+    const bar = document.querySelector<HTMLElement>("[data-ask-bottom-bar]");
+    const top = (header?.getBoundingClientRect().bottom ?? 56) + 8;
+    const bottom = (bar?.getBoundingClientRect().top ?? window.innerHeight) - 8;
+    const mid = (top + bottom) / 2;
+    const r = host.getBoundingClientRect();
+    const targetY = mid - r.height / 2;
+    const delta = r.top - targetY;
+    if (Math.abs(delta) > 2) {
+      const se = document.scrollingElement || document.documentElement;
+      se.scrollTop += delta;
+    }
+  });
+  await page.waitForTimeout(50);
+  return subtitle;
+}
+
+async function touchDragSubtitle(page: Page, from: { x: number; y: number }, dx: number, dy: number) {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: from.x, y: from.y }] });
+  for (let s = 1; s <= 5; s++) {
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchMove",
+      touchPoints: [{ x: from.x + (dx * s) / 5, y: from.y + (dy * s) / 5 }],
+    });
+  }
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await cdp.detach();
+}
+
+async function subtitleSafeHit(page: Page) {
+  return page.evaluate(() => {
+    const host = document.querySelector<HTMLElement>('[data-ask-target="subtitle"]');
+    const bar = document.querySelector<HTMLElement>("[data-ask-bottom-bar]");
+    if (!host || !bar) return null;
+    const header = document.querySelector<HTMLElement>("header");
+    const top = (header?.getBoundingClientRect().bottom ?? 56) + 8;
+    const barTop = bar.getBoundingClientRect().top;
+    const r = host.getBoundingClientRect();
+    if (r.width < 8 || r.height < 8) return null;
+    const y = Math.min(Math.max(r.top + Math.min(20, r.height / 2), top + 4), barTop - 8);
+    const x = r.left + Math.min(28, Math.max(10, r.width / 2));
+    if (y < r.top || y > r.bottom || y < top || y > barTop - 4) return null;
+    return { x, y, r: { top: r.top, bottom: r.bottom }, top, barTop };
+  });
+}
+
 async function enterSelection(page: Page) {
   const button = entry(page);
   await expect(button).toBeVisible();
@@ -2290,18 +2344,10 @@ test.describe("390 selection flow", () => {
     await expect(page.locator("[data-ask-panel]")).toHaveCount(0);
 
     await enterSelection(page);
-
-    const subtitleBody = page.locator('[data-ask-target="subtitle"] p').filter({ hasNotText: "字幕" }).first();
-    await subtitleBody.scrollIntoViewIfNeeded();
-    const subBox = await subtitleBody.boundingBox();
-    expect(subBox).not.toBeNull();
-    const startX = subBox!.x + 12;
-    const startY = subBox!.y + 12;
-
-    await page.mouse.move(startX, startY);
-    await page.mouse.down();
-    await page.mouse.move(startX + 50, startY + 25, { steps: 5 });
-    await page.mouse.up();
+    await scrollSubtitleIntoSafeBand(page);
+    const hit = await subtitleSafeHit(page);
+    expect(hit).not.toBeNull();
+    await touchDragSubtitle(page, hit!, 50, 25);
 
     const panel = page.locator("[data-ask-panel]");
     await expect(panel).toBeVisible();
@@ -2312,19 +2358,10 @@ test.describe("390 selection flow", () => {
     await startGenerated(page);
     await pauseLecture(page);
     await enterSelection(page);
-
-    const subtitleBody = page.locator('[data-ask-target="subtitle"] p').filter({ hasNotText: "字幕" }).first();
-    await subtitleBody.scrollIntoViewIfNeeded();
-    const subBox = (await subtitleBody.boundingBox())!;
-    expect(subBox).not.toBeNull();
-
-    const startX = subBox.x + 20;
-    const startY = subBox.y + 10;
-
-    await page.mouse.move(startX, startY);
-    await page.mouse.down();
-    await page.mouse.move(startX + 50, startY + 20, { steps: 5 });
-    await page.mouse.up();
+    await scrollSubtitleIntoSafeBand(page);
+    const hit = await subtitleSafeHit(page);
+    expect(hit).not.toBeNull();
+    await touchDragSubtitle(page, hit!, -40, 20);
 
     const panel = page.locator("[data-ask-panel]");
     await expect(panel).toBeVisible();
