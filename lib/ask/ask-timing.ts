@@ -83,6 +83,12 @@ export type AskTimingProbe = {
   captureSourceNodes?: number;
   /** Times modern-screenshot called onCloneEachNode. */
   captureClonedNodes?: number;
+  /**
+   * The canvas after crop and before encode. Set only when this probe object
+   * already exists. The pixel harness compares it to a screenshot of the same
+   * CSS rect. Absent from a page that never installs the probe.
+   */
+  captureCanvas?: HTMLCanvasElement;
 };
 
 declare global {

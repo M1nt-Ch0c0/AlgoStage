@@ -730,6 +730,20 @@ export async function captureStage(
       }
 
       const cropRect = { x: cropX, y: cropY, w: cropW, h: cropH };
+      // Test-only. The probe object is installed by the harness before
+      // submit. A page that never sets it (including a release build) does
+      // not allocate or keep the pre-encode canvas.
+      const canvasProbe = typeof window !== "undefined" ? window.__ASK_TIMING__ : undefined;
+      if (canvasProbe && typeof canvasProbe === "object" && cropW > 0 && cropH > 0) {
+        const preEncode = document.createElement("canvas");
+        preEncode.width = cropW;
+        preEncode.height = cropH;
+        const preCtx = preEncode.getContext("2d");
+        if (preCtx) {
+          preCtx.drawImage(canvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+          canvasProbe.captureCanvas = preEncode;
+        }
+      }
       const isTimedOut = () => timedOut;
 
       if (canEncodeOffThread()) {

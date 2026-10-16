@@ -277,6 +277,113 @@ function pngChunk(type: string, data: Buffer): Buffer {
  * Composite RGBA pixels onto an opaque board-950 base and return a PNG.
  * Used only by the S4_PIXELS dump so a later diff can compare against r4.
  */
+/** Encode RGBA pixels (row-major) as an 8-bit PNG. */
+function encodeRgbaPng(width: number, height: number, pixels: PngPixel[]): Buffer {
+  const raw = Buffer.alloc(height * (1 + width * 4));
+  for (let y = 0; y < height; y++) {
+    const rowStart = y * (1 + width * 4);
+    raw[rowStart] = 0;
+    for (let x = 0; x < width; x++) {
+      const pixel = pixels[y * width + x]!;
+      const i = rowStart + 1 + x * 4;
+      raw[i] = pixel.r;
+      raw[i + 1] = pixel.g;
+      raw[i + 2] = pixel.b;
+      raw[i + 3] = pixel.a;
+    }
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  return Buffer.concat([
+    Buffer.from("89504e470d0a1a0a", "hex"),
+    pngChunk("IHDR", ihdr),
+    pngChunk("IDAT", deflateSync(raw)),
+    pngChunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
+/**
+ * Per-channel delta. A pixel fails when any channel differs by more than
+ * CHANNEL_TOLERANCE. A block is a run of failing pixels that share a row
+ * and are at least BLOCK_EDGE long on both axes of the failing set.
+ */
+const CHANNEL_TOLERANCE = 4;
+const BLOCK_EDGE = 8;
+
+function pixelDelta(a: PngPixel, b: PngPixel): number {
+  return Math.max(
+    Math.abs(a.r - b.r),
+    Math.abs(a.g - b.g),
+    Math.abs(a.b - b.b),
+    Math.abs(a.a - b.a),
+  );
+}
+
+function comparePixels(
+  baseline: PngPixel[],
+  candidate: PngPixel[],
+  width: number,
+  height: number,
+): { matchRatio: number; largestBlock: number; diff: PngPixel[] } {
+  const total = width * height;
+  let matched = 0;
+  const fail = new Uint8Array(total);
+  const diff: PngPixel[] = new Array(total);
+  for (let i = 0; i < total; i++) {
+    const delta = pixelDelta(baseline[i]!, candidate[i]!);
+    if (delta <= CHANNEL_TOLERANCE) {
+      matched += 1;
+      diff[i] = { r: 0, g: 0, b: 0, a: 255 };
+    } else {
+      fail[i] = 1;
+      const mag = Math.min(255, delta);
+      diff[i] = { r: mag, g: 0, b: 0, a: 255 };
+    }
+  }
+  // Largest axis-aligned run of failing pixels. A block is large when both
+  // its width and its height reach BLOCK_EDGE.
+  let largestBlock = 0;
+  const seen = new Uint8Array(total);
+  for (let start = 0; start < total; start++) {
+    if (!fail[start] || seen[start]) continue;
+    const queue = [start];
+    seen[start] = 1;
+    let minX = start % width;
+    let maxX = minX;
+    let minY = Math.floor(start / width);
+    let maxY = minY;
+    let count = 0;
+    while (queue.length > 0) {
+      const at = queue.pop()!;
+      count += 1;
+      const x = at % width;
+      const y = Math.floor(at / width);
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+      const neighbors = [at - 1, at + 1, at - width, at + width];
+      for (const next of neighbors) {
+        if (next < 0 || next >= total || seen[next] || !fail[next]) continue;
+        const nx = next % width;
+        const ny = Math.floor(next / width);
+        if (Math.abs(nx - x) + Math.abs(ny - y) !== 1) continue;
+        seen[next] = 1;
+        queue.push(next);
+      }
+    }
+    const blockW = maxX - minX + 1;
+    const blockH = maxY - minY + 1;
+    if (blockW >= BLOCK_EDGE && blockH >= BLOCK_EDGE) {
+      largestBlock = Math.max(largestBlock, count);
+    }
+  }
+  return { matchRatio: total === 0 ? 1 : matched / total, largestBlock, diff };
+}
+
 function flattenOntoBoard950(png: Buffer): Buffer {
   const { width, height, pixels } = decodePngPixels(png);
   const raw = Buffer.alloc(height * (1 + width * 3));
@@ -362,6 +469,166 @@ async function submitAskImage(page: Page, width: number): Promise<AskImage> {
   return image as unknown as AskImage;
 }
 
+type CaptureProbe = {
+  captureCanvas?: HTMLCanvasElement;
+  captureCloneMs?: number;
+  captureEmbedMs?: number;
+  captureSvgMs?: number;
+  captureRasterMs?: number;
+  captureSourceNodes?: number;
+  captureClonedNodes?: number;
+};
+
+type CropBox = { x: number; y: number; width: number; height: number };
+
+/**
+ * Submit one ask and keep the pre-encode canvas on the timing probe.
+ * The panel is closed and the selection overlay removed before the caller
+ * screenshots the same CSS rect the crop used.
+ */
+async function submitAndReadCrop(page: Page, width: number): Promise<{ image: AskImage; crop: CropBox; dpr: number }> {
+  test.setTimeout(120_000);
+  await page.addInitScript(() => {
+    (window as unknown as { __ASK_TIMING__?: object }).__ASK_TIMING__ = {};
+  });
+  let image: AskImage | null = null;
+  let received: () => void = () => {};
+  const asked = new Promise<void>((resolve) => {
+    received = resolve;
+  });
+
+  await page.route("**/api/lecture/ask", async (route) => {
+    const body = route.request().postDataJSON() as { image?: AskImage | null };
+    if (body.image && typeof body.image.dataBase64 === "string") image = body.image;
+    received();
+    await route.fulfill({
+      status: 200,
+      contentType: "application/x-ndjson",
+      body: askStream("s1"),
+    });
+  });
+
+  await startGenerated(page);
+  await pauseLecture(page);
+  await enterSelection(page);
+  if (width === 390) await dragOnSubtitle(page);
+  else await dragOnStage(page);
+
+  const panel = page.locator("[data-ask-panel]");
+  await panel.locator("[data-ask-question]").fill(QUESTION);
+  const crop = await page.evaluate(() => {
+    const box = document.querySelector("[data-ask-selection]")?.getBoundingClientRect();
+    if (!box || box.width <= 0 || box.height <= 0) return null;
+    return { x: box.x, y: box.y, width: box.width, height: box.height };
+  });
+  expect(crop, "selection box has a CSS rect").not.toBeNull();
+  await panel.locator("[data-ask-submit]").click();
+  await asked;
+  expect(image, "ask request attached an image").not.toBeNull();
+
+  await expect(page.locator("[data-ask-panel]")).toHaveCount(0);
+  await page.evaluate(() => {
+    document.querySelector("[data-ask-layer]")?.remove();
+  });
+  await expect(page.locator("[data-ask-layer]")).toHaveCount(0);
+  const dpr = await page.evaluate(() => window.devicePixelRatio || 1);
+  return { image: image as unknown as AskImage, crop: crop as CropBox, dpr };
+}
+
+/** Pre-encode canvas (HEAD) as PNG bytes. Null when the probe never stored one. */
+async function readPreEncodePng(page: Page): Promise<Buffer | null> {
+  const base64 = await page.evaluate(() => {
+    const probe = (window as unknown as { __ASK_TIMING__?: CaptureProbe }).__ASK_TIMING__;
+    const canvas = probe?.captureCanvas;
+    if (!canvas || typeof canvas.toDataURL !== "function") return null;
+    const png = canvas.toDataURL("image/png");
+    const comma = png.indexOf(",");
+    return comma < 0 ? null : png.slice(comma + 1);
+  });
+  if (!base64) return null;
+  return Buffer.from(base64, "base64");
+}
+
+/**
+ * Screenshot the viewport, crop the selection's CSS rect at device pixels,
+ * and scale that crop down to the capture canvas size (scale:1, CSS pixels).
+ */
+async function baselinePng(page: Page, crop: CropBox, outWidth: number, outHeight: number): Promise<Buffer> {
+  const shot = await page.screenshot({ type: "png" });
+  const base64 = shot.toString("base64");
+  const scaled = await page.evaluate(
+    async ({ pngBase64, crop: box, outWidth: w, outHeight: h }) => {
+      const decoded = await createImageBitmap(await (await fetch(`data:image/png;base64,${pngBase64}`)).blob());
+      const dpr = window.devicePixelRatio || 1;
+      const sx = Math.round(box.x * dpr);
+      const sy = Math.round(box.y * dpr);
+      const sw = Math.max(1, Math.round(box.width * dpr));
+      const sh = Math.max(1, Math.round(box.height * dpr));
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("no 2d context");
+      ctx.drawImage(decoded, sx, sy, sw, sh, 0, 0, w, h);
+      decoded.close();
+      const png = canvas.toDataURL("image/png");
+      return png.slice(png.indexOf(",") + 1);
+    },
+    { pngBase64: base64, crop, outWidth, outHeight },
+  );
+  return Buffer.from(scaled, "base64");
+}
+
+async function assertPreEncodePixels(page: Page, width: number) {
+  const { image, crop, dpr } = await submitAndReadCrop(page, width);
+  const candidatePng = await readPreEncodePng(page);
+  expect(candidatePng, "pre-encode canvas on __ASK_TIMING__").not.toBeNull();
+  const candidate = decodePngPixels(candidatePng as Buffer);
+  console.log(
+    JSON.stringify({
+      width,
+      dpr,
+      cropCss: crop,
+      preEncode: { w: candidate.width, h: candidate.height },
+      encodedMime: image.mime,
+      encodedBytes: Math.floor((image.dataBase64.length * 3) / 4),
+    }),
+  );
+  if (width === 390) {
+    // The 390 subtitle drag crops about 258×73 CSS px. Log the actual size
+    // and keep the assertion on that order, not on a single frozen pair.
+    expect(candidate.width).toBeGreaterThan(180);
+    expect(candidate.width).toBeLessThan(340);
+    expect(candidate.height).toBeGreaterThan(40);
+    expect(candidate.height).toBeLessThan(140);
+  }
+  const baselineBuf = await baselinePng(page, crop, candidate.width, candidate.height);
+  const baseline = decodePngPixels(baselineBuf);
+  expect(baseline.width).toBe(candidate.width);
+  expect(baseline.height).toBe(candidate.height);
+
+  const { matchRatio, largestBlock, diff } = comparePixels(baseline.pixels, candidate.pixels, candidate.width, candidate.height);
+  mkdirSync(OUT_DIR, { recursive: true });
+  const baselineFile = path.join(OUT_DIR, `${LABEL}-${width}-baseline.png`);
+  const candidateFile = path.join(OUT_DIR, `${LABEL}-${width}-preencode.png`);
+  const diffFile = path.join(OUT_DIR, `${LABEL}-${width}-diff.png`);
+  writeFileSync(baselineFile, baselineBuf);
+  writeFileSync(candidateFile, candidatePng as Buffer);
+  writeFileSync(diffFile, encodeRgbaPng(candidate.width, candidate.height, diff));
+  console.log(
+    JSON.stringify({
+      width,
+      matchRatio,
+      largestBlock,
+      baselineFile,
+      candidateFile,
+      diffFile,
+    }),
+  );
+  expect(matchRatio, `pre-encode pixels within ${CHANNEL_TOLERANCE} per channel`).toBeGreaterThanOrEqual(0.99);
+  expect(largestBlock, "no large block of differing pixels").toBe(0);
+}
+
 async function capturePixels(page: Page, width: number) {
   const payload = await submitAskImage(page, width);
   expect(payload.mime === "image/webp" || payload.mime === "image/jpeg").toBe(true);
@@ -384,14 +651,27 @@ test.describe("S4 capture pixels", () => {
       test.skip(process.env.S4_PIXELS !== "1", "set S4_PIXELS=1 to dump the ask capture image");
       await capturePixels(page, 1280);
     });
+
+    test("pre-encode canvas matches the closed-panel screenshot at 1280", async ({ page }) => {
+      await assertPreEncodePixels(page, 1280);
+    });
   });
 
   test.describe("390x844", () => {
-    test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+    test.use({
+      hasTouch: true,
+      isMobile: true,
+      deviceScaleFactor: 3,
+      viewport: { width: 390, height: 844 },
+    });
 
     test("saves the captured image at 390", async ({ page }) => {
       test.skip(process.env.S4_PIXELS !== "1", "set S4_PIXELS=1 to dump the ask capture image");
       await capturePixels(page, 390);
+    });
+
+    test("pre-encode canvas matches the closed-panel screenshot at 390", async ({ page }) => {
+      await assertPreEncodePixels(page, 390);
     });
 
     test("the 390 ask image is at most 1% transparent", async ({ page }) => {

@@ -855,6 +855,29 @@ describe("lib/ask/capture", () => {
       delete window.__ASK_TIMING__;
     });
 
+    it("stores the pre-encode crop canvas on the timing probe and skips it when the probe is absent", async () => {
+      const probe: { captureCanvas?: HTMLCanvasElement } = {};
+      window.__ASK_TIMING__ = probe;
+      const res = await captureStage(container, baseSel);
+      expect(res.ok).toBe(true);
+      const stored = probe.captureCanvas;
+      expect(stored).toBeDefined();
+      // scale 1, container 200×200, source canvas 400×400 → crop is 2× the CSS bbox.
+      expect(stored?.width).toBe(60);
+      expect(stored?.height).toBe(80);
+      const cropDraw = drawImageMock.mock.calls.find(
+        (call) => call[0] === sourceCanvas && call[3] === 60 && call[4] === 80,
+      );
+      expect(cropDraw).toBeDefined();
+
+      delete window.__ASK_TIMING__;
+      const bare = await captureStage(container, baseSel);
+      expect(bare.ok).toBe(true);
+      expect(window.__ASK_TIMING__).toBeUndefined();
+      // The second capture has no probe, so it does not store a canvas.
+      expect(probe.captureCanvas).toBe(stored);
+    });
+
     it("calls domToCanvas with font:false, scale:1, and a filter that drops non-intersecting / monaco / iframe / video", async () => {
       const hitRect = () =>
         ({ left: 20, top: 30, width: 10, height: 10, right: 30, bottom: 40, x: 20, y: 30, toJSON() {} }) as DOMRect;
