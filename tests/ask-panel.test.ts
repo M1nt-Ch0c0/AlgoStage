@@ -214,13 +214,17 @@ async function drainPaintFrames() {
   });
 }
 
-/** Drain the pre-capture paint, then the one post-capture macrotask. */
+/** Drain the pre-capture paint, then the post-capture macrotask and settle. */
 async function finishCaptureTurn() {
   await Promise.resolve();
   await drainPaintFrames();
   await Promise.resolve();
   await new Promise<void>((resolve) => {
     setTimeout(resolve, 0);
+  });
+  await Promise.resolve();
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 200);
   });
 }
 
@@ -1036,15 +1040,16 @@ describe("ask panel", () => {
     draft("drafting", { draftQuestion: "为什么这样写？" });
     await render();
 
-    let releaseYield: (() => void) | undefined;
-    vi.stubGlobal("setTimeout", (callback: TimerHandler, delay?: number) => {
-      // The post-capture yield. The pre-capture paint's setTimeout(0) is a
-      // different callback, and this stub runs that one immediately.
-      if (delay === 0 && typeof callback === "function" && callback.toString().includes("askInputMacrotask")) {
-        releaseYield = () => {
+    const heldYields: Array<() => void> = [];
+    vi.stubGlobal("setTimeout", (callback: TimerHandler) => {
+      // The post-capture yield is a macrotask and then the input settle.
+      // Both use askInputMacrotask. The pre-capture paint's setTimeout(0)
+      // is a different callback, and this stub runs that one immediately.
+      if (typeof callback === "function" && callback.toString().includes("askInputMacrotask")) {
+        heldYields.push(() => {
           callback();
-        };
-        return 1;
+        });
+        return heldYields.length;
       }
       if (typeof callback === "function") callback();
       return 0;
@@ -1054,7 +1059,7 @@ describe("ask panel", () => {
       submitButton().click();
     });
     await vi.waitFor(() => {
-      expect(releaseYield).toBeTypeOf("function");
+      expect(heldYields.length).toBeGreaterThan(0);
     });
     expect(captureStage).toHaveBeenCalledTimes(1);
     expect(sendAsk).not.toHaveBeenCalled();
@@ -1067,7 +1072,8 @@ describe("ask panel", () => {
     expect(container.querySelector("[data-ask-panel]")).toBeNull();
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
 
-    releaseYield?.();
+    const queued = heldYields.splice(0);
+    queued.forEach((release) => release());
     await act(async () => {
       await pendingSubmit;
     });

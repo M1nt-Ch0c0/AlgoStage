@@ -122,16 +122,15 @@ async function drainPaint() {
  * also uses setTimeout(0); this holds only yieldMacrotask's callback.
  */
 async function reachBeforeEncode(submit: HTMLButtonElement): Promise<() => void> {
-  let releaseEncode: (() => void) | undefined;
+  const held: Array<(...heldArgs: unknown[]) => void> = [];
+  const heldArgs: unknown[][] = [];
   const realSetTimeout = setTimeout;
   const wrapped = ((callback: TimerHandler, delay?: number, ...args: unknown[]) => {
     const source = typeof callback === "function" ? callback.toString() : "";
-    if (delay === 0 && source.includes("askInputMacrotask")) {
-      const held = callback as (...heldArgs: unknown[]) => void;
-      releaseEncode = () => {
-        held(...args);
-      };
-      return 1;
+    if (source.includes("askInputMacrotask")) {
+      held.push(callback as (...cbArgs: unknown[]) => void);
+      heldArgs.push(args);
+      return held.length;
     }
     return realSetTimeout(callback as never, delay, ...args);
   }) as typeof setTimeout;
@@ -140,11 +139,14 @@ async function reachBeforeEncode(submit: HTMLButtonElement): Promise<() => void>
     submit.click();
     await drainPaint();
   });
-  if (!releaseEncode) throw new Error("post-capture yield was not scheduled");
-  const release = releaseEncode;
+  if (held.length === 0) throw new Error("post-capture yield was not scheduled");
   return () => {
     vi.stubGlobal("setTimeout", realSetTimeout);
-    release();
+    // The yield schedules its macrotask and its settle before it waits.
+    // Release every one that was held.
+    const queued = held.splice(0);
+    const queuedArgs = heldArgs.splice(0);
+    queued.forEach((callback, index) => callback(...(queuedArgs[index] ?? [])));
   };
 }
 

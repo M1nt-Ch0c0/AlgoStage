@@ -449,10 +449,11 @@ function AskPanelActive({ stage }: AskPanelProps) {
       // One yield after domToCanvas returns and before encode or fetch.
       // captureStage calls beforeEncode at that point and awaits it.
       // yieldMacrotask is scheduler.yield when it exists, otherwise
-      // setTimeout(0), and it always finishes with one macrotask: yield
-      // alone can resume before a pointerdown queued during the stall
-      // reaches this thread. That macrotask sets the hit flag before encode.
-      // A/B noSettle skips it.
+      // setTimeout(0), then the rest of the input settle (120ms from the
+      // start of the yield). Yield and one macrotask resume before a
+      // pointerdown issued during the stall reaches this thread (measured
+      // 34–97ms later under 4× CPU). The settle sets the hit flag before
+      // encode. A/B noSettle skips it.
       let yieldStarted = 0;
       const beforeEncode = askAb("noSettle")
         ? undefined
@@ -464,7 +465,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
       try {
         // captureStage calls beforeEncode after domToCanvas and awaits it
         // before encode, so this is the only yield. It replaces the earlier
-        // 50ms settle and the extra yield rounds. A/B noSettle omits it.
+        // input settle and the extra yield rounds. A/B noSettle omits it.
         capture = await captureStage(resolveStage(stage), startSelection, {
           signal: captureAbort.signal,
           beforeEncode,

@@ -151,7 +151,7 @@ describe("settleInput", () => {
   });
 
   test("waits ASK_INPUT_SETTLE_MS before resolving", async () => {
-    expect(ASK_INPUT_SETTLE_MS).toBe(50);
+    expect(ASK_INPUT_SETTLE_MS).toBe(120);
     const delays: number[] = [];
     vi.stubGlobal("setTimeout", (callback: () => void, delayMs: number) => {
       delays.push(delayMs);
@@ -171,8 +171,8 @@ describe("settleInput", () => {
     });
     await settleInput(20);
     await settleInput(ASK_INPUT_SETTLE_MS);
-    await settleInput(80);
-    expect(delays).toEqual([30]);
+    await settleInput(ASK_INPUT_SETTLE_MS + 40);
+    expect(delays).toEqual([ASK_INPUT_SETTLE_MS - 20]);
   });
 });
 
@@ -190,6 +190,7 @@ describe("yieldMacrotask", () => {
     await Promise.resolve();
     expect(yieldFn).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(ASK_INPUT_SETTLE_MS);
     await pending;
   });
 });

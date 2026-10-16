@@ -3,10 +3,11 @@
  * during capture) runs before the caller continues.
  * Prefers scheduler.yield(); falls back to setTimeout(0), a real macrotask,
  * so a pointerdown already queued on this thread is dispatched first.
+ * Then waits out the rest of ASK_INPUT_SETTLE_MS. A CDP press issued during
+ * the stall can take ~40–90ms to reach the renderer under 4× CPU, and
+ * isInputPending stays false until it arrives, so a yield loop never sees
+ * it. The settle is the window that press uses to land before encode.
  *
- * scheduler.yield is a prioritized continuation and can run ahead of input
- * that has not reached the renderer queue yet. A press that has been
- * dispatched into this thread's queue is visible after this one yield.
  * The cancel decision is the 取消 hit flag that yield lets the listener set,
  * not a timestamp compared with sentAt.
  */
@@ -21,13 +22,14 @@ type InputScheduling = {
   isInputPending?: () => boolean;
 };
 
-function nextMacrotask(): Promise<void> {
+function nextMacrotask(delayMs = 0): Promise<void> {
   return new Promise((resolve) => {
     // Named so a test can tell this yield from the pre-capture paint timer.
+    // The post-stall settle uses the same name: one release covers both.
     function askInputMacrotask() {
       resolve();
     }
-    setTimeout(askInputMacrotask, 0);
+    setTimeout(askInputMacrotask, delayMs);
   });
 }
 
@@ -39,32 +41,43 @@ function inputStillPending(): boolean {
   return isInputPending.call(scheduling) === true;
 }
 
-export function yieldMacrotask(): Promise<void> {
+export async function yieldMacrotask(): Promise<void> {
+  const started = typeof performance !== "undefined" ? performance.now() : Date.now();
   const host = globalThis as typeof globalThis & SchedulerYieldHost;
   const yieldTurn = host.scheduler?.yield;
   if (typeof yieldTurn === "function") {
     // scheduler.yield can resume before a pointer event that was issued
-    // during the stall reaches this thread. A real macrotask after it lets
-    // that pointerdown run, so a 取消 held across the stall is seen before
-    // encode and send.
-    return Promise.resolve(yieldTurn.call(host.scheduler)).then(() => nextMacrotask());
+    // during the stall reaches this thread.
+    await Promise.resolve(yieldTurn.call(host.scheduler));
   }
-  return nextMacrotask();
+  // A press dispatched by CDP during the stall is not in this thread yet,
+  // and isInputPending is false until it arrives. The macrotask lets a press
+  // already queued here run. The settle, scheduled in the same turn, is the
+  // rest of the window that press uses to arrive before encode. Same timer
+  // name, so a caller that holds the macrotask holds the settle too.
+  const elapsed = (typeof performance !== "undefined" ? performance.now() : Date.now()) - started;
+  const remaining = Math.max(0, ASK_INPUT_SETTLE_MS - Math.max(0, elapsed));
+  const macrotask = nextMacrotask();
+  const settle = remaining > 0 ? nextMacrotask(remaining) : Promise.resolve();
+  await macrotask;
+  await settle;
 }
 
 /**
  * Fixed wait after the capture long task so input queued during the stall
  * can reach the renderer queue. The budget is measured from longTaskEnd,
- * so time already spent yielding counts toward the 50ms.
+ * so time already spent yielding counts toward ASK_INPUT_SETTLE_MS.
  */
-export const ASK_INPUT_SETTLE_MS = 50;
+// A CDP press issued during the capture stall reached the renderer 34–97ms
+// after longTaskEnd under 4× CPU (hook log, release-after-stall 1280).
+// 50ms ended before that press, so encode and send ran first. 120ms covers
+// the observed gap and still returns before the test's 150ms post-stall hold.
+export const ASK_INPUT_SETTLE_MS = 120;
 
 export function settleInput(elapsedMs = 0): Promise<void> {
   const remaining = Math.max(0, ASK_INPUT_SETTLE_MS - Math.max(0, elapsedMs));
   if (remaining === 0) return Promise.resolve();
-  return new Promise((resolve) => {
-    setTimeout(resolve, remaining);
-  });
+  return nextMacrotask(remaining);
 }
 
 /**

@@ -30,8 +30,38 @@ describe("yieldMacrotask", () => {
     expect(settled).toBe(false);
 
     await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(120);
     await pending;
     expect(settled).toBe(true);
+  });
+
+  test("after the macrotask, waits out the rest of the input settle", async () => {
+    const delays: number[] = [];
+    vi.stubGlobal("setTimeout", (callback: () => void, delayMs: number) => {
+      delays.push(delayMs);
+      callback();
+      return delays.length;
+    });
+    vi.stubGlobal("scheduler", undefined);
+    let now = 1000;
+    vi.stubGlobal("performance", { now: () => now });
+
+    await yieldMacrotask();
+    // The macrotask is delay 0. The settle is whatever remains of 120ms.
+    expect(delays[0]).toBe(0);
+    expect(delays[1]).toBe(120);
+
+    delays.length = 0;
+    now = 2000;
+    const yieldFn = vi.fn(() => {
+      now += 20;
+      return Promise.resolve();
+    });
+    vi.stubGlobal("scheduler", { yield: yieldFn });
+    await yieldMacrotask();
+    expect(yieldFn).toHaveBeenCalledTimes(1);
+    expect(delays[0]).toBe(0);
+    expect(delays[1]).toBe(100);
   });
 
   test("falls back to setTimeout(0) when scheduler.yield is absent", async () => {
@@ -46,6 +76,7 @@ describe("yieldMacrotask", () => {
     expect(settled).toBe(false);
 
     await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(120);
     await pending;
     expect(settled).toBe(true);
   });
