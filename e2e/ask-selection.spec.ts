@@ -668,6 +668,28 @@ test.describe("1280 selection flow", () => {
     });
   }
 
+  test("chip390-b 1280 plan panel open: Tab from entry skips the 8 plan buttons to the chips; Shift+Tab returns", async ({ page }) => {
+    await startGenerated(page);
+    await pauseLecture(page);
+    await enterSelection(page);
+    // 讲义计划面板开着，DOM 顺序上它的 8 个按钮排在入口和芯片之间。
+    const between = await page.evaluate(() => {
+      const all = [...document.querySelectorAll<HTMLElement>("button")].filter(
+        (e) => e.tabIndex >= 0 && e.offsetParent !== null,
+      );
+      const i = all.indexOf(document.querySelector<HTMLElement>("[data-ask-entry]")!);
+      const j = all.findIndex((e) => e.hasAttribute("data-ask-shortcut"));
+      return all.slice(i + 1, j).filter((e) => e.closest("aside")).length;
+    });
+    expect(between).toBe(8);
+    const entryBtn = entry(page).first();
+    await entryBtn.focus();
+    await page.keyboard.press("Tab");
+    await expect(page.locator('[data-ask-bottom-bar] [data-ask-shortcut][tabindex="0"]')).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(entryBtn).toBeFocused();
+  });
+
   test("S5-chip390 1280: chip row position unchanged", async ({ page }) => {
     await startGenerated(page);
     await pauseLecture(page);
