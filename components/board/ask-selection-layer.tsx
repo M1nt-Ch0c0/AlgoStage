@@ -1413,6 +1413,9 @@ function AskSelectionLayerActive({
           suppressDrawRef.current = false;
           setRubberBand(null);
           const selected = commitBand(settled, settledEnd);
+          if (selected && openingChipRef) {
+            openingChipRef.current = null;
+          }
           if (!selected && pending.pointerType === "touch") {
             suppressClickUntilRef.current = null;
             touchCompletedSelectionRef.current = false;
@@ -1532,6 +1535,9 @@ function AskSelectionLayerActive({
       originRef.current = null;
       setRubberBand(null);
       const selected = commitBand(origin, current);
+      if (selected && openingChipRef) {
+        openingChipRef.current = null;
+      }
       if (selected && event.pointerType === "touch") {
         suppressClickUntilRef.current = event.timeStamp + 400;
         touchCompletedSelectionRef.current = true;

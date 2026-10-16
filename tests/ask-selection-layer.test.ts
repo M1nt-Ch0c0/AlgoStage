@@ -703,6 +703,105 @@ describe("AskSelectionLayer", () => {
     entry.remove();
   });
 
+  test("点选芯片后再框选提交：取消提问后焦点不回到芯片（按已有 fallback 聚焦选区目标）", async () => {
+    await render();
+    const chip = layer().querySelector<HTMLButtonElement>('[data-ask-shortcut="subtitle"]');
+    expect(chip).not.toBeNull();
+
+    await act(async () => {
+      chip!.click();
+    });
+    expect(usePlayerStore.getState().askPhase).toBe("drafting");
+
+    // 框选覆盖 subtitle + step 区域并提交
+    await gesture(20, 12, 120, 36);
+    expect(usePlayerStore.getState().selection?.mode).toBe("region");
+    expect(usePlayerStore.getState().askPhase).toBe("drafting");
+
+    const panel = document.createElement("div");
+    panel.setAttribute("data-ask-panel", "");
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.setAttribute("data-ask-cancel", "");
+    cancel.textContent = "取消";
+    cancel.addEventListener("click", () => {
+      usePlayerStore.getState().closeAskPanel();
+    });
+    panel.append(cancel);
+    document.body.append(panel);
+
+    try {
+      cancel.focus();
+      expect(document.activeElement).toBe(cancel);
+
+      await act(async () => {
+        cancel.click();
+      });
+      expect(usePlayerStore.getState().askPhase).toBe("selecting");
+      await flushFocus();
+
+      const restoredChip = document.querySelector<HTMLElement>('[data-ask-shortcut="subtitle"]');
+      expect(document.activeElement).not.toBe(restoredChip);
+      const target = stage.querySelector<HTMLElement>('[data-ask-id="subtitle:s1"]');
+      expect(document.activeElement).toBe(target);
+    } finally {
+      panel.remove();
+    }
+  });
+
+  test("先后点选捷径 A 和捷径 B：取消提问后焦点回到捷径 B", async () => {
+    await render();
+    const chipA = layer().querySelector<HTMLButtonElement>('[data-ask-shortcut="subtitle"]');
+    expect(chipA).not.toBeNull();
+
+    await act(async () => {
+      chipA!.click();
+    });
+    expect(usePlayerStore.getState().askPhase).toBe("drafting");
+
+    await act(async () => {
+      usePlayerStore.setState({ askPhase: "selecting" });
+    });
+    const chipB = layer().querySelector<HTMLButtonElement>('[data-ask-shortcut="step"]');
+    expect(chipB).not.toBeNull();
+
+    await act(async () => {
+      chipB!.click();
+    });
+    expect(usePlayerStore.getState().askPhase).toBe("drafting");
+
+    const panel = document.createElement("div");
+    panel.setAttribute("data-ask-panel", "");
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.setAttribute("data-ask-cancel", "");
+    cancel.textContent = "取消";
+    cancel.addEventListener("click", () => {
+      usePlayerStore.getState().closeAskPanel();
+    });
+    panel.append(cancel);
+    document.body.append(panel);
+
+    try {
+      cancel.focus();
+      expect(document.activeElement).toBe(cancel);
+
+      await act(async () => {
+        cancel.click();
+      });
+      expect(usePlayerStore.getState().askPhase).toBe("selecting");
+      await flushFocus();
+
+      const restoredChipA = document.querySelector<HTMLElement>('[data-ask-shortcut="subtitle"]');
+      const restoredChipB = document.querySelector<HTMLElement>('[data-ask-shortcut="step"]');
+      expect(restoredChipB).not.toBeNull();
+      expect(document.activeElement).toBe(restoredChipB);
+      expect(document.activeElement).not.toBe(restoredChipA);
+    } finally {
+      panel.remove();
+    }
+  });
+
   test("Esc 关面板后焦点回到选区原目标", async () => {
     const target = await openDraftOnStep();
     document.body.tabIndex = -1;
