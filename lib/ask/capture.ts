@@ -553,6 +553,14 @@ export async function captureStage(
           while (performance.now() - t < ms) {
             /* busy */
           }
+          // End of the same stall. The 390 cancel spec measures the cancel
+          // pointerdown against [ASK_TEST_STALL_HOOK, ASK_TEST_STALL_HOOK_END].
+          performance.mark("ASK_TEST_STALL_HOOK_END");
+          performance.measure(
+            "ASK_TEST_STALL_HOOK",
+            "ASK_TEST_STALL_HOOK",
+            "ASK_TEST_STALL_HOOK_END",
+          );
         }
         const rendered = await mod.domToCanvas(container, {
           font: false,

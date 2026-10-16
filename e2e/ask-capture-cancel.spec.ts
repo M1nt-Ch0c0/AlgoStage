@@ -1002,6 +1002,10 @@ function installNaturalCancel(width: number, touch: boolean) {
 
     for (let i = 1; i <= 10; i += 1) {
       test(`press 取消 within 150ms of submit run ${i}`, async ({ page }) => {
+        // 390 records the cancel pointerdown against the stall mark. That
+        // mark exists only in a hook build; a release build has no interval
+        // to assert against.
+        if (width === 390) requireStallHook();
         test.setTimeout(60_000);
         let askRequests = 0;
         let routeSawAbort = false;
@@ -1036,21 +1040,81 @@ function installNaturalCancel(width: number, touch: boolean) {
         const client = await page.context().newCDPSession(page);
         if (!touch) await page.mouse.move(cancelAt.x, cancelAt.y);
 
-        // Issue time of the cancel, taken before either gesture is awaited.
-        // On touch, pressAt is touchscreen.tap and down() is one CDP
-        // touchStart. Both return only after the renderer dequeues them.
-        // A capture stall holds that return, so a stamp after the await
-        // measures the stall (the 390 hook runs that exceeded 150ms).
-        const submittedAt = Date.now();
-        const submitted = pressAt(page, submitAt.x, submitAt.y, touch);
-        const pressedAt = Date.now();
-        expect(pressedAt - submittedAt).toBeLessThanOrEqual(150);
-        await submitted;
-        // After submit: the chips are already on screen, so an add or a
-        // remove from here is a flicker. The observer ignores a removal
-        // that is the whole panel unmounting on a successful cancel.
+        // Capture-phase stamps for both pointerdowns. event.timeStamp is the
+        // renderer clock, which is what the stall marks use. The listener
+        // is installed before either gesture so the submit press is included.
+        await page.evaluate(() => {
+          const win = window as unknown as { __askPointerDownTs?: number[] };
+          win.__askPointerDownTs = [];
+          document.addEventListener(
+            "pointerdown",
+            (event) => {
+              win.__askPointerDownTs?.push(event.timeStamp);
+            },
+            true,
+          );
+        });
+        // Chips are already on screen. An add or a remove from here is a
+        // flicker. The observer ignores a removal that is the whole panel
+        // unmounting on a successful cancel.
         await installChipHintObserver(page);
-        await down(page, client, cancelAt.x, cancelAt.y, touch);
+
+        // Do not await the submit before the cancel. On 390, pressAt is
+        // touchscreen.tap and returns only after the renderer dequeues it,
+        // which is after the capture stall. The cancel mouse.down() is fired
+        // in the same turn, so its pointerdown lands inside the stall.
+        const submitted = pressAt(page, submitAt.x, submitAt.y, touch);
+        const cancelDown = page.mouse.down();
+        await Promise.all([submitted, cancelDown]);
+
+        if (width === 390) {
+          const stamp = await page.evaluate(() => {
+            const marks = performance.getEntriesByName("ASK_TEST_STALL_HOOK", "mark");
+            const measures = performance.getEntriesByName("ASK_TEST_STALL_HOOK", "measure");
+            const start = marks[0]?.startTime;
+            const duration = measures[0]?.duration;
+            const downs = (window as unknown as { __askPointerDownTs?: number[] }).__askPointerDownTs ?? [];
+            return { start, duration, downs };
+          });
+          expect(stamp.start, "stall mark").toEqual(expect.any(Number));
+          expect(stamp.duration, "stall measure").toBeGreaterThan(0);
+          // downs[0] is the submit pointerdown, downs[1] is the cancel.
+          const cancelTs = stamp.downs[1];
+          expect(cancelTs, "cancel pointerdown timeStamp").toEqual(expect.any(Number));
+          const stallStart = stamp.start as number;
+          const stallEnd = stallStart + (stamp.duration as number);
+          expect(cancelTs).toBeGreaterThanOrEqual(stallStart);
+          expect(cancelTs).toBeLessThanOrEqual(stallEnd);
+          // The panel unmounts on the frame after the stall. That close is
+          // the paint this gate reads, and it is under 100ms from stall end.
+          const closed = await page.evaluate(async () => {
+            const end = performance.getEntriesByName("ASK_TEST_STALL_HOOK_END", "mark")[0]?.startTime;
+            const t0 = typeof end === "number" ? end : performance.now();
+            const gone = () => document.querySelector("[data-ask-panel]") == null;
+            if (gone()) return performance.now() - t0;
+            return new Promise<number>((resolve) => {
+              const started = performance.now();
+              const tick = () => {
+                if (gone()) {
+                  resolve(performance.now() - t0);
+                  return;
+                }
+                if (performance.now() - started > 100) {
+                  resolve(performance.now() - t0);
+                  return;
+                }
+                requestAnimationFrame(tick);
+              };
+              requestAnimationFrame(tick);
+            });
+          });
+          expect(closed).toBeLessThan(100);
+          console.log(`CANCEL390 round=${i} paint=${Math.round(closed)}ms`);
+          // The press landed inside the stall, so the ask never goes out.
+          expect(askRequests).toBe(0);
+          await expect(page.locator("[data-ask-panel]")).toHaveCount(0);
+        }
+
         await up(page, client, cancelAt.x, cancelAt.y, touch);
 
         // Either the press cancelled before send, or the request went out and
