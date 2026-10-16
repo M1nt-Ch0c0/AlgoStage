@@ -1430,8 +1430,65 @@ function installWaitingPhaseCancel(width: number, touch: boolean, throttle: numb
           await expect.poll(() => seen, { timeout: 15_000 }).toBe(true);
           await expect(page.locator("[data-ask-waiting]")).toBeVisible();
           await page.waitForTimeout(300);
+          // 390: sample the selection box and the bottom chip bar on the cancel
+          // frame (first rAF after pointerup/touchend) and the next 2 rAFs.
+          if (width === 390) {
+            await page.evaluate(() => {
+              type Box = { x: number; y: number; width: number; height: number };
+              const win = window as unknown as {
+                __rects390?: { selection: Box | null; bar: Box | null }[];
+              };
+              delete win.__rects390;
+              const read = (selector: string): Box | null => {
+                const box = document.querySelector(selector)?.getBoundingClientRect();
+                return box ? { x: box.x, y: box.y, width: box.width, height: box.height } : null;
+              };
+              const onEnd = () => {
+                document.removeEventListener("pointerup", onEnd, true);
+                document.removeEventListener("touchend", onEnd, true);
+                const samples: { selection: Box | null; bar: Box | null }[] = [];
+                const tick = () => {
+                  samples.push({
+                    selection: read("[data-ask-selection]"),
+                    bar: read("[data-ask-bottom-bar]"),
+                  });
+                  if (samples.length < 3) requestAnimationFrame(tick);
+                  else win.__rects390 = samples;
+                };
+                requestAnimationFrame(tick);
+              };
+              document.addEventListener("pointerup", onEnd, true);
+              document.addEventListener("touchend", onEnd, true);
+            });
+          }
           await down(page, client, cancelAt.x, cancelAt.y, touch);
           await up(page, client, cancelAt.x, cancelAt.y, touch);
+          if (width === 390) {
+            type Box = { x: number; y: number; width: number; height: number };
+            type Rects = { selection: Box | null; bar: Box | null }[];
+            const readRects = () =>
+              page.evaluate(() => {
+                const win = window as unknown as { __rects390?: Rects };
+                return win.__rects390 ?? null;
+              });
+            await expect.poll(readRects, { timeout: 2_000 }).not.toBeNull();
+            const rects = await readRects();
+            console.log(`RECTS390 ${JSON.stringify(rects)}`);
+            expect(rects, "RECTS390 samples").toHaveLength(3);
+            const near = (a: Box, b: Box) =>
+              Math.abs(a.x - b.x) <= 0.5 &&
+              Math.abs(a.y - b.y) <= 0.5 &&
+              Math.abs(a.width - b.width) <= 0.5 &&
+              Math.abs(a.height - b.height) <= 0.5;
+            for (const key of ["selection", "bar"] as const) {
+              const boxes = (rects ?? []).map((sample) => sample[key]);
+              const [a, b, c] = boxes;
+              expect(a != null && b != null && c != null, `${key} present on all 3 frames`).toBe(true);
+              if (a && b && c) {
+                expect(near(a, b) && near(a, c), `${key} rect stable across the cancel frames`).toBe(true);
+              }
+            }
+          }
 
           await expect
             .poll(() => (failedTexts.length > 0 || routeSawAbort ? "aborted" : "pending"), { timeout: 10_000 })
