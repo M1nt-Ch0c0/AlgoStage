@@ -164,7 +164,16 @@ async function dragOnSubtitle(page: Page) {
   await expect(page.locator("[data-ask-panel]")).toBeVisible();
 }
 
-type AskImage = { mime: string; dataBase64: string };
+type AskImage = {
+  mime: string;
+  dataBase64: string;
+  width?: number;
+  height?: number;
+  rect?: unknown;
+  scale?: number;
+  dpr?: number;
+  [key: string]: unknown;
+};
 
 const OUT_DIR = process.env.S4_OUT_DIR ?? "/workspace/logs/gavin-s4-capture";
 const LABEL = process.env.S4_LABEL ?? "pixels";
@@ -198,7 +207,38 @@ async function capturePixels(page: Page, width: number) {
 
   await page.route("**/api/lecture/ask", async (route) => {
     const body = route.request().postDataJSON() as { image?: AskImage | null };
-    if (body.image && typeof body.image.dataBase64 === "string") image = body.image;
+    if (body.image && typeof body.image.dataBase64 === "string") {
+      image = body.image;
+      // Extra dump, before the response. The asserts below are unchanged.
+      // captureStage passes the [data-ask-stage] element to domToCanvas, and
+      // that attribute is on the same element at 22a4807.
+      mkdirSync(OUT_DIR, { recursive: true });
+      await page.screenshot({
+        path: path.join(OUT_DIR, `${LABEL}-${width}-viewport.png`),
+        fullPage: false,
+      });
+      const { dataBase64, ...imageMeta } = body.image;
+      const rawExt = body.image.mime === "image/webp" ? "webp" : "jpg";
+      writeFileSync(
+        path.join(OUT_DIR, `${LABEL}-${width}-raw.${rawExt}`),
+        Buffer.from(dataBase64, "base64"),
+      );
+      const stageBox = await page.evaluate(() => {
+        const stage = document.querySelector("[data-ask-stage]");
+        const box = stage?.getBoundingClientRect();
+        return {
+          selector: "[data-ask-stage]",
+          devicePixelRatio: window.devicePixelRatio,
+          scrollX: window.scrollX,
+          scrollY: window.scrollY,
+          rect: box ? { x: box.x, y: box.y, w: box.width, h: box.height } : null,
+        };
+      });
+      writeFileSync(
+        path.join(OUT_DIR, `${LABEL}-${width}-meta.json`),
+        JSON.stringify({ image: imageMeta, ...stageBox }, null, 2),
+      );
+    }
     received();
     await route.fulfill({
       status: 200,
