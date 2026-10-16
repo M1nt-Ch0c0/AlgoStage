@@ -2440,8 +2440,8 @@ test.describe("390 selection flow", () => {
       await expect(page.locator("[data-ask-panel]")).toHaveCount(0);
 
       await installPointerdownClock(page);
+      // Back-to-back taps: nothing awaited between them (chip position measured in warm-up above).
       await page.touchscreen.tap(tapX, tapY);
-      await page.waitForSelector("[data-ask-panel] [data-ask-shortcut='subtitle']");
       await page.touchscreen.tap(chipBox.x + chipBox.width / 2, chipBox.y + chipBox.height / 2);
       const downs = await readPointerdownClock(page);
       expect(downs.length).toBeGreaterThanOrEqual(2);
