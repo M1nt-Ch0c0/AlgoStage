@@ -6,6 +6,7 @@ import type { AskTimingProbe } from "../lib/ask/ask-timing";
 /**
  * S4-a：提问提交时 captureStage（modern-screenshot domToCanvas）的性能测量。
  * 整组跳过，除非 S4_PERF=1。不进日常 e2e。
+ * 截图、summary json、trace zip 仅在 S4_PERF_DUMP=1 时写入。
  * 帮手从 e2e/ask-selection.spec.ts 原样复制，不 import。
  */
 
@@ -235,7 +236,9 @@ function abScript(): string {
   return `window.__ASK_AB__ = ${JSON.stringify(flags)};`;
 }
 
-const OUT_DIR = process.env.S4_OUT_DIR ?? "/workspace/logs/gavin-s4-capture";
+/** Screenshots, summary json, and trace zips. Default off: measurements only. */
+const DUMP = process.env.S4_PERF_DUMP === "1";
+const OUT_DIR = process.env.S4_OUT_DIR ?? path.join("test-results", "s4-perf");
 const LABEL = process.env.S4_LABEL ?? "run";
 /** CPU throttle for the capture window. Default 4. */
 const S4_RATE = Number(process.env.S4_RATE ?? "4");
@@ -307,16 +310,19 @@ async function measureCapture(page: Page, width: number) {
   const client = await page.context().newCDPSession(page);
   await client.send("Emulation.setCPUThrottlingRate", { rate: S4_RATE });
 
-  mkdirSync(OUT_DIR, { recursive: true });
-  const tracePath = path.join(OUT_DIR, `${LABEL}-${width}.trace.zip`);
   // playwright.config.ts sets trace: "retain-on-failure", which already called tracing.start.
-  // A second start throws "Tracing has already been started". Stop that session (discard the
-  // pre-click chunk), then start again so the submit window is the recorded trace.
-  const priorChunk = path.join(OUT_DIR, `.${LABEL}-${width}.prior.trace.zip`);
-  await page.context().tracing.stopChunk({ path: priorChunk });
-  await page.context().tracing.stop();
-  rmSync(priorChunk, { force: true });
-  await page.context().tracing.start({ screenshots: true, snapshots: true, title: `s4-capture-${width}` });
+  // A second start throws "Tracing has already been started". When dumping, stop that session
+  // (discard the pre-click chunk), then start again so the submit window is the recorded trace.
+  let tracePath: string | null = null;
+  if (DUMP) {
+    mkdirSync(OUT_DIR, { recursive: true });
+    tracePath = path.join(OUT_DIR, `${LABEL}-${width}.trace.zip`);
+    const priorChunk = path.join(OUT_DIR, `.${LABEL}-${width}.prior.trace.zip`);
+    await page.context().tracing.stopChunk({ path: priorChunk });
+    await page.context().tracing.stop();
+    rmSync(priorChunk, { force: true });
+    await page.context().tracing.start({ screenshots: true, snapshots: true, title: `s4-capture-${width}` });
+  }
 
   try {
     await page.evaluate(() => {
@@ -328,9 +334,11 @@ async function measureCapture(page: Page, width: number) {
 
     await panel.locator("[data-ask-submit]").click();
     await page.waitForTimeout(50);
-    await page.screenshot({
-      path: path.join(OUT_DIR, `${LABEL}-${width}-after-click.png`),
-    });
+    if (DUMP) {
+      await page.screenshot({
+        path: path.join(OUT_DIR, `${LABEL}-${width}-after-click.png`),
+      });
+    }
 
     await asked;
     await page.waitForTimeout(500);
@@ -380,7 +388,9 @@ async function measureCapture(page: Page, width: number) {
       phases,
     };
 
-    writeFileSync(path.join(OUT_DIR, `${LABEL}-${width}.json`), `${JSON.stringify(summary, null, 2)}\n`);
+    if (DUMP) {
+      writeFileSync(path.join(OUT_DIR, `${LABEL}-${width}.json`), `${JSON.stringify(summary, null, 2)}\n`);
+    }
     console.log(
       JSON.stringify({
         label: LABEL,
@@ -411,12 +421,14 @@ async function measureCapture(page: Page, width: number) {
       `[s4-capture] ${LABEL} ${width}px longest=${longestTaskMs.toFixed(1)}ms count=${longTasks.length} elapsed=${requestElapsedMs.toFixed(1)}ms image=${imageAttached} encoder=${encoder}`,
     );
 
-    await page.screenshot({
-      path: path.join(OUT_DIR, `${LABEL}-${width}-end.png`),
-    });
+    if (DUMP) {
+      await page.screenshot({
+        path: path.join(OUT_DIR, `${LABEL}-${width}-end.png`),
+      });
+    }
   } finally {
     await client.send("Emulation.setCPUThrottlingRate", { rate: 1 }).catch(() => {});
-    await page.context().tracing.stop({ path: tracePath });
+    if (tracePath) await page.context().tracing.stop({ path: tracePath });
   }
 }
 
@@ -479,11 +491,13 @@ async function measureCancelPaint(page: Page, width: number) {
     cancelPaintAfterReleaseMs: phases?.cancelPaintAfterReleaseMs ?? null,
     phases,
   };
-  mkdirSync(OUT_DIR, { recursive: true });
-  writeFileSync(
-    path.join(OUT_DIR, `${LABEL}-${width}-cancel.json`),
-    `${JSON.stringify(summary, null, 2)}\n`,
-  );
+  if (DUMP) {
+    mkdirSync(OUT_DIR, { recursive: true });
+    writeFileSync(
+      path.join(OUT_DIR, `${LABEL}-${width}-cancel.json`),
+      `${JSON.stringify(summary, null, 2)}\n`,
+    );
+  }
   console.log(
     JSON.stringify({
       label: LABEL,
