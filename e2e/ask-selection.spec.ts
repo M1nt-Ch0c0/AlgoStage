@@ -530,6 +530,29 @@ test.describe("1280 selection flow", () => {
     await expect(page.locator("[role=status]").first()).toHaveText(chipText!);
   });
 
+  test("1280: cancel from drafting returns focus to opening chip", async ({ page }) => {
+    await startGenerated(page);
+    await pauseLecture(page);
+    await enterSelection(page);
+
+    const chip = page.locator('[data-ask-bottom-bar] [data-ask-shortcut="subtitle"]');
+    await expect(chip).toBeVisible();
+    await chip.click();
+
+    const panel = page.locator("[data-ask-panel]");
+    await expect(panel).toBeVisible();
+
+    await panel.locator("[data-ask-cancel]").click();
+    await expect(panel).toHaveCount(0);
+
+    const activeMatchesOpeningChip = await page.evaluate(() => {
+      const active = document.activeElement;
+      const openedChip = document.querySelector('[data-ask-bottom-bar] [data-ask-shortcut="subtitle"]');
+      return Boolean(openedChip && active === openedChip);
+    });
+    expect(activeMatchesOpeningChip).toBe(true);
+  });
+
   test("37. stepDisabled and busy grey copy, entry stays focusable", async ({ page }) => {
     const releaseAsk: { current: (() => void) | null } = { current: null };
     await mockAsk(page, async (route) => {

@@ -459,6 +459,16 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
   // 上一阶段在 effect 里更新。取消的焦点还原由 finishAskCancelSync 拥有；
   // 这里只留下 drafting 的 status 播报。
   const previousPhaseRef = useRef(askPhase);
+  const openingChipRef = useRef<{
+    key?: string;
+    element?: HTMLElement | null;
+  } | null>(null);
+
+  useEffect(() => {
+    if (askPhase === "idle") {
+      openingChipRef.current = null;
+    }
+  }, [askPhase]);
 
   // Selection mode pays for the encode worker up front, on an idle callback,
   // so the first capture reuses it. The callback is not the submit task and
@@ -542,6 +552,7 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
       stepId={steps[currentIndex]?.id ?? ""}
       setAskSelection={setAskSelection}
       clearAskSelection={clearAskSelection}
+      openingChipRef={openingChipRef}
     />
   );
 }
@@ -555,6 +566,7 @@ function AskSelectionLayerActive({
   stepId,
   setAskSelection,
   clearAskSelection,
+  openingChipRef,
 }: AskSelectionLayerProps & {
   askPhase: string;
   active: boolean;
@@ -562,6 +574,10 @@ function AskSelectionLayerActive({
   stepId: string;
   setAskSelection: (selection: AskSelectionSummary) => void;
   clearAskSelection: () => void;
+  openingChipRef?: React.MutableRefObject<{
+    key?: string;
+    element?: HTMLElement | null;
+  } | null>;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const pointersRef = useRef<Map<number, PointerSample>>(new Map());
@@ -1714,6 +1730,9 @@ function AskSelectionLayerActive({
                             dragStartedRef.current = false;
                             return;
                           }
+                          if (openingChipRef) {
+                            openingChipRef.current = { key: item.key, element: event.currentTarget };
+                          }
                           setActiveShortcut(index);
                           pickShortcut(item.key);
                         }}
@@ -1737,6 +1756,9 @@ function AskSelectionLayerActive({
                             event.preventDefault();
                             event.stopPropagation();
                             if (event.repeat) return;
+                            if (openingChipRef) {
+                              openingChipRef.current = { key: item.key, element: event.currentTarget };
+                            }
                             setActiveShortcut(index);
                             pickShortcut(item.key);
                             return;
