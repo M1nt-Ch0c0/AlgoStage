@@ -2898,32 +2898,35 @@ test.describe("390 selection flow", () => {
             const codeEl = document.querySelector<HTMLElement>('[data-ask-stage] [data-ask-target="code"]');
             if (!codeEl) throw new Error("code element not found");
 
-            return new Promise<{ startX: number; startY: number }>((resolve) => {
+            return new Promise<{ startX: number; startY: number }>((resolve, reject) => {
               let prevScroll = scroller.scrollTop || window.scrollY;
               const check = () => {
                 const cur = scroller.scrollTop || window.scrollY;
                 if (cur !== prevScroll) {
                   const box = codeEl.getBoundingClientRect();
-                  const hb = document.querySelector('header')?.getBoundingClientRect().bottom ?? 0;
+                  const headerEl = document.querySelector('header');
+                  const hbLive = headerEl?.getBoundingClientRect().bottom ?? 0;
+                  const headerBand = Math.max(0, hbLive, headerEl instanceof HTMLElement ? headerEl.offsetHeight : 0);
+                  const topMin = headerBand + 4;
                   const bottomBarTop = document.querySelector('[data-ask-bottom-bar]')?.getBoundingClientRect().top ?? innerHeight;
                   const lines = document.querySelectorAll<HTMLElement>(".monaco-editor .line-numbers");
                   for (const ln of lines) {
                     const r = ln.getBoundingClientRect();
                     const startX = Math.round(box.left + 60);
                     const startY = Math.round(r.top + r.height / 2);
+                    if (startY < 0 || startY >= innerHeight) continue;
                     const elAtPoint = document.elementFromPoint(startX, startY);
                     if (
                       r.height > 0 &&
-                      r.top >= hb + 4 &&
+                      r.top >= topMin &&
+                      r.top >= 0 &&
                       r.bottom <= bottomBarTop - 4 &&
                       r.top >= box.top &&
                       r.bottom <= box.bottom &&
-                      !elAtPoint?.closest('header')
+                      !elAtPoint?.closest('header') &&
+                      (elAtPoint?.closest('[data-ask-layer]') || elAtPoint?.closest('.monaco-editor') || elAtPoint?.closest('[data-ask-target="code"]'))
                     ) {
-                      resolve({
-                        startX,
-                        startY,
-                      });
+                      resolve({ startX, startY });
                       return;
                     }
                   }
@@ -2932,6 +2935,7 @@ test.describe("390 selection flow", () => {
                 requestAnimationFrame(check);
               };
               requestAnimationFrame(check);
+              setTimeout(() => reject(new Error("N2 pick: no in-viewport line below header")), 3000);
             });
           });
 
