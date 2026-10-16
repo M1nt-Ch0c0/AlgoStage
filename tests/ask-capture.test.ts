@@ -802,6 +802,59 @@ describe("lib/ask/capture", () => {
       }));
     });
 
+    it("records clone, embed, svg, and raster phases when the timing probe is installed", async () => {
+      const child = document.createElement("span");
+      const nested = document.createElement("em");
+      child.append(nested);
+      container.append(child);
+
+      const probe: {
+        captureCloneMs?: number;
+        captureEmbedMs?: number;
+        captureSvgMs?: number;
+        captureRasterMs?: number;
+        captureSourceNodes?: number;
+        captureClonedNodes?: number;
+      } = {};
+      window.__ASK_TIMING__ = probe;
+
+      const order: string[] = [];
+      domToCanvasMock.mockImplementation(async (_node: unknown, options: {
+        onCloneEachNode?: () => void;
+        onCloneNode?: () => void;
+        onEmbedNode?: () => void;
+        onCreateForeignObjectSvg?: () => void;
+      }) => {
+        options.onCloneEachNode?.();
+        options.onCloneEachNode?.();
+        options.onCloneEachNode?.();
+        order.push("each");
+        options.onCloneNode?.();
+        order.push("clone");
+        options.onEmbedNode?.();
+        order.push("embed");
+        options.onCreateForeignObjectSvg?.();
+        order.push("svg");
+        return sourceCanvas;
+      });
+
+      const res = await captureStage(container, baseSel);
+      expect(res.ok).toBe(true);
+      expect(order).toEqual(["each", "clone", "embed", "svg"]);
+      expect(probe.captureCloneMs).toEqual(expect.any(Number));
+      expect(probe.captureEmbedMs).toEqual(expect.any(Number));
+      expect(probe.captureSvgMs).toEqual(expect.any(Number));
+      expect(probe.captureRasterMs).toEqual(expect.any(Number));
+      expect(probe.captureCloneMs).toBeGreaterThanOrEqual(0);
+      expect(probe.captureEmbedMs).toBeGreaterThanOrEqual(0);
+      expect(probe.captureSvgMs).toBeGreaterThanOrEqual(0);
+      expect(probe.captureRasterMs).toBeGreaterThanOrEqual(0);
+      expect(probe.captureClonedNodes).toBe(3);
+      expect(probe.captureSourceNodes).toBe(container.querySelectorAll("*").length);
+
+      delete window.__ASK_TIMING__;
+    });
+
     it("calls domToCanvas with font:false, scale:1, and a filter that drops non-intersecting / monaco / iframe / video", async () => {
       const hitRect = () =>
         ({ left: 20, top: 30, width: 10, height: 10, right: 30, bottom: 40, x: 20, y: 30, toJSON() {} }) as DOMRect;

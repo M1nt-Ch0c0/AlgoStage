@@ -22,7 +22,15 @@ export type AskTimingPhase =
   | "postToWorkerMs"
   | "encodeMs"
   | "settleMs"
-  | "preFetchMs";
+  | "preFetchMs"
+  /** domToCanvas start → onCloneNode (clone tree and computed-style inlining). */
+  | "captureCloneMs"
+  /** onCloneNode → onEmbedNode (fonts and images embedded). */
+  | "captureEmbedMs"
+  /** onEmbedNode → onCreateForeignObjectSvg. */
+  | "captureSvgMs"
+  /** domToCanvas start → the call resolved (raster). */
+  | "captureRasterMs";
 
 export type AskTimingProbe = {
   /** performance.now() at the submit handler entry. */
@@ -63,6 +71,18 @@ export type AskTimingProbe = {
   encodeMs?: number;
   settleMs?: number;
   preFetchMs?: number;
+  /** domToCanvas start → onCloneNode. */
+  captureCloneMs?: number;
+  /** onCloneNode → onEmbedNode. */
+  captureEmbedMs?: number;
+  /** onEmbedNode → onCreateForeignObjectSvg. */
+  captureSvgMs?: number;
+  /** domToCanvas start → the call resolved. */
+  captureRasterMs?: number;
+  /** Elements under the capture container (`querySelectorAll("*")`). */
+  captureSourceNodes?: number;
+  /** Times modern-screenshot called onCloneEachNode. */
+  captureClonedNodes?: number;
 };
 
 declare global {

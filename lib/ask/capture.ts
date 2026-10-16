@@ -614,6 +614,21 @@ export async function captureStage(
             "ASK_TEST_STALL_HOOK_END",
           );
         }
+        // Segment the domToCanvas task. modern-screenshot 4.7 calls
+        // onCloneEachNode per cloned node, onCloneNode once the clone tree
+        // (including computed-style inlining) is built, onEmbedNode after
+        // fonts and images are embedded, and onCreateForeignObjectSvg once
+        // the svg exists. Durations are relative to this call. markAskPhase
+        // no-ops unless the probe is installed. The node counts are not
+        // durations, so they are written on that same probe.
+        const domToCanvasStartedAt = performance.now();
+        let cloneDoneAt = domToCanvasStartedAt;
+        let embedDoneAt = domToCanvasStartedAt;
+        let clonedNodes = 0;
+        const probe = typeof window !== "undefined" ? window.__ASK_TIMING__ : undefined;
+        if (probe && typeof probe === "object") {
+          probe.captureSourceNodes = container.querySelectorAll("*").length;
+        }
         const rendered = await mod.domToCanvas(container, {
           font: false,
           scale: 1,
@@ -630,7 +645,25 @@ export async function captureStage(
           timeout: remaining,
           width: rect.width,
           height: rect.height,
+          onCloneEachNode: () => {
+            clonedNodes += 1;
+          },
+          onCloneNode: () => {
+            cloneDoneAt = performance.now();
+            markAskPhase("captureCloneMs", cloneDoneAt - domToCanvasStartedAt);
+          },
+          onEmbedNode: () => {
+            embedDoneAt = performance.now();
+            markAskPhase("captureEmbedMs", embedDoneAt - cloneDoneAt);
+          },
+          onCreateForeignObjectSvg: () => {
+            markAskPhase("captureSvgMs", performance.now() - embedDoneAt);
+          },
         });
+        markAskPhase("captureRasterMs", performance.now() - domToCanvasStartedAt);
+        if (probe && typeof probe === "object") {
+          probe.captureClonedNodes = clonedNodes;
+        }
         if (timedOut) return timeoutResult();
         if (!rendered || typeof rendered.getContext !== "function") {
           return { ok: false, reason: "RENDER_FAILED", fallbackText };
