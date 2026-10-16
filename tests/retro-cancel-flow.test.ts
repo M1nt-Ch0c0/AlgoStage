@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 /**
- * A press whose pointerdown.timeStamp is at or before the ask fetch, but whose
- * event is dispatched after the fetch, aborts the request. Nothing from that
- * ask stays: no streamed text, no history row, no browser cache entry.
+ * A press that hits 取消 and is dispatched after the ask fetch aborts the
+ * request. Nothing from that ask stays: no streamed text, no history row,
+ * no browser cache entry. The event timeStamp is not the decision.
  */
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -162,26 +162,23 @@ async function drainUntilFetch(fetchStarted: Promise<void>) {
       setTimeout(resolve, 1500);
     }),
   ]);
-  for (let frame = 0; frame < 4; frame += 1) {
+  for (let frame = 0; frame < 2; frame += 1) {
     await act(async () => {
       await new Promise<void>((resolve) => {
         requestAnimationFrame(() => resolve());
-      });
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, 0);
       });
     });
   }
   await act(async () => {
     await new Promise<void>((resolve) => {
-      setTimeout(resolve, 60);
+      setTimeout(resolve, 0);
     });
   });
   await pending;
 }
 
 describe("retro-cancelled ask", () => {
-  test("a late pointer event whose timeStamp is before sentAt leaves no history, cache, or streamed text", async () => {
+  test("a press that hits 取消 after the fetch leaves no history, cache, or streamed text", async () => {
     let releaseBody: (() => void) | undefined;
     const bodyGate = new Promise<void>((resolve) => {
       releaseBody = resolve;
@@ -252,9 +249,10 @@ describe("retro-cancelled ask", () => {
     });
     expect(container.textContent ?? "").toContain("这段不该留下来");
 
-    const downTs = sentAt - 30;
+    // The timeStamp is after sentAt on purpose. CDP stamps a stall press
+    // when it is dequeued, which is after the fetch. The hit is what cancels.
     await act(async () => {
-      cancel.dispatchEvent(pointer("pointerdown", downTs, 10, 8));
+      cancel.dispatchEvent(pointer("pointerdown", sentAt + 30, 10, 8));
       cancel.dispatchEvent(pointer("pointerup", sentAt + 40, 12, 9));
     });
     releaseBody?.();

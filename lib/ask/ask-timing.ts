@@ -100,7 +100,7 @@ export function markAskTiming(mark: AskTimingMark, at = now()): void {
 
 /**
  * performance.now() when domToCanvas returned, kept even when the probe is off.
- * The post-capture settle measures its 50ms budget from this instant.
+ * Timing logs still read the gap from this instant. The cancel decision does not.
  */
 let longTaskEndedAt: number | null = null;
 

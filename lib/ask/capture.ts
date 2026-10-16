@@ -7,6 +7,7 @@
 import { ASK_LIMITS } from "@/lib/ask/types";
 import type { AskBBox, AskSelection, AskTarget } from "@/lib/ask/types";
 import { markAskPhase, markAskTiming, noteLongTaskEnded, notePreCapture } from "./ask-timing";
+import { yieldMacrotask } from "./yield-macrotask";
 import { acquireEncodeWorker, retireEncodeWorker } from "./capture-worker";
 import { intersects, normalizeBBox } from "./hit-test";
 import type { EncodeRequest, EncodeResponse } from "./capture-encode";
@@ -21,7 +22,8 @@ export type CaptureFailReason =
   | "NO_CONTEXT"
   | "TOO_LARGE"
   | "TOO_MANY_NODES"
-  | "TIMEOUT";
+  | "TIMEOUT"
+  | "ABORTED";
 
 export type CaptureEncoder = "worker" | "main";
 
@@ -426,7 +428,19 @@ async function encodeOnMainThread(
 export async function captureStage(
   container: HTMLElement | null,
   sel: Pick<AskSelection, "bbox" | "targets">,
-  opts?: { timeoutMs?: number; maxBytes?: number },
+  opts?: {
+    timeoutMs?: number;
+    maxBytes?: number;
+    signal?: AbortSignal;
+    /**
+     * Called when domToCanvas returns, before encode. submit starts its one
+     * macrotask here, so the timer is queued after the long task and a
+     * pointerdown queued during it is dispatched first. The returned promise
+     * is awaited before encode, and signal can abort encode. Capture tests
+     * omit it.
+     */
+    beforeEncode?: () => Promise<void>;
+  },
 ): Promise<CaptureResult> {
   const fallbackText = buildFallbackText(sel.targets);
 
@@ -444,6 +458,8 @@ export async function captureStage(
 
     const timeoutMs = opts?.timeoutMs ?? CAPTURE_DEFAULTS.timeoutMs;
     const maxBytes = opts?.maxBytes ?? CAPTURE_DEFAULTS.maxBytes;
+    const signal = opts?.signal;
+    const beforeEncode = opts?.beforeEncode;
 
     let timedOut = false;
     const startedAt = Date.now();
@@ -459,6 +475,12 @@ export async function captureStage(
     const timeoutResult = (): CaptureResult => ({
       ok: false,
       reason: "TIMEOUT",
+      fallbackText,
+    });
+
+    const abortedResult = (): CaptureResult => ({
+      ok: false,
+      reason: "ABORTED",
       fallbackText,
     });
 
@@ -530,6 +552,17 @@ export async function captureStage(
       noteLongTaskEnded(longTaskEndedAt);
       markAskTiming("longTaskEnd", longTaskEndedAt);
       markAskPhase("domToCanvasMs", longTaskEndedAt - captureStartedAt);
+
+      // The stall is the task that just ended. One yield before encode, and
+      // only one: submit's beforeEncode starts the macrotask now
+      // (scheduler.yield, else setTimeout(0)) and does not yield again after
+      // this returns. A caller that passes neither (the capture tests) gets
+      // that same one macrotask here. A pointerdown queued during the stall
+      // is dispatched during the yield; an abort then skips encode.
+      const yieldForInput = beforeEncode ? beforeEncode() : signal ? Promise.resolve() : yieldMacrotask();
+      await yieldForInput;
+      if (signal?.aborted) return abortedResult();
+      if (timedOut) return timeoutResult();
 
       const scaleX =
         Number.isFinite(rect.width) && rect.width > 0

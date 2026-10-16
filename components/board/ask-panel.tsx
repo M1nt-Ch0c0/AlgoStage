@@ -28,14 +28,13 @@ import {
   markAskPhase,
   markAskPointerDown,
   markAskTiming,
-  msSinceLongTaskEnd,
   noteCancelPaint,
 } from "@/lib/ask/ask-timing";
 import { listenCancelPress } from "@/lib/ask/cancel-press";
 import { captureStage, type CaptureResult } from "@/lib/ask/capture";
 import { createCancelHold } from "@/lib/ask/cancel-hold";
 import { shouldRetroCancel } from "@/lib/ask/retro-cancel";
-import { ASK_INPUT_SETTLE_MS, settleInput } from "@/lib/ask/yield-macrotask";
+import { yieldMacrotask } from "@/lib/ask/yield-macrotask";
 import { usePointerActivate } from "@/lib/ask/use-pointer-activate";
 import { collectAskCandidates, summarizeSelection } from "@/lib/ask/collect-candidates";
 import { getAskCodeMissNotice, subscribeAskCodeMissNotice } from "@/lib/ask/code-editor-registry";
@@ -125,11 +124,6 @@ function clampQuestion(value: string): string {
 }
 
 /**
- * Two animation frames so setPreparing(true) paints the busy 取消 row and
- * the button is pressable before captureStage stalls the main thread.
- * When requestAnimationFrame is missing, one macrotask stands in for both.
- */
-/**
  * Probe mark. Call after the cancelled or idle state is committed, in the
  * same turn as that setState. React 19 flushes the update before the task
  * yields, so the next animation frame is the paint of that state.
@@ -153,6 +147,11 @@ export function noteCancelPaintAfterRelease(): void {
   });
 }
 
+/**
+ * Two animation frames so setPreparing(true) paints the busy 取消 row and
+ * the button is pressable before captureStage stalls the main thread.
+ * When requestAnimationFrame is missing, one macrotask stands in for both.
+ */
 export function yieldPaintFrames(): Promise<void> {
   const raf = globalThis.requestAnimationFrame;
   if (typeof raf !== "function") {
@@ -232,14 +231,30 @@ function AskPanelActive({ stage }: AskPanelProps) {
   const askSessionRef = useRef(0);
   const holdRef = useRef(createCancelHold());
   const holdWaitingRef = useRef(false);
-  /** performance.now() at the ask fetch, keyed by the panel session that sent it. */
-  const sentAtBySessionRef = useRef(new Map<number, number>());
-  /** pointerdown.timeStamp for a press that has not released yet. */
-  const pointerDownTsRef = useRef<number | null>(null);
-  /** pointerId of that press, so a later press does not overwrite its timestamp. */
+  /** Sessions whose ask fetch has already been issued. */
+  const sentSessionsRef = useRef(new Set<number>());
+  /**
+   * The capture-phase listener saw a primary pointerdown whose target is
+   * inside [data-ask-cancel]. This flag is the cancel decision. The event
+   * timeStamp is logged and is not compared to sentAt.
+   */
+  const cancelHitRef = useRef(false);
+  /** pointerId of that press, so a later press does not replace the hit. */
   const pointerDownIdRef = useRef<number | null>(null);
   /** Removes the early pointerdown listener once the press has released. */
   const stopEarlyPressRef = useRef<(() => void) | null>(null);
+  /**
+   * Aborts captureStage between domToCanvas and encode. Armed only while
+   * capture is running, so a press that lands after the fetch does not
+   * abort a controller nobody is listening to.
+   */
+  const captureAbortRef = useRef<AbortController | null>(null);
+  /**
+   * A release that is still on 取消 while capture is running. A slide-off
+   * does not set it. The post-capture yield reads it, because that release
+   * can happen before captureStage is awaiting the signal.
+   */
+  const releasedOnCancelRef = useRef(false);
   const heldAfterSendRef = useRef(false);
   const [holdPressed, setHoldPressed] = useState(false);
   const [heldAfterSend, setHeldAfterSend] = useState(false);
@@ -260,14 +275,14 @@ function AskPanelActive({ stage }: AskPanelProps) {
   }, []);
 
   const retroCancel = useCallback((releasedOnButton: boolean) => {
-    const downTs = pointerDownTsRef.current;
-    pointerDownTsRef.current = null;
+    const hit = cancelHitRef.current;
+    const session = askSessionRef.current;
+    const sent = sentSessionsRef.current.has(session);
+    cancelHitRef.current = false;
     pointerDownIdRef.current = null;
     stopEarlyPress();
-    if (downTs == null) return;
-    const sentAt = sentAtBySessionRef.current.get(askSessionRef.current) ?? null;
-    if (!shouldRetroCancel(downTs, sentAt, releasedOnButton)) return;
-    sentAtBySessionRef.current.delete(askSessionRef.current);
+    if (!shouldRetroCancel(hit, sent, releasedOnButton)) return;
+    sentSessionsRef.current.delete(session);
     retroCancelAsk();
   }, [stopEarlyPress]);
 
@@ -390,30 +405,35 @@ function AskPanelActive({ stage }: AskPanelProps) {
     const session = askSessionRef.current;
     sendingRef.current = true;
     holdRef.current.reset();
-    pointerDownTsRef.current = null;
+    cancelHitRef.current = false;
+    releasedOnCancelRef.current = false;
     pointerDownIdRef.current = null;
     // 新的一次截图开始：上一轮「没截到图」先清掉，这次失败再写回。
     usePlayerStore.setState({ askCaptureFallback: false });
     setPreparing(true);
-    // Record a 取消 press from before capture (and the double rAF) starts.
-    // The button's own listener is attached on the next commit, which is
-    // after a press that lands as the stall ends. This listener only stores
-    // the press timeStamp. It never presses the hold, captures the pointer,
+    // Record a 取消 press from before capture starts. The button's own
+    // listener is attached on the next commit, which is after a press that
+    // lands as the stall ends. This listener only sets the cancel-hit flag
+    // and the pointerId. It never presses the hold, captures the pointer,
     // or releases. The button's own handlers still do that.
-    // It stays up through the fetch: a press whose timeStamp is inside the
-    // settle window can be delivered after hold.wait already resolved to send,
-    // and the release on the button still has to retro-cancel.
+    // It stays up through the fetch: a press that lands after the fetch
+    // still has to abort on release, with no answer left behind.
     stopEarlyPress();
+    // A press that lands during domToCanvas aborts capture before encode.
+    const captureAbort = new AbortController();
+    captureAbortRef.current = captureAbort;
     const stopCancelPress = listenCancelPress(document, {
       onDown: (event) => {
         if (event.button !== 0) return;
         if (askSessionRef.current !== session) return;
         if (!sendingRef.current) return;
         // Keep the first press of this gesture. A later pointerdown must not
-        // replace the timestamp the retro-cancel decision uses.
+        // replace the hit the cancel decision uses.
         if (pointerDownIdRef.current != null) return;
         pointerDownIdRef.current = event.pointerId;
-        pointerDownTsRef.current = event.timeStamp;
+        cancelHitRef.current = true;
+        // Logs only. CDP stamps timeStamp when the renderer dequeues the
+        // event, so it is not compared with sentAt.
         markAskPointerDown(event.timeStamp);
       },
     });
@@ -423,37 +443,62 @@ function AskPanelActive({ stage }: AskPanelProps) {
       // so a press during the stall has a live button to hit.
       // A/B noDoubleRaf skips the two frames and captures in this turn.
       if (!askAb("noDoubleRaf")) await yieldPaintFrames();
+      // One macrotask after domToCanvas returns and before encode or fetch.
+      // captureStage calls beforeEncode at that point and awaits it, so this
+      // is the only yield: it replaces the earlier 50ms settle and the extra
+      // yield rounds. The macrotask is started after the long task, so a
+      // pointerdown queued during it is dispatched and sets the hit flag
+      // before encode. scheduler.yield when it exists, otherwise setTimeout(0).
+      // A/B noSettle skips it.
+      let yieldStarted = 0;
+      const beforeEncode = askAb("noSettle")
+        ? undefined
+        : () => {
+            yieldStarted = performance.now();
+            return yieldMacrotask();
+          };
       let capture: CaptureResult | null;
       try {
-        capture = await captureStage(resolveStage(stage), startSelection);
+        // captureStage calls beforeEncode after domToCanvas and awaits it
+        // before encode, so this is the only yield. It replaces the earlier
+        // 50ms settle and the extra yield rounds. A/B noSettle omits it.
+        capture = await captureStage(resolveStage(stage), startSelection, {
+          signal: captureAbort.signal,
+          beforeEncode,
+        });
       } catch {
         capture = null;
+      } finally {
+        captureAbortRef.current = null;
       }
-      // The 取消 press listener is already attached. One settle, at most
-      // ASK_INPUT_SETTLE_MS measured from the end of the long task (not added
-      // on top of encode), lets a press that landed as the stall ended reach it.
-      const elapsedSinceLongTask = msSinceLongTaskEnd();
-      const settleStarted = performance.now();
-      // A/B noSettle records a zero wait and continues straight to the hold.
-      if (askAb("noSettle")) {
+      if (askAb("noSettle") || yieldStarted === 0) {
         markAskPhase("settleMs", 0);
       } else {
-        await settleInput(elapsedSinceLongTask);
-        markAskPhase(
-          "settleMs",
-          Math.min(ASK_INPUT_SETTLE_MS, performance.now() - settleStarted),
-        );
+        markAskPhase("settleMs", performance.now() - yieldStarted);
+      }
+      // A release that stayed on 取消 during the long task resolved the
+      // hold as cancel before this yield returned. A mock capture ignores
+      // the signal, so the latch is the decision here too. A slide-off
+      // latches send. A press that is still down is not a decision yet:
+      // the hold wait below cancels on release, sends on slide-off, and
+      // sends after 2s while the press stays down.
+      const cancelledBeforeEncode =
+        releasedOnCancelRef.current ||
+        captureAbort.signal.aborted ||
+        holdRef.current.latched(session) === "cancel";
+      if (cancelledBeforeEncode && (capture == null || capture.ok)) {
+        capture = { ok: false, reason: "ABORTED", fallbackText: "" };
       }
       holdWaitingRef.current = true;
       const holdResult = await holdRef.current.wait(session, 2000);
       holdWaitingRef.current = false;
-      if (holdResult === "cancel") {
+      if (holdResult === "cancel" || (capture?.ok === false && capture.reason === "ABORTED")) {
         setPreparing(false);
         usePlayerStore.getState().closeAskPanel();
         // The panel unmounts on this path, so the paint mark cannot wait
         // for an effect. React flushes this commit before the task yields;
         // the next frame, and only that frame, is the paint mark. The
-        // settle wait and the hold wait have already resolved by here.
+        // yield and the hold wait have already resolved by here.
         noteCancelPaintAfterRelease();
         sendingRef.current = false;
         return;
@@ -481,19 +526,26 @@ function AskPanelActive({ stage }: AskPanelProps) {
       usePlayerStore.setState({ askCaptureFallback: failed });
       try {
         await sendAsk(failed ? null : capture, {
-          isCurrent: () => askSessionRef.current === session,
-          onFetch: (sentAt) => {
-            sentAtBySessionRef.current.set(session, sentAt);
+          isCurrent: () => {
+            // A press on 取消 that landed before this check aborts with no
+            // fetch. The button's release still closes the panel.
+            if (cancelHitRef.current && !sentSessionsRef.current.has(session)) return false;
+            return askSessionRef.current === session;
+          },
+          onFetch: (_sentAt) => {
+            // The clock is a log mark inside sendAsk. The cancel decision is
+            // the hit flag, which does not compare it.
+            sentSessionsRef.current.add(session);
           },
         });
       } finally {
         sendingRef.current = false;
         // A press is still down. Leave the listener until that pointer releases
-        // so its timeStamp can still abort the ask that just went out.
+        // so the hit can still abort the ask that just went out.
         if (pointerDownIdRef.current == null) stopEarlyPress();
       }
     } finally {
-      // Capture or settle threw before the fetch. Nothing is in flight.
+      // Capture threw before the fetch. Nothing is in flight.
       if (sendingRef.current) stopEarlyPress();
     }
   }, [stage, markHeldAfterSend, stopEarlyPress]);
@@ -551,12 +603,12 @@ function AskPanelActive({ stage }: AskPanelProps) {
   ) => ({
     onPointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => {
       if (event.button === 0) {
-        // The early document listener may already have stored this press.
-        // Keep that timeStamp: it is the one retro-cancel compares to sentAt.
+        // The early document listener may already have recorded this press.
+        // Keep that hit: it is the one the cancel decision uses.
         // A press the early listener missed (target outside the button) still
         // records here, which is the pre-aa122ae path.
         if (pointerDownIdRef.current !== event.pointerId) {
-          pointerDownTsRef.current = event.timeStamp;
+          cancelHitRef.current = true;
           pointerDownIdRef.current = event.pointerId;
         }
         markAskPointerDown(event.timeStamp);
@@ -583,8 +635,10 @@ function AskPanelActive({ stage }: AskPanelProps) {
         holdRef.current.leave();
         setHoldPressed(false);
         clearHeldAfterSendOffButton();
-        // The gesture left the button. A later release is not a retro-cancel,
+        // The gesture left the button. A later release is not a cancel,
         // and the early listener no longer has a press to remember.
+        cancelHitRef.current = false;
+        releasedOnCancelRef.current = false;
         if (!holdRef.current.isPending(askSessionRef.current)) stopEarlyPress();
       }
       activate.onPointerMove(event);
@@ -615,12 +669,20 @@ function AskPanelActive({ stage }: AskPanelProps) {
       holdRef.current.release(inside);
       setHoldPressed(false);
       if (!inside) clearHeldAfterSendOffButton();
+      // A release that is still on 取消, while capture has not encoded yet,
+      // aborts that capture. A slide-off has already cleared the hit, so it
+      // encodes and sends. A release after the fetch uses retroCancel.
+      if (inside) {
+        releasedOnCancelRef.current = true;
+        captureAbortRef.current?.abort();
+      }
       if (!sentWhileHeld) retroCancel(inside);
       if ((held || sentWhileHeld) && inside) return;
       activate.onPointerUp(event);
     },
     onPointerCancel: (event: ReactPointerEvent<HTMLButtonElement>) => {
-      pointerDownTsRef.current = null;
+      cancelHitRef.current = false;
+      releasedOnCancelRef.current = false;
       pointerDownIdRef.current = null;
       stopEarlyPress();
       holdRef.current.pointerCancel();

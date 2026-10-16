@@ -1121,6 +1121,42 @@ describe("lib/ask/capture", () => {
       vi.unstubAllEnvs();
     });
 
+    it("yields once after domToCanvas and before encode, and an abort there skips encode", async () => {
+      const order: string[] = [];
+      let releaseYield: (() => void) | undefined;
+      domToCanvasMock.mockImplementation(() => {
+        order.push("dom");
+        return Promise.resolve(sourceCanvas);
+      });
+      const bitmap = vi.fn(async () => {
+        order.push("encode");
+        return { close() {} };
+      });
+      vi.stubGlobal("createImageBitmap", bitmap);
+      const controller = new AbortController();
+      const beforeEncode = () =>
+        new Promise<void>((resolve) => {
+          order.push("yield");
+          releaseYield = () => {
+            controller.abort();
+            resolve();
+          };
+        });
+
+      const pending = captureStage(container, baseSel, { signal: controller.signal, beforeEncode });
+      await vi.waitFor(() => {
+        expect(releaseYield).toBeTypeOf("function");
+      });
+      expect(order).toEqual(["dom", "yield"]);
+      expect(bitmap).not.toHaveBeenCalled();
+      releaseYield?.();
+      const res = await pending;
+      expect(res).toMatchObject({ ok: false, reason: "ABORTED" });
+      expect(bitmap).not.toHaveBeenCalled();
+      expect(order).toEqual(["dom", "yield"]);
+      vi.unstubAllGlobals();
+    });
+
     it("calls domToCanvas without a second animation-frame pair", async () => {
       const order: string[] = [];
       const raf = vi.fn((cb: FrameRequestCallback) => {

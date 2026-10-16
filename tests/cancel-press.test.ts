@@ -4,6 +4,7 @@ import {
   eventHitsAskCancel,
   listenCancelPress,
   pointHitsAskCancel,
+  pressTargetsAskCancel,
   type CancelPressEvent,
 } from "../lib/ask/cancel-press";
 
@@ -79,6 +80,29 @@ describe("eventHitsAskCancel", () => {
     } satisfies CancelPressEvent;
     expect(eventHitsAskCancel(event)).toBe(true);
   });
+
+  test("pressTargetsAskCancel is the target closest() check and ignores a path-only hit", () => {
+    const cancel = button();
+    const child = document.createElement("span");
+    cancel.append(child);
+    const other = document.createElement("button");
+    document.body.append(other);
+
+    expect(pressTargetsAskCancel(pointer("pointerdown", cancel, 1) as unknown as CancelPressEvent)).toBe(true);
+    expect(pressTargetsAskCancel(pointer("pointerdown", child, 2) as unknown as CancelPressEvent)).toBe(true);
+    expect(pressTargetsAskCancel(pointer("pointerdown", other, 3) as unknown as CancelPressEvent)).toBe(false);
+    const pathOnly = {
+      timeStamp: 4,
+      button: 0,
+      pointerId: 1,
+      clientX: 0,
+      clientY: 0,
+      target: document.body,
+      composedPath: () => [document.body, cancel],
+    } satisfies CancelPressEvent;
+    expect(pressTargetsAskCancel(pathOnly)).toBe(false);
+    expect(pressTargetsAskCancel({ ...pathOnly, target: null })).toBe(false);
+  });
 });
 
 describe("listenCancelPress", () => {
@@ -137,11 +161,16 @@ describe("listenCancelPress", () => {
       fired.push("click");
     });
 
-    let lastSeen: { timeStamp: number; pointerId: number } | null = null;
+    let lastSeen: { timeStamp: number; pointerId: number; cancelHit: boolean } | null = null;
     const stop = listenCancelPress(document, {
       onDown: (event) => {
-        // The production handler stores only these two fields.
-        lastSeen = { timeStamp: event.timeStamp, pointerId: event.pointerId };
+        // The production handler stores the hit and the pointerId.
+        // timeStamp is kept for timing logs and is not the decision.
+        lastSeen = {
+          timeStamp: event.timeStamp,
+          pointerId: event.pointerId,
+          cancelHit: pressTargetsAskCancel(event),
+        };
       },
     });
 
@@ -163,7 +192,7 @@ describe("listenCancelPress", () => {
     expect(preventDefault).not.toHaveBeenCalled();
     expect(stopPropagation).not.toHaveBeenCalled();
     expect(setPointerCapture).not.toHaveBeenCalled();
-    expect(lastSeen).toEqual({ timeStamp: 40, pointerId: 1 });
+    expect(lastSeen).toEqual({ timeStamp: 40, pointerId: 1, cancelHit: true });
 
     stop();
   });

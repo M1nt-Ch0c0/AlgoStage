@@ -1,10 +1,14 @@
 /**
  * One macrotask so input queued during a main-thread stall (e.g. a 取消 click
  * during capture) runs before the caller continues.
- * Prefers scheduler.yield(); falls back to setTimeout(0).
+ * Prefers scheduler.yield(); falls back to setTimeout(0), a real macrotask,
+ * so a pointerdown already queued on this thread is dispatched first.
  *
  * scheduler.yield is a prioritized continuation and can run ahead of input
- * already queued on the event loop. submit should use yieldToInput instead.
+ * that has not reached the renderer queue yet. A press that has been
+ * dispatched into this thread's queue is visible after this one yield.
+ * The cancel decision is the 取消 hit flag that yield lets the listener set,
+ * not a timestamp compared with sentAt.
  */
 
 type SchedulerYieldHost = {
@@ -19,7 +23,11 @@ type InputScheduling = {
 
 function nextMacrotask(): Promise<void> {
   return new Promise((resolve) => {
-    setTimeout(resolve, 0);
+    // Named so a test can tell this yield from the pre-capture paint timer.
+    function askInputMacrotask() {
+      resolve();
+    }
+    setTimeout(askInputMacrotask, 0);
   });
 }
 

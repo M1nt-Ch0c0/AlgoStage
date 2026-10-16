@@ -1,11 +1,12 @@
 /**
  * Capture-phase pointerdown listener for 取消, attached before capture starts.
- * It records event.timeStamp (and pointerId) for a press whose target is
- * inside [data-ask-cancel]. It does not stop the event, prevent its default,
- * or capture the pointer. The button's own pointerdown, pointer capture,
- * data-pressed, pointerup, and slide-off handling run unchanged. The recorded
- * timestamp feeds retro-cancel (pressTs <= sentAt and a final release on the
- * button aborts) and the hold wait when the button's own handler fires late.
+ * It records a cancel flag when the press target is inside [data-ask-cancel]
+ * (`(event.target as Element | null)?.closest?.('[data-ask-cancel]')`), plus
+ * the pointerId. event.timeStamp is kept for timing logs only and is not the
+ * cancel decision. It does not stop the event, prevent its default, or
+ * capture the pointer. The button's own pointerdown, pointer capture,
+ * data-pressed, pointerup, and slide-off handling run unchanged and own the
+ * hold: release on the button cancels, a slide-off sends.
  */
 
 export const ASK_CANCEL_SELECTOR = "[data-ask-cancel]";
@@ -61,8 +62,19 @@ export function eventHitsAskCancel(event: CancelPressEvent): boolean {
 }
 
 /**
- * Listen for pointerdown in the capture phase so a press that lands before
- * the button's own listener is attached still has a timeStamp for retro-cancel.
+ * The cancel decision. A press counts only when its target is an element
+ * inside [data-ask-cancel]. A non-element target, or a target outside the
+ * button, is not a cancel. composedPath is not consulted: a press that only
+ * reaches the button through a shadow path is not this flag.
+ */
+export function pressTargetsAskCancel(event: CancelPressEvent): boolean {
+  const target = event.target as Element | null;
+  return target?.closest?.(ASK_CANCEL_SELECTOR) != null;
+}
+
+/**
+ * Listen for pointerdown in the capture phase so a press queued during the
+ * capture long task is recorded as a hit on 取消 before encode and fetch.
  * Records only. Returns the remover. Calling it twice is safe.
  */
 export function listenCancelPress(doc: Listened, handlers: CancelPressHandlers): () => void {
@@ -70,7 +82,7 @@ export function listenCancelPress(doc: Listened, handlers: CancelPressHandlers):
 
   const onDown = (event: Event) => {
     const pointer = event as unknown as CancelPressEvent;
-    if (!eventHitsAskCancel(pointer)) return;
+    if (!pressTargetsAskCancel(pointer)) return;
     handlers.onDown(pointer);
   };
 

@@ -17,6 +17,8 @@ export type CancelHold = {
   leave: () => void;
   pointerCancel: () => void;
   isPending: (session: number) => boolean;
+  /** A release already resolved this session and has not been consumed by wait. */
+  latched: (session: number) => "cancel" | "send" | null;
   wait: (session: number, timeoutMs?: number) => Promise<CancelHoldResult>;
   onLateCancel: (cb: () => void) => void;
   reset: () => void;
@@ -116,6 +118,11 @@ export function createCancelHold(options?: CancelHoldOptions): CancelHold {
     return pending && boundSession === session;
   }
 
+  function latchedOutcome(session: number) {
+    if (!latched || latched.session !== session) return null;
+    return latched.outcome;
+  }
+
   function wait(session: number, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<CancelHoldResult> {
     if (latched) {
       if (latched.session === session) {
@@ -166,6 +173,7 @@ export function createCancelHold(options?: CancelHoldOptions): CancelHold {
     leave: abandon,
     pointerCancel: abandon,
     isPending,
+    latched: latchedOutcome,
     wait,
     onLateCancel,
     reset,

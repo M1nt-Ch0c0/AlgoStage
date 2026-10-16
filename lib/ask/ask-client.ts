@@ -78,7 +78,8 @@ export interface SendAskOptions {
   isCurrent?: () => boolean;
   /**
    * Called at the instant the ask fetch is issued, with performance.now().
-   * The panel compares this with a late pointerdown.timeStamp.
+   * The value is a timing mark. The panel's cancel decision is the 取消 hit
+   * flag, not this clock.
    */
   onFetch?: (sentAt: number) => void;
 }
@@ -263,8 +264,8 @@ export async function sendAsk(
 
 /**
  * Abort the foreground request and drop anything it already streamed or stored.
- * A press whose pointerdown.timeStamp is at or before the fetch must leave no
- * answer, no preview text, no error, and no history or browser-cache row.
+ * A press that hit 取消 and released on the button after the fetch must leave
+ * no answer, no preview text, no error, and no history or browser-cache row.
  */
 export function retroCancelAsk(): void {
   const token = usePlayerStore.getState().askContext?.token;

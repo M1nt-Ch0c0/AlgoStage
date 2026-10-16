@@ -2,27 +2,19 @@ import { describe, expect, test } from "vitest";
 import { shouldRetroCancel } from "../lib/ask/retro-cancel";
 
 describe("shouldRetroCancel", () => {
-  test("a pointerdown timeStamp earlier than sentAt cancels even though the event is dispatched late", () => {
-    const sentAt = 5_000;
-    const downTs = 4_200;
-    const dispatchedLate = downTs < sentAt;
-    expect(dispatchedLate).toBe(true);
-    expect(shouldRetroCancel(downTs, sentAt, true)).toBe(true);
+  test("a press that hit 取消, released on the button after the fetch, cancels", () => {
+    expect(shouldRetroCancel(true, true, true)).toBe(true);
   });
 
-  test("a pointerdown timeStamp after sentAt keeps normal hold behaviour", () => {
-    expect(shouldRetroCancel(5_001, 5_000, true)).toBe(false);
+  test("a press that did not hit 取消 does not cancel", () => {
+    expect(shouldRetroCancel(false, true, true)).toBe(false);
   });
 
   test("a slide off the button does not cancel", () => {
-    expect(shouldRetroCancel(4_200, 5_000, false)).toBe(false);
+    expect(shouldRetroCancel(true, true, false)).toBe(false);
   });
 
-  test("equal timeStamps count as pressed before the send", () => {
-    expect(shouldRetroCancel(5_000, 5_000, true)).toBe(true);
-  });
-
-  test("no send timestamp does not cancel", () => {
-    expect(shouldRetroCancel(4_200, null, true)).toBe(false);
+  test("a hit that released before the fetch is the hold's cancel, not a retro cancel", () => {
+    expect(shouldRetroCancel(true, false, true)).toBe(false);
   });
 });

@@ -1,7 +1,7 @@
 /**
  * Test-only A/B toggles for the capture setup. Read from window.__ASK_AB__.
  * Production never sets that object, and every flag is then off: prewarm,
- * the two pre-capture frames, and the post-capture settle all run as usual.
+ * the two pre-capture frames, and the post-capture input yield all run.
  */
 
 export type AskAbFlags = {
@@ -9,7 +9,7 @@ export type AskAbFlags = {
   noPrewarm?: boolean;
   /** Skip the two animation frames that paint the busy row before capture. */
   noDoubleRaf?: boolean;
-  /** Skip the post-capture input settle. */
+  /** Skip the post-capture input yield. */
   noSettle?: boolean;
 };
 

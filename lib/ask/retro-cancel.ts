@@ -1,16 +1,15 @@
 /**
- * A pointerdown whose event.timeStamp is at or before the ask fetch's
- * performance.now() was pressed before the send, even when the event is
- * dispatched after the fetch. The final release has to be on the button.
- * A slide-off is not a cancel.
+ * A press that hit 取消, released on the button, after the ask fetch has
+ * already been issued. The hit is the cancel flag from the capture-phase
+ * listener, not pointerdown.timeStamp (CDP stamps that when the renderer
+ * dequeues the event, which is after the stall). A slide-off is not a cancel.
  */
 export function shouldRetroCancel(
-  downTs: number,
-  sentAt: number | null,
+  hitCancel: boolean,
+  sent: boolean,
   releasedOnButton: boolean,
 ): boolean {
   if (!releasedOnButton) return false;
-  if (sentAt == null) return false;
-  if (!Number.isFinite(downTs) || !Number.isFinite(sentAt)) return false;
-  return downTs <= sentAt;
+  if (!sent) return false;
+  return hitCancel;
 }

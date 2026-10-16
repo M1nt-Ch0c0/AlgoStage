@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
 /**
- * The document-level 取消 listener only records pointerdown.timeStamp. The
- * button's own pointerdown / capture / data-pressed / pointerup / slide-off
- * path still drives the hold. A press whose timeStamp is inside the settle
- * window, delivered after the hold wait resolved, aborts on release.
+ * The document-level 取消 listener records a cancel hit when the press
+ * target is inside [data-ask-cancel]. The button's own pointerdown / capture
+ * / data-pressed / pointerup / slide-off path still drives the hold. A press
+ * dispatched during the capture long task is processed before fetch. A press
+ * that lands after the fetch aborts on release and leaves no answer.
  */
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -26,12 +27,16 @@ vi.mock("../lib/ask/capture", async () => {
   const actual = await vi.importActual<typeof import("../lib/ask/capture")>("../lib/ask/capture");
   return {
     ...actual,
-    captureStage: vi.fn(async () => ({
-      ok: true as const,
-      encoder: "main" as const,
-      image: { mime: "image/jpeg" as const, dataBase64: "qq==" },
-      bytes: 1,
-    })),
+    captureStage: vi.fn(async (_container, _selection, opts?: { beforeEncode?: () => Promise<void> }) => {
+      // The real capture yields here, after domToCanvas and before encode.
+      await opts?.beforeEncode?.();
+      return {
+        ok: true as const,
+        encoder: "main" as const,
+        image: { mime: "image/jpeg" as const, dataBase64: "qq==" },
+        bytes: 1,
+      };
+    }),
   };
 });
 
@@ -101,17 +106,46 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function finishCaptureTurn() {
-  await Promise.resolve();
-  for (let frame = 0; frame < 2; frame += 1) {
-    await new Promise<void>((resolve) => {
-      requestAnimationFrame(() => resolve());
-    });
-  }
-  await Promise.resolve();
+/** The pre-capture paint is two animation frames. */
+async function drainPaint() {
   await new Promise<void>((resolve) => {
-    setTimeout(resolve, 60);
+    requestAnimationFrame(() => resolve());
   });
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
+}
+
+/**
+ * Run the submit until the post-capture macrotask is pending, which is the
+ * gap after domToCanvas and before encode or fetch. The pre-capture paint
+ * uses its own setTimeout(0); this holds only yieldMacrotask's callback.
+ */
+async function reachBeforeEncode(submit: HTMLButtonElement): Promise<() => void> {
+  let releaseEncode: (() => void) | undefined;
+  const realSetTimeout = setTimeout;
+  const wrapped = ((callback: TimerHandler, delay?: number, ...args: unknown[]) => {
+    const source = typeof callback === "function" ? callback.toString() : "";
+    if (delay === 0 && source.includes("askInputMacrotask")) {
+      const held = callback as (...heldArgs: unknown[]) => void;
+      releaseEncode = () => {
+        held(...args);
+      };
+      return 1;
+    }
+    return realSetTimeout(callback as never, delay, ...args);
+  }) as typeof setTimeout;
+  vi.stubGlobal("setTimeout", wrapped);
+  await act(async () => {
+    submit.click();
+    await drainPaint();
+  });
+  if (!releaseEncode) throw new Error("post-capture yield was not scheduled");
+  const release = releaseEncode;
+  return () => {
+    vi.stubGlobal("setTimeout", realSetTimeout);
+    release();
+  };
 }
 
 const BUTTON_BOX = {
@@ -192,9 +226,7 @@ describe("early 取消 press", () => {
 
     await act(async () => {
       submit.click();
-      await new Promise<void>((resolve) => {
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-      });
+      await drainPaint();
     });
     await vi.waitFor(() => {
       expect(container.querySelector("[data-ask-capture-preparing]")).not.toBeNull();
@@ -228,39 +260,83 @@ describe("early 取消 press", () => {
     });
   });
 
-  test("a press with timeStamp inside the settle window, dispatched after the hold wait resolved, aborts and leaves no answer", async () => {
+  test("a press dispatched during the long task is processed before fetch and sends nothing", async () => {
+    const { cancel, submit } = await renderPanel();
+    const other = document.createElement("button");
+    other.textContent = "not cancel";
+    container.append(other);
+
+    const release = await reachBeforeEncode(submit);
+    expect(sendAsk).not.toHaveBeenCalled();
+    expect(container.querySelector("[data-ask-capture-preparing]")).not.toBeNull();
+
+    // A press on something that is not 取消 is ignored.
+    await act(async () => {
+      other.dispatchEvent(pointer("pointerdown", performance.now(), 1, 1, 3));
+    });
+    expect(sendAsk).not.toHaveBeenCalled();
+
+    // The press is injected while the before-encode macrotask is still
+    // queued, the same window as a press dispatched during domToCanvas.
+    await act(async () => {
+      cancel.dispatchEvent(pointer("pointerdown", performance.now() + 5_000, 12, 10));
+      cancel.dispatchEvent(pointer("pointerup", performance.now() + 5_010, 14, 12));
+    });
+    expect(cancel.hasAttribute("data-pressed")).toBe(false);
+
+    await act(async () => {
+      release();
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 0);
+      });
+    });
+
+    expect(sendAsk).not.toHaveBeenCalled();
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
+    expect(container.querySelector("[data-ask-panel]")).toBeNull();
+    expect(container.textContent ?? "").not.toContain("播放回答");
+    expect(container.textContent ?? "").not.toContain("老师在想");
+    expect(container.querySelector("[data-ask-error]")).toBeNull();
+  });
+
+  test("a press that lands after the fetch aborts and leaves no answer", async () => {
     const { cancel, submit } = await renderPanel();
 
-    let sentAt = 0;
     let releaseSend: (() => void) | undefined;
-    vi.mocked(sendAsk).mockImplementation(async (_capture, options) => {
-      sentAt = performance.now();
-      options?.onFetch?.(sentAt);
+    vi.mocked(sendAsk).mockImplementation(async (capture, options) => {
+      expect(capture == null || capture.ok !== false || capture.reason !== "ABORTED").toBe(true);
+      options?.onFetch?.(performance.now());
+      // The fetch is in flight. A press now is after the send.
+      const button = document.querySelector<HTMLButtonElement>("[data-ask-cancel]");
+      button?.dispatchEvent(pointer("pointerdown", performance.now() + 5_000, 12, 10));
+      button?.dispatchEvent(pointer("pointerup", performance.now() + 5_020, 14, 12));
       await new Promise<void>((resolve) => {
         releaseSend = resolve;
       });
     });
 
+    const release = await reachBeforeEncode(submit);
     await act(async () => {
-      submit.click();
-      await finishCaptureTurn();
+      release();
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 0);
+      });
     });
     await vi.waitFor(() => {
       expect(sendAsk).toHaveBeenCalledTimes(1);
     });
 
-    const down = pointer("pointerdown", sentAt - 30, 12, 10);
-    const up = pointer("pointerup", sentAt + 20, 14, 12);
-    await act(async () => {
-      cancel.dispatchEvent(down);
-      cancel.dispatchEvent(up);
-    });
-
+    // retroCancelAsk is mocked, so the phase stays where the fetch left it.
+    // The abort is the call. Nothing in this test writes an answer, a
+    // waiting row, an error, or a history mark.
     expect(cancel.hasAttribute("data-pressed")).toBe(false);
     expect(retroCancelAsk).toHaveBeenCalledTimes(1);
-    expect(usePlayerStore.getState().askPhase).not.toBe("playing");
     expect(usePlayerStore.getState().answers).toEqual({});
     expect(container.textContent ?? "").not.toContain("播放回答");
+    expect(container.textContent ?? "").not.toContain("老师在想");
+    expect(container.querySelector("[data-ask-waiting]")).toBeNull();
+    expect(container.querySelector("[data-ask-error]")).toBeNull();
+    expect(container.querySelector("[data-answer-mark]")).toBeNull();
     releaseSend?.();
     await act(async () => {
       await Promise.resolve();
@@ -288,9 +364,7 @@ describe("early 取消 press", () => {
 
     await act(async () => {
       submit.click();
-      await new Promise<void>((resolve) => {
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-      });
+      await drainPaint();
     });
     await vi.waitFor(() => {
       expect(container.querySelector("[data-ask-capture-preparing]")).not.toBeNull();
@@ -309,7 +383,12 @@ describe("early 取消 press", () => {
 
     const finish = releaseHungCapture;
     releaseHungCapture = undefined;
-    finish?.();
+    await act(async () => {
+      finish?.();
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 0);
+      });
+    });
     await vi.waitFor(() => {
       expect(sendAsk).toHaveBeenCalledTimes(1);
     });
@@ -319,8 +398,29 @@ describe("early 取消 press", () => {
   });
 
   test("a hold longer than 2s then a release on the button aborts", async () => {
-    vi.useFakeTimers();
     const { cancel, submit } = await renderPanel();
+
+    const realSetTimeout = setTimeout;
+    const realClearTimeout = clearTimeout;
+    let holdTimer: (() => void) | undefined;
+    vi.stubGlobal("setTimeout", ((callback: TimerHandler, delay?: number, ...args: unknown[]) => {
+      // The hold's 2s timer is the only long timer on this path. Hold it
+      // so the test can fire the timeout while the press is still down.
+      if (delay === 2000 && typeof callback === "function") {
+        holdTimer = () => {
+          callback(...args);
+        };
+        return 2000;
+      }
+      return realSetTimeout(callback as never, delay, ...args);
+    }) as typeof setTimeout);
+    vi.stubGlobal("clearTimeout", ((handle: unknown) => {
+      if (handle === 2000) {
+        holdTimer = undefined;
+        return;
+      }
+      realClearTimeout(handle as ReturnType<typeof setTimeout>);
+    }) as typeof clearTimeout);
 
     let releaseSend: (() => void) | undefined;
     vi.mocked(sendAsk).mockImplementation(async (_capture, options) => {
@@ -330,10 +430,7 @@ describe("early 取消 press", () => {
       });
     });
 
-    await act(async () => {
-      submit.click();
-      await vi.advanceTimersByTimeAsync(0);
-    });
+    const release = await reachBeforeEncode(submit);
     expect(container.querySelector("[data-ask-capture-preparing]")).not.toBeNull();
 
     await act(async () => {
@@ -342,10 +439,20 @@ describe("early 取消 press", () => {
     expect(cancel.hasAttribute("data-pressed")).toBe(true);
     expect(sendAsk).not.toHaveBeenCalled();
 
-    // The hold timer starts after the post-capture settle. Advance both.
+    // domToCanvas has returned and the one yield is pending. Releasing the
+    // yield starts the hold. The press is still down, so the 2s timeout
+    // sends, and the release on the button aborts that ask.
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(60);
-      await vi.advanceTimersByTimeAsync(2100);
+      release();
+      await new Promise<void>((resolve) => {
+        realSetTimeout(resolve, 0);
+      });
+    });
+    expect(holdTimer).toBeTypeOf("function");
+    expect(sendAsk).not.toHaveBeenCalled();
+
+    await act(async () => {
+      holdTimer?.();
     });
     expect(sendAsk).toHaveBeenCalledTimes(1);
     expect(cancel.hasAttribute("data-pressed")).toBe(true);
@@ -360,8 +467,9 @@ describe("early 取消 press", () => {
 
     releaseSend?.();
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
+      await Promise.resolve();
     });
-    vi.useRealTimers();
+    vi.stubGlobal("setTimeout", realSetTimeout);
+    vi.stubGlobal("clearTimeout", realClearTimeout);
   });
 });

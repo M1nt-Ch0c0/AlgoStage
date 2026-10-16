@@ -40,6 +40,29 @@ vi.mock("../lib/ask/capture", async () => {
   };
 });
 
+type CaptureOpts = { beforeEncode?: () => Promise<void> };
+
+/**
+ * Run a capture the way the real one does: its own work, then the one
+ * post-domToCanvas yield, then the result. Pass `first` for a capture that
+ * must yield before it resolves, so a press lands in that gap.
+ */
+function withYield(
+  run: (opts: CaptureOpts | undefined) => Promise<CaptureResult>,
+  first = false,
+): (container: HTMLElement | null, selection: unknown, opts?: CaptureOpts) => Promise<CaptureResult> {
+  return async (_container, _selection, opts) => {
+    if (first) {
+      const pending = run(opts);
+      await opts?.beforeEncode?.();
+      return pending;
+    }
+    const result = await run(opts);
+    if (result.ok) await opts?.beforeEncode?.();
+    return result;
+  };
+}
+
 const script: TeachingScript = {
   problemSlug: "3sum",
   mode: "lecture",
@@ -80,7 +103,7 @@ beforeEach(() => {
   vi.mocked(cancelAsk).mockReset();
   vi.mocked(retroCancelAsk).mockReset();
   vi.mocked(captureStage).mockReset();
-  vi.mocked(captureStage).mockResolvedValue(OK_CAPTURE);
+  vi.mocked(captureStage).mockImplementation(withYield(async () => OK_CAPTURE));
 
   window.matchMedia = ((query: string) => ({
     matches: false,
@@ -191,13 +214,13 @@ async function drainPaintFrames() {
   });
 }
 
-/** Drain the pre-capture double rAF, then the post-capture settle wait. */
+/** Drain the pre-capture paint, then the one post-capture macrotask. */
 async function finishCaptureTurn() {
   await Promise.resolve();
   await drainPaintFrames();
   await Promise.resolve();
   await new Promise<void>((resolve) => {
-    setTimeout(resolve, 60);
+    setTimeout(resolve, 0);
   });
 }
 
@@ -321,12 +344,13 @@ describe("ask panel", () => {
     await render();
 
     let resolveCapture: ((value: CaptureResult) => void) | undefined;
-    vi.mocked(captureStage).mockImplementation(
+    vi.mocked(captureStage).mockImplementation(withYield(
       () =>
         new Promise<CaptureResult>((resolve) => {
           resolveCapture = resolve;
         }),
-    );
+      true,
+    ));
 
     await act(async () => {
       submitButton().click();
@@ -346,12 +370,13 @@ describe("ask panel", () => {
     expect(container.querySelector("[data-ask-capture-fallback]")).toBeNull();
 
     resolveCapture = undefined;
-    vi.mocked(captureStage).mockImplementation(
+    vi.mocked(captureStage).mockImplementation(withYield(
       () =>
         new Promise<CaptureResult>((resolve) => {
           resolveCapture = resolve;
         }),
-    );
+      true,
+    ));
     await act(async () => {
       submitButton().click();
       await drainPaintFrames();
@@ -380,11 +405,11 @@ describe("ask panel", () => {
         askPhase: "drafting",
       });
     });
-    vi.mocked(captureStage).mockResolvedValue({
+    vi.mocked(captureStage).mockImplementation(withYield(async () => ({
       ok: false,
       reason: "RENDER_FAILED",
       fallbackText: "步骤内容",
-    });
+    })));
     await act(async () => {
       submitButton().click();
       await finishCaptureTurn();
@@ -399,11 +424,11 @@ describe("ask panel", () => {
   test("25b. 回答落到 playing 后草稿面板卸掉，截图失败提示还在", async () => {
     draft("drafting", { draftQuestion: "换个例子讲讲" });
     await render();
-    vi.mocked(captureStage).mockResolvedValue({
+    vi.mocked(captureStage).mockImplementation(withYield(async () => ({
       ok: false,
       reason: "RENDER_FAILED",
       fallbackText: "步骤内容",
-    });
+    })));
     vi.mocked(sendAsk).mockImplementation(async () => {
       usePlayerStore.setState({ askPhase: "playing", selection: null, draftQuestion: "" });
     });
@@ -436,11 +461,11 @@ describe("ask panel", () => {
   test("25d. 截图失败提示从 streaming 留到 playing 和 done，下一次提问才卸", async () => {
     draft("drafting", { draftQuestion: "换个例子讲讲" });
     await render();
-    vi.mocked(captureStage).mockResolvedValue({
+    vi.mocked(captureStage).mockImplementation(withYield(async () => ({
       ok: false,
       reason: "RENDER_FAILED",
       fallbackText: "步骤内容",
-    });
+    })));
     vi.mocked(sendAsk).mockImplementation(async () => {
       usePlayerStore.setState({ askPhase: "streaming", selection: null, draftQuestion: "" });
     });
@@ -565,10 +590,10 @@ describe("ask panel", () => {
     draft("drafting", { draftQuestion: "为什么这样写？" });
     await render();
     const seen: string[] = [];
-    vi.mocked(captureStage).mockImplementation(async () => {
+    vi.mocked(captureStage).mockImplementation(withYield(async () => {
       seen.push(container.querySelector("[data-ask-capture-preparing]")?.textContent ?? "");
       return OK_CAPTURE;
-    });
+    }));
     await act(async () => {
       submitButton().click();
       await finishCaptureTurn();
@@ -591,12 +616,13 @@ describe("ask panel", () => {
     expect(idle.textContent).not.toBe(ASK_CAPTURE_PREPARING);
 
     let resolveCapture: ((value: CaptureResult) => void) | undefined;
-    vi.mocked(captureStage).mockImplementation(
+    vi.mocked(captureStage).mockImplementation(withYield(
       () =>
         new Promise<CaptureResult>((resolve) => {
           resolveCapture = resolve;
         }),
-    );
+      true,
+    ));
 
     await act(async () => {
       submitButton().click();
@@ -629,12 +655,13 @@ describe("ask panel", () => {
     await render();
 
     let resolveCapture: ((value: CaptureResult) => void) | undefined;
-    vi.mocked(captureStage).mockImplementation(
+    vi.mocked(captureStage).mockImplementation(withYield(
       () =>
         new Promise<CaptureResult>((resolve) => {
           resolveCapture = resolve;
         }),
-    );
+      true,
+    ));
 
     await act(async () => {
       submitButton().click();
@@ -668,12 +695,13 @@ describe("ask panel", () => {
     await render();
 
     let resolveCapture: ((value: CaptureResult) => void) | undefined;
-    vi.mocked(captureStage).mockImplementation(
+    vi.mocked(captureStage).mockImplementation(withYield(
       () =>
         new Promise<CaptureResult>((resolve) => {
           resolveCapture = resolve;
         }),
-    );
+      true,
+    ));
 
     await act(async () => {
       submitButton().click();
@@ -700,12 +728,13 @@ describe("ask panel", () => {
     resolveCapture = undefined;
     draft("drafting", { draftQuestion: "为什么这样写？", askPhase: "drafting" });
     await render();
-    vi.mocked(captureStage).mockImplementation(
+    vi.mocked(captureStage).mockImplementation(withYield(
       () =>
         new Promise<CaptureResult>((resolve) => {
           resolveCapture = resolve;
         }),
-    );
+      true,
+    ));
     await act(async () => {
       submitButton().click();
       await drainPaintFrames();
@@ -744,11 +773,11 @@ describe("ask panel", () => {
   test("25c. 截图 TIMEOUT 仍显示 #39 回退并 sendAsk(null)", async () => {
     draft("drafting", { draftQuestion: "换个例子讲讲" });
     await render();
-    vi.mocked(captureStage).mockResolvedValue({
+    vi.mocked(captureStage).mockImplementation(withYield(async () => ({
       ok: false,
       reason: "TIMEOUT",
       fallbackText: "步骤内容",
-    });
+    })));
     await act(async () => {
       submitButton().click();
       await finishCaptureTurn();
@@ -996,13 +1025,15 @@ describe("ask panel", () => {
     draft("drafting", { draftQuestion: "为什么这样写？" });
     await render();
 
-    let releaseSettle: (() => void) | undefined;
+    let releaseYield: (() => void) | undefined;
     vi.stubGlobal("setTimeout", (callback: TimerHandler, delay?: number) => {
-      if (delay === 50 && typeof callback === "function") {
-        releaseSettle = () => {
+      // The post-capture yield. The paint frames are requestAnimationFrame,
+      // which this stub leaves on the real timer.
+      if (delay === 0 && typeof callback === "function" && callback.toString().includes("askInputMacrotask")) {
+        releaseYield = () => {
           callback();
         };
-        return 50;
+        return 1;
       }
       if (typeof callback === "function") callback();
       return 0;
@@ -1012,7 +1043,7 @@ describe("ask panel", () => {
       submitButton().click();
     });
     await vi.waitFor(() => {
-      expect(releaseSettle).toBeTypeOf("function");
+      expect(releaseYield).toBeTypeOf("function");
     });
     expect(captureStage).toHaveBeenCalledTimes(1);
     expect(sendAsk).not.toHaveBeenCalled();
@@ -1025,7 +1056,7 @@ describe("ask panel", () => {
     expect(container.querySelector("[data-ask-panel]")).toBeNull();
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
 
-    releaseSettle?.();
+    releaseYield?.();
     await act(async () => {
       await pendingSubmit;
     });
