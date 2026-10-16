@@ -2888,14 +2888,14 @@ describe("resolveAskEscape", () => {
       cleanupEnteringScroll = null;
     });
 
-    test("N1: settle rAF is cancelled on pointerup and unmount", async () => {
+    test("N1: pointerup does NOT cancel settle rAF, unmount cancels any pending settle rAF", async () => {
       setupEnteringScrollEnv();
       await startEnteringScroll(10);
       const rafSpy = vi.spyOn(window, "requestAnimationFrame");
       const cancelSpy = vi.spyOn(window, "cancelAnimationFrame");
       const host = layer();
 
-      // (a) pointerup cancels the scheduled settle rAF
+      // (a) pointerup does NOT cancel the scheduled settle rAF
       let settleRafId1: number | undefined;
       await act(async () => {
         host.dispatchEvent(pointer("pointerdown", { pointerId: 1, clientX: 20, clientY: 20 }));
@@ -2903,12 +2903,18 @@ describe("resolveAskEscape", () => {
         host.dispatchEvent(pointer("pointerup", { pointerId: 1, clientX: 20, clientY: 20 }));
       });
       expect(settleRafId1).toBeDefined();
-      expect(cancelSpy).toHaveBeenCalledWith(settleRafId1);
+      expect(cancelSpy).not.toHaveBeenCalledWith(settleRafId1);
+
+      // Flush settle rAF from (a) and reset selection before (b)
+      await act(async () => {
+        flushPendingRafs();
+      });
+      usePlayerStore.getState().clearAskSelection();
 
       cancelSpy.mockClear();
       rafSpy.mockClear();
 
-      // (b) unmount cancels any pending settle rAF
+      // (b) unmount cancels any pending settle rAF (even with pending release)
       await reenterSelectionWithScroll(20);
       cancelSpy.mockClear();
       rafSpy.mockClear();
@@ -2917,10 +2923,12 @@ describe("resolveAskEscape", () => {
       await act(async () => {
         host2.dispatchEvent(pointer("pointerdown", { pointerId: 2, clientX: 30, clientY: 30 }));
         settleRafId2 = rafSpy.mock.results.at(-1)?.value;
+        host2.dispatchEvent(pointer("pointerup", { pointerId: 2, clientX: 30, clientY: 30 }));
         root.unmount();
       });
       expect(settleRafId2).toBeDefined();
       expect(cancelSpy).toHaveBeenCalledWith(settleRafId2);
+      expect(usePlayerStore.getState().selection).toBeNull();
 
       // Re-create root for cleanup in afterEach
       root = createRoot(container);
@@ -2957,12 +2965,33 @@ describe("resolveAskEscape", () => {
         host.dispatchEvent(pointer("pointerdown", { pointerId: 2, clientX: 20, clientY: 20 }));
         settleRafId2 = rafSpy.mock.results.at(-1)?.value;
         host.dispatchEvent(pointer("pointerdown", { pointerId: 3, clientX: 40, clientY: 40 }));
+        host.dispatchEvent(pointer("pointercancel", { pointerId: 2 }));
+        host.dispatchEvent(pointer("pointercancel", { pointerId: 3 }));
       });
       expect(settleRafId2).toBeDefined();
       expect(cancelSpy).toHaveBeenCalledWith(settleRafId2);
+
+      // (c) pointercancel after pointerup drops pending release and cancels settle rAF
+      await reenterSelectionWithScroll(30);
+      host = layer();
+      cancelSpy.mockClear();
+      rafSpy.mockClear();
+      let settleRafId3: number | undefined;
+      await act(async () => {
+        host.dispatchEvent(pointer("pointerdown", { pointerId: 4, clientX: 20, clientY: 20 }));
+        settleRafId3 = rafSpy.mock.results.at(-1)?.value;
+        host.dispatchEvent(pointer("pointerup", { pointerId: 4, clientX: 20, clientY: 20 }));
+        host.dispatchEvent(pointer("pointercancel", { pointerId: 4 }));
+      });
+      expect(settleRafId3).toBeDefined();
+      expect(cancelSpy).toHaveBeenCalledWith(settleRafId3);
+      await act(async () => {
+        flushPendingRafs();
+      });
+      expect(usePlayerStore.getState().selection).toBeNull();
     });
 
-    test("N2: pointerup before frame commits re-sampled start for tap and drag", async () => {
+    test("N2: pointerup before frame -> selection committed only after the rAF with settled coordinates", async () => {
       const pointSpy = vi.spyOn(hitTest, "hitTestPoint");
       const regionSpy = vi.spyOn(hitTest, "hitTest");
       setupEnteringScrollEnv();
@@ -2977,8 +3006,16 @@ describe("resolveAskEscape", () => {
         host.dispatchEvent(pointer("pointerup", { pointerId: 1, clientX: 20, clientY: 20 }));
       });
 
-      // Synchronously re-sampled start (y = 20 - (-15) = 35) was passed to hitTestPoint, not the pre-snap y=20
+      // Before rAF: selection not committed yet
+      expect(pointSpy).not.toHaveBeenCalled();
+      expect(usePlayerStore.getState().selection).toBeNull();
+
+      // After rAF runs: selection committed with settled coordinates (y = 20 - (-15) = 35)
+      await act(async () => {
+        flushPendingRafs();
+      });
       expect(pointSpy).toHaveBeenCalledWith(20, 35, expect.anything());
+      expect(usePlayerStore.getState().selection).not.toBeNull();
 
       pointSpy.mockClear();
       usePlayerStore.getState().clearAskSelection();
@@ -2996,11 +3033,88 @@ describe("resolveAskEscape", () => {
         hostDrag.dispatchEvent(pointer("pointerup", { pointerId: 2, clientX: 60, clientY: 70 }));
       });
 
-      // Drag bounding box should start at re-sampled y = 20 - (-10) = 30
+      // Before rAF: selection not committed yet
+      expect(regionSpy).not.toHaveBeenCalled();
+      expect(usePlayerStore.getState().selection).toBeNull();
+
+      // After rAF runs: drag bounding box should start at re-sampled y = 20 - (-10) = 30 and end at y = 70 - (-10) = 80
+      await act(async () => {
+        flushPendingRafs();
+      });
       expect(regionSpy).toHaveBeenCalledWith(
         expect.objectContaining({ x: 20, y: 30 }),
         expect.anything(),
       );
+      expect(usePlayerStore.getState().selection).not.toBeNull();
+    });
+
+    test("N2: press during scroll, release before next frame => chip and box both present with same lines, or both absent", async () => {
+      setupEnteringScrollEnv();
+      await startEnteringScroll(10);
+      let host = layer();
+      const codeEl = stage.querySelector<HTMLElement>('[data-ask-target="code"]')!;
+      codeEl.setAttribute("data-ask-id", "code:main");
+      codeEl.setAttribute("data-ask-step-id", "s1");
+      codeEl.getBoundingClientRect = () => domRect(0, 0, 300, 400);
+
+      const mockHandle: CodeEditorHandle = {
+        getLineRangeForClientBox: vi.fn((top: number, bottom: number) => {
+          // Lines 1-10 at 20px per line (0..200). Above 200 => null (no line)
+          if (top < 0 || bottom > 200) return null;
+          const startLine = Math.floor(top / 20) + 1;
+          const endLine = Math.floor((bottom - 1) / 20) + 1;
+          if (startLine > 10 || endLine > 10) return null;
+          return { startLine, endLine };
+        }),
+        getLinesText: vi.fn((start, end) => `line ${start} to ${end}`),
+        getFullText: vi.fn(() => "code full text"),
+      };
+      registerCodeEditor(codeEl, mockHandle);
+
+      // Case 1: lands on valid line (y = 50 => line 3). Release before rAF.
+      await act(async () => {
+        host.dispatchEvent(pointer("pointerdown", { pointerId: 1, clientX: 50, clientY: 50 }));
+        host.dispatchEvent(pointer("pointerup", { pointerId: 1, clientX: 50, clientY: 50 }));
+      });
+
+      // Before rAF: neither box nor chip present
+      expect(layer().querySelector("[data-ask-selection]")).toBeNull();
+      expect(layer().querySelector("[data-ask-selection-label]")).toBeNull();
+
+      // After rAF: BOTH box and chip present with matching line range
+      await act(async () => {
+        flushPendingRafs();
+      });
+      const box1 = layer().querySelector("[data-ask-selection]");
+      const chip1 = layer().querySelector("[data-ask-selection-label]");
+      expect(box1).not.toBeNull();
+      expect(chip1).not.toBeNull();
+      expect(chip1?.textContent).toBe("已选：代码第 3 行");
+      const sel1 = usePlayerStore.getState().selection;
+      expect(sel1?.targets[0].codeRange).toEqual({ startLine: 3, endLine: 3 });
+
+      // Case 2: lands outside lines (y = 300 => handle returns null). Release before rAF.
+      usePlayerStore.getState().clearAskSelection();
+      await reenterSelectionWithScroll(20);
+      host = layer();
+      codeEl.getBoundingClientRect = () => domRect(0, 0, 300, 400);
+
+      await act(async () => {
+        host.dispatchEvent(pointer("pointerdown", { pointerId: 2, clientX: 50, clientY: 300 }));
+        host.dispatchEvent(pointer("pointerup", { pointerId: 2, clientX: 50, clientY: 300 }));
+      });
+
+      // Before rAF: both absent
+      expect(layer().querySelector("[data-ask-selection]")).toBeNull();
+      expect(layer().querySelector("[data-ask-selection-label]")).toBeNull();
+
+      // After rAF: BOTH box and chip absent (not selected state, no chip)
+      await act(async () => {
+        flushPendingRafs();
+      });
+      expect(layer().querySelector("[data-ask-selection]")).toBeNull();
+      expect(layer().querySelector("[data-ask-selection-label]")).toBeNull();
+      expect(usePlayerStore.getState().selection).toBeNull();
     });
 
     test("N3: modified Enter/Space on focused chip: no selection / existing selection unchanged, panel phase unchanged, Ctrl+Enter and Meta+Enter reach document", async () => {

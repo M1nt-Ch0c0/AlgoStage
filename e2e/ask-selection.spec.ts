@@ -2645,13 +2645,11 @@ test.describe("390 selection flow", () => {
     });
     }
 
-    // pre-existing failure since 17175b4; deferred-commit fix in progress (stash@{0}); tracked for C8 batch
-    test.fixme("chip390-b nits (b) press during the entry smooth scroll and release before the next frame, for tap and very short drag, assert the selected code line range matches the line under the pointer (no off-by-one)", async ({ page }) => {
+    test("chip390-b nits (b) press during the entry smooth scroll and release before the next frame, for tap and very short drag, assert the selected code line range matches the line under the pointer (no off-by-one)", async ({ page }) => {
       test.setTimeout(90_000);
       await startGenerated(page);
       await pauseLecture(page);
 
-      const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
       const button = entry(page);
       const panel = page.locator("[data-ask-panel]");
 
@@ -2682,12 +2680,42 @@ test.describe("390 selection flow", () => {
           const y0 = await page.evaluate(() => window.scrollY);
           await button.click();
           await expect.poll(() => page.evaluate(() => window.scrollY), { timeout: 3000 }).not.toBe(y0);
-          await page.waitForTimeout(60 + (run % 5) * 20);
 
-          const boxAtDown = (await code.boundingBox())!;
-          const vh = page.viewportSize()!.height;
-          const startX = boxAtDown.x + 60;
-          const startY = Math.round(vh * 0.35);
+          const { startX, startY } = await page.evaluate(async () => {
+            const scroller =
+              document.scrollingElement ??
+              document.querySelector<HTMLElement>("[data-ask-stage]") ??
+              document.documentElement;
+            const codeEl = document.querySelector<HTMLElement>('[data-ask-stage] [data-ask-target="code"]');
+            if (!codeEl) throw new Error("code element not found");
+
+            return new Promise<{ startX: number; startY: number }>((resolve) => {
+              let prevScroll = scroller.scrollTop || window.scrollY;
+              const check = () => {
+                const cur = scroller.scrollTop || window.scrollY;
+                if (cur !== prevScroll) {
+                  const box = codeEl.getBoundingClientRect();
+                  let chosenY = Math.round(box.top + Math.min(box.height / 2, 80));
+                  const lines = document.querySelectorAll<HTMLElement>(".monaco-editor .line-numbers");
+                  for (const ln of lines) {
+                    const r = ln.getBoundingClientRect();
+                    if (r.height > 0 && r.top >= box.top && r.bottom <= box.bottom) {
+                      chosenY = Math.round(r.top + r.height / 2);
+                      break;
+                    }
+                  }
+                  resolve({
+                    startX: Math.round(box.left + 60),
+                    startY: chosenY,
+                  });
+                  return;
+                }
+                prevScroll = cur;
+                requestAnimationFrame(check);
+              };
+              requestAnimationFrame(check);
+            });
+          });
 
           await page.mouse.move(startX, startY);
           if (mode === "tap") {

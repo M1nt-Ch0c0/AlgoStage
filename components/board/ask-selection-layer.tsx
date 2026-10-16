@@ -26,7 +26,7 @@ import {
   ASK_SHORTCUT_VIZ,
 } from "@/lib/ask/ask-ui-text";
 import { ASK_LIMITS, type AskBBox, type AskSelectionSummary, type AskTarget } from "@/lib/ask/types";
-import { setAskCodeMissNotice } from "@/lib/ask/code-editor-registry";
+import { getCodeEditorHandle, setAskCodeMissNotice } from "@/lib/ask/code-editor-registry";
 import { askCancelGhostUntil, finishAskCancelSync } from "@/lib/ask/ask-cancel";
 import { setAskOpenSource } from "@/lib/ask/ask-open-source";
 import {
@@ -574,6 +574,13 @@ function AskSelectionLayerActive({
   const scrollRafRef = useRef<number | null>(null);
   const settleRafRef = useRef<number | null>(null);
   const downClientRef = useRef<{ clientX: number; clientY: number } | null>(null);
+  const pendingReleaseRef = useRef<{
+    pointerId: number;
+    clientX: number;
+    clientY: number;
+    pointerType: string;
+    timeStamp: number;
+  } | null>(null);
   const enteringSmoothScrollRef = useRef(false);
   const enteringScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const enteringScrollRafRef = useRef<number | null>(null);
@@ -764,6 +771,8 @@ function AskSelectionLayerActive({
         cancelAnimationFrame(settleRafRef.current);
         settleRafRef.current = null;
       }
+      downClientRef.current = null;
+      pendingReleaseRef.current = null;
     };
   }, []);
 
@@ -1131,8 +1140,15 @@ function AskSelectionLayerActive({
       settleRafRef.current = null;
     }
     downClientRef.current = null;
+    pendingReleaseRef.current = null;
     scrollDeltaRef.current = { x: 0, y: 0 };
   }, []);
+
+  useEffect(() => {
+    if (!active) {
+      resetGesture();
+    }
+  }, [active, resetGesture]);
 
   const commitBand = useCallback(
     (origin: PointerSample, current: PointerSample) => {
@@ -1195,6 +1211,39 @@ function AskSelectionLayerActive({
 
       const codeIntersected = dragIntersectsCode || Boolean(clickCodeEl);
       const codeCollected = hit.targets.some((t) => t.kind === "code");
+
+      if (codeCollected) {
+        const hasValidCode = hit.targets.some((t) => {
+          if (t.kind !== "code") return true;
+          if (t.codeRange) return true;
+          const codeEl = codeElements.find((el) => {
+            const id = el.getAttribute("data-ask-id");
+            return id === t.id;
+          }) ?? codeElements[0];
+          if (codeEl) {
+            const handle = getCodeEditorHandle(codeEl);
+            if (!handle) return true;
+            const cr = normalizeBBox(relativeRect(host, codeEl));
+            return (
+              box.x <= cr.x &&
+              box.y <= cr.y &&
+              box.x + box.width >= cr.x + cr.width &&
+              box.y + box.height >= cr.y + cr.height
+            );
+          }
+          return false;
+        });
+
+        if (!hasValidCode) {
+          if (codeIntersected) {
+            setHint(ASK_CODE_MISS_HINT);
+          } else {
+            setHint(ASK_EMPTY_HIT);
+          }
+          setAskCodeMissNotice(null);
+          return false;
+        }
+      }
 
       if (hit.targets.length === 0) {
         if (codeIntersected) {
@@ -1265,6 +1314,7 @@ function AskSelectionLayerActive({
         settleRafRef.current = null;
       }
       downClientRef.current = null;
+      pendingReleaseRef.current = null;
       // 第二指：放弃当前框，进入滚动。不 hitTest。
       drawingRef.current = false;
       originRef.current = null;
@@ -1306,14 +1356,44 @@ function AskSelectionLayerActive({
         settleRafRef.current = null;
       }
       downClientRef.current = { clientX, clientY };
+      pendingReleaseRef.current = null;
       settleRafRef.current = requestAnimationFrame(() => {
         settleRafRef.current = null;
         downClientRef.current = null;
+        const pending = pendingReleaseRef.current;
+        pendingReleaseRef.current = null;
+
         if (originRef.current !== start || !drawingRef.current) return;
         const settledHost = getStage();
-        if (!settledHost) return;
+        if (!settledHost) {
+          if (pending) {
+            pointersRef.current.delete(pending.pointerId);
+            drawingRef.current = false;
+            originRef.current = null;
+            suppressDrawRef.current = false;
+            setRubberBand(null);
+          }
+          return;
+        }
         const settled = sampleAt(settledHost, clientX, clientY);
         originRef.current = settled;
+
+        if (pending) {
+          const isTap = pending.clientX === clientX && pending.clientY === clientY;
+          const settledEnd = isTap ? settled : sampleAt(settledHost, pending.clientX, pending.clientY);
+          pointersRef.current.delete(pending.pointerId);
+          drawingRef.current = false;
+          originRef.current = null;
+          suppressDrawRef.current = false;
+          setRubberBand(null);
+          const selected = commitBand(settled, settledEnd);
+          if (selected && pending.pointerType === "touch") {
+            suppressClickUntilRef.current = pending.timeStamp + 400;
+            touchCompletedSelectionRef.current = true;
+          }
+          return;
+        }
+
         const cur = pointersRef.current.get(pointerId);
         if (cur === start) pointersRef.current.set(pointerId, settled);
         setRubberBand(bandFrom(settled, cur === start || !cur ? settled : cur));
@@ -1326,6 +1406,7 @@ function AskSelectionLayerActive({
         settleRafRef.current = null;
       }
       downClientRef.current = null;
+      pendingReleaseRef.current = null;
       const start = sampleAt(stageHost, clientX, clientY);
       pointersRef.current.set(pointerId, start);
       originRef.current = start;
@@ -1375,19 +1456,21 @@ function AskSelectionLayerActive({
 
   const onPointerUp = (event: PointerEvent<HTMLDivElement>) => {
     if (settleRafRef.current != null) {
-      cancelAnimationFrame(settleRafRef.current);
-      settleRafRef.current = null;
-      if (drawingRef.current && originRef.current != null && downClientRef.current) {
-        const settledHost = getStage();
-        if (settledHost) {
-          const settled = sampleAt(settledHost, downClientRef.current.clientX, downClientRef.current.clientY);
-          const prevOrigin = originRef.current;
-          originRef.current = settled;
-          const cur = pointersRef.current.get(event.pointerId);
-          if (cur === prevOrigin) pointersRef.current.set(event.pointerId, settled);
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        try {
+          event.currentTarget.releasePointerCapture(event.pointerId);
+        } catch {
+          // Ignore if pointer capture was already released or lost.
         }
       }
-      downClientRef.current = null;
+      pendingReleaseRef.current = {
+        pointerId: event.pointerId,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        pointerType: event.pointerType,
+        timeStamp: event.timeStamp,
+      };
+      return;
     }
     if (isIgnoredTarget(event.target)) return;
     const wasDrawing = drawingRef.current && originRef.current != null && !scrollModeRef.current;
@@ -1395,7 +1478,11 @@ function AskSelectionLayerActive({
     const current = pointersRef.current.get(event.pointerId) ?? origin;
     pointersRef.current.delete(event.pointerId);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
+      try {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      } catch {
+        // Ignore if pointer capture was already released or lost.
+      }
     }
 
     if (scrollModeRef.current) {
@@ -1436,6 +1523,7 @@ function AskSelectionLayerActive({
       settleRafRef.current = null;
     }
     downClientRef.current = null;
+    pendingReleaseRef.current = null;
     if (isIgnoredTarget(event.target)) return;
     pointersRef.current.delete(event.pointerId);
     if (pointersRef.current.size === 0) resetGesture();
