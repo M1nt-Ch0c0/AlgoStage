@@ -1067,3 +1067,125 @@ function installNaturalCancel(width: number, touch: boolean) {
 
 installNaturalCancel(1280, false);
 installNaturalCancel(390, true);
+
+/**
+ * Prod path (no stall hook). The ask response is held so the panel stays in
+ * the waiting phase (request seen, no first token). 300ms later, press and
+ * release 取消. The request aborts and the panel closes with no answer, no
+ * red dot, and no error. cancelPaintAfterReleaseMs is pointerup → the next
+ * frame after the cancelled state.
+ */
+function installWaitingPhaseCancel(width: number, touch: boolean, throttle: number) {
+  const label = width === 1280 ? "Desktop" : "390";
+  const cpu = throttle === 1 ? "normal CPU" : "4x CPU";
+
+  test.describe(`waiting-phase cancel ${label} ${width} ${cpu}`, () => {
+    test.use(
+      width === 1280
+        ? { viewport: { width: 1280, height: 800 } }
+        : {
+            hasTouch: true,
+            isMobile: true,
+            deviceScaleFactor: 3,
+            viewport: { width: 390, height: 844 },
+          },
+    );
+
+    test.beforeEach(async ({ page }) => {
+      await page.addInitScript(() => {
+        (window as unknown as { __ASK_TIMING__?: object }).__ASK_TIMING__ = {};
+      });
+    });
+
+    for (let i = 1; i <= 6; i += 1) {
+      test(`press 取消 300ms after the request is seen run ${i}`, async ({ page }) => {
+        test.setTimeout(60_000);
+        let askRequests = 0;
+        let seen = false;
+        let releaseHold = () => {};
+        const hold = new Promise<void>((resolve) => {
+          releaseHold = resolve;
+        });
+        let routeSawAbort = false;
+        const failedTexts: string[] = [];
+        page.on("requestfailed", (request) => {
+          if (!request.url().includes("/api/lecture/ask")) return;
+          failedTexts.push(request.failure()?.errorText ?? "");
+        });
+        await page.route("**/api/lecture/ask", async (route) => {
+          askRequests += 1;
+          seen = true;
+          const request = route.request();
+          try {
+            await hold;
+            if (request.failure()) {
+              routeSawAbort = true;
+              return;
+            }
+            await route.fulfill({
+              status: 200,
+              contentType: "application/x-ndjson",
+              body: askStream("s1"),
+            });
+          } catch {
+            routeSawAbort = true;
+          }
+        });
+
+        const client = await page.context().newCDPSession(page);
+        try {
+          if (throttle !== 1) {
+            await client.send("Emulation.setCPUThrottlingRate", { rate: throttle });
+          }
+          await openAskPanel(page);
+          const cancelAt = await boxCenter(page, "[data-ask-cancel]");
+          const submitAt = await boxCenter(page, "[data-ask-submit]");
+          if (!touch) await page.mouse.move(cancelAt.x, cancelAt.y);
+          await pressAt(page, submitAt.x, submitAt.y, touch);
+          await expect.poll(() => seen, { timeout: 15_000 }).toBe(true);
+          await expect(page.locator("[data-ask-waiting]")).toBeVisible();
+          await page.waitForTimeout(300);
+          await down(page, client, cancelAt.x, cancelAt.y, touch);
+          await up(page, client, cancelAt.x, cancelAt.y, touch);
+
+          await expect
+            .poll(() => (failedTexts.length > 0 || routeSawAbort ? "aborted" : "pending"), { timeout: 10_000 })
+            .toBe("aborted");
+          expect(askRequests).toBe(1);
+          expect(failedTexts.some((text) => /abort/i.test(text)) || routeSawAbort).toBe(true);
+          await expectClosedLikeCancel(page);
+          await expect(page.getByText(ANSWER_NARRATION)).toHaveCount(0);
+          await expect(page.locator("[data-answer-mark]")).toHaveCount(0);
+          await expect(page.getByText("播放回答")).toHaveCount(0);
+          await expect(page.locator("[data-testid='ask-preview']")).toHaveCount(0);
+
+          // pointerup → the frame after the cancelled state. The probe writes
+          // it on that frame, so poll until the mark exists, then bound it.
+          await expect
+            .poll(
+              () =>
+                page.evaluate(() => {
+                  const probe = (
+                    window as unknown as { __ASK_TIMING__?: { cancelPaintAfterReleaseMs?: number } }
+                  ).__ASK_TIMING__;
+                  const ms = probe?.cancelPaintAfterReleaseMs;
+                  return ms == null ? "pending" : ms <= 100 ? "ok" : `slow:${ms}`;
+                }),
+              { timeout: 2_000 },
+            )
+            .toBe("ok");
+        } finally {
+          releaseHold();
+          if (throttle !== 1) {
+            await client.send("Emulation.setCPUThrottlingRate", { rate: 1 }).catch(() => {});
+          }
+        }
+      });
+    }
+  });
+}
+
+installWaitingPhaseCancel(1280, false, 1);
+installWaitingPhaseCancel(390, true, 1);
+installWaitingPhaseCancel(1280, false, 4);
+installWaitingPhaseCancel(390, true, 4);
