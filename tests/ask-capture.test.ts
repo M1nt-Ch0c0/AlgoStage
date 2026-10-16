@@ -1126,6 +1126,26 @@ describe("lib/ask/capture", () => {
       vi.unstubAllEnvs();
     });
 
+    it("a stall longer than timeoutMs returns ABORTED when 取消 aborted during the stall", async () => {
+      vi.useFakeTimers();
+      const controller = new AbortController();
+      domToCanvasMock.mockImplementation(() => {
+        controller.abort();
+        return new Promise(() => {});
+      });
+
+      const pending = captureStage(container, baseSel, { timeoutMs: 1000, signal: controller.signal });
+      await vi.advanceTimersByTimeAsync(1001);
+      const res = await pending;
+
+      expect(res).toEqual({
+        ok: false,
+        reason: "ABORTED",
+        fallbackText: "Code target",
+      });
+      vi.useRealTimers();
+    });
+
     it("yields once after domToCanvas and before encode, and an abort there skips encode", async () => {
       const order: string[] = [];
       let releaseYield: (() => void) | undefined;

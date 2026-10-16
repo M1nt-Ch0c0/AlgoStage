@@ -467,6 +467,14 @@ export async function captureStage(
 
     const timeoutPromise = new Promise<CaptureResult>((resolve) => {
       timer = setTimeout(() => {
+        // The hook stall is one synchronous task, so this timer can fire
+        // before the task ends. A 取消 that landed during that task has
+        // already aborted. Returning TIMEOUT here would win the race and
+        // send the ask; the abort is the result that race should keep.
+        if (signal?.aborted) {
+          resolve(abortedResult());
+          return;
+        }
         timedOut = true;
         resolve({ ok: false, reason: "TIMEOUT", fallbackText });
       }, timeoutMs);
