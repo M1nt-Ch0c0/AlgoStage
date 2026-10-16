@@ -35,6 +35,49 @@ describe("yieldMacrotask", () => {
     expect(settled).toBe(true);
   });
 
+  test("a decided cancel ends the settle after the macrotask", async () => {
+    const delays: number[] = [];
+    vi.stubGlobal("setTimeout", (callback: () => void, delayMs: number) => {
+      delays.push(delayMs);
+      if (delayMs === 0) callback();
+      return delays.length;
+    });
+    vi.stubGlobal("scheduler", undefined);
+    vi.stubGlobal("performance", { now: () => 1000 });
+
+    await yieldMacrotask({ done: () => true });
+    // The macrotask ran. The 120ms settle was scheduled and not awaited.
+    expect(delays).toEqual([0, 120]);
+  });
+
+  test("an undecided press still waits out the settle", async () => {
+    const delays: number[] = [];
+    const pending: Array<() => void> = [];
+    vi.stubGlobal("setTimeout", (callback: () => void, delayMs: number) => {
+      delays.push(delayMs);
+      pending.push(callback);
+      return delays.length;
+    });
+    vi.stubGlobal("scheduler", undefined);
+    vi.stubGlobal("performance", { now: () => 1000 });
+
+    let settled = false;
+    const running = yieldMacrotask({ done: () => false }).then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(delays).toEqual([0, 120]);
+    expect(settled).toBe(false);
+
+    pending[0]?.();
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    pending[1]?.();
+    await running;
+    expect(settled).toBe(true);
+  });
+
   test("after the macrotask, waits out the rest of the input settle", async () => {
     const delays: number[] = [];
     vi.stubGlobal("setTimeout", (callback: () => void, delayMs: number) => {

@@ -7,6 +7,8 @@
  * the stall can take ~40–90ms to reach the renderer under 4× CPU, and
  * isInputPending stays false until it arrives, so a yield loop never sees
  * it. The settle is the window that press uses to land before encode.
+ * A caller that already has its answer passes done(). The settle timer is
+ * still armed (a held macrotask holds both), but it is not awaited.
  *
  * The cancel decision is the 取消 hit flag that yield lets the listener set,
  * not a timestamp compared with sentAt.
@@ -41,7 +43,7 @@ function inputStillPending(): boolean {
   return isInputPending.call(scheduling) === true;
 }
 
-export async function yieldMacrotask(): Promise<void> {
+export async function yieldMacrotask(options?: { done?: () => boolean }): Promise<void> {
   const started = typeof performance !== "undefined" ? performance.now() : Date.now();
   const host = globalThis as typeof globalThis & SchedulerYieldHost;
   const yieldTurn = host.scheduler?.yield;
@@ -55,11 +57,15 @@ export async function yieldMacrotask(): Promise<void> {
   // already queued here run. The settle, scheduled in the same turn, is the
   // rest of the window that press uses to arrive before encode. Same timer
   // name, so a caller that holds the macrotask holds the settle too.
+  // A caller that already has its answer (the 取消 hit landed during the
+  // stall) passes done(). The settle then stops: the remaining wait would
+  // sit between that release and the close, which is the 390 cancel paint.
   const elapsed = (typeof performance !== "undefined" ? performance.now() : Date.now()) - started;
   const remaining = Math.max(0, ASK_INPUT_SETTLE_MS - Math.max(0, elapsed));
   const macrotask = nextMacrotask();
   const settle = remaining > 0 ? nextMacrotask(remaining) : Promise.resolve();
   await macrotask;
+  if (options?.done?.()) return;
   await settle;
 }
 

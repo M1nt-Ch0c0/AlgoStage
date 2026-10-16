@@ -301,6 +301,73 @@ describe("early 取消 press", () => {
     expect(container.querySelector("[data-ask-error]")).toBeNull();
   });
 
+  test("a tap that finished during the stall closes on the macrotask, before the 120ms settle", async () => {
+    const { cancel, submit } = await renderPanel();
+    // The real captureStage returns ABORTED once the release aborts its
+    // signal. The default mock ignores the signal and would otherwise keep
+    // going until the hold's 120ms settle resolved.
+    vi.mocked(captureStage).mockImplementation(async (_container, _selection, opts) => {
+      await opts?.beforeEncode?.();
+      if (opts?.signal?.aborted) {
+        return { ok: false, reason: "ABORTED", fallbackText: "" };
+      }
+      return {
+        ok: true,
+        encoder: "main",
+        image: { mime: "image/jpeg", dataBase64: "qq==" },
+        bytes: 1,
+      };
+    });
+    const realSetTimeout = setTimeout;
+    const held: Array<{ delay: number; run: () => void }> = [];
+    vi.stubGlobal(
+      "setTimeout",
+      ((callback: TimerHandler, delay?: number, ...args: unknown[]) => {
+        const source = typeof callback === "function" ? callback.toString() : "";
+        if (source.includes("askInputMacrotask") && typeof callback === "function") {
+          held.push({ delay: delay ?? 0, run: () => callback(...args) });
+          return held.length;
+        }
+        return realSetTimeout(callback as never, delay, ...args);
+      }) as typeof setTimeout,
+    );
+
+    await act(async () => {
+      submit.click();
+      await drainPaint();
+    });
+    const delays = held.map((entry) => entry.delay).sort((a, b) => a - b);
+    expect(delays[0]).toBe(0);
+    expect(delays[1]).toBeGreaterThan(100);
+
+    // The tap completed while capture was still inside the post-stall yield.
+    // That is the 390 preparing cancel: pointerdown and pointerup both land
+    // before the thread continues to encode.
+    await act(async () => {
+      cancel.dispatchEvent(pointer("pointerdown", 10, 12, 10));
+      cancel.dispatchEvent(pointer("pointerup", 20, 14, 12));
+    });
+
+    const macrotask = held.find((entry) => entry.delay === 0);
+    await act(async () => {
+      macrotask?.run();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(held.map((entry) => entry.delay), "timers armed after the macrotask").toEqual(delays);
+    expect(captureStage).toHaveBeenCalled();
+    const signal = vi.mocked(captureStage).mock.calls.at(-1)?.[2]?.signal;
+    expect(signal?.aborted, "release aborted the capture signal").toBe(true);
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
+    expect(container.querySelector("[data-ask-panel]")).toBeNull();
+    expect(sendAsk).not.toHaveBeenCalled();
+    // The 120ms settle was armed and never ran. The close did not wait for it.
+    expect(held.filter((entry) => entry.delay > 100)).toHaveLength(1);
+
+    vi.stubGlobal("setTimeout", realSetTimeout);
+  });
+
   test("a press that lands after the fetch aborts and leaves no answer", async () => {
     const { cancel, submit } = await renderPanel();
 

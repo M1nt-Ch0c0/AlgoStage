@@ -469,12 +469,22 @@ function AskPanelActive({ stage }: AskPanelProps) {
       // pointerdown issued during the stall reaches this thread (measured
       // 34–97ms later under 4× CPU). The settle sets the hit flag before
       // encode. A/B noSettle skips it.
+      // A tap that already completed inside the stall (the 390 preparing
+      // cancel) has released on the button by the macrotask. The pointerup
+      // clears the hit flag, so the decision that is still set is the
+      // release latch. Waiting out the rest of the 120ms holds the panel
+      // open, so that path ends the settle. A press that is still down, or
+      // that has not arrived yet, keeps the full window: the 2s hold and
+      // the late CDP press both need it.
       let yieldStarted = 0;
       const beforeEncode = askAb("noSettle")
         ? undefined
         : () => {
             yieldStarted = performance.now();
-            return yieldMacrotask();
+            return yieldMacrotask({
+              done: () =>
+                releasedOnCancelRef.current || holdRef.current.latched(session) === "cancel",
+            });
           };
       let capture: CaptureResult | null;
       try {
