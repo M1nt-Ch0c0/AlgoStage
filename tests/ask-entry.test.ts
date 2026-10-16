@@ -289,29 +289,6 @@ test("on mobile busy notes stay in-flow but invisible (reserve height, no chalk 
   window.matchMedia = original;
 });
 
-test("on mobile drafting reserves note space under the hidden entry", async () => {
-  const original = window.matchMedia;
-  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
-    matches: query === "(max-width: 639px)",
-    media: query,
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-  }));
-
-  loadReady();
-  usePlayerStore.setState({ askPhase: "drafting", status: "interrupted" });
-  await render();
-
-  const button = container.querySelector<HTMLButtonElement>("button");
-  expect(button?.className).toContain("invisible");
-  const spacer = Array.from(container.querySelectorAll("span")).find(
-    (el) => el.getAttribute("aria-hidden") === "true" && el.textContent === ASK_REASON_TEXT.busy,
-  );
-  expect(spacer).toBeTruthy();
-  expect(spacer?.className).toContain("invisible");
-
-  window.matchMedia = original;
-});
 
 test("on mobile when in ask mode, entry button in player area is hidden and has no data-ask-entry", async () => {
   const original = window.matchMedia;

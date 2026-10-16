@@ -177,19 +177,13 @@ export default function AskEntry() {
     chip.focus();
   }
 
-  // Mobile Uma 390: capture runs while askPhase is still drafting (entry hidden,
-  // no busy note), then baseline is taken after sending|streaming|playing when
-  // BUSY_PHASES mounts the busy note. An in-flow visible note grew the subtitle
-  // (+17px) and painted chalk into the crop; absolute-above removed growth and
-  // exposed lesson-plan board-900 in the crop that capture fills with stage bg
-  // (0.65). Keep the note's in-flow footprint on mobile during ask + busy so
-  // capture and baseline share geometry, but do not paint the chalk (invisible).
+  // Mobile Uma 390: after submit, busy notes must not paint chalk into the
+  // closed-panel crop. Keep in-flow footprint (so step geometry stays in the
+  // tip's post-busy regime) but paint invisible during sending|streaming|playing.
   const mobileBusy =
     isMobile && (askPhase === "sending" || askPhase === "streaming" || askPhase === "playing");
-  const reserveMobileNoteSpace = isMobile && (hideAtMobileAsk || mobileBusy || reason != null || showTimeout);
-  const hideMobileNotePaint = isMobile && (hideAtMobileAsk || mobileBusy);
-  const noteClass = hideMobileNotePaint
-    ? "invisible pointer-events-none text-[10px] leading-tight text-chalk-500"
+  const noteClass = mobileBusy
+    ? "invisible pointer-events-none text-[10px] text-chalk-500"
     : "text-[10px] text-chalk-500";
 
   return (
@@ -236,13 +230,10 @@ export default function AskEntry() {
         <span id={REASON_ID} role="note" className={noteClass}>
           {ASK_REASON_TEXT[reason]}
         </span>
-      ) : showTimeout ? (
+      ) : null}
+      {showTimeout ? (
         <span id={TIMEOUT_ID} role="note" className={noteClass}>
           {ASK_PENDING_TIMEOUT}
-        </span>
-      ) : reserveMobileNoteSpace ? (
-        <span className="invisible pointer-events-none text-[10px] leading-tight" aria-hidden>
-          {ASK_REASON_TEXT.busy}
         </span>
       ) : null}
     </span>
