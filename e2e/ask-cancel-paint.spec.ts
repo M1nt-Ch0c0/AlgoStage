@@ -263,6 +263,20 @@ async function enter(page: Page, touch: boolean) {
   return h;
 }
 
+/**
+ * Mobile drops [data-ask-entry] while ask is open, so a later enter() cannot
+ * see it. Esc closes the panel, then exits ask so the entry is visible.
+ */
+async function exitAskToIdle(page: Page) {
+  const layer = page.locator("[data-ask-layer]");
+  for (let i = 0; i < 4; i += 1) {
+    if ((await layer.count()) === 0) break;
+    await page.keyboard.press("Escape");
+  }
+  await expect(layer).toHaveCount(0);
+  await expect(entry(page)).toBeVisible();
+}
+
 async function marquee(page: Page, x0: number, y0: number, x1: number, y1: number) {
   await page.mouse.move(x0, y0);
   await page.mouse.down();
@@ -680,14 +694,13 @@ test.describe("cancel paint 390", () => {
     await openViz(page, true);
     await page.setViewportSize({ width: 844, height: 390 });
     await page.setViewportSize({ width: 390, height: 844 });
-    const entryOrLayer = page.locator("[data-ask-entry], [data-ask-layer]");
-    await expect(entryOrLayer.first()).toBeVisible({ timeout: 10_000 });
-    if (!(await page.locator("[data-ask-layer]").isVisible())) await enter(page, true);
-    await openViz(page, true);
+    await expect(page.locator("[data-ask-layer]")).toBeVisible({ timeout: 10_000 });
+    await exitAskToIdle(page);
     const paint = await runCancelRound(page, 390, "preparing", true);
     expect(paint.missing).toBe(false);
     if (paint.missing) return;
     expect(paint.paintMs).toBeLessThan(BUDGET_MS);
+    expect(paint.focusAtPaint?.where ?? "", "focus at paint is the chip").toMatch(/^chip:/);
     expect(bag.asks).toHaveLength(0);
     await expect(page.locator("[data-ask-error]")).toHaveCount(0);
     await expect(page.locator("[data-ask-panel]")).toHaveCount(0);
