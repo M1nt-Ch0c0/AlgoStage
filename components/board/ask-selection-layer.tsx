@@ -1300,19 +1300,15 @@ function AskSelectionLayerActive({
 
       if (hit.targets.length === 0) {
         setRubberBand(null);
-        // A code-only miss stays silent. A code-origin drag whose box also
-        // intersects viz (those targets were filtered out) still tells the
-        // user the code lines were missed. The panel is not open, so the
-        // layer hint is what they see.
+        // C2: a code-origin drag whose box also intersects viz (those targets
+        // were filtered out) still tells the user the code lines were missed.
+        // C8: otherwise silent void keeps existing layer hint / code-miss notice.
         const coveredViz = candidates.some((candidate) => {
           if (candidate.target.kind !== "viz") return false;
           return intersects(box, candidate.rect);
         });
         if (codeOrigin && !codeCollected && coveredViz) {
           setHint(ASK_CODE_MISS_HINT);
-          setAskCodeMissNotice(null);
-        } else {
-          setHint(null);
           setAskCodeMissNotice(null);
         }
         incrementVoid();
