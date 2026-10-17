@@ -491,8 +491,10 @@ describe("early 取消 press", () => {
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
     expect(container.querySelector("[data-ask-panel]")).toBeNull();
     expect(sendAsk).not.toHaveBeenCalled();
-    // The 120ms settle was cleared when the cancel ended it.
-    expect(vi.getTimerCount()).toBe(0);
+    // The 120ms settle was cleared when the cancel ended it. The remaining
+    // timer is the ask-cancel ghost suppress (500ms), armed by
+    // finishAskCancelSync after the panel closes.
+    expect(vi.getTimerCount()).toBe(1);
 
     await act(async () => {
       releaseEncode?.({
@@ -954,7 +956,10 @@ describe("early 取消 press", () => {
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
     expect(probe.cancelPaintAt).toBeUndefined();
     // The frame callback only schedules the paint stamp. It has not run.
-    expect(vi.getTimerCount()).toBe(1);
+    // The other pending timer is the ask-cancel ghost suppress (500ms),
+    // armed when finishAskCancelSync closed the panel. The 120ms settle
+    // was cleared.
+    expect(vi.getTimerCount()).toBe(2);
 
     await act(async () => {
       releaseEncode?.();
@@ -973,7 +978,8 @@ describe("early 取消 press", () => {
     expect(probe.cancelPaintAt).toEqual(expect.any(Number));
     expect(probe.cancelPaintAfterReleaseMs).toEqual(expect.any(Number));
     const paintedAt = probe.cancelPaintAt;
-    expect(vi.getTimerCount()).toBe(0);
+    // Paint stamp has run. Only the ask-cancel ghost suppress (500ms) remains.
+    expect(vi.getTimerCount()).toBe(1);
 
     await act(async () => {
       vi.advanceTimersToNextFrame();
@@ -981,6 +987,13 @@ describe("early 取消 press", () => {
     });
     expect(probe.cancelPaintAt).toBe(paintedAt);
     expect(closeSpy).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(vi.getTimerCount()).toBe(0);
+    expect(sendAsk).not.toHaveBeenCalled();
 
     delete (window as unknown as { __ASK_TIMING__?: unknown }).__ASK_TIMING__;
   });
