@@ -27,6 +27,7 @@ import {
 } from "@/lib/ask/ask-ui-text";
 import { ASK_LIMITS, type AskBBox, type AskSelectionSummary, type AskTarget } from "@/lib/ask/types";
 import { setAskCodeMissNotice } from "@/lib/ask/code-editor-registry";
+import { setAskOpenSource } from "@/lib/ask/ask-open-source";
 import {
   applyAskSelectingRootVars,
   computeBottomOcclusion,
@@ -133,6 +134,7 @@ export function nextRovingIndex(
 /** 退出圈选并将焦点还给入口按钮（若在 DOM 中）。 */
 export function exitAskAndFocusEntry(): void {
   setAskCodeMissNotice(null);
+  setAskOpenSource(null);
   const active = typeof document !== "undefined" ? document.activeElement : null;
   const focusWasInLayer =
     active != null &&
@@ -986,6 +988,7 @@ function AskSelectionLayerActive({
       } else {
         setAskCodeMissNotice(null);
       }
+      setAskOpenSource({ kind: "box" });
       setAskSelection({ mode: hit.mode, bbox: box, targets: hit.targets });
       return true;
     },
@@ -1127,6 +1130,7 @@ function AskSelectionLayerActive({
       return;
     }
     setHint(null);
+    setAskOpenSource({ kind: "chip", key });
     setAskSelection(next);
   };
 
@@ -1178,6 +1182,7 @@ function AskSelectionLayerActive({
       }
       setHint(null);
       setAskCodeMissNotice(null);
+      setAskOpenSource({ kind: "box" });
       setAskSelection({ mode: "single", bbox: match.rect, targets: [match.target] });
     }
   };

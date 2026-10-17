@@ -42,6 +42,7 @@ import { yieldMacrotask } from "@/lib/ask/yield-macrotask";
 import { usePointerActivate } from "@/lib/ask/use-pointer-activate";
 import { collectAskCandidates, summarizeSelection } from "@/lib/ask/collect-candidates";
 import { getAskCodeMissNotice, subscribeAskCodeMissNotice } from "@/lib/ask/code-editor-registry";
+import { setAskOpenSource } from "@/lib/ask/ask-open-source";
 import {
   ASK_CAPTURE_FALLBACK,
   ASK_CHIPS,
@@ -763,6 +764,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
     if (!hostEl || !stepId) return;
     const next = selectionFromShortcut(hostEl, stepId, key);
     if (!next) return;
+    setAskOpenSource({ kind: "chip", key });
     setAskSelection(next);
   };
 

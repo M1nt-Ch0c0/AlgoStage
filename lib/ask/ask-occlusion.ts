@@ -36,6 +36,8 @@ export function createAskMeasureCache(): AskMeasureCache {
   return { isMobile: null, keyboardOpen: null, playerHeight: null, barHeight: null };
 }
 
+export const sharedAskMeasureCache: AskMeasureCache = createAskMeasureCache();
+
 /** Drop every cached measurement. The next rAF re-measure fills them again. */
 export function invalidateAskMeasureCache(cache: AskMeasureCache): void {
   cache.isMobile = null;
