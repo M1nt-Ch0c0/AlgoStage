@@ -525,10 +525,17 @@ describe("cancel root vars", () => {
     await renderLayer();
     await settle();
 
+    const shell = document.querySelector("[data-ask-layer]");
+    expect(shell).not.toBeNull();
+
     await act(async () => {
       usePlayerStore.setState({ askPhase: "sending" });
     });
     await settle();
+    // Waiting keeps this shell mounted and hides the chip bar, so selecting
+    // can focus a chip in the same commit instead of remounting the layer.
+    expect(document.querySelector("[data-ask-layer]")).toBe(shell);
+    expect(document.querySelector("[data-ask-bottom-bar]")).toBeNull();
     expect(document.querySelector("[data-ask-shortcut]")).toBeNull();
 
     const lingering = document.createElement("button");

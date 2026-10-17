@@ -665,7 +665,8 @@ describe("AskSelectionLayer", () => {
     };
     usePlayerStore.setState({ askPhase: "sending", askContext: context });
     await render();
-    expect(container.querySelector("[data-ask-layer]")).toBeNull();
+    expect(container.querySelector("[data-ask-layer]")).not.toBeNull();
+    expect(container.querySelector("[data-ask-shortcut]")).toBeNull();
     const sending = await act(async () => pressEscape(document.body));
     expect(sending.defaultPrevented).toBe(false);
     expect(usePlayerStore.getState().askPhase).toBe("sending");
@@ -680,7 +681,8 @@ describe("AskSelectionLayer", () => {
     expect(streaming.defaultPrevented).toBe(false);
     expect(usePlayerStore.getState().askPhase).toBe("streaming");
     expect(usePlayerStore.getState().askContext?.token).toBe(4);
-    expect(container.querySelector("[data-ask-layer]")).toBeNull();
+    expect(container.querySelector("[data-ask-layer]")).not.toBeNull();
+    expect(container.querySelector("[data-ask-shortcut]")).toBeNull();
   });
 
   test("按住 Esc 的重复键只处理一次", async () => {
@@ -1415,15 +1417,16 @@ describe("resolveAskEscape", () => {
       // player 60 + panel 200 + gap 8 = 268px (bar hidden while panel open)
       expect(document.documentElement.style.getPropertyValue("--ask-bottom-occlusion")).toBe("268px");
 
-      // sending unmounts the selection chrome. The player offset is owned by
-      // the layer that stays mounted, so 取消 does not drop.
+      // sending keeps the shell mounted under the open panel (same as drafting).
+      // The chip bar stays hidden. Occlusion still counts the panel, so 取消 does not drop.
       await act(async () => {
         usePlayerStore.setState({ askPhase: "sending" });
       });
-      expect(document.querySelector("[data-ask-layer]")).toBeNull();
+      expect(document.querySelector("[data-ask-layer]")).not.toBeNull();
+      expect(document.querySelector("[data-ask-shortcut]")).toBeNull();
       expect(document.documentElement.style.getPropertyValue("--ask-player-bar-h")).toBe("60px");
       expect(document.documentElement.style.getPropertyValue("--ask-bottom-bar-h")).toBe("0px");
-      expect(document.documentElement.style.getPropertyValue("--ask-bottom-occlusion")).toBe("0px");
+      expect(document.documentElement.style.getPropertyValue("--ask-bottom-occlusion")).toBe("268px");
 
       panelEl.remove();
       playerEl.remove();
@@ -1521,7 +1524,8 @@ describe("resolveAskEscape", () => {
       await act(async () => {
         usePlayerStore.setState({ askPhase: "sending" });
       });
-      expect(document.querySelector("[data-ask-layer]")).toBeNull();
+      expect(document.querySelector("[data-ask-layer]")).not.toBeNull();
+      expect(document.querySelector("[data-ask-shortcut]")).toBeNull();
       expect(playerVar()).toBe("162px");
 
       await act(async () => {

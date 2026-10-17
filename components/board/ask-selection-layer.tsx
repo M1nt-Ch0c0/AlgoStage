@@ -46,6 +46,12 @@ import { useIsMobile } from "./use-is-mobile";
 const MIN_REGION_SIDE = 24;
 
 const ACTIVE_PHASES = new Set(["selecting", "drafting", "error"]);
+/**
+ * Shell stays mounted through waiting so a sending/streaming → selecting
+ * cancel can focus the chip in that same commit. Encode prewarm stays on
+ * ACTIVE_PHASES. Esc stays on ESCAPE_PHASES (not registered while waiting).
+ */
+const LAYER_MOUNTED_PHASES = new Set(["selecting", "drafting", "error", "sending", "streaming"]);
 /** 窗口级 Esc 覆盖的阶段。sending/streaming/playing 仍留给原来的流程，不在这里处理。 */
 const ESCAPE_PHASES = new Set(["selecting", "drafting", "error"]);
 
@@ -361,7 +367,7 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
       stageRef={stageRef}
       stage={stage}
       askPhase={askPhase}
-      active={ACTIVE_PHASES.has(askPhase)}
+      active={LAYER_MOUNTED_PHASES.has(askPhase)}
       selection={selection}
       stepId={steps[currentIndex]?.id ?? ""}
       setAskSelection={setAskSelection}

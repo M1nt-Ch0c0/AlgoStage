@@ -15,8 +15,9 @@ const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffec
  * (components/board/ask-panel.tsx), so [data-ask-panel] and its 取消 are gone
  * before the answer plays. The answer itself is StepAnswers, in normal flow
  * under the lesson step, and it does not read --ask-player-bar-h. The chip
- * bar is AskSelectionLayer, which renders only for selecting/drafting/error
- * (ACTIVE_PHASES). globals.css applies the variable only to
+ * bar is AskSelectionLayer. The shell stays mounted for selecting, drafting,
+ * error, sending, and streaming; the chip bar itself renders only while
+ * selecting. globals.css applies the variable only to
  * [data-ask-bottom-bar] and [data-ask-panel]. Both are absent in playing, so
  * publishing the offset there would not hold any panel or 取消 in place.
  */
