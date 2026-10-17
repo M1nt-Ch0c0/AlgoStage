@@ -27,7 +27,13 @@ import {
 } from "@/lib/ask/ask-ui-text";
 import { ASK_LIMITS, type AskBBox, type AskSelectionSummary, type AskTarget } from "@/lib/ask/types";
 import { setAskCodeMissNotice } from "@/lib/ask/code-editor-registry";
-import { getAskBottomObstacle, measureAskElementHeight, measureAskPlayerBarHeight } from "@/lib/ask/ask-occlusion";
+import {
+  computeBottomOcclusion,
+  getAskBottomObstacle,
+  measureAskElementHeight,
+  measureAskPlayerBarHeight,
+  type OcclusionParts,
+} from "@/lib/ask/ask-occlusion";
 import { scheduleEncodeWorkerPrewarm } from "@/lib/ask/capture-worker";
 import { usePlayerStore } from "@/lib/player/store";
 import { useIsMobile } from "./use-is-mobile";
@@ -224,22 +230,7 @@ export function findScrollable(start: HTMLElement | null): HTMLElement {
 
 const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
-export interface OcclusionParts {
-  playerHeight?: number;
-  barHeight?: number;
-  panelHeight?: number;
-}
-
-export function computeBottomOcclusion(parts: OcclusionParts): number {
-  const player = Math.max(0, Math.ceil(parts.playerHeight ?? 0));
-  const panel = Math.max(0, Math.ceil(parts.panelHeight ?? 0));
-  const bar = panel > 0 ? 0 : Math.max(0, Math.ceil(parts.barHeight ?? 0));
-
-  if (player === 0 && bar === 0 && panel === 0) return 0;
-
-  return player + bar + panel + 8;
-}
-
+export { computeBottomOcclusion, type OcclusionParts };
 export const computeOcclusion = computeBottomOcclusion;
 
 function shortcutId(stepId: string, key: ShortcutKey): string {

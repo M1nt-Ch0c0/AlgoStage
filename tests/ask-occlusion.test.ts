@@ -1,6 +1,18 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { getAskBottomObstacle, getAskBottomOcclusion, measureAskElementHeight, measureAskPlayerBarHeight } from "../lib/ask/ask-occlusion";
+import {
+  applyAskSelectingRootVars,
+  computeBottomOcclusion,
+  createAskMeasureCache,
+  getAskBottomObstacle,
+  getAskBottomOcclusion,
+  invalidateAskMeasureCache,
+  measureAskElementHeight,
+  measureAskPlayerBarHeight,
+  selectingRootVarsFromCache,
+  writeAskRootVars,
+  type AskMeasureCache,
+} from "../lib/ask/ask-occlusion";
 
 describe("getAskBottomOcclusion", () => {
   afterEach(() => {
@@ -215,5 +227,166 @@ describe("measureAskElementHeight / getAskBottomObstacle", () => {
     player.remove();
     Object.defineProperty(window, "innerHeight", { configurable: true, value: originalHeight });
     window.matchMedia = originalMatchMedia;
+  });
+});
+
+describe("ask root var writes", () => {
+  function styleTarget(): HTMLElement {
+    const el = document.createElement("div");
+    document.body.appendChild(el);
+    return el;
+  }
+
+  afterEach(() => {
+    document.body.replaceChildren();
+    vi.restoreAllMocks();
+  });
+
+  test("writeAskRootVars skips setProperty when the inline value is unchanged", () => {
+    const el = styleTarget();
+    el.style.setProperty("--ask-player-bar-h", "60px");
+    el.style.setProperty("--ask-bottom-bar-h", "52px");
+    const setProperty = vi.spyOn(el.style, "setProperty");
+
+    expect(
+      writeAskRootVars(
+        { "--ask-player-bar-h": "60px", "--ask-bottom-bar-h": "52px" },
+        el.style,
+      ),
+    ).toEqual([]);
+    expect(setProperty).not.toHaveBeenCalled();
+  });
+
+  test("writeAskRootVars writes only the names whose inline value differs", () => {
+    const el = styleTarget();
+    el.style.setProperty("--ask-bottom-bar-h", "52px");
+    el.style.setProperty("--ask-bottom-occlusion", "120px");
+
+    const written = writeAskRootVars(
+      {
+        "--ask-bottom-bar-h": "52px",
+        "--ask-bottom-occlusion": "0px",
+        "--ask-player-bar-h": "60px",
+      },
+      el.style,
+    );
+
+    expect(written).toEqual(["--ask-player-bar-h", "--ask-bottom-occlusion"]);
+    expect(el.style.getPropertyValue("--ask-player-bar-h")).toBe("60px");
+    expect(el.style.getPropertyValue("--ask-bottom-bar-h")).toBe("52px");
+    expect(el.style.getPropertyValue("--ask-bottom-occlusion")).toBe("0px");
+  });
+
+  test("writeAskRootVars reads every current inline value before any setProperty", () => {
+    const el = styleTarget();
+    el.style.setProperty("--ask-bottom-bar-h", "10px");
+    el.style.setProperty("--ask-bottom-occlusion", "20px");
+    const order: string[] = [];
+    const rawGet = el.style.getPropertyValue.bind(el.style);
+    const rawSet = el.style.setProperty.bind(el.style);
+    vi.spyOn(el.style, "getPropertyValue").mockImplementation((property: string) => {
+      order.push(`read:${property}`);
+      return rawGet(property);
+    });
+    vi.spyOn(el.style, "setProperty").mockImplementation((property: string, value: string | null, priority?: string) => {
+      order.push(`write:${property}`);
+      return rawSet(property, value, priority);
+    });
+
+    const written = writeAskRootVars(
+      {
+        "--ask-player-bar-h": "4px",
+        "--ask-bottom-bar-h": "10px",
+        "--ask-bottom-occlusion": "30px",
+      },
+      el.style,
+    );
+
+    expect(written).toEqual(["--ask-player-bar-h", "--ask-bottom-occlusion"]);
+    const firstWrite = order.findIndex((entry) => entry.startsWith("write:"));
+    expect(firstWrite).toBeGreaterThan(0);
+    expect(order.slice(0, firstWrite).every((entry) => entry.startsWith("read:"))).toBe(true);
+    expect(order.slice(firstWrite).some((entry) => entry.startsWith("read:"))).toBe(false);
+    expect(order.filter((entry) => entry.startsWith("read:"))).toEqual([
+      "read:--ask-player-bar-h",
+      "read:--ask-bottom-bar-h",
+      "read:--ask-bottom-occlusion",
+    ]);
+  });
+
+  test("selectingRootVarsFromCache returns null until every field the formula needs is filled", () => {
+    const empty = createAskMeasureCache();
+    expect(selectingRootVarsFromCache(empty, true)).toBeNull();
+
+    const missingBar: AskMeasureCache = {
+      isMobile: true,
+      keyboardOpen: false,
+      playerHeight: 164,
+      barHeight: null,
+    };
+    expect(selectingRootVarsFromCache(missingBar, true)).toBeNull();
+
+    const missingKeyboard: AskMeasureCache = { ...missingBar, barHeight: 60, keyboardOpen: null };
+    expect(selectingRootVarsFromCache(missingKeyboard, true)).toBeNull();
+  });
+
+  test("selectingRootVarsFromCache publishes 0px when inactive, desktop, or the keyboard is open", () => {
+    const mobile: AskMeasureCache = {
+      isMobile: true,
+      keyboardOpen: false,
+      playerHeight: 164,
+      barHeight: 60,
+    };
+    const zero = { "--ask-bottom-bar-h": "0px", "--ask-bottom-occlusion": "0px" };
+    expect(selectingRootVarsFromCache(mobile, false)).toEqual(zero);
+    expect(selectingRootVarsFromCache({ ...mobile, isMobile: false, playerHeight: null, barHeight: null }, true)).toEqual(zero);
+    expect(selectingRootVarsFromCache({ ...mobile, keyboardOpen: true }, true)).toEqual(zero);
+  });
+
+  test("selectingRootVarsFromCache uses computeBottomOcclusion with a zero panel", () => {
+    const playerHeight = 164;
+    const barHeight = 60;
+    expect(computeBottomOcclusion({ playerHeight, barHeight, panelHeight: 0 })).toBe(232);
+    expect(
+      selectingRootVarsFromCache(
+        { isMobile: true, keyboardOpen: false, playerHeight, barHeight },
+        true,
+      ),
+    ).toEqual({
+      "--ask-bottom-bar-h": "60px",
+      "--ask-bottom-occlusion": "232px",
+    });
+  });
+
+  test("invalidateAskMeasureCache nulls every field", () => {
+    const cache = createAskMeasureCache();
+    expect(cache).toEqual({ isMobile: null, keyboardOpen: null, playerHeight: null, barHeight: null });
+    cache.isMobile = true;
+    cache.keyboardOpen = false;
+    cache.playerHeight = 164;
+    cache.barHeight = 60;
+    invalidateAskMeasureCache(cache);
+    expect(cache).toEqual({ isMobile: null, keyboardOpen: null, playerHeight: null, barHeight: null });
+  });
+
+  test("applyAskSelectingRootVars defers when the cache is incomplete and writes when it is not", () => {
+    const el = styleTarget();
+    const cache = createAskMeasureCache();
+
+    expect(applyAskSelectingRootVars(cache, true, el.style)).toEqual({ written: [], deferred: true });
+    expect(el.style.getPropertyValue("--ask-bottom-bar-h")).toBe("");
+    expect(el.style.getPropertyValue("--ask-bottom-occlusion")).toBe("");
+
+    cache.isMobile = true;
+    cache.keyboardOpen = false;
+    cache.playerHeight = 164;
+    cache.barHeight = 60;
+    expect(applyAskSelectingRootVars(cache, true, el.style)).toEqual({
+      written: ["--ask-bottom-bar-h", "--ask-bottom-occlusion"],
+      deferred: false,
+    });
+    expect(el.style.getPropertyValue("--ask-bottom-occlusion")).toBe("232px");
+
+    expect(applyAskSelectingRootVars(cache, true, el.style)).toEqual({ written: [], deferred: false });
   });
 });

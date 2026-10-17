@@ -1,4 +1,131 @@
 /**
+ * Player bar + chip bar + open panel, plus the 8px gap the bottom chrome
+ * leaves above the viewport edge. A positive panel hides the chip bar
+ * (the drawer covers it). All three at 0 is 0, not the gap.
+ * chip390-b reuses this formula on rebase; keep the math identical.
+ */
+export interface OcclusionParts {
+  playerHeight?: number;
+  barHeight?: number;
+  panelHeight?: number;
+}
+
+export function computeBottomOcclusion(parts: OcclusionParts): number {
+  const player = Math.max(0, Math.ceil(parts.playerHeight ?? 0));
+  const panel = Math.max(0, Math.ceil(parts.panelHeight ?? 0));
+  const bar = panel > 0 ? 0 : Math.max(0, Math.ceil(parts.barHeight ?? 0));
+
+  if (player === 0 && bar === 0 && panel === 0) return 0;
+
+  return player + bar + panel + 8;
+}
+
+/**
+ * Last measured mobile / keyboard / height snapshot. Null means "not measured
+ * yet" — a cancel commit must not invent a layout read to fill it.
+ * chip390-b will reuse this cache on rebase.
+ */
+export type AskMeasureCache = {
+  isMobile: boolean | null;
+  keyboardOpen: boolean | null;
+  playerHeight: number | null;
+  barHeight: number | null;
+};
+
+export function createAskMeasureCache(): AskMeasureCache {
+  return { isMobile: null, keyboardOpen: null, playerHeight: null, barHeight: null };
+}
+
+/** Drop every cached measurement. The next rAF re-measure fills them again. */
+export function invalidateAskMeasureCache(cache: AskMeasureCache): void {
+  cache.isMobile = null;
+  cache.keyboardOpen = null;
+  cache.playerHeight = null;
+  cache.barHeight = null;
+}
+
+/** Root custom properties whose writes inherit and dirty the whole document. */
+export type AskRootVarName = "--ask-player-bar-h" | "--ask-bottom-bar-h" | "--ask-bottom-occlusion";
+
+const ASK_ROOT_VAR_NAMES: AskRootVarName[] = [
+  "--ask-player-bar-h",
+  "--ask-bottom-bar-h",
+  "--ask-bottom-occlusion",
+];
+
+/**
+ * Batch a root-var update. getPropertyValue on an inline style is not a layout
+ * read, so every current value is read before any setProperty. Unchanged
+ * values are left alone: a custom property on documentElement dirties the
+ * whole tree, and the next layout read then pays for a full recalc.
+ * Returns the names that were actually written.
+ */
+export function writeAskRootVars(
+  next: Partial<Record<AskRootVarName, string>>,
+  style: CSSStyleDeclaration = typeof document !== "undefined"
+    ? document.documentElement.style
+    : (undefined as unknown as CSSStyleDeclaration),
+): AskRootVarName[] {
+  if (!style || typeof style.getPropertyValue !== "function" || typeof style.setProperty !== "function") {
+    return [];
+  }
+  const names = ASK_ROOT_VAR_NAMES.filter((name) => next[name] !== undefined);
+  const current = names.map((name) => style.getPropertyValue(name));
+  const written: AskRootVarName[] = [];
+  for (let i = 0; i < names.length; i++) {
+    const value = next[names[i]];
+    if (value === undefined || current[i] === value) continue;
+    style.setProperty(names[i], value);
+    written.push(names[i]);
+  }
+  return written;
+}
+
+/**
+ * Selecting-phase --ask-bottom-* values from the cache alone. No DOM and no
+ * layout reads. Inactive, desktop, or an open keyboard publishes 0px. A null
+ * field the formula needs means the caller must wait for the rAF re-measure.
+ */
+export function selectingRootVarsFromCache(
+  cache: AskMeasureCache,
+  active: boolean,
+): { "--ask-bottom-bar-h": string; "--ask-bottom-occlusion": string } | null {
+  if (!active || cache.isMobile === false || cache.keyboardOpen === true) {
+    return { "--ask-bottom-bar-h": "0px", "--ask-bottom-occlusion": "0px" };
+  }
+  if (
+    cache.isMobile == null ||
+    cache.keyboardOpen == null ||
+    cache.playerHeight == null ||
+    cache.barHeight == null
+  ) {
+    return null;
+  }
+  const bar = `${cache.barHeight}px`;
+  const occlusion = `${computeBottomOcclusion({
+    playerHeight: cache.playerHeight,
+    barHeight: cache.barHeight,
+    panelHeight: 0,
+  })}px`;
+  return { "--ask-bottom-bar-h": bar, "--ask-bottom-occlusion": occlusion };
+}
+
+/**
+ * Publish selecting root vars from the cache. deferred is true when the cache
+ * is incomplete: nothing is written, and the caller keeps the already-queued
+ * rAF re-measure.
+ */
+export function applyAskSelectingRootVars(
+  cache: AskMeasureCache,
+  active: boolean,
+  style?: CSSStyleDeclaration,
+): { written: AskRootVarName[]; deferred: boolean } {
+  const next = selectingRootVarsFromCache(cache, active);
+  if (next == null) return { written: [], deferred: true };
+  return { written: writeAskRootVars(next, style), deferred: false };
+}
+
+/**
  * Reads the --ask-bottom-occlusion CSS variable from the root element
  * (inline style first, then getComputedStyle) and returns px as a number.
  * Returns 0 if missing, unparsable, or during SSR.
