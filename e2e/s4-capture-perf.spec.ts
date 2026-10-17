@@ -160,19 +160,90 @@ async function dragOnStage(page: Page) {
   await expect(page.locator("[data-ask-panel]")).toBeVisible();
 }
 
+/** Copied from e2e/ask-selection.spec.ts. Not imported. */
+async function scrollSubtitleIntoSafeBand(page: Page) {
+  const subtitle = page.locator('[data-ask-target="subtitle"]').first();
+  await subtitle.scrollIntoViewIfNeeded();
+  await page.evaluate(() => {
+    const host = document.querySelector<HTMLElement>('[data-ask-target="subtitle"]');
+    if (!host) return;
+    const header = document.querySelector<HTMLElement>("header");
+    const bar = document.querySelector<HTMLElement>("[data-ask-bottom-bar]");
+    const top = (header?.getBoundingClientRect().bottom ?? 56) + 8;
+    const bottom = (bar?.getBoundingClientRect().top ?? window.innerHeight) - 8;
+    const mid = (top + bottom) / 2;
+    const r = host.getBoundingClientRect();
+    const targetY = mid - r.height / 2;
+    const delta = r.top - targetY;
+    if (Math.abs(delta) > 2) {
+      const se = document.scrollingElement || document.documentElement;
+      se.scrollTop += delta;
+    }
+  });
+  await page.waitForTimeout(50);
+  return subtitle;
+}
+
+/** Copied from e2e/ask-selection.spec.ts. Not imported. */
+async function touchDragSubtitle(page: Page, from: { x: number; y: number }, dx: number, dy: number) {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: from.x, y: from.y }] });
+  for (let s = 1; s <= 5; s++) {
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchMove",
+      touchPoints: [{ x: from.x + (dx * s) / 5, y: from.y + (dy * s) / 5 }],
+    });
+  }
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await cdp.detach();
+}
+
+/** Copied from e2e/ask-selection.spec.ts. Not imported. */
+async function subtitleSafeHit(page: Page) {
+  return page.evaluate(() => {
+    const host = document.querySelector<HTMLElement>('[data-ask-target="subtitle"]');
+    const bar = document.querySelector<HTMLElement>("[data-ask-bottom-bar]");
+    if (!host || !bar) return null;
+    const header = document.querySelector<HTMLElement>("header");
+    const top = (header?.getBoundingClientRect().bottom ?? 56) + 8;
+    const barTop = bar.getBoundingClientRect().top;
+    const r = host.getBoundingClientRect();
+    if (r.width < 8 || r.height < 8) return null;
+    const y = Math.min(Math.max(r.top + Math.min(20, r.height / 2), top + 4), barTop - 8);
+    const x = r.left + Math.min(28, Math.max(10, r.width / 2));
+    if (y < r.top || y > r.bottom || y < top || y > barTop - 4) return null;
+    return { x, y, r: { top: r.top, bottom: r.bottom }, top, barTop };
+  });
+}
+
 async function dragOnSubtitle(page: Page) {
+  await scrollSubtitleIntoSafeBand(page);
+  const hit = await subtitleSafeHit(page);
+  if (!hit) throw new Error("subtitle has no safe hit between header and ask bottom bar");
+
+  // The 390 pixel check crops the body text (~258×73). The host safe-hit sits
+  // on the title row; a wide drag from there includes 圈选提问, which capture
+  // hides and the closed-panel shot still paints. Start on the body when that
+  // point is inside the safe band, otherwise on the host safe hit.
   const subtitleBody = page.locator('[data-ask-target="subtitle"] p').filter({ hasNotText: "字幕" }).first();
-  await subtitleBody.scrollIntoViewIfNeeded();
   const box = await subtitleBody.boundingBox();
   if (!box) throw new Error("subtitle body has no box");
-  const startX = box.x + 20;
-  const startY = box.y + 5;
-  const endX = box.x + box.width - 20;
-  const endY = box.y + box.height + 30;
-  await page.mouse.move(startX, startY);
-  await page.mouse.down();
-  await page.mouse.move(endX, endY, { steps: 8 });
-  await page.mouse.up();
+  const band = await page.evaluate(() => {
+    const header = document.querySelector<HTMLElement>("header");
+    const bar = document.querySelector<HTMLElement>("[data-ask-bottom-bar]");
+    return {
+      top: (header?.getBoundingClientRect().bottom ?? 56) + 8,
+      barTop: bar?.getBoundingClientRect().top ?? window.innerHeight,
+    };
+  });
+  const bodyStartY = box.y + 5;
+  const onBody = bodyStartY >= band.top + 4 && bodyStartY <= band.barTop - 8;
+  const start = onBody ? { x: box.x + 20, y: bodyStartY } : { x: hit.x, y: hit.y };
+  const endX = box.x + Math.max(box.width - 20, 40);
+  const endY = Math.min(box.y + box.height + 30, band.barTop - 8);
+  const dx = Math.max(50, endX - start.x);
+  const dy = Math.max(25, endY - start.y);
+  await touchDragSubtitle(page, start, dx, dy);
   await expect(page.locator("[data-ask-panel]")).toBeVisible();
 }
 
