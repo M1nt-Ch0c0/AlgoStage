@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect } from "react";
-import { measureAskPlayerBarHeight } from "@/lib/ask/ask-occlusion";
+import { measureAskPlayerBarHeight, writeAskRootVars } from "@/lib/ask/ask-occlusion";
 import { usePlayerStore } from "@/lib/player/store";
 
 /** Layout on the client so the first paint already has the offset; effect during SSR. */
@@ -27,27 +27,51 @@ function keyboardOpen(): boolean {
   return window.innerHeight - window.visualViewport.height > 120;
 }
 
+/**
+ * Last string this module published. Compared together with the live inline
+ * value so a phase change that does not move the bar skips setProperty.
+ * writeAskRootVars already skips an unchanged inline value; this stays in
+ * step with that so a 0px close cannot leave a stale open height behind.
+ */
+let lastWrittenPlayerBarH: string | null = null;
+
+function publishPlayerBarHeight(value: string): void {
+  if (typeof document === "undefined") return;
+  if (lastWrittenPlayerBarH === value) {
+    const live = document.documentElement.style.getPropertyValue("--ask-player-bar-h");
+    if (live === value) return;
+  }
+  const written = writeAskRootVars({ "--ask-player-bar-h": value });
+  if (written.length > 0 || document.documentElement.style.getPropertyValue("--ask-player-bar-h") === value) {
+    lastWrittenPlayerBarH = value;
+  }
+}
+
 /** Publish or clear --ask-player-bar-h. The panel margin and the chip bar read it. */
 export function syncAskPlayerBarHeight(): void {
   if (typeof document === "undefined") return;
   const phase = usePlayerStore.getState().askPhase;
   const height = ASK_OPEN_PHASES.has(phase) && !keyboardOpen() ? measureAskPlayerBarHeight() : 0;
-  document.documentElement.style.setProperty("--ask-player-bar-h", `${height}px`);
+  publishPlayerBarHeight(`${height}px`);
 }
 
 /**
  * Owns --ask-player-bar-h for the whole ask session.
- * The selection chrome unmounts at sending, and the panel unmounts when the
- * answer starts streaming, but this root stays mounted until the phase leaves
- * ask entirely. The variable resets only then (or while the keyboard is open).
+ * Keyed on open versus closed, not on the phase itself: moving between
+ * selecting, drafting, sending, streaming, and error must not reset the
+ * variable to 0px or measure in that commit. Open entry measures once,
+ * synchronously, so the first paint has the offset. Later size changes
+ * (resize, scroll, visualViewport, orientation, the narrow-viewport query)
+ * re-measure on the next frame. The variable resets only when the phase
+ * leaves ask entirely, on unmount, or while the keyboard is open.
  */
 export default function AskPlayerBarVar() {
-  const askPhase = usePlayerStore((s) => s.askPhase);
+  const isOpen = usePlayerStore((s) => ASK_OPEN_PHASES.has(s.askPhase));
 
   useIsomorphicLayoutEffect(() => {
     if (typeof document === "undefined") return;
-    if (!ASK_OPEN_PHASES.has(askPhase)) {
-      document.documentElement.style.setProperty("--ask-player-bar-h", "0px");
+    if (!isOpen) {
+      publishPlayerBarHeight("0px");
       return;
     }
 
@@ -70,6 +94,7 @@ export default function AskPlayerBarVar() {
     mq.addEventListener("change", schedule);
     window.addEventListener("resize", schedule);
     window.addEventListener("scroll", schedule, { passive: true, capture: true });
+    window.addEventListener("orientationchange", schedule);
     window.visualViewport?.addEventListener("resize", schedule);
 
     return () => {
@@ -78,10 +103,11 @@ export default function AskPlayerBarVar() {
       mq.removeEventListener("change", schedule);
       window.removeEventListener("resize", schedule);
       window.removeEventListener("scroll", schedule, { capture: true } as EventListenerOptions);
+      window.removeEventListener("orientationchange", schedule);
       window.visualViewport?.removeEventListener("resize", schedule);
-      document.documentElement.style.setProperty("--ask-player-bar-h", "0px");
+      publishPlayerBarHeight("0px");
     };
-  }, [askPhase]);
+  }, [isOpen]);
 
   return null;
 }
