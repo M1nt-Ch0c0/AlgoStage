@@ -251,4 +251,72 @@ describe("answers repo", () => {
     expect(written).not.toContain("note");
     expect(written).not.toContain("drop me");
   });
+
+  it("insertAnswer with imageAttached:true preserves true in returned payload and db JSON", async () => {
+    const { db, create } = fakeDb([]);
+    const payload = answerPayload({ imageAttached: true });
+
+    const stored = await insertAnswer(db, {
+      id: "req-1",
+      cacheKey: "cache-a",
+      scriptVersion: "v-current",
+      stepId: "s1",
+      payload,
+    });
+
+    expect(stored.imageAttached).toBe(true);
+    expect(create).toHaveBeenCalledTimes(1);
+    const writtenJson = JSON.parse(create.mock.calls[0]?.[0].data.payload);
+    expect(writtenJson.imageAttached).toBe(true);
+  });
+
+  it("insertAnswer with imageAttached:false preserves false in returned payload and db JSON", async () => {
+    const { db, create } = fakeDb([]);
+    const payload = answerPayload({ imageAttached: false });
+
+    const stored = await insertAnswer(db, {
+      id: "req-1",
+      cacheKey: "cache-a",
+      scriptVersion: "v-current",
+      stepId: "s1",
+      payload,
+    });
+
+    expect(stored.imageAttached).toBe(false);
+    expect(create).toHaveBeenCalledTimes(1);
+    const writtenJson = JSON.parse(create.mock.calls[0]?.[0].data.payload);
+    expect(writtenJson.imageAttached).toBe(false);
+  });
+
+  it("insertAnswer without imageAttached leaves returned and stored payload without imageAttached", async () => {
+    const { db, create } = fakeDb([]);
+    const payload = answerPayload();
+    delete (payload as Partial<StepAnswer>).imageAttached;
+
+    const stored = await insertAnswer(db, {
+      id: "req-1",
+      cacheKey: "cache-a",
+      scriptVersion: "v-current",
+      stepId: "s1",
+      payload,
+    });
+
+    expect(stored.imageAttached).toBeUndefined();
+    expect("imageAttached" in stored).toBe(false);
+    expect(create).toHaveBeenCalledTimes(1);
+    const writtenJson = JSON.parse(create.mock.calls[0]?.[0].data.payload);
+    expect(writtenJson.imageAttached).toBeUndefined();
+    expect("imageAttached" in writtenJson).toBe(false);
+  });
+
+  it("listAnswers keeps imageAttached:false from stored row JSON", async () => {
+    const rowWithFalse = row({
+      id: "img-false",
+      payload: payloadOf({ id: "img-false", stepId: "s1", imageAttached: false }),
+    });
+    const { db } = fakeDb([rowWithFalse]);
+
+    const map = await listAnswers(db, "cache-a", "v-current", new Set(["s1"]));
+    expect(map.s1?.[0]?.imageAttached).toBe(false);
+  });
 });

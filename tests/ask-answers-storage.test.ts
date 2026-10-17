@@ -169,4 +169,27 @@ describe("browser answers storage", () => {
     clearBrowserAnswersAfterRegenerate("");
     expect(window.localStorage.getItem("algostage.answers.")).toBe("nope");
   });
+
+  test("round-trips map with imageAttached true/false and reads back same", () => {
+    const map: StepAnswersMap = {
+      s1: [
+        answer({ id: "with-image", imageAttached: true, createdAt: "2026-10-13T08:00:00.000Z" }),
+        answer({ id: "without-image", imageAttached: false, createdAt: "2026-10-13T09:00:00.000Z" }),
+      ],
+    };
+    writeBrowserAnswers("cache-a", "v1", map);
+    const read = readBrowserAnswers("cache-a", "v1", valid);
+    expect(read.s1?.[0]?.imageAttached).toBe(true);
+    expect(read.s1?.[1]?.imageAttached).toBe(false);
+  });
+
+  test("round-trips map without imageAttached field and reads back undefined/absent", () => {
+    const map: StepAnswersMap = {
+      s1: [answer({ id: "no-image" })],
+    };
+    writeBrowserAnswers("cache-a", "v1", map);
+    const read = readBrowserAnswers("cache-a", "v1", valid);
+    expect(read.s1?.[0]?.imageAttached).toBeUndefined();
+    expect("imageAttached" in (read.s1?.[0] ?? {})).toBe(false);
+  });
 });

@@ -93,6 +93,9 @@ export async function insertAnswer(
     segments: parsed.segments,
     createdAt: parsed.createdAt,
   };
+  if (typeof parsed.imageAttached === "boolean") {
+    payload.imageAttached = parsed.imageAttached;
+  }
   await db.lectureAnswer.create({
     data: {
       id: input.id,
