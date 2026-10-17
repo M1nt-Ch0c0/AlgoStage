@@ -418,6 +418,16 @@ describe("early 取消 press", () => {
       await vi.advanceTimersByTimeAsync(1);
     });
     expect(encoded).toBe(true);
+    // Capture is done. The pre-send grace is one more macrotask plus its
+    // own 120ms settle before fetch.
+    expect(sendAsk).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(sendAsk).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120);
+    });
     expect(sendAsk).toHaveBeenCalledTimes(1);
     const sent = vi.mocked(sendAsk).mock.calls[0]?.[0];
     expect(sent).toMatchObject({ ok: true, image: { dataBase64: "qq==" } });

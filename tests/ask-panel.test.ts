@@ -254,8 +254,10 @@ async function finishCaptureTurn() {
     setTimeout(resolve, 0);
   });
   await Promise.resolve();
+  // Capture settle is 120ms. The pre-send grace is another yield plus its
+  // own 120ms settle, so a drain that stops at 200ms ends before sendAsk.
   await new Promise<void>((resolve) => {
-    setTimeout(resolve, 200);
+    setTimeout(resolve, 400);
   });
 }
 
@@ -1223,6 +1225,11 @@ describe("ask panel", () => {
     const queued = heldYields.splice(0);
     await act(async () => {
       queued.forEach((release) => release());
+      await drainPaintFrames();
+      // Releasing the capture yield schedules the pre-send grace. That
+      // macrotask is held by the same stub, so release it too.
+      const grace = heldYields.splice(0);
+      grace.forEach((release) => release());
       await drainPaintFrames();
     });
     await pendingSubmit;

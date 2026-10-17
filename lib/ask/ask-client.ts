@@ -101,10 +101,25 @@ function abandonBeforeFetch(token: number | null): void {
 }
 
 /**
+ * Drop a runtime that never reached askSent. The waiting row must not appear
+ * for a cancel decided before the fetch is committed, and askPhase stays put.
+ */
+function disposeRuntimeBeforeAskSent(token: number): void {
+  const runtime = runtimes.get(token);
+  if (!runtime || runtime.settled) return;
+  runtime.userCancel = true;
+  runtime.settled = true;
+  clearTimeout(runtime.timer);
+  runtime.controller.abort();
+  runtimes.delete(token);
+}
+
+/**
  * Send the current draft. Returns without throwing when the phase, availability,
  * draft, or selection cannot be sent. In-flight work is tracked until settle.
- * options.isCurrent is checked at the last synchronous point before askSent,
- * and again immediately before fetch.
+ * The waiting row must not appear before the final cancel decision. Never-send
+ * means no fetch. options.isCurrent is checked after the byok / server-key
+ * await and before askSent, and again immediately before fetch.
  */
 export async function sendAsk(
   capture: CaptureResult | null,
@@ -167,7 +182,6 @@ export async function sendAsk(
     settled: false,
   };
   runtimes.set(token, runtime);
-  usePlayerStore.getState().askSent(guard);
 
   const image = selectionImage(capture);
 
@@ -176,6 +190,14 @@ export async function sendAsk(
     const serverKeyDisabled = localByok
       ? await fetchServerKeyDisabled(controller.signal)
       : false;
+    // Final cancel decision before the waiting row. askSent has not run, so
+    // a stale session disposes the runtime and does not call askCancelled.
+    if (options?.isCurrent && !options.isCurrent()) {
+      disposeRuntimeBeforeAskSent(token);
+      return;
+    }
+    usePlayerStore.getState().askSent(guard);
+    // A cancel that lands in the turn askSent just opened still must not fetch.
     if (options?.isCurrent && !options.isCurrent()) {
       abandonBeforeFetch(token);
       return;

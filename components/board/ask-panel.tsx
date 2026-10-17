@@ -678,6 +678,43 @@ function AskPanelActive({ stage }: AskPanelProps) {
           retroCancelAsk();
         });
       }
+      // Uma A/C post-prep cancel under 4× can still be in the CDP queue after
+      // hold resolves send (no pending press). Drain one settle before fetch.
+      // Prefer this abort/phase guard over a thicker ghost window.
+      if (
+        holdResult === "send" &&
+        !cancelHitRef.current &&
+        !releasedOnCancelRef.current &&
+        holdRef.current.latched(session) == null &&
+        !askAb("noSettle")
+      ) {
+        await yieldMacrotask({
+          done: () =>
+            cancelHitRef.current ||
+            releasedOnCancelRef.current ||
+            holdRef.current.latched(session) === "cancel" ||
+            holdRef.current.isPending(session),
+        });
+        if (holdRef.current.isPending(session)) {
+          holdWaitingRef.current = true;
+          const lateHold = await holdRef.current.wait(session, 2000);
+          holdWaitingRef.current = false;
+          if (lateHold === "cancel" || (capture?.ok === false && capture.reason === "ABORTED")) {
+            setPreparing(false);
+            closeCancelledOnce(session);
+            sendingRef.current = false;
+            return;
+          }
+          if (lateHold === "send-held") {
+            markHeldAfterSend(true);
+            holdRef.current.onLateCancel(() => {
+              markHeldAfterSend(false);
+              setHoldPressed(false);
+              retroCancelAsk();
+            });
+          }
+        }
+      }
       setPreparing(false);
       const latest = usePlayerStore.getState();
       const latestStepId = latest.steps[latest.currentIndex]?.id ?? "";

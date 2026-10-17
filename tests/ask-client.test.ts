@@ -460,8 +460,11 @@ describe("isCurrent session guard", () => {
       isCurrent: () => current,
     });
     await vi.waitFor(() => {
-      expect(s().askPhase).toBe("sending");
+      expect(fetchMock).toHaveBeenCalled();
     });
+    // askSent waits until the server-key await returns, so the waiting row
+    // is still absent while that request is open.
+    expect(s().askPhase).toBe("drafting");
     expect(askCallCount(fetchMock)).toBe(0);
 
     current = false;
