@@ -559,11 +559,12 @@ async function assertOcclusion(page: Page) {
     };
   });
   expect(frame.occl).toBe(settled.occl);
-  // Uma's 390x844 session measured 232. This build measures ~230 depending on
-  // player chrome. Equality of the first frame to settled is the gate.
+  // 390×844: player 164 + chip bar 60 + gap 8. Both the cancel frame and the
+  // settled value are that total. The player sits flush (bottom-0) so
+  // measureAskPlayerBarHeight reads 164, not the old sticky bottom-2's 162.
   console.log(`cancel-paint occlusion settled=${settled.occl} innerHeight=${settled.innerHeight}`);
-  expect(settled.occl).toMatch(/^\d+px$/);
-  expect(Number.parseFloat(settled.occl)).toBeGreaterThan(0);
+  expect(frame.occl).toBe("232px");
+  expect(settled.occl).toBe("232px");
   expect(frame.selTop, "selection top at first frame").toEqual(expect.any(Number));
   expect(settled.selTop, "selection top settled").toEqual(expect.any(Number));
   expect(Math.abs((frame.selTop as number) - (settled.selTop as number))).toBeLessThanOrEqual(0.5);

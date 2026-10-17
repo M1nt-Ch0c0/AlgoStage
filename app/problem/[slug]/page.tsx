@@ -1179,7 +1179,7 @@ export default function ProblemPage() {
         ref={playerAreaRef}
         tabIndex={-1}
         aria-label="讲解播放区"
-        className="z-30 max-lg:sticky max-lg:bottom-2"
+        className="z-30 max-lg:sticky max-lg:bottom-0 max-lg:pb-0.5"
       >
         <PlayerControls
           preparing={lectureBusy && (!receiving || stepCount === 0)}
