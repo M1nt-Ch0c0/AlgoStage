@@ -1002,7 +1002,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
 
   const seconds = elapsedSeconds(askStartedAt, now);
   const cancelPressed = holdPressed || heldAfterSend;
-  const cancelClassName = `pointer-coarse:min-h-11 pointer-coarse:min-w-11 rounded-md border border-board-600 px-3 py-1${
+  const cancelClassName = `min-h-11 min-w-11 max-sm:min-h-12 max-sm:min-w-12 pointer-coarse:min-h-11 max-sm:pointer-coarse:min-h-12 pointer-coarse:min-w-11 max-sm:pointer-coarse:min-w-12 inline-flex items-center justify-center rounded-md border border-board-600 px-3 py-1${
     cancelPressed ? " bg-board-700" : ""
   }`;
   const positionClass = desktop ? "absolute z-40 w-80" : "fixed inset-x-0 z-40 max-h-[50vh] overflow-y-auto";
@@ -1018,13 +1018,13 @@ function AskPanelActive({ stage }: AskPanelProps) {
       className={`${positionClass} flex flex-col gap-2 rounded-xl border border-board-600 bg-board-900/95 p-3 text-sm text-chalk-100 shadow-lg`}
       style={desktop ? { top: anchor?.top ?? GAP, left: anchor?.left ?? GAP, width: PANEL_WIDTH } : { bottom: drawerBottom }}
     >
-      <div role="group" aria-label="点选捷径" className="flex flex-wrap gap-1">
+      <div role="group" aria-label="点选捷径" className="flex flex-wrap gap-2">
         {shortcuts.map((item) => (
           <button
             key={item.key}
             type="button"
             data-ask-shortcut={item.key}
-            className="pointer-coarse:min-h-11 pointer-coarse:min-w-11 rounded-full border border-board-600 px-2 py-0.5 text-[10px] text-chalk-100"
+            className="min-h-11 min-w-11 max-sm:min-h-12 max-sm:min-w-12 pointer-coarse:min-h-11 max-sm:pointer-coarse:min-h-12 pointer-coarse:min-w-11 max-sm:pointer-coarse:min-w-12 inline-flex items-center justify-center rounded-full border border-board-600 px-3 py-1 text-xs text-chalk-100"
             onClick={() => pickShortcut(item.key)}
           >
             {item.label}
@@ -1059,13 +1059,13 @@ function AskPanelActive({ stage }: AskPanelProps) {
         </p>
       ) : null}
 
-      <div className="flex flex-wrap gap-1">
+      <div className="flex flex-wrap gap-2">
         {ASK_CHIPS.map((chip) => (
           <button
             key={chip}
             type="button"
             data-ask-chip={chip}
-            className="pointer-coarse:min-h-11 pointer-coarse:min-w-11 rounded-full border border-board-600 px-2 py-1 text-xs text-chalk-100"
+            className="min-h-11 min-w-11 max-sm:min-h-12 max-sm:min-w-12 pointer-coarse:min-h-11 max-sm:pointer-coarse:min-h-12 pointer-coarse:min-w-11 max-sm:pointer-coarse:min-w-12 inline-flex items-center justify-center rounded-full border border-board-600 px-3 py-1 text-xs text-chalk-100"
             onClick={() => onQuestionChange(chip)}
           >
             {chip}
@@ -1129,7 +1129,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
             type="button"
             data-ask-submit
             aria-disabled={submitLocked ? true : undefined}
-            className={`pointer-coarse:min-h-11 pointer-coarse:min-w-11 rounded-md bg-beam-gold px-3 py-1 text-on-accent${
+            className={`min-h-11 min-w-11 max-sm:min-h-12 max-sm:min-w-12 pointer-coarse:min-h-11 max-sm:pointer-coarse:min-h-12 pointer-coarse:min-w-11 max-sm:pointer-coarse:min-w-12 inline-flex items-center justify-center rounded-md bg-beam-gold px-3 py-1 text-on-accent${
               submitLocked ? " opacity-50 cursor-not-allowed" : ""
             }`}
             onClick={() => {
@@ -1154,7 +1154,7 @@ function ErrorAction({
 }) {
   const label = ACTION_LABEL[action];
   const className =
-    "pointer-coarse:min-h-11 pointer-coarse:min-w-11 rounded-md bg-beam-gold px-3 py-1 text-center text-on-accent";
+    "min-h-11 min-w-11 max-sm:min-h-12 max-sm:min-w-12 pointer-coarse:min-h-11 max-sm:pointer-coarse:min-h-12 pointer-coarse:min-w-11 max-sm:pointer-coarse:min-w-12 inline-flex items-center justify-center rounded-md bg-beam-gold px-3 py-1 text-center text-on-accent";
   if (action === "settings") {
     return (
       <Link href="/settings" data-ask-error-action={action} className={className}>

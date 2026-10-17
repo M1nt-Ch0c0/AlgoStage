@@ -6,7 +6,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent } from "react";
-import { Loader2 } from "lucide-react";
+import { CircleDashed, Loader2 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import {
   ASK_ENTRY_LABEL,
@@ -196,6 +196,8 @@ export default function AskEntry() {
     ? "invisible pointer-events-none text-[10px] text-chalk-500"
     : "text-[10px] text-chalk-500";
 
+  const iconSize = isMobile ? 22 : 20;
+
   return (
     <span className="inline-flex flex-col items-end gap-0.5">
       <button
@@ -209,27 +211,38 @@ export default function AskEntry() {
         aria-describedby={describedBy}
         aria-keyshortcuts={inAsk ? "Escape" : "Q"}
         data-ask-disabled-reason={reason ?? (showTimeout ? "pendingTimeout" : undefined)}
-        className={`relative z-40 inline-flex items-center justify-center gap-1 rounded-full border border-board-600 px-2 py-0.5 font-mono text-[10px] tracking-wide text-chalk-300 pointer-coarse:min-h-11 pointer-coarse:min-w-11 whitespace-nowrap ${
+        className={`relative z-40 inline-flex items-center justify-center gap-1.5 rounded-full border border-board-600 font-mono font-medium tracking-wide text-chalk-300 whitespace-nowrap h-10 min-h-11 min-w-11 px-3 text-[15px] max-sm:h-12 max-sm:min-h-12 max-sm:min-w-12 max-sm:text-base pointer-coarse:min-h-11 pointer-coarse:min-w-11 ${
           grey ? GREY_CLASS : ""
-        }${inAsk && !isMobile ? " min-h-11 min-w-11 pointer-fine:-my-3" : ""}${
-          hideAtMobileAsk ? " invisible pointer-events-none" : ""
-        }`}
+        }${hideAtMobileAsk ? " invisible pointer-events-none" : ""}`}
         onClick={onClick}
         onKeyDown={onEntryKeyDown}
       >
-        <span className="inline-flex h-3 w-3 shrink-0 items-center justify-center" aria-hidden>
-          {awaitingPending ? (
-            reduced ? (
-              "…"
-            ) : (
-              <Loader2 size={12} className="animate-spin" data-ask-pending-spinner />
-            )
-          ) : null}
-        </span>
+        {awaitingPending ? (
+          reduced ? (
+            <span className="inline-flex shrink-0 items-center justify-center text-sm" aria-hidden>
+              …
+            </span>
+          ) : (
+            <Loader2
+              size={iconSize}
+              className="animate-spin shrink-0"
+              data-ask-pending-spinner
+              data-ask-entry-icon
+              aria-hidden
+            />
+          )
+        ) : (
+          <CircleDashed
+            size={iconSize}
+            className="shrink-0"
+            data-ask-entry-icon
+            aria-hidden
+          />
+        )}
         <span>{inAsk && !isMobile ? ASK_EXIT_LABEL : ASK_ENTRY_LABEL}</span>
         <kbd
           data-ask-kbd
-          className="max-[391px]:hidden rounded border border-board-600 px-1 font-mono text-[9px] leading-none text-chalk-500"
+          className="max-[391px]:hidden rounded border border-board-600 px-1.5 py-0.5 font-mono text-[10px] leading-none text-chalk-500"
           aria-hidden
         >
           {inAsk && !isMobile ? "Esc" : "Q"}

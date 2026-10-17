@@ -11,6 +11,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type RefObject } from "react";
+import { CircleDashed } from "lucide-react";
 import { isTypingTarget } from "@/lib/player/keyboard";
 import { collectAskCandidates, relativeRect, summarizeSelection } from "@/lib/ask/collect-candidates";
 import { hitTest, hitTestPoint, intersects, normalizeBBox } from "@/lib/ask/hit-test";
@@ -1818,7 +1819,7 @@ function AskSelectionLayerActive({
                         data-ask-shortcut={item.key}
                         aria-pressed={isSelected ? true : undefined}
                         tabIndex={isTabbable ? 0 : -1}
-                        className="min-h-11 min-w-11 pointer-coarse:min-h-11 pointer-coarse:min-w-11 inline-flex shrink-0 items-center justify-center rounded-full border border-board-600 bg-board-900/80 px-3 py-1 text-xs sm:px-2 sm:py-0.5 sm:text-[10px] sm:min-h-0 sm:min-w-0 sm:pointer-coarse:min-h-11 sm:pointer-coarse:min-w-11 text-chalk-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beam-gold focus-visible:ring-inset"
+                        className="min-h-11 min-w-11 max-sm:min-h-12 max-sm:min-w-12 pointer-coarse:min-h-11 max-sm:pointer-coarse:min-h-12 pointer-coarse:min-w-11 max-sm:pointer-coarse:min-w-12 inline-flex shrink-0 items-center justify-center rounded-full border border-board-600 bg-board-900/80 px-3 py-1 text-xs text-chalk-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beam-gold focus-visible:ring-inset"
                         onClick={(event) => {
                           event.stopPropagation();
                           // 键盘带修饰键触发的合成 click（detail===0）不选芯片；鼠标 Shift+点击照常选中。
@@ -1939,12 +1940,13 @@ function AskSelectionLayerActive({
                 tabIndex={-1}
                 aria-pressed="true"
                 aria-keyshortcuts="Escape"
-                className="shrink-0 min-h-11 min-w-11 pointer-coarse:min-h-11 pointer-coarse:min-w-11 inline-flex items-center justify-center gap-1 rounded-full border border-board-600 bg-board-900/80 px-3 py-1 font-mono text-xs text-chalk-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beam-gold focus-visible:ring-inset sm:hidden whitespace-nowrap"
+                className="shrink-0 h-12 min-h-12 min-w-12 pointer-coarse:min-h-12 pointer-coarse:min-w-12 inline-flex items-center justify-center gap-1.5 rounded-full border border-board-600 bg-board-900/80 px-3 py-1 font-mono font-medium text-base text-chalk-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beam-gold focus-visible:ring-inset sm:hidden whitespace-nowrap"
                 onClick={(event) => {
                   event.stopPropagation();
                   exitAskAndFocusEntry();
                 }}
               >
+                <CircleDashed size={22} className="shrink-0" data-ask-entry-icon aria-hidden />
                 <span>{ASK_EXIT_LABEL}</span>
                 <kbd
                   data-ask-kbd
