@@ -491,7 +491,11 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
       event.preventDefault();
       event.stopPropagation();
       if (action === "close-panel") {
-        finishAskCancelSync(document.querySelector<HTMLElement>("[data-ask-panel]"), closeAskPanel);
+        finishAskCancelSync(
+          document.querySelector<HTMLElement>("[data-ask-panel]"),
+          closeAskPanel,
+          { focusMode: "selection" },
+        );
       }
       else {
         exitAskAndFocusEntry();

@@ -683,7 +683,7 @@ describe("AskSelectionLayer", () => {
     panel.remove();
   });
 
-  test("chip opens panel, Esc closes -> focus returns to opener chip (SCOPE 14:25)", async () => {
+  test("chip opens panel, Esc closes -> focus selection target, not chip", async () => {
     await render();
     const chip = layer().querySelector<HTMLButtonElement>('[data-ask-shortcut="subtitle"]');
     expect(chip).not.toBeNull();
@@ -702,9 +702,10 @@ describe("AskSelectionLayer", () => {
       expect(close.defaultPrevented).toBe(true);
       expect(usePlayerStore.getState().askPhase).toBe("selecting");
 
-      const restoredChip = document.querySelector<HTMLElement>('[data-ask-shortcut="subtitle"]');
-      expect(restoredChip).not.toBeNull();
-      expect(document.activeElement).toBe(restoredChip);
+      const target = stage.querySelector<HTMLElement>('[data-ask-id="subtitle:s1"]');
+      expect(target).not.toBeNull();
+      expect(document.activeElement).toBe(target);
+      expect(document.activeElement).not.toBe(chip);
     } finally {
       panel.remove();
     }

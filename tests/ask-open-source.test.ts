@@ -131,6 +131,61 @@ describe("resolveAskCancelFocusTarget", () => {
     expect(el).toBe(chips.get("step"));
     expect(chips.get("subtitle")?.tabIndex).toBe(0);
   });
+
+  test("focusMode selection skips chip and returns data-ask-id (desktop)", () => {
+    const { chips, target } = mount({
+      chipKeys: ["subtitle", "step"],
+      currentKey: "subtitle",
+      askId: "step:s1",
+    });
+    setAskOpenSource({ kind: "chip", key: "step" });
+
+    const el = resolveAskCancelFocusTarget({
+      isMobile: false,
+      selection: selection("step:s1"),
+      focusMode: "selection",
+    });
+
+    expect(el).toBe(target);
+    expect(el).not.toBe(chips.get("step"));
+  });
+
+  test("focusMode opener (default) still prefers chip", () => {
+    const { chips, target } = mount({
+      chipKeys: ["subtitle", "step"],
+      currentKey: "subtitle",
+      askId: "step:s1",
+    });
+    setAskOpenSource({ kind: "chip", key: "step" });
+
+    const el = resolveAskCancelFocusTarget({
+      isMobile: false,
+      selection: selection("step:s1"),
+      focusMode: "opener",
+    });
+
+    expect(el).toBe(chips.get("step"));
+    expect(el).not.toBe(target);
+  });
+
+  test("focusMode selection skips mobile chip fallback", () => {
+    const { chips, target } = mount({
+      chipKeys: ["subtitle", "step", "viz"],
+      currentKey: "subtitle",
+      askId: "step:s1",
+    });
+    setAskOpenSource({ kind: "chip", key: "viz" });
+
+    const el = resolveAskCancelFocusTarget({
+      isMobile: true,
+      selection: selection("step:s1"),
+      focusMode: "selection",
+    });
+
+    expect(el).toBe(target);
+    expect(el).not.toBe(chips.get("viz"));
+    expect(el).not.toBe(chips.get("subtitle"));
+  });
 });
 
 const script: TeachingScript = {

@@ -5,7 +5,10 @@ import {
   measureAskPlayerBarHeight,
   sharedAskMeasureCache,
 } from "@/lib/ask/ask-occlusion";
-import { resolveAskCancelFocusTarget } from "@/lib/ask/ask-open-source";
+import {
+  resolveAskCancelFocusTarget,
+  type AskCancelFocusMode,
+} from "@/lib/ask/ask-open-source";
 import { usePlayerStore } from "@/lib/player/store";
 
 /**
@@ -168,11 +171,12 @@ export function hideAskPanelNow(panel: HTMLElement | null): void {
   panel.setAttribute("inert", "");
 }
 
-function focusAskCancelTarget(): void {
+function focusAskCancelTarget(focusMode: AskCancelFocusMode = "opener"): void {
   const isMobile = window.matchMedia("(max-width: 639px)").matches;
   const target = resolveAskCancelFocusTarget({
     isMobile,
     selection: usePlayerStore.getState().selection,
+    focusMode,
   });
   const focused = document.activeElement;
   if (focused instanceof HTMLElement && focused !== target) {
@@ -185,8 +189,14 @@ function focusAskCancelTarget(): void {
  * Hide, commit the store transition, then restore selecting root vars and
  * focus before the next frame. One sync measure only when the shared cache
  * is incomplete (Leo L4), still before focus.
+ * focusMode: Esc close-panel passes "selection"; Cancel keeps default "opener".
  */
-export function finishAskCancelSync(panel: HTMLElement | null, transition: () => void): void {
+export function finishAskCancelSync(
+  panel: HTMLElement | null,
+  transition: () => void,
+  opts?: { focusMode?: AskCancelFocusMode },
+): void {
+  const focusMode = opts?.focusMode ?? "opener";
   hideAskPanelNow(panel);
   flushSync(transition);
   if (usePlayerStore.getState().askPhase !== "selecting") return;
@@ -204,10 +214,10 @@ export function finishAskCancelSync(panel: HTMLElement | null, transition: () =>
     }
     applyAskSelectingRootVars(cache, true);
   }
-  focusAskCancelTarget();
+  focusAskCancelTarget(focusMode);
   // After the first focus: the compatibility mousedown lands once the
   // panel unmounts on the following microtask. Swallow it, then put focus
   // back on the opener in this same turn. No rAF, timeout, or microtask.
   armAskCancelGhostSuppress();
-  focusAskCancelTarget();
+  focusAskCancelTarget(focusMode);
 }
