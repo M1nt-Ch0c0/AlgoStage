@@ -407,39 +407,6 @@ const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffec
 export { computeBottomOcclusion, type OcclusionParts };
 export const computeOcclusion = computeBottomOcclusion;
 
-/**
- * Cancel commit (drafting|error → selecting) on a narrow viewport.
- * The panel is already gone and the chip bar has just remounted, but the
- * queued measurement has not run. Write the selecting targets now so the
- * box and the bar do not sit on waiting/drafting values for one frame.
- * Panel contribution is 0 — do not query the panel. Player height is the
- * inline variable AskPlayerBarVar already owns; only read it. The bar is
- * measured, never written and then remeasured.
- */
-function applyCancelSelectingChromeTargets(bottomBar: HTMLElement | null): void {
-  if (typeof document === "undefined") return;
-  const rootStyle = document.documentElement.style;
-  const playerRaw = rootStyle.getPropertyValue("--ask-player-bar-h").trim();
-  const parsedPlayer = Number.parseFloat(playerRaw);
-  const playerH =
-    Number.isFinite(parsedPlayer) && parsedPlayer > 0
-      ? Math.ceil(parsedPlayer)
-      : measureAskPlayerBarHeight();
-  const barH = measureAskElementHeight(bottomBar);
-  const nextBar = `${barH}px`;
-  const nextOcclusion = `${computeBottomOcclusion({
-    playerHeight: playerH,
-    barHeight: barH,
-    panelHeight: 0,
-  })}px`;
-  if (rootStyle.getPropertyValue("--ask-bottom-bar-h") !== nextBar) {
-    rootStyle.setProperty("--ask-bottom-bar-h", nextBar);
-  }
-  if (rootStyle.getPropertyValue("--ask-bottom-occlusion") !== nextOcclusion) {
-    rootStyle.setProperty("--ask-bottom-occlusion", nextOcclusion);
-  }
-}
-
 
 function shortcutId(stepId: string, key: ShortcutKey): string {
   return `${key}:${stepId}`;
@@ -494,18 +461,6 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
   // 上一阶段在 effect 里更新。取消的焦点还原由 finishAskCancelSync 拥有；
   // 这里只留下 drafting 的 status 播报。
   const previousPhaseRef = useRef(askPhase);
-  const openingChipRef = useRef<{
-    key?: string;
-    element?: HTMLElement | null;
-  } | null>(null);
-  const closedByCancelRef = useRef(false);
-
-  useEffect(() => {
-    if (askPhase === "idle") {
-      openingChipRef.current = null;
-      closedByCancelRef.current = false;
-    }
-  }, [askPhase]);
 
   // Selection mode pays for the encode worker up front, on an idle callback,
   // so the first capture reuses it. The callback is not the submit task and
@@ -524,7 +479,6 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
     const onKey = (event: globalThis.KeyboardEvent) => {
       if (event.key !== "Escape") return;
       if (event.repeat) return;
-      closedByCancelRef.current = false;
       const action = resolveAskEscape(usePlayerStore.getState().askPhase, event.target, {
         composing: event.isComposing,
         defaultPrevented: event.defaultPrevented,
@@ -590,8 +544,6 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
       stepId={steps[currentIndex]?.id ?? ""}
       setAskSelection={setAskSelection}
       clearAskSelection={clearAskSelection}
-      openingChipRef={openingChipRef}
-      closedByCancelRef={closedByCancelRef}
     />
   );
 }
@@ -605,8 +557,6 @@ function AskSelectionLayerActive({
   stepId,
   setAskSelection,
   clearAskSelection,
-  openingChipRef,
-  closedByCancelRef,
 }: AskSelectionLayerProps & {
   askPhase: string;
   active: boolean;
@@ -614,11 +564,6 @@ function AskSelectionLayerActive({
   stepId: string;
   setAskSelection: (selection: AskSelectionSummary) => void;
   clearAskSelection: () => void;
-  openingChipRef?: React.MutableRefObject<{
-    key?: string;
-    element?: HTMLElement | null;
-  } | null>;
-  closedByCancelRef?: React.MutableRefObject<boolean>;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const pointersRef = useRef<Map<number, PointerSample>>(new Map());
@@ -747,12 +692,6 @@ function AskSelectionLayerActive({
       touchCompletedSelectionRef.current = false;
       lastTouchCancelPointerUpRef.current = null;
       cancelClickSeenRef.current = false;
-      const target = event.target as Element | null;
-      if (target?.closest?.("[data-ask-panel] [data-ask-cancel], [data-ask-cancel]")) {
-        if (closedByCancelRef) closedByCancelRef.current = true;
-      } else if (closedByCancelRef) {
-        closedByCancelRef.current = false;
-      }
     };
     const onDocPointerUp = (event: globalThis.PointerEvent) => {
       if (event.pointerType !== "touch") return;
@@ -783,7 +722,6 @@ function AskSelectionLayerActive({
       cancelClickSeenRef.current = true;
       const target = event.target as Element | null;
       if (target?.closest?.("[data-ask-panel] [data-ask-cancel], [data-ask-cancel]")) {
-        if (closedByCancelRef) closedByCancelRef.current = true;
         return;
       }
       if (!ghostMouse(event)) return;
@@ -802,7 +740,7 @@ function AskSelectionLayerActive({
       document.removeEventListener("mousedown", onDocMouseDown, true);
       document.removeEventListener("click", onDocClick, true);
     };
-  }, [closedByCancelRef]);
+  }, []);
 
   // 处于 selecting 且无选区时播报（含首次进入与再次进入）。优先写入页面已有的 role=status。
   useEffect(() => {
@@ -964,7 +902,7 @@ function AskSelectionLayerActive({
       prev === "drafting" || prev === "error" || prev === "sending" || prev === "streaming";
     const cancelToSelecting = askPhase === "selecting" && prev !== "selecting" && prev !== "idle";
 
-    if (cancelling) {
+    if (closingPanel) {
       const now = typeof performance !== "undefined" ? performance.now() : Date.now();
       const lastUp = lastTouchCancelPointerUpRef.current;
       if (
@@ -1094,6 +1032,13 @@ function AskSelectionLayerActive({
       document.documentElement.style.setProperty("--ask-bottom-occlusion", "0px");
     };
   }, [scheduleUpdate, getScrollPositions]);
+
+  const getStageRef = useRef(getStage);
+  getStageRef.current = getStage;
+  const getScrollPositionsRef = useRef(getScrollPositions);
+  getScrollPositionsRef.current = getScrollPositions;
+  const clearEnteringScrollTrackerRef = useRef(clearEnteringScrollTracker);
+  clearEnteringScrollTrackerRef.current = clearEnteringScrollTracker;
 
   // 当进入 ask 模式（selecting）在移动端时，确保代码区域可见。
   useEffect(() => {
@@ -1504,9 +1449,6 @@ function AskSelectionLayerActive({
           suppressDrawRef.current = false;
           setRubberBand(null);
           const selected = commitBand(settled, settledEnd);
-          if (selected && openingChipRef) {
-            openingChipRef.current = null;
-          }
           if (!selected && pending.pointerType === "touch") {
             suppressClickUntilRef.current = null;
             touchCompletedSelectionRef.current = false;
@@ -1628,9 +1570,6 @@ function AskSelectionLayerActive({
       originRef.current = null;
       setRubberBand(null);
       const selected = commitBand(origin, current);
-      if (selected && openingChipRef) {
-        openingChipRef.current = null;
-      }
       if (selected && event.pointerType === "touch") {
         suppressClickUntilRef.current = event.timeStamp + 400;
         touchCompletedSelectionRef.current = true;
@@ -1830,9 +1769,6 @@ function AskSelectionLayerActive({
                             dragStartedRef.current = false;
                             return;
                           }
-                          if (openingChipRef) {
-                            openingChipRef.current = { key: item.key, element: event.currentTarget };
-                          }
                           setActiveShortcut(index);
                           pickShortcut(item.key);
                         }}
@@ -1856,9 +1792,6 @@ function AskSelectionLayerActive({
                             event.preventDefault();
                             event.stopPropagation();
                             if (event.repeat) return;
-                            if (openingChipRef) {
-                              openingChipRef.current = { key: item.key, element: event.currentTarget };
-                            }
                             setActiveShortcut(index);
                             pickShortcut(item.key);
                             return;

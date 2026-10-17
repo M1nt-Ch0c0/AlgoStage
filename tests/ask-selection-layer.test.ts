@@ -663,7 +663,7 @@ describe("AskSelectionLayer", () => {
     cancel.setAttribute("data-ask-cancel", "");
     cancel.textContent = "取消";
     cancel.addEventListener("click", () => {
-      usePlayerStore.getState().closeAskPanel();
+      finishAskCancelSync(panel, () => usePlayerStore.getState().closeAskPanel());
     });
     panel.append(cancel);
     document.body.append(panel);
@@ -675,7 +675,6 @@ describe("AskSelectionLayer", () => {
       cancel.click();
     });
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
-    await flushFocus();
 
     const restoredChip = document.querySelector<HTMLElement>('[data-ask-shortcut="subtitle"]');
     expect(restoredChip).not.toBeNull();
@@ -684,7 +683,7 @@ describe("AskSelectionLayer", () => {
     panel.remove();
   });
 
-  test("chip opens panel, Esc closes -> focus on the selection target, not the chip", async () => {
+  test("chip opens panel, Esc closes -> focus returns to opener chip (SCOPE 14:25)", async () => {
     await render();
     const chip = layer().querySelector<HTMLButtonElement>('[data-ask-shortcut="subtitle"]');
     expect(chip).not.toBeNull();
@@ -696,26 +695,16 @@ describe("AskSelectionLayer", () => {
 
     const panel = document.createElement("div");
     panel.setAttribute("data-ask-panel", "");
-    const cancel = document.createElement("button");
-    cancel.type = "button";
-    cancel.setAttribute("data-ask-cancel", "");
-    cancel.textContent = "取消";
-    cancel.addEventListener("click", () => {
-      usePlayerStore.getState().closeAskPanel();
-    });
-    panel.append(cancel);
     document.body.append(panel);
 
     try {
       const close = await act(async () => pressEscape(document.body));
       expect(close.defaultPrevented).toBe(true);
       expect(usePlayerStore.getState().askPhase).toBe("selecting");
-      await flushFocus();
 
-      const target = stage.querySelector<HTMLElement>('[data-ask-id="subtitle:s1"]');
-      expect(target).not.toBeNull();
-      expect(document.activeElement).toBe(target);
-      expect(document.activeElement).not.toBe(chip);
+      const restoredChip = document.querySelector<HTMLElement>('[data-ask-shortcut="subtitle"]');
+      expect(restoredChip).not.toBeNull();
+      expect(document.activeElement).toBe(restoredChip);
     } finally {
       panel.remove();
     }
@@ -738,7 +727,7 @@ describe("AskSelectionLayer", () => {
     cancel.setAttribute("data-ask-cancel", "");
     cancel.textContent = "取消";
     cancel.addEventListener("click", () => {
-      usePlayerStore.getState().closeAskPanel();
+      finishAskCancelSync(panel, () => usePlayerStore.getState().closeAskPanel());
     });
     panel.append(cancel);
     document.body.append(panel);
@@ -752,7 +741,6 @@ describe("AskSelectionLayer", () => {
         cancel.click();
       });
       expect(usePlayerStore.getState().askPhase).toBe("selecting");
-      await flushFocus();
 
       const restoredChip = document.querySelector<HTMLElement>('[data-ask-shortcut="subtitle"]');
       expect(restoredChip).not.toBeNull();
@@ -762,13 +750,7 @@ describe("AskSelectionLayer", () => {
     }
   });
 
-  test("1280 桌面端：在提问面板按取消后，若打开面板的芯片已不在 DOM 中，焦点落到入口按钮（chip removed -> entry focused）", async () => {
-    const entry = document.createElement("button");
-    entry.type = "button";
-    entry.setAttribute("data-ask-entry", "");
-    entry.textContent = "圈选提问";
-    document.body.append(entry);
-
+  test("1280 桌面端：取消时芯片已不在 DOM，焦点落到选区 ask-id（S4 open-source fallback）", async () => {
     await render();
     const chip = layer().querySelector<HTMLButtonElement>('[data-ask-shortcut="subtitle"]');
     expect(chip).not.toBeNull();
@@ -785,7 +767,7 @@ describe("AskSelectionLayer", () => {
     cancel.setAttribute("data-ask-cancel", "");
     cancel.textContent = "取消";
     cancel.addEventListener("click", () => {
-      usePlayerStore.getState().closeAskPanel();
+      finishAskCancelSync(panel, () => usePlayerStore.getState().closeAskPanel());
     });
     panel.append(cancel);
     document.body.append(panel);
@@ -793,9 +775,7 @@ describe("AskSelectionLayer", () => {
     cancel.focus();
     expect(document.activeElement).toBe(cancel);
 
-    // Selecting chrome remounts chips with the same shortcut key. Stub the key
-    // lookup so openingChipRef cannot recover a remounted chip and must fall
-    // through to the desktop entry (the case this test names).
+    // Stub shortcut lookup so the recorded chip key cannot resolve.
     const realQuery = document.querySelector.bind(document);
     const querySpy = vi.spyOn(document, "querySelector").mockImplementation((selectors) => {
       if (typeof selectors === "string" && selectors.includes("[data-ask-shortcut=")) {
@@ -808,16 +788,16 @@ describe("AskSelectionLayer", () => {
       cancel.click();
     });
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
-
-    await flushFocus();
     querySpy.mockRestore();
-    expect(document.activeElement).toBe(entry);
+
+    const target = stage.querySelector<HTMLElement>('[data-ask-id="subtitle:s1"]');
+    expect(target).not.toBeNull();
+    expect(document.activeElement).toBe(target);
 
     panel.remove();
-    entry.remove();
   });
 
-  test("点选芯片后再框选提交：取消提问后焦点不回到芯片（按已有 fallback 聚焦选区目标）", async () => {
+  test("点选芯片后再框选提交：取消提问后焦点按 box open-source 回到选区目标", async () => {
     await render();
     const chip = layer().querySelector<HTMLButtonElement>('[data-ask-shortcut="subtitle"]');
     expect(chip).not.toBeNull();
@@ -827,7 +807,7 @@ describe("AskSelectionLayer", () => {
     });
     expect(usePlayerStore.getState().askPhase).toBe("drafting");
 
-    // 框选覆盖 subtitle + step 区域并提交
+    // 框选覆盖 subtitle + step 区域并提交 → setAskOpenSource({ kind: "box" })
     await gesture(20, 12, 120, 36);
     expect(usePlayerStore.getState().selection?.mode).toBe("region");
     expect(usePlayerStore.getState().askPhase).toBe("drafting");
@@ -839,7 +819,7 @@ describe("AskSelectionLayer", () => {
     cancel.setAttribute("data-ask-cancel", "");
     cancel.textContent = "取消";
     cancel.addEventListener("click", () => {
-      usePlayerStore.getState().closeAskPanel();
+      finishAskCancelSync(panel, () => usePlayerStore.getState().closeAskPanel());
     });
     panel.append(cancel);
     document.body.append(panel);
@@ -852,7 +832,6 @@ describe("AskSelectionLayer", () => {
         cancel.click();
       });
       expect(usePlayerStore.getState().askPhase).toBe("selecting");
-      await flushFocus();
 
       const restoredChip = document.querySelector<HTMLElement>('[data-ask-shortcut="subtitle"]');
       expect(document.activeElement).not.toBe(restoredChip);
@@ -891,7 +870,7 @@ describe("AskSelectionLayer", () => {
     cancel.setAttribute("data-ask-cancel", "");
     cancel.textContent = "取消";
     cancel.addEventListener("click", () => {
-      usePlayerStore.getState().closeAskPanel();
+      finishAskCancelSync(panel, () => usePlayerStore.getState().closeAskPanel());
     });
     panel.append(cancel);
     document.body.append(panel);
@@ -904,7 +883,6 @@ describe("AskSelectionLayer", () => {
         cancel.click();
       });
       expect(usePlayerStore.getState().askPhase).toBe("selecting");
-      await flushFocus();
 
       const restoredChipA = document.querySelector<HTMLElement>('[data-ask-shortcut="subtitle"]');
       const restoredChipB = document.querySelector<HTMLElement>('[data-ask-shortcut="step"]');
