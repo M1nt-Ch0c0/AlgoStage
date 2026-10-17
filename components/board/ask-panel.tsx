@@ -21,6 +21,7 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import Link from "next/link";
+import { finishAskCancelSync, hideAskPanelNow } from "@/lib/ask/ask-cancel";
 import { cancelAsk, retroCancelAsk, sendAsk } from "@/lib/ask/ask-client";
 import { ASK_ERROR_SPECS, resolveAskError, type AskErrorAction } from "@/lib/ask/ask-errors";
 import { getAskBottomOcclusion } from "@/lib/ask/ask-occlusion";
@@ -58,13 +59,6 @@ import { usePlayerStore } from "@/lib/player/store";
 const PANEL_PHASES = new Set(["drafting", "sending", "streaming", "error"]);
 const EXIT_PHASES = new Set(["selecting", "idle"]);
 const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
-
-function hideAskPanelNow(panel: HTMLElement | null): void {
-  if (!panel) return;
-  panel.style.display = "none";
-  panel.setAttribute("aria-hidden", "true");
-  panel.setAttribute("inert", "");
-}
 
 const DESKTOP_QUERY = "(min-width: 1024px)";
 const PANEL_WIDTH = 320;
@@ -352,8 +346,7 @@ function AskPanelActive({ stage }: AskPanelProps) {
   const closeCancelledOnce = (session: number) => {
     if (cancelClosedSessionRef.current === session) return;
     cancelClosedSessionRef.current = session;
-    hideAskPanelNow(panelRef.current);
-    usePlayerStore.getState().closeAskPanel();
+    finishAskCancelSync(panelRef.current, () => usePlayerStore.getState().closeAskPanel());
     noteCancelPaintAfterRelease();
   };
   /**
@@ -791,10 +784,10 @@ function AskPanelActive({ stage }: AskPanelProps) {
   });
   const cancelDraft = usePointerActivate(() => {
     if (holdWaitingRef.current || heldAfterSendRef.current) return;
-    // Hide in this pointerup / keyboard commit, before React paints the
-    // one-frame exit hold. removeChild of the panel waits until the next frame.
-    hideAskPanelNow(panelRef.current);
-    closeAskPanel();
+    // Hide, commit selecting, and restore focus in this pointerup / keyboard
+    // turn, before React paints the exit hold. removeChild of the panel waits
+    // until the next microtask.
+    finishAskCancelSync(panelRef.current, closeAskPanel);
   });
 
   const bindCancelHold = (
@@ -920,21 +913,25 @@ function AskPanelActive({ stage }: AskPanelProps) {
       // hold's own wait (holdWaitingRef) is drafting, not this phase.
       const waitingCancel = inside && waitingPhase && !sentWhileHeld && !holdWaitingRef.current;
       if (waitingCancel) {
-        // Hide before retroCancel. The visual close is this display:none.
-        // Stamp the paint on the hide, in this turn. noteCancelPaintAfterRelease
-        // still schedules the probe rAF, but under 4× CPU that frame lands
-        // ~110ms later and would charge the abort and the store update to a
-        // panel the user can no longer see. The first stamp wins.
-        hideAskPanelNow(panelRef.current);
-        markAskTiming("cancelPaintAt");
-        noteCancelPaint();
+        // Hide, stamp, then abort, still before focus. The stamp is the first
+        // work in the transition so it stays ahead of the abort.
+        // noteCancelPaintAfterRelease still schedules the probe rAF, but under
+        // 4× CPU that frame lands ~110ms later. The first stamp wins.
+        // cancelWaitingAsk is in this transition: retroCancel alone does not
+        // leave sending, and focus runs only once the phase is selecting.
+        finishAskCancelSync(panelRef.current, () => {
+          markAskTiming("cancelPaintAt");
+          noteCancelPaint();
+          retroCancel(inside);
+          cancelWaitingAsk({ holdWaiting: holdWaitingRef.current, heldAfterSend: sentWhileHeld });
+        });
+      } else if (!sentWhileHeld) {
+        retroCancel(inside);
       }
-      if (!sentWhileHeld) retroCancel(inside);
       if (waitingCancel) {
         cancelHitRef.current = false;
         pointerDownIdRef.current = null;
         stopEarlyPress();
-        cancelWaitingAsk({ holdWaiting: holdWaitingRef.current, heldAfterSend: sentWhileHeld });
         noteCancelPaintAfterRelease();
         return;
       }

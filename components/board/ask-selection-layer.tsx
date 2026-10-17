@@ -27,15 +27,16 @@ import {
 } from "@/lib/ask/ask-ui-text";
 import { ASK_LIMITS, type AskBBox, type AskSelectionSummary, type AskTarget } from "@/lib/ask/types";
 import { setAskCodeMissNotice } from "@/lib/ask/code-editor-registry";
+import { finishAskCancelSync } from "@/lib/ask/ask-cancel";
 import { setAskOpenSource } from "@/lib/ask/ask-open-source";
 import {
   applyAskSelectingRootVars,
   computeBottomOcclusion,
-  createAskMeasureCache,
   getAskBottomObstacle,
   invalidateAskMeasureCache,
   measureAskElementHeight,
   measureAskPlayerBarHeight,
+  sharedAskMeasureCache,
   writeAskRootVars,
   type OcclusionParts,
 } from "@/lib/ask/ask-occlusion";
@@ -249,20 +250,6 @@ function shortcutId(stepId: string, key: ShortcutKey): string {
   return `${key}:${stepId}`;
 }
 
-function cssEscape(value: string): string {
-  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") return CSS.escape(value);
-  return value.replace(/[^a-zA-Z0-9_-]/g, (ch) => `\\${ch}`);
-}
-
-/** 关面板后要还回去的舞台目标。不在文档里则没有。 */
-function focusTargetFor(selection: AskSelectionSummary | null): HTMLElement | null {
-  const id = selection?.targets[0]?.id;
-  if (!id) return null;
-  const target = document.querySelector<HTMLElement>(`[data-ask-id="${cssEscape(id)}"]`);
-  if (!target || !target.isConnected) return null;
-  return target;
-}
-
 function findByAskId(host: HTMLElement, id: string): HTMLElement | null {
   for (const el of host.querySelectorAll<HTMLElement>("[data-ask-id]")) {
     if (el.getAttribute("data-ask-id") !== id) continue;
@@ -309,8 +296,8 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
   const setAskSelection = usePlayerStore((s) => s.setAskSelection);
   const clearAskSelection = usePlayerStore((s) => s.clearAskSelection);
   const closeAskPanel = usePlayerStore((s) => s.closeAskPanel);
-  // 上一阶段在 effect 里更新。桌面取消的焦点还原走内层 layout effect，
-  // 与 hide 同一帧；这里只留下 drafting 的 status 播报。
+  // 上一阶段在 effect 里更新。取消的焦点还原由 finishAskCancelSync 拥有；
+  // 这里只留下 drafting 的 status 播报。
   const previousPhaseRef = useRef(askPhase);
 
   // Selection mode pays for the encode worker up front, on an idle callback,
@@ -340,7 +327,9 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
       if (action === "ignore") return;
       event.preventDefault();
       event.stopPropagation();
-      if (action === "close-panel") closeAskPanel();
+      if (action === "close-panel") {
+        finishAskCancelSync(document.querySelector<HTMLElement>("[data-ask-panel]"), closeAskPanel);
+      }
       else {
         exitAskAndFocusEntry();
       }
@@ -350,7 +339,7 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
   }, [askPhase, closeAskPanel]);
 
   // drafting → selecting 时把选区摘要写回 role=status。
-  // 焦点还原在内层 layout effect，与 hideAskPanelNow 同一帧。
+  // 焦点由 finishAskCancelSync 在同一提交里写。
   // 这里不排 setTimeout / rAF / microtask，也不写焦点。
   useEffect(() => {
     const previous = previousPhaseRef.current;
@@ -417,13 +406,11 @@ function AskSelectionLayerActive({
 
   const bottomBarRef = useRef<HTMLDivElement>(null);
   // Last mobile / keyboard / height snapshot from updateMeasurements.
-  // A cancel commit restores selecting vars from this cache and does not
-  // measure heights: innerHeight, visualViewport, and getBoundingClientRect
-  // after a root custom-property write each force a full-document recalc.
-  // The focus branch does not use cache.isMobile — that boolean can stay
-  // false after a desktop measure. It reads matchMedia, which is not a
-  // layout read.
-  const measureCacheRef = useRef(createAskMeasureCache());
+  // Module-level so finishAskCancelSync restores selecting vars from the
+  // same object this layer fills and invalidates. A cancel commit does not
+  // measure heights here: innerHeight, visualViewport, and
+  // getBoundingClientRect after a root custom-property write each force a
+  // full-document recalc. Focus is owned by finishAskCancelSync.
 
   const [rubberBand, setRubberBand] = useState<RubberBand | null>(null);
   const [hint, setHint] = useState<string | null>(null);
@@ -561,7 +548,7 @@ function AskSelectionLayerActive({
     const kbOpen =
       viewport != null && typeof window !== "undefined" && window.innerHeight - viewport.height > 120;
 
-    const cache = measureCacheRef.current;
+    const cache = sharedAskMeasureCache;
     cache.isMobile = isMobileDevice;
     cache.keyboardOpen = kbOpen;
 
@@ -635,13 +622,14 @@ function AskSelectionLayerActive({
   }, []);
 
   // Selecting targets for a cancel commit. Panel contribution is 0. Uses only
-  // the measure cache, so this path does no layout read (no innerHeight,
+  // the shared measure cache, so this path does no layout read (no innerHeight,
   // visualViewport, matchMedia, or getBoundingClientRect). An incomplete
   // cache writes nothing; the scheduleUpdate rAF already queued by the
-  // layout effect re-measures before the next paint.
+  // layout effect re-measures before the next paint. finishAskCancelSync
+  // already wrote these vars, so this call is a no-op when the values match.
   const writeSelectingCssVarsSync = useCallback(() => {
     if (typeof document === "undefined") return;
-    applyAskSelectingRootVars(measureCacheRef.current, active);
+    applyAskSelectingRootVars(sharedAskMeasureCache, active);
   }, [active]);
 
   const prevAskPhaseRef = useRef(askPhase);
@@ -653,13 +641,9 @@ function AskSelectionLayerActive({
     // commit invalidates style for the document. Cancel (any phase other
     // than selecting/idle → selecting) drops the panel contribution in this
     // same commit so waiting values cannot sit for one frame.
-    // Focus uses a live matchMedia read. matchMedia is not a layout read,
-    // and a cached isMobile=false (desktop measured earlier, or a resize
-    // that never invalidated) would otherwise take the desktop branch and
-    // focus [data-ask-layer] on a 390px phone. CSS vars still come from the
-    // cache below — that path must not measure.
-    const isMobileDevice =
-      typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches;
+    // Focus is owned by finishAskCancelSync. This effect does not blur or
+    // focus. CSS vars still come from the cache below — that path must not
+    // measure.
     const closingPanel = prev === "drafting" || prev === "error";
     const cancelToSelecting = askPhase === "selecting" && prev !== "selecting" && prev !== "idle";
 
@@ -677,35 +661,12 @@ function AskSelectionLayerActive({
       lastTouchCancelPointerUpRef.current = null;
     }
 
-    // Write the cached selecting vars before focus. focus() forces style
-    // and layout; doing it while the root is already dirty is one recalc
-    // that also settles these vars. A write after focus would dirty the
-    // root again and the next frame would pay for a second full recalc.
+    // finishAskCancelSync already wrote selecting vars before focus. This
+    // write is a no-op when those values match. A store-only cancel (no
+    // finishAskCancelSync) still publishes the cached selecting vars here.
+    // Focus stays in finishAskCancelSync: this effect does not blur or focus.
     if (cancelToSelecting) {
       writeSelectingCssVarsSync();
-    }
-
-    // Same commit as hideAskPanelNow. Waiting cancel is sending|streaming →
-    // selecting, so this is every cancelToSelecting, not only drafting|error.
-    // Desktop restores the selection target (else the layer). No timer.
-    if (cancelToSelecting && isMobileDevice) {
-      const bar = bottomBarRef.current ?? document.querySelector<HTMLElement>("[data-ask-bottom-bar]");
-      const chips = bar?.querySelectorAll<HTMLButtonElement>("[data-ask-shortcut]");
-      const currentChip = Array.from(chips ?? []).find((c) => c.tabIndex === 0) ?? chips?.[0];
-      // The button that closed the panel still holds focus on this commit.
-      // Blur it first so the chip can take focus in the same frame.
-      const focused = document.activeElement;
-      if (focused instanceof HTMLElement && focused !== currentChip) focused.blur();
-      currentChip?.focus({ preventScroll: true });
-    } else if (cancelToSelecting && !isMobileDevice) {
-      const target = focusTargetFor(usePlayerStore.getState().selection);
-      if (target) {
-        if (!target.hasAttribute("tabindex")) target.tabIndex = -1;
-        target.focus({ preventScroll: true });
-      }
-      if (!target || document.activeElement !== target) {
-        document.querySelector<HTMLElement>("[data-ask-layer]")?.focus({ preventScroll: true });
-      }
     }
 
     // The queued frame re-measures and rebinds ResizeObserver. When the
@@ -716,8 +677,9 @@ function AskSelectionLayerActive({
   // 测量底部条高度、播放区高度与抽屉面板高度，并同步 --ask-bottom-bar-h 和 --ask-bottom-occlusion。
   // --ask-player-bar-h 由始终挂载的 AskPlayerBarVar 写。
   // 桌面/inactive/unmount/键盘打开时设为 0px（或 removeProperty）。
-  // 取消回到 selecting 时，先用缓存写上目标值，再在同一次提交里 blur + focus；
-  // 其余阶段变化、ResizeObserver、scroll、mount 仍走 scheduleUpdate 的 rAF。
+  // 取消回到 selecting 时，finishAskCancelSync 先用缓存写上目标值再 focus；
+  // 这里只在它没写过时补一次缓存写。其余阶段变化、ResizeObserver、scroll、
+  // mount 仍走 scheduleUpdate 的 rAF。
   // resize / visualViewport / orientationchange / matchMedia change 先作废缓存，
   // 这样下一次取消不会用过期高度。ResizeObserver 只排 rAF：面板开着时底栏不在，
   // 不能把已记住的底栏高度清成未测量。
@@ -786,7 +748,7 @@ function AskSelectionLayerActive({
 
     const mq = window.matchMedia("(max-width: 639px)");
     const onInvalidate = () => {
-      invalidateAskMeasureCache(measureCacheRef.current);
+      invalidateAskMeasureCache(sharedAskMeasureCache);
       scheduleUpdate();
     };
     mq.addEventListener("change", onInvalidate);
@@ -1038,6 +1000,9 @@ function AskSelectionLayerActive({
     suppressClickUntilRef.current = null;
     touchCompletedSelectionRef.current = false;
     lastPointerTypeRef.current = event.pointerType;
+    // Waiting keeps the shell mounted so cancel can restore selecting in
+    // the same commit. A press on that shell must not start a selection.
+    if (askPhase === "sending" || askPhase === "streaming") return;
     if (isIgnoredTarget(event.target)) return;
     beginPointer(event.currentTarget, event.pointerId, event.pointerType, event.button, event.clientX, event.clientY);
   };
