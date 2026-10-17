@@ -1966,13 +1966,12 @@ function AskSelectionLayerActive({
                 tabIndex={-1}
                 aria-pressed="true"
                 aria-keyshortcuts="Escape"
-                className="shrink-0 h-12 min-h-12 min-w-12 pointer-coarse:min-h-12 pointer-coarse:min-w-12 inline-flex items-center justify-center gap-1.5 rounded-full border border-board-600 bg-board-900/80 px-3 py-1 font-mono font-medium text-base text-chalk-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beam-gold focus-visible:ring-inset sm:hidden whitespace-nowrap"
+                className="shrink-0 h-12 min-h-12 min-w-12 pointer-coarse:min-h-12 pointer-coarse:min-w-12 inline-flex items-center justify-center gap-1 rounded-full border border-board-600 bg-board-900/80 px-3 py-1 font-mono font-medium text-base text-chalk-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beam-gold focus-visible:ring-inset sm:hidden whitespace-nowrap"
                 onClick={(event) => {
                   event.stopPropagation();
                   exitAskAndFocusEntry();
                 }}
               >
-                <CircleDashed size={22} className="shrink-0" data-ask-entry-icon aria-hidden />
                 <span>{ASK_EXIT_LABEL}</span>
                 <kbd
                   data-ask-kbd
