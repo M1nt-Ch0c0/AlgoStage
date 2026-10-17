@@ -650,6 +650,7 @@ function AskSelectionLayerActive({
   const [rovingIndex, setRovingIndex] = useState(0);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
+  const [safeExitBottom, setSafeExitBottom] = useState<number | null>(null);
   const isMobile = useIsMobile();
 
   const getStage = useCallback(() => resolveStage(stage, stageRef), [stage, stageRef]);
@@ -833,6 +834,16 @@ function AskSelectionLayerActive({
 
     let nextBar = "0px";
     let nextOcclusion = "0px";
+    let safeBottom: number | null = null;
+    if (active && isMobileDevice) {
+      const panelEl = document.querySelector<HTMLElement>("[data-ask-panel]");
+      if (panelEl) {
+        const rect = panelEl.getBoundingClientRect();
+        if (rect.height > 0) {
+          safeBottom = Math.max(0, Math.round(window.innerHeight - rect.top + 8));
+        }
+      }
+    }
     if (active && isMobileDevice && !kbOpen) {
       const playerH = measureAskPlayerBarHeight();
       cache.playerHeight = playerH;
@@ -863,6 +874,7 @@ function AskSelectionLayerActive({
     // setState after the reads. It does not write a CSS variable, and on the
     // cancel path the keyboard flag is unchanged so this is a no-op.
     setKeyboardOpen(kbOpen);
+    setSafeExitBottom(safeBottom);
 
     // --ask-player-bar-h is owned by AskPlayerBarVar, which stays mounted
     // after this chrome unmounts. This effect only publishes the chip bar
@@ -956,6 +968,20 @@ function AskSelectionLayerActive({
     // cached values already match the inline style, that frame writes nothing.
     scheduleUpdate();
   }, [active, askPhase, scheduleUpdate, writeSelectingCssVarsSync]);
+
+  useIsomorphicLayoutEffect(() => {
+    if (!isMobile || askPhase === "selecting" || !active) {
+      setSafeExitBottom(null);
+      return;
+    }
+    const panelEl = document.querySelector<HTMLElement>("[data-ask-panel]");
+    if (panelEl) {
+      const rect = panelEl.getBoundingClientRect();
+      if (rect.height > 0) {
+        setSafeExitBottom(Math.max(0, Math.round(window.innerHeight - rect.top + 8)));
+      }
+    }
+  }, [isMobile, askPhase, active]);
 
   // 测量底部条高度、播放区高度与抽屉面板高度，并同步 --ask-bottom-bar-h 和 --ask-bottom-occlusion。
   // --ask-player-bar-h 由始终挂载的 AskPlayerBarVar 写。
@@ -1958,6 +1984,42 @@ function AskSelectionLayerActive({
               </button>
             ) : null}
           </div>
+        ) : null}
+
+        {isMobile && askPhase !== "selecting" && active ? (
+          <button
+            type="button"
+            data-ask-entry
+            data-ask-exit-safe
+            data-ask-capture-exclude
+            tabIndex={-1}
+            aria-pressed="true"
+            aria-keyshortcuts="Escape"
+            className="fixed right-4 z-30 pointer-events-auto shrink-0 h-12 min-h-12 min-w-12 pointer-coarse:min-h-12 pointer-coarse:min-w-12 inline-flex items-center justify-center gap-1.5 rounded-full border border-board-600 bg-board-900/90 px-3 py-1 font-mono font-medium text-base text-chalk-300 shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beam-gold focus-visible:ring-inset sm:hidden whitespace-nowrap"
+            style={{
+              bottom:
+                safeExitBottom != null
+                  ? `${safeExitBottom}px`
+                  : "calc(var(--ask-bottom-occlusion, 260px) + 8px)",
+            }}
+            onPointerDown={(event) => {
+              event.stopPropagation();
+            }}
+            onClick={(event) => {
+              event.stopPropagation();
+              exitAskAndFocusEntry();
+            }}
+          >
+            <CircleDashed size={22} className="shrink-0" data-ask-entry-icon aria-hidden />
+            <span>{ASK_EXIT_LABEL}</span>
+            <kbd
+              data-ask-kbd
+              className="max-[391px]:hidden rounded border border-board-600 px-1 font-mono text-[9px] leading-none text-chalk-500"
+              aria-hidden
+            >
+              Esc
+            </kbd>
+          </button>
         ) : null}
       </div>
 
