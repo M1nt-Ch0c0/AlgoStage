@@ -271,8 +271,26 @@ describe("ask schema", () => {
     expect(stepAnswerSchema.safeParse(answer({ createdAt: "yesterday" })).success).toBe(false);
   });
 
+  it("StepAnswer imageAttached: true/false 保留，缺省 absent，未知字段剔除", () => {
+    const withTrue = stepAnswerSchema.parse(answer({ imageAttached: true }));
+    expect(withTrue.imageAttached).toBe(true);
+
+    const withFalse = stepAnswerSchema.parse(answer({ imageAttached: false }));
+    expect(withFalse.imageAttached).toBe(false);
+
+    const without = stepAnswerSchema.parse(answer());
+    expect(without.imageAttached).toBeUndefined();
+    expect(Object.prototype.hasOwnProperty.call(without, "imageAttached")).toBe(false);
+    expect("imageAttached" in without).toBe(false);
+
+    const stripped = stepAnswerSchema.parse(answer({ extraField: "should-be-stripped" }));
+    expect(stripped).not.toHaveProperty("extraField");
+    expect("extraField" in stripped).toBe(false);
+  });
+
   it("answerSegmentSchema 输出可赋给 AnswerSegment", () => {
     expectTypeOf<z.output<typeof answerSegmentSchema>>().toMatchTypeOf<AnswerSegment>();
+    expectTypeOf<z.output<typeof stepAnswerSchema>>().toMatchTypeOf<StepAnswer>();
   });
 });
 

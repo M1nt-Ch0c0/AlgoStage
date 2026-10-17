@@ -78,6 +78,7 @@ export const stepAnswerSchema = z.object({
   }),
   segments: z.array(answerSegmentSchema).min(1).max(ASK_LIMITS.segmentsMax),
   createdAt: z.string().datetime({ offset: true }),
+  imageAttached: z.boolean().optional(),
 });
 
 export const stepAnswersMapSchema = z.record(z.string(), z.array(stepAnswerSchema)).superRefine((map, ctx) => {

@@ -15,7 +15,7 @@ export type AskSelectionMode = "region" | "single";
 export interface AskSelection { stepId: string; mode: AskSelectionMode; bbox: AskBBox; targets: AskTarget[]; question: string }
 export type AskSelectionSummary = Pick<AskSelection, "mode" | "bbox" | "targets">;
 export interface AnswerSegment { id: string; narration: string; targets?: EffectTarget[]; effects?: EffectCall[]; viz?: ArrayVizFrame }
-export interface StepAnswer { v: 1; id: string; stepId: string; question: string; selection: AskSelectionSummary; segments: AnswerSegment[]; createdAt: string }
+export interface StepAnswer { v: 1; id: string; stepId: string; question: string; selection: AskSelectionSummary; segments: AnswerSegment[]; createdAt: string; imageAttached?: boolean }
 export type StepAnswersMap = Record<string, StepAnswer[]>;
 export interface AskStart {
   answerId: string;
