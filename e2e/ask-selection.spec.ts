@@ -274,6 +274,200 @@ async function getMonacoLineY(page: Page, lineNumber: number): Promise<number> {
   return (box.top + box.bottom) / 2;
 }
 
+type ClientBox = { x: number; y: number; width: number; height: number };
+
+function intersectionBox(a: ClientBox, b: ClientBox): ClientBox | null {
+  const x = Math.max(a.x, b.x);
+  const y = Math.max(a.y, b.y);
+  const right = Math.min(a.x + a.width, b.x + b.width);
+  const bottom = Math.min(a.y + a.height, b.y + b.height);
+  if (right - x <= 0 || bottom - y <= 0) return null;
+  return { x, y, width: right - x, height: bottom - y };
+}
+
+function boxesOverlap(a: ClientBox, b: ClientBox): boolean {
+  return intersectionBox(a, b) !== null;
+}
+
+/**
+ * C2: drag from the code container (gutter included) onto viz.
+ * The chip and the request stay code-only, and the screenshot is the drawn box ∩ code area.
+ */
+async function expectCodeOriginExcludesViz(page: Page) {
+  let captured: {
+    targets: Array<{ kind?: string; id?: string }>;
+    image: { mime?: string; dataBase64?: string } | null;
+  } = { targets: [], image: null };
+  await mockAsk(page, async (route) => {
+    const body = route.request().postDataJSON() as {
+      selection?: { targets?: Array<{ kind?: string; id?: string }> };
+      image?: { mime?: string; dataBase64?: string } | null;
+    };
+    captured = {
+      targets: body?.selection?.targets ?? [],
+      image: body?.image ?? null,
+    };
+    await route.fulfill({
+      status: 200,
+      contentType: "application/x-ndjson",
+      body: askStream("s1"),
+    });
+  });
+  await startGenerated(page);
+  await pauseLecture(page);
+  await enterSelection(page);
+
+  const monaco = page.locator("[data-ask-stage] .monaco-editor");
+  const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+  const viz = page.locator('[data-ask-target="viz"]').first();
+  await code.evaluate((el) => el.scrollIntoView({ block: "center" }));
+  await viz.evaluate((el) => {
+    const rect = el.getBoundingClientRect();
+    if (rect.top < 0 || rect.bottom > window.innerHeight) el.scrollIntoView({ block: "nearest" });
+  });
+  await expect(monaco).toBeVisible();
+  await expect(viz).toBeVisible();
+
+  const monacoBox = await monaco.boundingBox();
+  const vizBox = await viz.boundingBox();
+  if (!monacoBox || !vizBox) throw new Error("monaco or viz has no box");
+
+  const line5 = await getMonacoLineBox(page, 5);
+  const startX = monacoBox.x + monacoBox.width * 0.3;
+  const startY = (line5.top + line5.bottom) / 2;
+  const endX = vizBox.x + vizBox.width / 2;
+  const endY = vizBox.y + vizBox.height / 2;
+
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(endX, endY, { steps: 8 });
+  // Snapshot before pointerup: the panel scrolls the selection into view after commit.
+  const geometry = await page.evaluate(() => {
+    const stage = document.querySelector("[data-ask-stage]");
+    const codeEl = document.querySelector('[data-ask-stage] [data-ask-target="code"]');
+    const vizEl = document.querySelector('[data-ask-target="viz"]');
+    if (!stage || !codeEl || !vizEl) return null;
+    const sr = stage.getBoundingClientRect();
+    const rel = (el: Element) => {
+      const er = el.getBoundingClientRect();
+      return {
+        x: er.left - sr.left + stage.scrollLeft,
+        y: er.top - sr.top + stage.scrollTop,
+        width: er.width,
+        height: er.height,
+      };
+    };
+    return {
+      originX: sr.left - stage.scrollLeft,
+      originY: sr.top - stage.scrollTop,
+      code: rel(codeEl),
+      viz: rel(vizEl),
+    };
+  });
+  if (!geometry) throw new Error("stage geometry missing");
+  await page.mouse.up();
+
+  const panel = page.locator("[data-ask-panel]");
+  await expect(panel).toBeVisible();
+  const chip = panel.locator("[data-ask-panel-label]");
+  await expect(chip).toHaveText(/^已选：代码第 \d+(–\d+)? 行$/);
+  await expect(chip).not.toContainText("可视化");
+
+  const vizIds = await page.locator('[data-ask-target="viz"]').evaluateAll((nodes) =>
+    nodes.map((node) => node.getAttribute("data-ask-id")).filter((id): id is string => Boolean(id)),
+  );
+  for (const id of vizIds) {
+    await expect(page.locator(`[data-ask-highlight="${id}"]`)).toHaveCount(0);
+  }
+
+  await askQuestion(page);
+  // Sync capture on the shared machine can take ~6.5s before the ask request leaves.
+  await expect.poll(() => captured.targets.length, { timeout: 25_000 }).toBeGreaterThan(0);
+  expect(captured.targets.every((item) => item.kind === "code")).toBe(true);
+
+  const image = captured.image;
+  expect(image?.dataBase64).toBeTruthy();
+  const ratio = await page.evaluate(async (dataUrl) => {
+    const img = new Image();
+    const loaded = new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error("capture image failed to decode"));
+    });
+    img.src = dataUrl;
+    await loaded;
+    return img.naturalWidth / img.naturalHeight;
+  }, `data:${image!.mime};base64,${image!.dataBase64}`);
+
+  const drawn: ClientBox = {
+    x: Math.min(startX, endX) - geometry.originX,
+    y: Math.min(startY, endY) - geometry.originY,
+    width: Math.abs(endX - startX),
+    height: Math.abs(endY - startY),
+  };
+  const crop = intersectionBox(drawn, geometry.code);
+  if (!crop || crop.height <= 0) throw new Error("drawn box does not meet the code area");
+  const drawnRatio = drawn.width / drawn.height;
+  const cropRatio = crop.width / crop.height;
+  expect(Math.abs(ratio - cropRatio) / cropRatio).toBeLessThanOrEqual(0.03);
+  expect(Math.abs(ratio - drawnRatio) / drawnRatio).toBeGreaterThan(0.03);
+  // Crop stays out of the viz rect on both the right and the bottom, stacked or side by side.
+  expect(boxesOverlap(crop, geometry.viz)).toBe(false);
+}
+
+/** C2 regression: a drag that starts on viz still collects code and viz together. */
+async function expectVizOriginCollectsBoth(page: Page) {
+  let capturedTargets: Array<{ kind?: string }> = [];
+  await mockAsk(page, async (route) => {
+    const body = route.request().postDataJSON() as {
+      selection?: { targets?: Array<{ kind?: string }> };
+    };
+    capturedTargets = body?.selection?.targets ?? [];
+    await route.fulfill({
+      status: 200,
+      contentType: "application/x-ndjson",
+      body: askStream("s1"),
+    });
+  });
+  await startGenerated(page);
+  await pauseLecture(page);
+  await enterSelection(page);
+
+  const code = page.locator('[data-ask-stage] [data-ask-target="code"]');
+  const viz = page.locator('[data-ask-target="viz"]').first();
+  await viz.evaluate((el) => el.scrollIntoView({ block: "nearest" }));
+  await code.evaluate((el) => {
+    const rect = el.getBoundingClientRect();
+    if (rect.top < 0 || rect.bottom > window.innerHeight) el.scrollIntoView({ block: "nearest" });
+  });
+  await expect(code).toBeVisible();
+  await expect(viz).toBeVisible();
+
+  const codeBox = await code.boundingBox();
+  const vizBox = await viz.boundingBox();
+  if (!codeBox || !vizBox) throw new Error("code or viz has no box");
+
+  // The code container is the tall blackboard frame and can cover the viz block.
+  // Start on a cell inside the viz block, away from that frame, so the origin is viz.
+  const cell = viz.locator("[data-viz-node]").first();
+  const cellBox = (await cell.count()) > 0 ? await cell.boundingBox() : null;
+  const startX = cellBox ? cellBox.x + cellBox.width / 2 : vizBox.x + Math.min(24, vizBox.width / 2);
+  const startY = cellBox ? cellBox.y + cellBox.height / 2 : vizBox.y + Math.min(24, vizBox.height / 2);
+  const endX = codeBox.x + codeBox.width * 0.5;
+  const endY = codeBox.y + codeBox.height * 0.5;
+
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(endX, endY, { steps: 8 });
+  await page.mouse.up();
+
+  const panel = page.locator("[data-ask-panel]");
+  await expect(panel).toBeVisible();
+  await askQuestion(page);
+  await expect.poll(() => capturedTargets.length, { timeout: 25_000 }).toBeGreaterThan(0);
+  expect(capturedTargets.some((item) => item.kind === "code")).toBe(true);
+  expect(capturedTargets.some((item) => item.kind === "viz")).toBe(true);
+}
+
 /** 直接子项按中心线合并成行。播放中基线 4，讲完 3。 */
 async function controlRows(bar: Locator) {
   return bar.evaluate((el) => {
@@ -1887,8 +2081,8 @@ test.describe("1280 selection flow", () => {
     expect(await page.getByText("代码部分没选上，换个地方再框一次").count()).toBe(0);
   });
 
-  test("S5. code + viz collects both", async ({ page }) => {
-    // Locks the S5-b rule: a drag starting in code collects code units only, never viz.
+  test("S5. drag from code across viz collects code only", async ({ page }) => {
+    // Starts in the code area, so viz is not collected (C2). Assertions unchanged.
     let capturedTargets: Array<{ kind?: string }> = [];
     await mockAsk(page, async (route) => {
       const body = route.request().postDataJSON() as {
@@ -1932,6 +2126,16 @@ test.describe("1280 selection flow", () => {
 
     expect(capturedTargets.some((t) => t.kind === 'code')).toBe(true);
     expect(capturedTargets.some((t) => t.kind === 'viz')).toBe(false);
+  });
+
+  test("C2. code origin dragged onto viz keeps code only and crops the capture", async ({ page }) => {
+    test.setTimeout(60_000);
+    await expectCodeOriginExcludesViz(page);
+  });
+
+  test("C2. viz origin covering code collects both", async ({ page }) => {
+    test.setTimeout(60_000);
+    await expectVizOriginCollectsBoth(page);
   });
 
   test("S5. empty area shows 没选中 only when nothing hit", async ({ page }) => {
@@ -2393,6 +2597,16 @@ test.describe("390 selection flow", () => {
     const selectionBox = page.locator("[data-ask-selection]");
     await expect(rubber.or(selectionBox)).toBeVisible();
     await page.mouse.up();
+  });
+
+  test("C2. 390: code origin dragged onto viz keeps code only and crops the capture", async ({ page }) => {
+    test.setTimeout(60_000);
+    await expectCodeOriginExcludesViz(page);
+  });
+
+  test("C2. 390: viz origin covering code collects both", async ({ page }) => {
+    test.setTimeout(60_000);
+    await expectVizOriginCollectsBoth(page);
   });
 
   test("39b. 390: capture fallback stays visible after answer text and during playback", async ({ page }) => {
