@@ -301,8 +301,8 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
   const setAskSelection = usePlayerStore((s) => s.setAskSelection);
   const clearAskSelection = usePlayerStore((s) => s.clearAskSelection);
   const closeAskPanel = usePlayerStore((s) => s.closeAskPanel);
-  // 上一阶段在 effect 里更新。关面板的那次要等 0ms 回调记上：
-  // 严格模式会先清掉这次回调再跑一遍，第二遍仍要看得到 drafting。
+  // 上一阶段在 effect 里更新。桌面取消的焦点还原走内层 layout effect，
+  // 与 hide 同一帧；这里只留下 drafting 的 status 播报。
   const previousPhaseRef = useRef(askPhase);
 
   // Selection mode pays for the encode worker up front, on an idle callback,
@@ -341,39 +341,19 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
     return () => window.removeEventListener("keydown", onKey, true);
   }, [askPhase, closeAskPanel]);
 
-  // 关面板回到 selecting：焦点还给选区原目标。
-  // 只在 drafting/error → selecting 时还。刚进入圈选、或已经在圈选里 Tab，不动焦点。
-  // 挂在始终挂载的这层。内层只在 selecting 才画出节点，排在内层的回调会被清理掉。
-  // 0ms 等这次提交把画选层放进文档，取消按钮也已卸掉。
-  // 目标已不在文档里，或 focus() 之后 activeElement 不是它，才落到画选层。
+  // drafting → selecting 时把选区摘要写回 role=status。
+  // 焦点还原在内层 layout effect，与 hideAskPanelNow 同一帧。
+  // 这里不排 setTimeout / rAF / microtask，也不写焦点。
   useEffect(() => {
     const previous = previousPhaseRef.current;
-    const closingPanel = previous === "drafting" || previous === "error";
-    if (askPhase === "selecting" && closingPanel) {
-      if (previous === "drafting") {
-        const curSelection = usePlayerStore.getState().selection;
-        if (curSelection && curSelection.targets.length > 0) {
-          const status = document.querySelector("[role=status]");
-          if (status) status.textContent = summarizeSelection(curSelection);
-        }
-      }
-      const isMobileDevice = typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches;
-      if (!isMobileDevice) {
-        const timer = window.setTimeout(() => {
-          previousPhaseRef.current = askPhase;
-          if (usePlayerStore.getState().askPhase !== "selecting") return;
-          const target = focusTargetFor(usePlayerStore.getState().selection);
-          if (target) {
-            if (!target.hasAttribute("tabindex")) target.tabIndex = -1;
-            target.focus({ preventScroll: true });
-            if (document.activeElement === target) return;
-          }
-          document.querySelector<HTMLElement>("[data-ask-layer]")?.focus({ preventScroll: true });
-        }, 0);
-        return () => window.clearTimeout(timer);
+    previousPhaseRef.current = askPhase;
+    if (askPhase === "selecting" && previous === "drafting") {
+      const curSelection = usePlayerStore.getState().selection;
+      if (curSelection && curSelection.targets.length > 0) {
+        const status = document.querySelector("[role=status]");
+        if (status) status.textContent = summarizeSelection(curSelection);
       }
     }
-    previousPhaseRef.current = askPhase;
   }, [askPhase]);
 
   return (
@@ -691,7 +671,10 @@ function AskSelectionLayerActive({
       writeSelectingCssVarsSync();
     }
 
-    if (askPhase === "selecting" && closingPanel && isMobileDevice) {
+    // Same commit as hideAskPanelNow. Waiting cancel is sending|streaming →
+    // selecting, so this is every cancelToSelecting, not only drafting|error.
+    // Desktop restores the selection target (else the layer). No timer.
+    if (cancelToSelecting && isMobileDevice) {
       const bar = bottomBarRef.current ?? document.querySelector<HTMLElement>("[data-ask-bottom-bar]");
       const chips = bar?.querySelectorAll<HTMLButtonElement>("[data-ask-shortcut]");
       const currentChip = Array.from(chips ?? []).find((c) => c.tabIndex === 0) ?? chips?.[0];
@@ -700,6 +683,15 @@ function AskSelectionLayerActive({
       const focused = document.activeElement;
       if (focused instanceof HTMLElement && focused !== currentChip) focused.blur();
       currentChip?.focus({ preventScroll: true });
+    } else if (cancelToSelecting && !isMobileDevice) {
+      const target = focusTargetFor(usePlayerStore.getState().selection);
+      if (target) {
+        if (!target.hasAttribute("tabindex")) target.tabIndex = -1;
+        target.focus({ preventScroll: true });
+      }
+      if (!target || document.activeElement !== target) {
+        document.querySelector<HTMLElement>("[data-ask-layer]")?.focus({ preventScroll: true });
+      }
     }
 
     // The queued frame re-measures and rebinds ResizeObserver. When the

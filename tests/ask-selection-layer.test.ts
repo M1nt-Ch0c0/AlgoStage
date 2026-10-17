@@ -480,13 +480,6 @@ describe("AskSelectionLayer", () => {
     return event;
   }
 
-  /** 关面板的焦点恢复排在 0ms timeout 上，act 会把它冲掉。 */
-  async function flushFocus() {
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-  }
-
   test("窗口级 Esc：selecting 退出，drafting 先关面板再退出", async () => {
     await render();
     const body = document.body;
@@ -516,7 +509,6 @@ describe("AskSelectionLayer", () => {
     expect(close.defaultPrevented).toBe(true);
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
     expect(usePlayerStore.getState().draftQuestion).toBe("窗口也能关");
-    await flushFocus();
     expect(document.activeElement).toBe(target);
 
     const exit = await act(async () => pressEscape(layer()));
@@ -558,7 +550,6 @@ describe("AskSelectionLayer", () => {
     const close = await act(async () => pressEscape(question));
     expect(close.defaultPrevented).toBe(true);
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
-    await flushFocus();
     expect(document.activeElement).toBe(layer());
 
     editor.remove();
@@ -601,7 +592,6 @@ describe("AskSelectionLayer", () => {
       cancel.click();
     });
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
-    await flushFocus();
     expect(document.activeElement).toBe(target);
     panel.remove();
   });
@@ -615,7 +605,6 @@ describe("AskSelectionLayer", () => {
     const close = await act(async () => pressEscape(document.body));
     expect(close.defaultPrevented).toBe(true);
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
-    await flushFocus();
     expect(document.activeElement).toBe(target);
   });
 
@@ -633,7 +622,6 @@ describe("AskSelectionLayer", () => {
     await act(async () => {
       usePlayerStore.setState({ askPhase: "selecting", status: "interrupted" });
     });
-    await flushFocus();
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
     const layerEl = container.querySelector("[data-ask-layer]");
     expect(layerEl).not.toBeNull();
@@ -662,7 +650,6 @@ describe("AskSelectionLayer", () => {
     const close = await act(async () => pressEscape(document.body));
     expect(close.defaultPrevented).toBe(true);
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
-    await flushFocus();
     expect(document.activeElement).toBe(layer());
   });
 

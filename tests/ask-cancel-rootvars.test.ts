@@ -520,4 +520,86 @@ describe("cancel root vars", () => {
     ]);
     setProperty.mockRestore();
   });
+
+  test("mobile sending to selecting focuses a shortcut in the same act, before any rAF", async () => {
+    await renderLayer();
+    await settle();
+
+    await act(async () => {
+      usePlayerStore.setState({ askPhase: "sending" });
+    });
+    await settle();
+    expect(document.querySelector("[data-ask-shortcut]")).toBeNull();
+
+    const lingering = document.createElement("button");
+    lingering.textContent = "取消";
+    document.body.append(lingering);
+    lingering.focus();
+    expect(document.activeElement).toBe(lingering);
+    expect(frames.pending()).toBe(0);
+
+    await act(async () => {
+      usePlayerStore.setState({ askPhase: "selecting", selection });
+    });
+
+    const chip = document.activeElement as HTMLElement | null;
+    expect(chip?.closest("[data-ask-shortcut]")).toBe(chip);
+    expect(chip?.hasAttribute("data-ask-shortcut")).toBe(true);
+    // The measure frame is queued, not flushed. Focus already landed.
+    expect(frames.pending()).toBeGreaterThan(0);
+
+    lingering.remove();
+  });
+
+  test("desktop drafting to selecting focuses the selection target in the same act and schedules no focus timer", async () => {
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }));
+
+    await act(async () => {
+      root.unmount();
+    });
+    root = createRoot(container);
+    await renderLayer();
+    await settle();
+
+    const target = stage.querySelector<HTMLElement>('[data-ask-id="subtitle:s1"]')!;
+    expect(target.hasAttribute("tabindex")).toBe(false);
+
+    await act(async () => {
+      usePlayerStore.setState({ askPhase: "drafting", selection });
+    });
+    await settle();
+
+    const cancel = document.createElement("button");
+    cancel.textContent = "取消";
+    document.body.append(cancel);
+    cancel.focus();
+
+    const nativeSetTimeout = window.setTimeout.bind(window);
+    const scheduled: string[] = [];
+    const setTimeoutSpy = vi.spyOn(window, "setTimeout").mockImplementation(((
+      callback: TimerHandler,
+      delay?: number,
+      ...args: unknown[]
+    ) => {
+      scheduled.push(typeof callback === "function" ? callback.toString() : "");
+      return nativeSetTimeout(callback, delay, ...args);
+    }) as typeof window.setTimeout);
+
+    await act(async () => {
+      usePlayerStore.setState({ askPhase: "selecting", selection });
+    });
+
+    expect(document.activeElement).toBe(target);
+    expect(target.tabIndex).toBe(-1);
+    expect(scheduled.filter((source) => /focus|data-ask-layer|activeElement/.test(source))).toEqual([]);
+    expect(frames.pending()).toBeGreaterThan(0);
+
+    setTimeoutSpy.mockRestore();
+    cancel.remove();
+  });
 });
