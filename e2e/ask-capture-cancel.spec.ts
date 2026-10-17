@@ -1035,11 +1035,54 @@ type AskPanelEvent = { type: "add" | "remove"; t: number };
 type AskCancelProbe = {
   __askPointerDownTs?: AskPointerDown[];
   __askPointerUpTs?: AskPointerUp[];
-  /** performance.now() when [data-ask-panel] first leaves the document. */
-  __askPanelGoneAt?: number;
+  /**
+   * performance.now() when [data-ask-panel] is first hidden or leaves the
+   * document. Written by this spec's init script, not by prod code.
+   */
+  __e2ePanelGoneAt?: number;
   /** Every add and remove of [data-ask-panel] from before submit until the test ends. */
   __askPanelEvents?: AskPanelEvent[];
 };
+
+/**
+ * Stamps window.__e2ePanelGoneAt from a MutationObserver that lives only in
+ * this spec. Prod code does not write a panel-gone clock. The stamp is the
+ * hide (display:none / aria-hidden / inert) or the later removal, whichever
+ * the observer sees first. An absent panel before it has ever been inserted
+ * is not a close.
+ */
+async function installE2ePanelGoneProbe(page: Page) {
+  await page.addInitScript(() => {
+    const win = window as unknown as AskCancelProbe;
+    let panelGoneAt: number | undefined;
+    let sawPanel = false;
+    const panelIsHidden = (panel: Element) =>
+      panel instanceof HTMLElement &&
+      (panel.style.display === "none" ||
+        panel.getAttribute("aria-hidden") === "true" ||
+        panel.hasAttribute("inert"));
+    const stampPanelGone = () => {
+      if (panelGoneAt != null) return;
+      const panel = document.querySelector("[data-ask-panel]");
+      if (panel) {
+        sawPanel = true;
+        if (!panelIsHidden(panel)) return;
+      } else if (!sawPanel) {
+        return;
+      }
+      panelGoneAt = performance.now();
+      win.__e2ePanelGoneAt = panelGoneAt;
+    };
+    const observer = new MutationObserver(() => {
+      stampPanelGone();
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      childList: true,
+      subtree: true,
+    });
+  });
+}
 
 /** True when a remove of [data-ask-panel] is followed later by an add. */
 function panelWasReadded(seq: AskPanelEvent[]): boolean {
@@ -1070,6 +1113,10 @@ function installNaturalCancel(width: number, touch: boolean) {
             viewport: { width: 390, height: 844 },
           },
     );
+
+    test.beforeEach(async ({ page }) => {
+      await installE2ePanelGoneProbe(page);
+    });
 
     for (let i = 1; i <= 10; i += 1) {
       test(`press 取消 within 150ms of submit run ${i}`, async ({ page }) => {
@@ -1117,17 +1164,16 @@ function installNaturalCancel(width: number, touch: boolean) {
         // distinguish the cancel press from the submit press. The same
         // evaluate, still before the submit tap, installs a MutationObserver
         // and leaves it connected for the whole test. It records every add
-        // and remove of [data-ask-panel] with performance.now(), and stamps
-        // __askPanelGoneAt the first time the panel is absent. It does not
-        // disconnect on that first removal: a later re-add stays in the
-        // sequence. The close stamp is taken when the removal commits, not
-        // when a later evaluate round-trips. Listeners are installed before
-        // either gesture so the submit press is included.
+        // and remove of [data-ask-panel] with performance.now(). It does not
+        // disconnect on the first removal: a later re-add stays in the
+        // sequence. The close stamp is window.__e2ePanelGoneAt from the init
+        // script observer (hide attributes or removal), not a prod global.
+        // Listeners are installed before either gesture so the submit press
+        // is included.
         await page.evaluate(() => {
           const win = window as unknown as AskCancelProbe;
           win.__askPointerDownTs = [];
           win.__askPointerUpTs = [];
-          delete win.__askPanelGoneAt;
           const events: AskPanelEvent[] = [];
           win.__askPanelEvents = events;
           const inCancel = (event: Event) =>
@@ -1167,13 +1213,6 @@ function installNaturalCancel(width: number, touch: boolean) {
             for (const record of records) {
               for (const node of record.removedNodes) notePanel(node, "remove");
               for (const node of record.addedNodes) notePanel(node, "add");
-            }
-            // The paint clock is the hide, which hideAskPanelNow writes.
-            // A removal stamp is a frame later (b2 keeps the node) and, when
-            // the hide's microtask has not run yet, it overwrites the earlier
-            // number. Only stamp removal when nothing has hidden the panel.
-            if (win.__askPanelGoneAt == null && document.querySelector("[data-ask-panel]") == null) {
-              win.__askPanelGoneAt = performance.now();
             }
           });
           observer.observe(document.body, { childList: true, subtree: true });
@@ -1245,7 +1284,8 @@ function installNaturalCancel(width: number, touch: boolean) {
         }
 
         if (width === 390) {
-          // Read the stamp inside the page, on the turn the hide writes it.
+          // Read the stamp inside the page. The init-script observer writes
+          // window.__e2ePanelGoneAt when the panel is hidden or removed.
           // A later page.evaluate starts only after Node has awaited touchEnd,
           // and that round-trip is longer than the paint budget. b2 removes
           // the node one frame after the hide, so the clock is the hide.
@@ -1259,15 +1299,15 @@ function installNaturalCancel(width: number, touch: boolean) {
                 duration: measures[0]?.duration,
                 downs: win.__askPointerDownTs ?? [],
                 ups: win.__askPointerUpTs ?? [],
-                panelGoneAt: win.__askPanelGoneAt,
+                panelGoneAt: win.__e2ePanelGoneAt,
                 events: win.__askPanelEvents ?? [],
               };
             };
-            if (typeof win.__askPanelGoneAt === "number") return read();
+            if (typeof win.__e2ePanelGoneAt === "number") return read();
             return new Promise<ReturnType<typeof read>>((resolve) => {
               const started = performance.now();
               const tick = () => {
-                if (typeof win.__askPanelGoneAt === "number" || performance.now() - started > 2000) {
+                if (typeof win.__e2ePanelGoneAt === "number" || performance.now() - started > 2000) {
                   resolve(read());
                   return;
                 }

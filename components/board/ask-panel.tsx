@@ -62,13 +62,6 @@ function hideAskPanelNow(panel: HTMLElement | null): void {
   panel.style.display = "none";
   panel.setAttribute("aria-hidden", "true");
   panel.setAttribute("inert", "");
-  // The cancel clock is this hide, which is the visual close. b2 keeps the
-  // node mounted for one frame, so a removal observer stamps too late.
-  // Stamp once, on the first hide, and leave a later removeChild alone.
-  const win = window as Window & { __askPanelGoneAt?: number };
-  if (win.__askPanelGoneAt == null) {
-    win.__askPanelGoneAt = performance.now();
-  }
 }
 
 const DESKTOP_QUERY = "(min-width: 1024px)";

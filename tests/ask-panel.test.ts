@@ -144,7 +144,6 @@ afterEach(async () => {
   usePlayerStore.getState().reset();
   resetCodeEditorRegistry();
   resetLongTaskEndForTests();
-  delete (window as Window & { __askPanelGoneAt?: number }).__askPanelGoneAt;
   container.remove();
   stage.remove();
   status.remove();
@@ -230,9 +229,8 @@ function expectPanelHiddenSelecting() {
   expect(held?.hasAttribute("inert")).toBe(true);
   expect(held?.inert).toBe(true);
   expect(usePlayerStore.getState().askPhase).toBe("selecting");
-  // The visual close is this hide. The node stays one frame, so the stamp
-  // is performance.now() at hide, not the later removeChild.
-  expect((window as Window & { __askPanelGoneAt?: number }).__askPanelGoneAt).toEqual(expect.any(Number));
+  // Visually closed in this cancel commit: display none, aria-hidden, inert.
+  // The node stays mounted for one frame, then unmounts.
 }
 
 /** Drain the pre-capture paint, then the post-capture macrotask and settle. */
