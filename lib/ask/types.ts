@@ -13,7 +13,7 @@ export interface AskTarget {
 export interface AskCandidate { target: AskTarget; rect: AskBBox }
 export type AskSelectionMode = "region" | "single";
 export interface AskSelection { stepId: string; mode: AskSelectionMode; bbox: AskBBox; targets: AskTarget[]; question: string }
-export type AskSelectionSummary = Pick<AskSelection, "mode" | "bbox" | "targets">;
+export type AskSelectionSummary = Pick<AskSelection, "mode" | "bbox" | "targets"> & { captureBBox?: AskBBox };
 export interface AnswerSegment { id: string; narration: string; targets?: EffectTarget[]; effects?: EffectCall[]; viz?: ArrayVizFrame }
 export interface StepAnswer { v: 1; id: string; stepId: string; question: string; selection: AskSelectionSummary; segments: AnswerSegment[]; createdAt: string; imageAttached?: boolean }
 export type StepAnswersMap = Record<string, StepAnswer[]>;

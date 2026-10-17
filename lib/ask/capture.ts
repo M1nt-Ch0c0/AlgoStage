@@ -11,6 +11,7 @@ import { yieldForQueuedInput, yieldMacrotask } from "./yield-macrotask";
 import { acquireEncodeWorker, retireEncodeWorker } from "./capture-worker";
 import { intersects, normalizeBBox } from "./hit-test";
 import type { EncodeRequest, EncodeResponse } from "./capture-encode";
+import { resolveCaptureSelection } from "./origin-kind";
 
 export const CAPTURE_FALLBACK_NOTICE = "没截到图，这次只发送选中的文字。";
 
@@ -740,7 +741,7 @@ async function encodeOnMainThread(
 
 export async function captureStage(
   container: HTMLElement | null,
-  sel: Pick<AskSelection, "bbox" | "targets">,
+  selection: Pick<AskSelection, "bbox" | "targets"> & { captureBBox?: AskBBox },
   opts?: {
     timeoutMs?: number;
     maxBytes?: number;
@@ -755,6 +756,7 @@ export async function captureStage(
     beforeEncode?: () => Promise<void>;
   },
 ): Promise<CaptureResult> {
+  const sel = resolveCaptureSelection(selection);
   const fallbackText = buildFallbackText(sel.targets);
 
   let timer: ReturnType<typeof setTimeout> | undefined;

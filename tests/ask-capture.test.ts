@@ -18,6 +18,7 @@ import {
 import { resetLongTaskEndForTests } from "@/lib/ask/ask-timing";
 import { resetEncodeWorkerForTests } from "@/lib/ask/capture-worker";
 import type { EncodeRequest, EncodeResponse } from "@/lib/ask/capture-encode";
+import { resolveCaptureSelection } from "@/lib/ask/origin-kind";
 
 const { mockState, domToCanvasMock } = vi.hoisted(() => ({
   mockState: { shouldThrow: false },
@@ -31,6 +32,15 @@ vi.mock("modern-screenshot", () => {
   return {
     domToCanvas: domToCanvasMock,
   };
+});
+
+describe("resolveCaptureSelection", () => {
+  it("uses captureBBox as bbox and leaves a selection without one unchanged", () => {
+    const drawn = { bbox: { x: 1, y: 2, width: 30, height: 40 }, targets: [] as AskTarget[] };
+    expect(resolveCaptureSelection(drawn)).toBe(drawn);
+    const withCrop = { ...drawn, captureBBox: { x: 5, y: 6, width: 7, height: 8 } };
+    expect(resolveCaptureSelection(withCrop)).toEqual({ ...withCrop, bbox: withCrop.captureBBox });
+  });
 });
 
 describe("lib/ask/capture", () => {
@@ -316,6 +326,32 @@ describe("lib/ask/capture", () => {
         0,
         80,
         60,
+      );
+    });
+
+    it("crops using captureBBox when present, not the drawn bbox", async () => {
+      // container 200×200, canvas 400×400 → scale 2.
+      // Drawn box would crop to (20, 40, 200, 120); captureBBox crops to (40, 60, 80, 40).
+      const sel: Pick<AskSelection, "bbox" | "targets"> & {
+        captureBBox?: { x: number; y: number; width: number; height: number };
+      } = {
+        bbox: { x: 10, y: 20, width: 100, height: 60 },
+        captureBBox: { x: 20, y: 30, width: 40, height: 20 },
+        targets: [codeTarget("c1", "lines")],
+      };
+
+      const res = await captureStage(container, sel);
+      expect(res.ok).toBe(true);
+      expect(drawImageMock).toHaveBeenCalledWith(
+        sourceCanvas,
+        40,
+        60,
+        80,
+        40,
+        0,
+        0,
+        80,
+        40,
       );
     });
 
