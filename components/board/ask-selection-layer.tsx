@@ -28,7 +28,7 @@ import {
 } from "@/lib/ask/ask-ui-text";
 import { ASK_LIMITS, type AskBBox, type AskSelectionSummary, type AskTarget } from "@/lib/ask/types";
 import { getCodeEditorHandle, setAskCodeMissNotice } from "@/lib/ask/code-editor-registry";
-import { askCancelGhostUntil, finishAskCancelSync } from "@/lib/ask/ask-cancel";
+import { askCancelGhostUntil, endAskCancelGhostWindow, finishAskCancelSync } from "@/lib/ask/ask-cancel";
 import { setAskOpenSource } from "@/lib/ask/ask-open-source";
 import {
   applyAskSelectingRootVars,
@@ -285,6 +285,9 @@ export function handlePanelTabNavigation(
 export function exitAskAndFocusEntry(): void {
   setAskCodeMissNotice(null);
   setAskOpenSource(null);
+  // A touch cancel may have armed the 500ms ghost window. Leaving ask must
+  // drop it, or the next press on the entry is swallowed.
+  endAskCancelGhostWindow();
   const active = typeof document !== "undefined" ? document.activeElement : null;
   const focusWasInLayer =
     active != null &&
@@ -494,7 +497,7 @@ export default function AskSelectionLayer({ stageRef, stage }: AskSelectionLayer
         finishAskCancelSync(
           document.querySelector<HTMLElement>("[data-ask-panel]"),
           closeAskPanel,
-          { focusMode: "selection" },
+          { focusMode: "selection", armGhost: false },
         );
       }
       else {

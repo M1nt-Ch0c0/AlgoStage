@@ -3,12 +3,13 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { scrollHeight, clientHeight, scrollWidth, clientWidth } from "happy-dom/lib/PropertySymbol.js";
-import { armAskCancelGhostSuppress, askCancelGhostUntil, finishAskCancelSync, isAskCancelGhostActive } from "../lib/ask/ask-cancel";
+import { armAskCancelGhostSuppress, askCancelGhostUntil, endAskCancelGhostWindow, finishAskCancelSync, isAskCancelGhostActive } from "../lib/ask/ask-cancel";
 import AskEntry from "../components/board/ask-entry";
 import AskPlayerBarVar from "../components/board/ask-player-bar-var";
 import AskSelectionLayer, {
   computeBottomOcclusion,
   computeOcclusion,
+  exitAskAndFocusEntry,
   getDesktopAskEntry,
   getNextTabbableAfterEntry,
   getScrollableAncestors,
@@ -2751,6 +2752,160 @@ describe("resolveAskEscape", () => {
       expect(isAskCancelGhostActive()).toBe(true);
 
       window.matchMedia = originalMatchMedia;
+    });
+
+    test("Esc close-panel does not arm the ghost window; a following mouse pointerdown is delivered", async () => {
+      await render();
+      const target = stage.querySelector<HTMLElement>('[data-ask-id="step:s1"]')!;
+      usePlayerStore.setState({
+        askPhase: "drafting",
+        status: "interrupted",
+        selection: {
+          mode: "single",
+          bbox: { x: 80, y: 10, width: 60, height: 30 },
+          targets: [{ kind: "step", id: "step:s1", stepId: "s1", text: "步骤内容" }],
+        },
+      });
+      await render();
+
+      // A leftover touch-cancel arm must not survive the Esc close.
+      armAskCancelGhostSuppress();
+      expect(isAskCancelGhostActive()).toBe(true);
+
+      const close = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+      await act(async () => {
+        document.body.dispatchEvent(close);
+      });
+      expect(close.defaultPrevented).toBe(true);
+      expect(usePlayerStore.getState().askPhase).toBe("selecting");
+      expect(isAskCancelGhostActive()).toBe(false);
+      expect(askCancelGhostUntil).toBe(0);
+
+      const layerEl = layer();
+      const pointerDown = new PointerEvent("pointerdown", {
+        bubbles: true,
+        cancelable: true,
+        pointerId: 1,
+        pointerType: "mouse",
+        button: 0,
+        clientX: 40,
+        clientY: 40,
+      });
+      await act(async () => {
+        layerEl.dispatchEvent(pointerDown);
+      });
+      expect(pointerDown.defaultPrevented).toBe(false);
+      expect(document.activeElement).toBe(target);
+    });
+
+    test("Cancel finishAskCancelSync still arms the ghost window", async () => {
+      await render();
+      usePlayerStore.setState({ askPhase: "drafting", status: "interrupted" });
+      await render();
+      endAskCancelGhostWindow();
+      expect(isAskCancelGhostActive()).toBe(false);
+
+      await act(async () => {
+        finishAskCancelSync(null, () => usePlayerStore.getState().closeAskPanel());
+      });
+
+      expect(usePlayerStore.getState().askPhase).toBe("selecting");
+      expect(isAskCancelGhostActive()).toBe(true);
+      expect(askCancelGhostUntil).toBeGreaterThan(performance.now());
+    });
+
+    test("swallowing a mouse pointerdown spends the ghost gesture", async () => {
+      await render();
+      await act(async () => {
+        usePlayerStore.setState({ askPhase: "selecting" });
+      });
+      const layerEl = layer();
+      armAskCancelGhostSuppress();
+      expect(isAskCancelGhostActive()).toBe(true);
+
+      const first = new PointerEvent("pointerdown", {
+        bubbles: true,
+        cancelable: true,
+        pointerId: 1,
+        pointerType: "mouse",
+        button: 0,
+        clientX: 40,
+        clientY: 40,
+      });
+      const second = new PointerEvent("pointerdown", {
+        bubbles: true,
+        cancelable: true,
+        pointerId: 2,
+        pointerType: "mouse",
+        button: 0,
+        clientX: 48,
+        clientY: 48,
+      });
+      await act(async () => {
+        layerEl.dispatchEvent(first);
+        layerEl.dispatchEvent(second);
+      });
+
+      expect(first.defaultPrevented).toBe(true);
+      expect(second.defaultPrevented).toBe(false);
+      // The window stays up for the matching click; only the gesture is spent.
+      expect(isAskCancelGhostActive()).toBe(true);
+    });
+
+    test("endAskCancelGhostWindow clears an armed ghost window", async () => {
+      armAskCancelGhostSuppress();
+      expect(isAskCancelGhostActive()).toBe(true);
+      expect(askCancelGhostUntil).toBeGreaterThan(0);
+
+      endAskCancelGhostWindow();
+
+      expect(isAskCancelGhostActive()).toBe(false);
+      expect(askCancelGhostUntil).toBe(0);
+
+      const entry = document.createElement("button");
+      entry.setAttribute("data-ask-entry", "");
+      document.body.append(entry);
+      const pointerDown = new PointerEvent("pointerdown", {
+        bubbles: true,
+        cancelable: true,
+        pointerId: 1,
+        pointerType: "mouse",
+        button: 0,
+      });
+      entry.dispatchEvent(pointerDown);
+      expect(pointerDown.defaultPrevented).toBe(false);
+      entry.remove();
+    });
+
+    test("exitAskAndFocusEntry clears an armed ghost window", async () => {
+      const entry = document.createElement("button");
+      entry.setAttribute("data-ask-entry", "");
+      entry.tabIndex = 0;
+      document.body.append(entry);
+
+      await render();
+      await act(async () => {
+        usePlayerStore.setState({ askPhase: "selecting" });
+      });
+      armAskCancelGhostSuppress();
+      expect(isAskCancelGhostActive()).toBe(true);
+
+      exitAskAndFocusEntry();
+
+      expect(usePlayerStore.getState().askPhase).toBe("idle");
+      expect(isAskCancelGhostActive()).toBe(false);
+      expect(askCancelGhostUntil).toBe(0);
+
+      const pointerDown = new PointerEvent("pointerdown", {
+        bubbles: true,
+        cancelable: true,
+        pointerId: 1,
+        pointerType: "mouse",
+        button: 0,
+      });
+      entry.dispatchEvent(pointerDown);
+      expect(pointerDown.defaultPrevented).toBe(false);
+      entry.remove();
     });
 
     test("touch pointerup on cancel followed by new pointerdown clears suppression", async () => {

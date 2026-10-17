@@ -74,7 +74,8 @@ function syncGhostExitPointerEvents(): void {
   if (exit.style.pointerEvents === "none") exit.style.pointerEvents = "";
 }
 
-function endAskCancelGhostWindow(): void {
+/** Drop the ghost window. Keyboard exit calls this so a prior touch-cancel arm does not eat the next press. */
+export function endAskCancelGhostWindow(): void {
   askCancelGhostUntil = 0;
   ghostGestureSpent = false;
   ghostMouseDown = null;
@@ -145,6 +146,11 @@ function onGhostPointerDown(event: Event): void {
   if (event.pointerType !== "mouse" || ghostGestureSpent) return;
   if (!eventInGhostZone(event)) return;
   swallowGhost(event);
+  // Same one-gesture budget as onGhostMouse. A swallowed pointerdown with no
+  // following mousedown must still spend the window, or the next real press
+  // inside 500ms is eaten too.
+  ghostGestureSpent = true;
+  ghostMouseDown = event;
 }
 
 /**
@@ -192,13 +198,16 @@ function focusAskCancelTarget(focusMode: AskCancelFocusMode = "opener"): void {
  * focus before the next frame. One sync measure only when the shared cache
  * is incomplete (Leo L4), still before focus.
  * focusMode: Esc close-panel passes "selection"; Cancel keeps default "opener".
+ * armGhost: default true (Cancel / touch cancel). Keyboard Esc passes false —
+ * there is no compatibility mouse ghost after a key.
  */
 export function finishAskCancelSync(
   panel: HTMLElement | null,
   transition: () => void,
-  opts?: { focusMode?: AskCancelFocusMode },
+  opts?: { focusMode?: AskCancelFocusMode; armGhost?: boolean },
 ): void {
   const focusMode = opts?.focusMode ?? "opener";
+  const armGhost = opts?.armGhost !== false;
   hideAskPanelNow(panel);
   flushSync(transition);
   if (usePlayerStore.getState().askPhase !== "selecting") return;
@@ -220,6 +229,9 @@ export function finishAskCancelSync(
   // After the first focus: the compatibility mousedown lands once the
   // panel unmounts on the following microtask. Swallow it, then put focus
   // back on the opener in this same turn. No rAF, timeout, or microtask.
-  armAskCancelGhostSuppress();
+  // Keyboard Esc is not a touch cancel. It also drops a window a previous
+  // Cancel left armed, so the next press is not eaten.
+  if (armGhost) armAskCancelGhostSuppress();
+  else endAskCancelGhostWindow();
   focusAskCancelTarget(focusMode);
 }
