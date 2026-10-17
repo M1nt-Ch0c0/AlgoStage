@@ -15,7 +15,7 @@ concurrency:
 jobs:
   checks:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 40
     env:
       NEXT_TELEMETRY_DISABLED: "1"
       NEXT_PUBLIC_BASE_PATH: ""
