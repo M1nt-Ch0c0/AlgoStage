@@ -19,6 +19,7 @@ import {
   type KeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { flushSync } from "react-dom";
 import Link from "next/link";
 import { cancelAsk, retroCancelAsk, sendAsk } from "@/lib/ask/ask-client";
 import { ASK_ERROR_SPECS, resolveAskError, type AskErrorAction } from "@/lib/ask/ask-errors";
@@ -222,7 +223,7 @@ export default function AskPanel({ stage }: AskPanelProps) {
   const askPhase = usePlayerStore((s) => s.askPhase);
   const captureFailed = usePlayerStore((s) => s.askCaptureFallback);
   const prevPhaseRef = useRef(askPhase);
-  /** True for one frame after cancel/exit so AskPanelActive stays mounted (already hidden). */
+  /** True until the next macrotask after cancel/exit so AskPanelActive stays mounted (already hidden). */
   const exitHoldRef = useRef(false);
   const [, setExitTick] = useState(0);
 
@@ -245,18 +246,37 @@ export default function AskPanel({ stage }: AskPanelProps) {
 
   useIsomorphicLayoutEffect(() => {
     if (!exitHoldRef.current || inPanelPhase) return;
+    // Hide in the cancel commit (display:none stays on this task). Unmount in
+    // the next macrotask, normally before the first paint, so removal is off
+    // pointerup (Leo b2) but does not wait for an extra frame. flushSync
+    // commits the unmount in that macrotask instead of waiting for React's
+    // scheduler. Cleanup cancels a pending macrotask so a re-open in that
+    // window does not unmount the new panel.
     hideAskPanelNow(document.querySelector<HTMLElement>("[data-ask-panel]"));
-    const raf = globalThis.requestAnimationFrame;
-    if (typeof raf !== "function") {
-      exitHoldRef.current = false;
-      setExitTick((n) => n + 1);
-      return;
+    const releaseHold = () => {
+      flushSync(() => {
+        exitHoldRef.current = false;
+        setExitTick((n) => n + 1);
+      });
+    };
+    const Channel = globalThis.MessageChannel;
+    if (typeof Channel === "function") {
+      const channel = new Channel();
+      channel.port1.onmessage = () => {
+        channel.port1.onmessage = null;
+        releaseHold();
+      };
+      channel.port2.postMessage(0);
+      return () => {
+        channel.port1.onmessage = null;
+      };
     }
-    const id = raf(() => {
-      exitHoldRef.current = false;
-      setExitTick((n) => n + 1);
-    });
-    return () => globalThis.cancelAnimationFrame?.(id);
+    if (typeof globalThis.setTimeout === "function") {
+      const id = globalThis.setTimeout(releaseHold, 0);
+      return () => globalThis.clearTimeout?.(id);
+    }
+    exitHoldRef.current = false;
+    setExitTick((n) => n + 1);
   }, [askPhase, inPanelPhase]);
 
   if (answerPhase) {

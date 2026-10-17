@@ -215,11 +215,10 @@ async function drainPaintFrames() {
 }
 
 /**
- * PANEL → selecting keeps the panel mounted for one frame, already hidden.
- * happy-dom's requestAnimationFrame is setImmediate, and React's awaited
- * act flushes that frame before it resolves, so the hidden node is only
- * observable inside the act that closed the panel. Call this there, then
- * drainPaintFrames in the same act to unmount.
+ * PANEL → selecting keeps the panel mounted until the next macrotask, already
+ * hidden. React's awaited act flushes that macrotask before it resolves, so
+ * the hidden node is only observable inside the act that closed the panel.
+ * Call this there, then drain one macrotask in the same act to unmount.
  */
 function expectPanelHiddenSelecting() {
   const held = container.querySelector<HTMLElement>("[data-ask-panel]");
@@ -230,7 +229,7 @@ function expectPanelHiddenSelecting() {
   expect(held?.inert).toBe(true);
   expect(usePlayerStore.getState().askPhase).toBe("selecting");
   // Visually closed in this cancel commit: display none, aria-hidden, inert.
-  // The node stays mounted for one frame, then unmounts.
+  // The node stays mounted until the next macrotask, then unmounts.
 }
 
 /** Drain the pre-capture paint, then the post-capture macrotask and settle. */
@@ -742,8 +741,8 @@ describe("ask panel", () => {
 
     await act(async () => {
       usePlayerStore.getState().closeAskPanel();
-      // Let the selecting commit paint the hidden hold before the exit rAF
-      // (happy-dom setImmediate) unmounts it at the end of this act.
+      // Let the selecting commit hide the hold before the exit macrotask
+      // unmounts it at the end of this act.
       await Promise.resolve();
       expectPanelHiddenSelecting();
       await drainPaintFrames();
@@ -1017,7 +1016,7 @@ describe("ask panel", () => {
     expect(usePlayerStore.getState().selection).toBe(kept);
   });
 
-  test("b2. cancel hides panel in commit then unmounts next frame", async () => {
+  test("b2. cancel hides panel in commit then unmounts next macrotask", async () => {
     const kept = selection();
     draft("drafting", { draftQuestion: "下次还在", selection: kept });
     await render();
@@ -1026,7 +1025,7 @@ describe("ask panel", () => {
     await act(async () => {
       activateButton(cancel);
       expectPanelHiddenSelecting();
-      // aria-hidden and inert are set for the hold frame. happy-dom refuses
+      // aria-hidden and inert are set for the hold macrotask. happy-dom refuses
       // focus() on an inert element, so a programmatic focus cannot land here.
       const held = container.querySelector<HTMLElement>("[data-ask-panel]");
       const before = document.activeElement;
@@ -1200,18 +1199,63 @@ describe("ask panel", () => {
       if (cancel) activateButton(cancel);
       expectPanelHiddenSelecting();
     });
-    // The held askInputMacrotask blocks the exit-hold frame. Releasing it
-    // lets submit finish (and drop the send) and lets the next rAF unmount.
+    // The held askInputMacrotask blocks the exit-hold macrotask. Releasing it
+    // lets submit finish (and drop the send) and lets the next macrotask unmount.
+    // pendingSubmit is its own act. Awaiting it inside this one leaves React's
+    // act scope open, so the next test's render never commits.
     const queued = heldYields.splice(0);
     await act(async () => {
       queued.forEach((release) => release());
-      await pendingSubmit;
       await drainPaintFrames();
     });
+    await pendingSubmit;
     expect(container.querySelector("[data-ask-panel]")).toBeNull();
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
     expect(sendAsk).toHaveBeenCalledTimes(1);
     expect(vi.mocked(sendAsk).mock.calls[0]?.[1]?.isCurrent?.()).toBe(false);
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
+  });
+
+  test("b2. cancel unmounts on the next macrotask without a frame; re-open cancels it", async () => {
+    const queued: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      queued.push(callback);
+      return queued.length;
+    });
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+
+    draft("drafting", { draftQuestion: "下次还在" });
+    await render();
+    const cancel = container.querySelector<HTMLButtonElement>("[data-ask-cancel]");
+    expect(cancel).not.toBeNull();
+
+    await act(async () => {
+      activateButton(cancel!);
+      expectPanelHiddenSelecting();
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 0);
+      });
+    });
+    expect(container.querySelector("[data-ask-panel]")).toBeNull();
+    expect(queued).toHaveLength(0);
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
+
+    draft("drafting", { draftQuestion: "重新打开" });
+    await render();
+    expect(container.querySelector("[data-ask-panel]")).not.toBeNull();
+    const cancelAgain = container.querySelector<HTMLButtonElement>("[data-ask-cancel]");
+    expect(cancelAgain).not.toBeNull();
+
+    await act(async () => {
+      activateButton(cancelAgain!);
+      expectPanelHiddenSelecting();
+      usePlayerStore.setState({ askPhase: "drafting" });
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 0);
+      });
+    });
+    expect(container.querySelector("[data-ask-panel]")).not.toBeNull();
+    expect(usePlayerStore.getState().askPhase).toBe("drafting");
+    expect(queued).toHaveLength(0);
   });
 });
