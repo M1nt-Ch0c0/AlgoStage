@@ -1347,4 +1347,92 @@ describe("POST /api/lecture/ask", () => {
     await second.json();
     expect(await fixture.prisma.lectureAnswer.count()).toBe(2);
   });
+
+  describe("StepAnswer.imageAttached server write", () => {
+    const tinyImage = { mime: "image/jpeg" as const, dataBase64: "QQ==" };
+
+    test("a) image: null -> start.imageUsed false AND answer.imageAttached === false", async () => {
+      const seeded = await seed();
+      harness.set(okGeneration());
+      const res = await post(askBody(STEP, seeded.key, seeded.version, { image: null }), { accept: "application/json" });
+      expect(res.status).toBe(200);
+      const data = (await res.json()) as { answer: StepAnswer };
+      expect(data.answer.imageAttached).toBe(false);
+
+      const row = await fixture.prisma.lectureAnswer.findUniqueOrThrow({ where: { id: data.answer.id } });
+      const payload = JSON.parse(row.payload) as StepAnswer;
+      expect(payload.imageAttached).toBe(false);
+
+      const { listAnswers } = await import("@/lib/ask/answers-repo");
+      const map = await listAnswers(fixture.prisma, seeded.key, seeded.version, new Set([STEP]));
+      expect(map[STEP]?.[0]?.imageAttached).toBe(false);
+
+      const ndjsonRes = await post(askBody(STEP, seeded.key, seeded.version, { image: null }), { accept: "application/x-ndjson" });
+      expect(ndjsonRes.status).toBe(200);
+      const lines = await readLines(ndjsonRes);
+      const start = lines.find((line) => line.type === "start");
+      expect(start).toMatchObject({ type: "start", imageUsed: false });
+      const result = lines.find((line) => line.type === "result") as { type: "result"; answer: StepAnswer } | undefined;
+      expect(result?.answer.imageAttached).toBe(false);
+    });
+
+    test("b) image present + model supporting ask image (gpt-4o) -> start.imageUsed true AND answer.imageAttached === true", async () => {
+      const byokGpt4o = { ...BYOK, model: "gpt-4o" };
+      const seeded = await seed(undefined, byokGpt4o);
+      harness.set(okGeneration());
+      const res = await post(
+        askBody(STEP, seeded.key, seeded.version, { image: tinyImage, byok: byokGpt4o }),
+        { accept: "application/json" },
+      );
+      expect(res.status).toBe(200);
+      const data = (await res.json()) as { answer: StepAnswer };
+      expect(data.answer.imageAttached).toBe(true);
+
+      const row = await fixture.prisma.lectureAnswer.findUniqueOrThrow({ where: { id: data.answer.id } });
+      const payload = JSON.parse(row.payload) as StepAnswer;
+      expect(payload.imageAttached).toBe(true);
+
+      const { listAnswers } = await import("@/lib/ask/answers-repo");
+      const map = await listAnswers(fixture.prisma, seeded.key, seeded.version, new Set([STEP]));
+      expect(map[STEP]?.[0]?.imageAttached).toBe(true);
+
+      const ndjsonRes = await post(
+        askBody(STEP, seeded.key, seeded.version, { image: tinyImage, byok: byokGpt4o }),
+        { accept: "application/x-ndjson" },
+      );
+      expect(ndjsonRes.status).toBe(200);
+      const lines = await readLines(ndjsonRes);
+      const start = lines.find((line) => line.type === "start");
+      expect(start).toMatchObject({ type: "start", imageUsed: true });
+      const result = lines.find((line) => line.type === "result") as { type: "result"; answer: StepAnswer } | undefined;
+      expect(result?.answer.imageAttached).toBe(true);
+    });
+
+    test("c) image present + unsupported model (gpt-6.1-sol) -> start.imageUsed false AND answer.imageAttached === false", async () => {
+      const seeded = await seed();
+      harness.set(okGeneration());
+      const res = await post(
+        askBody(STEP, seeded.key, seeded.version, { image: tinyImage }),
+        { accept: "application/json" },
+      );
+      expect(res.status).toBe(200);
+      const data = (await res.json()) as { answer: StepAnswer };
+      expect(data.answer.imageAttached).toBe(false);
+
+      const row = await fixture.prisma.lectureAnswer.findUniqueOrThrow({ where: { id: data.answer.id } });
+      const payload = JSON.parse(row.payload) as StepAnswer;
+      expect(payload.imageAttached).toBe(false);
+
+      const ndjsonRes = await post(
+        askBody(STEP, seeded.key, seeded.version, { image: tinyImage }),
+        { accept: "application/x-ndjson" },
+      );
+      expect(ndjsonRes.status).toBe(200);
+      const lines = await readLines(ndjsonRes);
+      const start = lines.find((line) => line.type === "start");
+      expect(start).toMatchObject({ type: "start", imageUsed: false });
+      const result = lines.find((line) => line.type === "result") as { type: "result"; answer: StepAnswer } | undefined;
+      expect(result?.answer.imageAttached).toBe(false);
+    });
+  });
 });

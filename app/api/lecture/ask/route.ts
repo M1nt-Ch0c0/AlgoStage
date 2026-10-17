@@ -455,6 +455,7 @@ async function completeAnswer(
       selection: summarizeSelection(context.body.selection),
       segments,
       createdAt: new Date().toISOString(),
+      imageAttached: context.imageUsed,
     });
   } catch {
     return invalidAnswer();
