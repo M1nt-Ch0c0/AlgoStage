@@ -3508,9 +3508,15 @@ test.describe("390 selection flow", () => {
       const bar = page.locator("[data-ask-bottom-bar]");
       await expect(bar).toBeVisible();
 
-      // Expect elementFromPoint at the exit button center (inside the bar) to be the exit button itself or inside it
+      // S4 ghost suppress sets exit pointer-events:none for ~500ms after cancel.
+      // Wait until hit-testing works again before elementFromPoint asserts.
       const exitBtn = bar.locator("[data-ask-entry]");
       await expect(exitBtn).toBeVisible();
+      await expect
+        .poll(async () => exitBtn.evaluate((el) => (el as HTMLElement).style.pointerEvents), {
+          timeout: 2000,
+        })
+        .not.toBe("none");
       const exitBox = (await exitBtn.boundingBox())!;
       const exitCx = exitBox.x + exitBox.width / 2;
       const exitCy = exitBox.y + exitBox.height / 2;
