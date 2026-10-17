@@ -13,6 +13,8 @@ export default defineConfig([
     "coverage/**",
     "playwright-report/**",
     "test-results/**",
+    ".gemma-tmp/**",
+    ".gemma-uma/**",
     "next-env.d.ts",
   ]),
   js.configs.recommended,

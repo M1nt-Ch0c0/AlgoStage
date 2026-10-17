@@ -1616,7 +1616,7 @@ describe("resolveAskEscape", () => {
       window.matchMedia = originalMatchMedia;
     });
 
-    test("selection layer does not write --ask-player-bar-h (AskPlayerBarVar owns it)", async () => {
+    test("AskPlayerBarVar owns --ask-player-bar-h; layer publishes bar/occlusion only", async () => {
       const originalMatchMedia = window.matchMedia;
       window.matchMedia = vi.fn().mockImplementation((query: string) => {
         if (query === "(max-width: 639px)") {
@@ -1645,20 +1645,20 @@ describe("resolveAskEscape", () => {
       await act(async () => {
         window.dispatchEvent(new Event("resize"));
       });
-
-      // AskPlayerBarVar owns --ask-player-bar-h; the selection layer must not write it.
-      expect(document.documentElement.style.getPropertyValue("--ask-player-bar-h")).toBe("");
-      // Layer still publishes bar/occlusion after measurement rAF.
       await act(async () => {
         flushPendingRafs();
       });
       await flushMeasureFrame();
+
+      // AskPlayerBarVar publishes player height from the live player area.
+      expect(document.documentElement.style.getPropertyValue("--ask-player-bar-h")).toBe("60px");
+      // Layer publishes bar/occlusion (not a second player-bar write ownership).
       expect(document.documentElement.style.getPropertyValue("--ask-bottom-bar-h")).not.toBe("");
 
       await act(async () => {
         root.unmount();
       });
-      expect(document.documentElement.style.getPropertyValue("--ask-player-bar-h")).toBe("");
+      expect(document.documentElement.style.getPropertyValue("--ask-player-bar-h")).toBe("0px");
 
       playerEl.remove();
       window.matchMedia = originalMatchMedia;
