@@ -546,14 +546,13 @@ async function collectRounds(
       await expect(page.locator("[data-ask-panel]")).toHaveCount(0);
       await expect(page.locator("[data-ask-error]")).toHaveCount(0);
       if (phase === "preparing") expect(asks).toHaveLength(0);
-      const focusLanded = await page.evaluate((w) => {
+      // Chip-opened (viz shortcut) at both widths: focus returns to that opener.
+      const focusChip = await page.evaluate(() => {
         const active = document.activeElement;
         if (!(active instanceof HTMLElement)) return false;
-        if (w === 390) return !!active.closest("[data-ask-shortcut]");
-        return !!active.closest("[data-ask-layer]") || active.matches("[data-ask-id], [data-ask-selection]");
-      }, width);
-      expect(focusLanded, width === 390 ? "chip keeps focus" : "selection or layer keeps focus").toBe(true);
-      const focusChip = width === 390 ? focusLanded : false;
+        return !!active.closest("[data-ask-shortcut]");
+      });
+      expect(focusChip, "chip keeps focus").toBe(true);
       let occl1: string | null = null;
       let occlSettled: string | null = null;
       if (width === 390 && phase === "preparing") {
