@@ -3,6 +3,7 @@ import { act, createElement, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import StepAnswers from "../components/board/step-answers";
+import { ASK_IMAGE_NOT_USED_NOTE } from "../lib/ask/ask-ui-text";
 import { usePlayerStore } from "../lib/player/store";
 import type { StepAnswer } from "../lib/ask/types";
 import type { TeachingScript } from "../lib/teaching/types";
@@ -18,7 +19,14 @@ const script: TeachingScript = {
   ],
 };
 
-function answer(id: string, stepId: string, question: string, narration: string, createdAt: string): StepAnswer {
+function answer(
+  id: string,
+  stepId: string,
+  question: string,
+  narration: string,
+  createdAt: string,
+  imageAttached?: boolean,
+): StepAnswer {
   return {
     v: 1,
     id,
@@ -27,6 +35,7 @@ function answer(id: string, stepId: string, question: string, narration: string,
     selection: { mode: "single", bbox: { x: 0, y: 0, width: 1, height: 1 }, targets: [] },
     segments: [{ id: `${id}-seg`, narration }],
     createdAt,
+    ...(imageAttached !== undefined ? { imageAttached } : {}),
   };
 }
 
@@ -132,4 +141,65 @@ test("点击展开区不冒泡到外层", async () => {
     panel.click();
   });
   expect(container.querySelector("[data-testid='hits']")?.textContent).toBe("0");
+});
+
+test("展开且 imageAttached 为 false 时显示提示文案与图标", async () => {
+  const stored = answer("a1", "s1", "为什么用哈希表", "因为查找是常数时间。", "2026-10-13T00:00:00.000Z", false);
+  usePlayerStore.getState().setAnswers({ s1: [stored] });
+  usePlayerStore.setState({
+    answersReady: true,
+    askPhase: "idle",
+    status: "paused",
+    expandedAnswerIds: new Set(["a1"]),
+  });
+  await render();
+  const notice = container.querySelector("[data-testid='answer-image-missing']");
+  expect(notice).not.toBeNull();
+  expect(notice?.hasAttribute("data-answer-image-notice")).toBe(true);
+  expect(notice?.textContent).toContain(ASK_IMAGE_NOT_USED_NOTE);
+  expect(container.querySelector("[data-answer-image-notice]")).toBe(notice);
+  expect(notice?.getAttribute("role")).toBeNull();
+  expect(notice?.getAttribute("aria-live")).toBeNull();
+});
+
+test("展开且 imageAttached 为 true 时不显示提示", async () => {
+  const stored = answer("a1", "s1", "为什么用哈希表", "因为查找是常数时间。", "2026-10-13T00:00:00.000Z", true);
+  usePlayerStore.getState().setAnswers({ s1: [stored] });
+  usePlayerStore.setState({
+    answersReady: true,
+    askPhase: "idle",
+    status: "paused",
+    expandedAnswerIds: new Set(["a1"]),
+  });
+  await render();
+  expect(container.querySelector("[data-testid='answer-image-missing']")).toBeNull();
+  expect(container.querySelector("[data-answer-image-notice]")).toBeNull();
+});
+
+test("展开且 imageAttached 为 undefined 时不显示提示", async () => {
+  const stored = answer("a1", "s1", "为什么用哈希表", "因为查找是常数时间。", "2026-10-13T00:00:00.000Z", undefined);
+  usePlayerStore.getState().setAnswers({ s1: [stored] });
+  usePlayerStore.setState({
+    answersReady: true,
+    askPhase: "idle",
+    status: "paused",
+    expandedAnswerIds: new Set(["a1"]),
+  });
+  await render();
+  expect(container.querySelector("[data-testid='answer-image-missing']")).toBeNull();
+  expect(container.querySelector("[data-answer-image-notice]")).toBeNull();
+});
+
+test("折叠且 imageAttached 为 false 时不显示提示", async () => {
+  const stored = answer("a1", "s1", "为什么用哈希表", "因为查找是常数时间。", "2026-10-13T00:00:00.000Z", false);
+  usePlayerStore.getState().setAnswers({ s1: [stored] });
+  usePlayerStore.setState({
+    answersReady: true,
+    askPhase: "idle",
+    status: "paused",
+    expandedAnswerIds: new Set(),
+  });
+  await render();
+  expect(container.querySelector("[data-testid='answer-image-missing']")).toBeNull();
+  expect(container.querySelector("[data-answer-image-notice]")).toBeNull();
 });

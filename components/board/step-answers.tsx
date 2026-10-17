@@ -7,7 +7,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ImageOff } from "lucide-react";
 import { resolveAskError } from "@/lib/ask/ask-errors";
+import { ASK_IMAGE_NOT_USED_NOTE } from "@/lib/ask/ask-ui-text";
 import type { AnswerSegment, StepAnswer } from "@/lib/ask/types";
 import { usePlayerStore } from "@/lib/player/store";
 import { usePrefersReducedMotion } from "@/components/effects/fx-context";
@@ -180,6 +182,16 @@ export default function StepAnswers({ stepId }: { stepId: string }) {
             </button>
             {expanded && (
               <div id={panelId} className="mt-1 flex flex-col gap-1.5">
+                {answer.imageAttached === false && (
+                  <p
+                    data-testid="answer-image-missing"
+                    data-answer-image-notice=""
+                    className="flex items-start gap-1.5 text-xs leading-5 text-chalk-500"
+                  >
+                    <ImageOff className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                    <span className="min-w-0 break-words">{ASK_IMAGE_NOT_USED_NOTE}</span>
+                  </p>
+                )}
                 <AnswerBody
                   answer={answer}
                   active={active}

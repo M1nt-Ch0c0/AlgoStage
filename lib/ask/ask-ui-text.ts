@@ -43,6 +43,12 @@ export const ASK_REASON_TEXT: Record<AskDisabledReason, string> = {
 /** Screenshot failure notice. Same string as capture.ts; do not fork the wording. */
 export const ASK_CAPTURE_FALLBACK = CAPTURE_FALLBACK_NOTICE;
 
+/**
+ * Placeholder until Cosmo locks copy (I6 BLOCKED).
+ * Cosmo must lock before I6 unblocks.
+ */
+export const ASK_IMAGE_NOT_USED_NOTE = "这次回答没有参考截图";
+
 export { formatCodeRangeLabel } from "@/lib/ask/code-line-range";
 
 /** Shown the moment submit starts, before captureStage paints a frame. */

@@ -11,6 +11,7 @@ import {
   ASK_ENTERED_STATUS,
   ASK_ENTRY_LABEL,
   ASK_EXIT_LABEL,
+  ASK_IMAGE_NOT_USED_NOTE,
   ASK_LAYER_HINT,
   ASK_PENDING_PREPARING_SR,
   ASK_PENDING_TIMEOUT,
@@ -72,6 +73,15 @@ describe("ask-ui-text", () => {
     expect(ASK_CAPTURE_FALLBACK).toBe("没截到图，这次只发送选中的文字。");
   });
 
+  it("image not used note placeholder matches", () => {
+    expect(ASK_IMAGE_NOT_USED_NOTE).toBe("这次回答没有参考截图");
+  });
+
+  it.skip("I6 BLOCKED: copy pending Cosmo", () => {
+    // Cosmo must lock final copy before I6 unblocks. This assertion would fail against placeholder.
+    expect(ASK_IMAGE_NOT_USED_NOTE).toBe("__COSMO_LOCKED_COPY__");
+  });
+
   it("does not contain the cancelled pending phrase", () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const source = readFileSync(join(here, "../lib/ask/ask-ui-text.ts"), "utf8");
@@ -98,6 +108,7 @@ describe("ask-ui-text", () => {
       ...ASK_CHIPS,
       ...Object.values(ASK_REASON_TEXT),
       ASK_CAPTURE_FALLBACK,
+      ASK_IMAGE_NOT_USED_NOTE,
     ];
     for (const value of values) {
       expect(value.includes(CANCELLED_PENDING)).toBe(false);
