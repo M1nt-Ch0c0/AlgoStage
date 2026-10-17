@@ -4694,3 +4694,100 @@ describe("resolveAskEscape", () => {
     });
   });
 });
+
+describe("C2 origin filter", () => {
+  function addCode(rect: DOMRect, text = "const x = 1;") {
+    const codeEl = document.createElement("div");
+    codeEl.setAttribute("data-ask-target", "code");
+    codeEl.setAttribute("data-ask-id", "code:main");
+    codeEl.setAttribute("data-ask-step-id", "s1");
+    codeEl.textContent = text;
+    codeEl.getBoundingClientRect = () => rect;
+    stage.append(codeEl);
+    return codeEl;
+  }
+
+  function addViz(rect: DOMRect, id = "viz:extra") {
+    const vizEl = document.createElement("div");
+    vizEl.setAttribute("data-ask-target", "viz");
+    vizEl.setAttribute("data-ask-id", id);
+    vizEl.setAttribute("data-ask-step-id", "s1");
+    vizEl.textContent = "可视化整块";
+    vizEl.getBoundingClientRect = () => rect;
+    stage.append(vizEl);
+    return vizEl;
+  }
+
+  test("(a) drag starting in the code gutter and ending over viz keeps only code", async () => {
+    // Code container includes the line-number gutter. The press is inside that padding.
+    const codeRect = domRect(40, 40, 200, 120);
+    addCode(codeRect);
+    addViz(domRect(280, 40, 80, 80), "viz:s1:0");
+
+    await render();
+    await gesture(50, 70, 320, 80);
+
+    const sel = usePlayerStore.getState().selection;
+    expect(sel).not.toBeNull();
+    expect(sel?.targets.length).toBeGreaterThan(0);
+    expect(sel?.targets.every((item) => item.kind === "code")).toBe(true);
+    expect(sel?.targets.some((item) => item.kind === "viz" || item.kind === "subtitle" || item.kind === "step")).toBe(false);
+    expect(sel?.bbox).toEqual({ x: 50, y: 70, width: 270, height: 10 });
+    // Drawn box x 50..320, y 70..80 ∩ code x 40..240, y 40..160.
+    expect(sel?.captureBBox).toEqual({ x: 50, y: 70, width: 190, height: 10 });
+    expect(layer().querySelector('[data-ask-highlight="viz:s1"]')).toBeNull();
+    expect(layer().querySelector('[data-ask-highlight="viz:s1:0"]')).toBeNull();
+    expect(layer().querySelector('[data-ask-highlight="viz:extra"]')).toBeNull();
+    expect(layer().querySelector('[data-ask-highlight="code:main"]')).not.toBeNull();
+  });
+
+  test("(b) drag starting in viz and covering code collects both, with no captureBBox", async () => {
+    addCode(domRect(40, 40, 200, 120));
+    addViz(domRect(280, 40, 80, 80));
+
+    await render();
+    await gesture(300, 50, 80, 100);
+
+    const sel = usePlayerStore.getState().selection;
+    expect(sel?.targets.some((item) => item.kind === "code")).toBe(true);
+    expect(sel?.targets.some((item) => item.kind === "viz")).toBe(true);
+    expect(sel?.captureBBox).toBeUndefined();
+  });
+
+  test("(c) drag starting in blank space and covering code and viz collects both", async () => {
+    addCode(domRect(40, 40, 200, 120));
+    addViz(domRect(280, 40, 80, 80));
+
+    await render();
+    // Gap between step (ends x=140) and viz (starts x=150), above the code container (y=40).
+    await gesture(142, 20, 320, 100);
+
+    const sel = usePlayerStore.getState().selection;
+    expect(sel?.targets.some((item) => item.kind === "code")).toBe(true);
+    expect(sel?.targets.some((item) => item.kind === "viz")).toBe(true);
+    expect(sel?.captureBBox).toBeUndefined();
+  });
+
+  test("(d) drag starting in code that covers no code lines shows ASK_CODE_MISS_HINT and no viz", async () => {
+    const codeEl = addCode(domRect(40, 40, 200, 120), "");
+    const mockHandle: CodeEditorHandle = {
+      getLineRangeForClientBox: vi.fn(() => null),
+      getLinesText: vi.fn(() => ""),
+      getFullText: vi.fn(() => ""),
+    };
+    registerCodeEditor(codeEl, mockHandle);
+    addViz(domRect(280, 40, 80, 80));
+
+    const setSpy = vi.spyOn(usePlayerStore.getState(), "setAskSelection");
+    await render();
+    await gesture(50, 70, 320, 80);
+
+    expect(setSpy).not.toHaveBeenCalled();
+    expect(usePlayerStore.getState().selection).toBeNull();
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
+    expect(layer().textContent).toContain(ASK_CODE_MISS_HINT);
+    expect(getAskCodeMissNotice()).toBeNull();
+    expect(layer().querySelector('[data-ask-highlight="viz:extra"]')).toBeNull();
+    expect(layer().querySelector('[data-ask-highlight="viz:s1"]')).toBeNull();
+  });
+});

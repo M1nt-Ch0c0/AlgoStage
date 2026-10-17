@@ -14,6 +14,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Keyboar
 import { isTypingTarget } from "@/lib/player/keyboard";
 import { collectAskCandidates, relativeRect, summarizeSelection } from "@/lib/ask/collect-candidates";
 import { hitTest, hitTestPoint, intersects, normalizeBBox } from "@/lib/ask/hit-test";
+import { classifyOrigin, codeCaptureBox } from "@/lib/ask/origin-kind";
 import {
   ASK_CODE_MISS_HINT,
   ASK_EMPTY_HIT,
@@ -1226,10 +1227,27 @@ function AskSelectionLayerActive({
           : box;
       }
 
-      const candidates = collectAskCandidates(host, candidateBox);
-      const hit = point ? hitTestPoint(point.x, point.y, candidates) : hitTest(box, candidates);
+      // Drag only: a press inside the code area keeps code targets and crops the screenshot.
+      // Clicks stay on hitTestPoint, so the origin is the landing point and needs no filter.
+      const codeOrigin =
+        point === null &&
+        classifyOrigin(
+          origin,
+          codeElements.map((el) => relativeRect(host, el)),
+          Array.from(host.querySelectorAll<HTMLElement>('[data-ask-target="viz"]'))
+            .filter((el) => el.closest("[data-ask-exclude]") === null)
+            .map((el) => relativeRect(host, el)),
+        ) === "code";
 
-      const codeIntersected = dragIntersectsCode || Boolean(clickCodeEl);
+      const candidates = collectAskCandidates(host, candidateBox);
+      const hit = point
+        ? hitTestPoint(point.x, point.y, candidates)
+        : hitTest(
+            box,
+            codeOrigin ? candidates.filter((candidate) => candidate.target.kind === "code") : candidates,
+          );
+
+      const codeIntersected = dragIntersectsCode || Boolean(clickCodeEl) || codeOrigin;
       const codeCollected = hit.targets.some((t) => t.kind === "code");
 
       if (codeCollected) {
@@ -1265,8 +1283,21 @@ function AskSelectionLayerActive({
 
       if (hit.targets.length === 0) {
         setRubberBand(null);
-        setHint(null);
-        setAskCodeMissNotice(null);
+        // A code-only miss stays silent. A code-origin drag whose box also
+        // intersects viz (those targets were filtered out) still tells the
+        // user the code lines were missed. The panel is not open, so the
+        // layer hint is what they see.
+        const coveredViz = candidates.some((candidate) => {
+          if (candidate.target.kind !== "viz") return false;
+          return intersects(box, candidate.rect);
+        });
+        if (codeOrigin && !codeCollected && coveredViz) {
+          setHint(ASK_CODE_MISS_HINT);
+          setAskCodeMissNotice(null);
+        } else {
+          setHint(null);
+          setAskCodeMissNotice(null);
+        }
         incrementVoid();
         return false;
       }
@@ -1277,8 +1308,16 @@ function AskSelectionLayerActive({
       } else {
         setAskCodeMissNotice(null);
       }
+      const capture = codeOrigin
+        ? codeCaptureBox(box, codeElements.map((el) => relativeRect(host, el)))
+        : null;
       setAskOpenSource({ kind: "box" });
-      setAskSelection({ mode: hit.mode, bbox: box, targets: hit.targets });
+      setAskSelection({
+        mode: hit.mode,
+        bbox: box,
+        targets: hit.targets,
+        ...(capture ? { captureBBox: capture } : {}),
+      });
       return true;
     },
     [getStage, incrementVoid, setAskSelection],
