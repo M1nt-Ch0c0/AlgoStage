@@ -416,8 +416,11 @@ function AskSelectionLayerActive({
   const bottomBarRef = useRef<HTMLDivElement>(null);
   // Last mobile / keyboard / height snapshot from updateMeasurements.
   // A cancel commit restores selecting vars from this cache and does not
-  // measure: innerHeight, visualViewport, matchMedia, and getBoundingClientRect
+  // measure heights: innerHeight, visualViewport, and getBoundingClientRect
   // after a root custom-property write each force a full-document recalc.
+  // The focus branch does not use cache.isMobile — that boolean can stay
+  // false after a desktop measure. It reads matchMedia, which is not a
+  // layout read.
   const measureCacheRef = useRef(createAskMeasureCache());
 
   const [rubberBand, setRubberBand] = useState<RubberBand | null>(null);
@@ -648,10 +651,13 @@ function AskSelectionLayerActive({
     // commit invalidates style for the document. Cancel (any phase other
     // than selecting/idle → selecting) drops the panel contribution in this
     // same commit so waiting values cannot sit for one frame.
-    // matchMedia only when the cache has not recorded a viewport yet.
+    // Focus uses a live matchMedia read. matchMedia is not a layout read,
+    // and a cached isMobile=false (desktop measured earlier, or a resize
+    // that never invalidated) would otherwise take the desktop branch and
+    // focus [data-ask-layer] on a 390px phone. CSS vars still come from the
+    // cache below — that path must not measure.
     const isMobileDevice =
-      measureCacheRef.current.isMobile ??
-      (typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches);
+      typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches;
     const closingPanel = prev === "drafting" || prev === "error";
     const cancelToSelecting = askPhase === "selecting" && prev !== "selecting" && prev !== "idle";
 

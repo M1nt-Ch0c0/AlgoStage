@@ -1498,6 +1498,52 @@ describe("resolveAskEscape", () => {
       window.matchMedia = originalMatchMedia;
     });
 
+    test("narrow matchMedia focuses the chip even when the measure cache says isMobile=false", async () => {
+      const originalMatchMedia = window.matchMedia;
+      // Mount and the gesture see a desktop viewport, so the measure cache
+      // records isMobile=false. Cancel then sees a narrow viewport. A stale
+      // cache must not send focus to [data-ask-layer].
+      let narrow = false;
+      window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+        matches: query === "(max-width: 639px)" && narrow,
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }));
+
+      await render();
+      await gesture(20, 12, 120, 36);
+      expect(usePlayerStore.getState().askPhase).toBe("drafting");
+
+      // The queued frame re-measures and overwrites the cache. Snapshot the
+      // boolean the cancel commit actually hands to the CSS-var write.
+      const realApply = askOcclusion.applyAskSelectingRootVars;
+      const isMobileAtWrite: Array<boolean | null> = [];
+      vi.spyOn(askOcclusion, "applyAskSelectingRootVars").mockImplementation((cache, active, style) => {
+        isMobileAtWrite.push(cache.isMobile);
+        return realApply(cache, active, style);
+      });
+      narrow = true;
+
+      const lingering = document.createElement("button");
+      lingering.textContent = "取消";
+      document.body.append(lingering);
+      lingering.focus();
+
+      await act(async () => {
+        usePlayerStore.getState().closeAskPanel();
+      });
+
+      expect(usePlayerStore.getState().askPhase).toBe("selecting");
+      expect(isMobileAtWrite[0]).toBe(false);
+      const chip = document.activeElement as HTMLElement | null;
+      expect(chip?.hasAttribute("data-ask-shortcut")).toBe(true);
+      expect(chip?.hasAttribute("data-ask-layer")).toBe(false);
+
+      lingering.remove();
+      window.matchMedia = originalMatchMedia;
+    });
+
     test("owns --ask-player-bar-h from selecting through sending and streaming, and resets only when the panel closes", async () => {
       const originalMatchMedia = window.matchMedia;
       const originalHeight = window.innerHeight;
