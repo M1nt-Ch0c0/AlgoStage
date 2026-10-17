@@ -376,6 +376,40 @@ describe("ask panel", () => {
     expect(sendAsk).toHaveBeenCalledWith(OK_CAPTURE, expect.objectContaining({ isCurrent: expect.any(Function) }));
   });
 
+  test("24b. IME 组字中 Ctrl/Meta+Enter 不发送（isComposing 或 keyCode 229）", async () => {
+    draft("drafting", { draftQuestion: "为什么这样写？" });
+    await render();
+
+    await act(async () => {
+      keydown(question(), { key: "Enter", ctrlKey: true, isComposing: true, keyCode: 229 });
+      await finishCaptureTurn();
+    });
+    expect(sendAsk).not.toHaveBeenCalled();
+    expect(captureStage).not.toHaveBeenCalled();
+
+    await act(async () => {
+      keydown(question(), { key: "Enter", metaKey: true, isComposing: true, keyCode: 229 });
+      await finishCaptureTurn();
+    });
+    expect(sendAsk).not.toHaveBeenCalled();
+    expect(captureStage).not.toHaveBeenCalled();
+
+    await act(async () => {
+      keydown(question(), { key: "Enter", ctrlKey: true, isComposing: false, keyCode: 229 });
+      await finishCaptureTurn();
+    });
+    expect(sendAsk).not.toHaveBeenCalled();
+    expect(captureStage).not.toHaveBeenCalled();
+
+    await act(async () => {
+      keydown(question(), { key: "Enter", ctrlKey: true });
+      await finishCaptureTurn();
+    });
+    expect(captureStage).toHaveBeenCalledTimes(1);
+    expect(sendAsk).toHaveBeenCalledTimes(1);
+    expect(sendAsk).toHaveBeenCalledWith(OK_CAPTURE, expect.objectContaining({ isCurrent: expect.any(Function) }));
+  });
+
   test("25. 截图返回前 selection 或 stepId 变化则不发送；失败仍提示并 sendAsk(null)", async () => {
     draft("drafting", { draftQuestion: "换个例子讲讲" });
     await render();

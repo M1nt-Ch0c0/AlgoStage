@@ -782,6 +782,9 @@ function AskPanelActive({ stage }: AskPanelProps) {
   };
 
   const onTextKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    // IME confirm (Enter while composing) also reports keyCode 229 on Chrome
+    // even when isComposing is already false. Do not submit that key.
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
       event.stopPropagation();
