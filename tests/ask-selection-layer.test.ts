@@ -2694,6 +2694,65 @@ describe("resolveAskEscape", () => {
       window.matchMedia = originalMatchMedia;
     });
 
+    test("ghost window does not swallow a mouse click on a shortcut chip", async () => {
+      const originalMatchMedia = window.matchMedia;
+      window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+        matches: query === "(max-width: 639px)",
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }));
+
+      await render();
+      await act(async () => {
+        usePlayerStore.setState({ askPhase: "sending" });
+      });
+      setAskOpenSource({ kind: "chip", key: "viz" });
+
+      await act(async () => {
+        finishAskCancelSync(null, () => usePlayerStore.setState({ askPhase: "selecting" }));
+      });
+
+      expect(isAskCancelGhostActive()).toBe(true);
+      expect(askCancelGhostUntil).toBeGreaterThan(performance.now());
+
+      const chip = document.querySelector<HTMLButtonElement>('[data-ask-shortcut="subtitle"]');
+      expect(chip).not.toBeNull();
+      // Chip sits inside the bottom bar / layer. That ancestry must not make it a ghost target.
+      expect(chip!.closest("[data-ask-bottom-bar], [data-ask-layer]")).not.toBeNull();
+
+      const pointerDown = new PointerEvent("pointerdown", {
+        bubbles: true,
+        cancelable: true,
+        pointerId: 1,
+        pointerType: "mouse",
+        button: 0,
+      });
+      const mouseDown = new MouseEvent("mousedown", { bubbles: true, cancelable: true, detail: 1, button: 0 });
+      const click = new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1, button: 0 });
+
+      let clicked = false;
+      chip!.addEventListener("click", () => {
+        clicked = true;
+      });
+
+      await act(async () => {
+        chip!.dispatchEvent(pointerDown);
+        chip!.dispatchEvent(mouseDown);
+        chip!.dispatchEvent(click);
+      });
+
+      // Ghost swallow is preventDefault. The bar still stopPropagation on
+      // pointerdown so a chip press does not start a layer drag.
+      expect(pointerDown.defaultPrevented).toBe(false);
+      expect(mouseDown.defaultPrevented).toBe(false);
+      expect(click.defaultPrevented).toBe(false);
+      expect(clicked).toBe(true);
+      expect(isAskCancelGhostActive()).toBe(true);
+
+      window.matchMedia = originalMatchMedia;
+    });
+
     test("touch pointerup on cancel followed by new pointerdown clears suppression", async () => {
       await render();
 

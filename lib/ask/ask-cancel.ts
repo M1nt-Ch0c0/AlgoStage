@@ -20,14 +20,14 @@ import { usePlayerStore } from "@/lib/player/store";
  * One ghost gesture: the compatibility sequence is a mouse pointerdown, then
  * mousedown, then click, with no touch pointerdown between them. A real tap
  * starts with a touch pointerdown and ends the window so the exit button
- * still receives its click.
+ * still receives its click. Shortcut chips are never ghost targets: a real
+ * click on [data-ask-shortcut] must land even inside this window.
  */
 export let askCancelGhostUntil = 0;
 
 const GHOST_SUPPRESS_MS = 500;
 
-const GHOST_TARGET =
-  "[data-ask-layer], [data-ask-bottom-bar], [data-ask-entry], [data-ask-shortcut]";
+const GHOST_TARGET = "[data-ask-layer], [data-ask-bottom-bar], [data-ask-entry]";
 
 /** True once this window has swallowed its ghost mousedown. */
 let ghostGestureSpent = false;
@@ -84,6 +84,8 @@ function endAskCancelGhostWindow(): void {
 function eventInGhostZone(event: Event): boolean {
   const target = event.target;
   if (!(target instanceof Element)) return false;
+  // Intentional chip activation, even when the chip sits inside the bar or layer.
+  if (target.closest("[data-ask-shortcut]")) return false;
   return target.closest(GHOST_TARGET) != null;
 }
 
