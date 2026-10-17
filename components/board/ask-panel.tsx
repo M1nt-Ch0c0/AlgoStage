@@ -223,7 +223,7 @@ export default function AskPanel({ stage }: AskPanelProps) {
   const askPhase = usePlayerStore((s) => s.askPhase);
   const captureFailed = usePlayerStore((s) => s.askCaptureFallback);
   const prevPhaseRef = useRef(askPhase);
-  /** True until the next macrotask after cancel/exit so AskPanelActive stays mounted (already hidden). */
+  /** True until the next microtask after cancel/exit so AskPanelActive stays mounted (already hidden). */
   const exitHoldRef = useRef(false);
   const [, setExitTick] = useState(0);
 
@@ -246,37 +246,35 @@ export default function AskPanel({ stage }: AskPanelProps) {
 
   useIsomorphicLayoutEffect(() => {
     if (!exitHoldRef.current || inPanelPhase) return;
-    // Hide in the cancel commit (display:none stays on this task). Unmount in
-    // the next macrotask, normally before the first paint, so removal is off
-    // pointerup (Leo b2) but does not wait for an extra frame. flushSync
-    // commits the unmount in that macrotask instead of waiting for React's
-    // scheduler. Cleanup cancels a pending macrotask so a re-open in that
-    // window does not unmount the new panel.
+    // Hide in the cancel commit (display:none stays on this task). Unmount on
+    // a microtask after the pointerup handler and its microtask checkpoint,
+    // before the next frame, so removeChild stays off the cancel commit
+    // (Leo b2) and does not wait for paint. flushSync commits the unmount
+    // there instead of waiting for React's scheduler. A microtask cannot be
+    // cancelled; a cancelled flag drops a re-open that lands before it runs.
     hideAskPanelNow(document.querySelector<HTMLElement>("[data-ask-panel]"));
+    let cancelled = false;
     const releaseHold = () => {
+      if (cancelled) return;
       flushSync(() => {
         exitHoldRef.current = false;
         setExitTick((n) => n + 1);
       });
     };
-    const Channel = globalThis.MessageChannel;
-    if (typeof Channel === "function") {
-      const channel = new Channel();
-      channel.port1.onmessage = () => {
-        channel.port1.onmessage = null;
-        releaseHold();
-      };
-      channel.port2.postMessage(0);
-      return () => {
-        channel.port1.onmessage = null;
-      };
+    const microtask = globalThis.queueMicrotask;
+    if (typeof microtask === "function") {
+      microtask(releaseHold);
+    } else if (typeof Promise !== "undefined" && typeof Promise.resolve === "function") {
+      Promise.resolve().then(releaseHold);
+    } else if (typeof globalThis.setTimeout === "function") {
+      globalThis.setTimeout(releaseHold, 0);
+    } else {
+      exitHoldRef.current = false;
+      setExitTick((n) => n + 1);
     }
-    if (typeof globalThis.setTimeout === "function") {
-      const id = globalThis.setTimeout(releaseHold, 0);
-      return () => globalThis.clearTimeout?.(id);
-    }
-    exitHoldRef.current = false;
-    setExitTick((n) => n + 1);
+    return () => {
+      cancelled = true;
+    };
   }, [askPhase, inPanelPhase]);
 
   if (answerPhase) {

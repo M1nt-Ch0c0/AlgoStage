@@ -215,10 +215,11 @@ async function drainPaintFrames() {
 }
 
 /**
- * PANEL → selecting keeps the panel mounted until the next macrotask, already
- * hidden. React's awaited act flushes that macrotask before it resolves, so
- * the hidden node is only observable inside the act that closed the panel.
- * Call this there, then drain one macrotask in the same act to unmount.
+ * PANEL → selecting keeps the panel mounted until the next microtask, already
+ * hidden. React's awaited act flushes that microtask before it resolves, so
+ * the hidden node is only observable inside the act that closed the panel,
+ * before any awaited Promise. Call this there, then drain one microtask in
+ * the same act to unmount.
  */
 function expectPanelHiddenSelecting() {
   const held = container.querySelector<HTMLElement>("[data-ask-panel]");
@@ -229,7 +230,13 @@ function expectPanelHiddenSelecting() {
   expect(held?.inert).toBe(true);
   expect(usePlayerStore.getState().askPhase).toBe("selecting");
   // Visually closed in this cancel commit: display none, aria-hidden, inert.
-  // The node stays mounted until the next macrotask, then unmounts.
+  // The node stays mounted until the next microtask, then unmounts.
+}
+
+/** Drain the exit-hold microtask. flushSync inside it may schedule another. */
+async function drainExitMicrotask() {
+  await Promise.resolve();
+  await Promise.resolve();
 }
 
 /** Drain the pre-capture paint, then the post-capture macrotask and settle. */
@@ -741,11 +748,12 @@ describe("ask panel", () => {
 
     await act(async () => {
       usePlayerStore.getState().closeAskPanel();
-      // Let the selecting commit hide the hold before the exit macrotask
-      // unmounts it at the end of this act.
+      // Store updates outside the click path commit after this microtask.
+      // The exit-hold unmount is queued after that, so the panel is hidden
+      // here and gone after one more drain.
       await Promise.resolve();
       expectPanelHiddenSelecting();
-      await drainPaintFrames();
+      await drainExitMicrotask();
     });
     expect(container.querySelector("[data-ask-panel]")).toBeNull();
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
@@ -779,7 +787,7 @@ describe("ask panel", () => {
       const cancel = container.querySelector<HTMLButtonElement>("[data-ask-cancel]");
       if (cancel) activateButton(cancel);
       expectPanelHiddenSelecting();
-      await drainPaintFrames();
+      await drainExitMicrotask();
     });
     expect(container.querySelector("[data-ask-panel]")).toBeNull();
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
@@ -1008,7 +1016,7 @@ describe("ask panel", () => {
       expectPanelHiddenSelecting();
       expect(usePlayerStore.getState().draftQuestion).toBe("下次还在");
       expect(usePlayerStore.getState().selection).toBe(kept);
-      await drainPaintFrames();
+      await drainExitMicrotask();
     });
     expect(container.querySelector("[data-ask-panel]")).toBeNull();
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
@@ -1016,7 +1024,7 @@ describe("ask panel", () => {
     expect(usePlayerStore.getState().selection).toBe(kept);
   });
 
-  test("b2. cancel hides panel in commit then unmounts next macrotask", async () => {
+  test("b2. cancel hides panel in commit then unmounts next microtask", async () => {
     const kept = selection();
     draft("drafting", { draftQuestion: "下次还在", selection: kept });
     await render();
@@ -1025,7 +1033,7 @@ describe("ask panel", () => {
     await act(async () => {
       activateButton(cancel);
       expectPanelHiddenSelecting();
-      // aria-hidden and inert are set for the hold macrotask. happy-dom refuses
+      // aria-hidden and inert are set for the hold microtask. happy-dom refuses
       // focus() on an inert element, so a programmatic focus cannot land here.
       const held = container.querySelector<HTMLElement>("[data-ask-panel]");
       const before = document.activeElement;
@@ -1033,7 +1041,7 @@ describe("ask panel", () => {
       expect(document.activeElement).toBe(before);
       expect(usePlayerStore.getState().draftQuestion).toBe("下次还在");
       expect(usePlayerStore.getState().selection).toBe(kept);
-      await drainPaintFrames();
+      await drainExitMicrotask();
     });
     expect(container.querySelector("[data-ask-panel]")).toBeNull();
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
@@ -1198,9 +1206,12 @@ describe("ask panel", () => {
       const cancel = container.querySelector<HTMLButtonElement>("[data-ask-cancel]");
       if (cancel) activateButton(cancel);
       expectPanelHiddenSelecting();
+      // The exit-hold unmount is a microtask. Drain it here, before this act
+      // returns, or the panel is already gone on the next line.
+      await drainExitMicrotask();
     });
-    // The held askInputMacrotask blocks the exit-hold macrotask. Releasing it
-    // lets submit finish (and drop the send) and lets the next macrotask unmount.
+    // The held askInputMacrotask blocks the post-capture yield. Releasing it
+    // lets submit finish (and drop the send).
     // pendingSubmit is its own act. Awaiting it inside this one leaves React's
     // act scope open, so the next test's render never commits.
     const queued = heldYields.splice(0);
@@ -1216,7 +1227,7 @@ describe("ask panel", () => {
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
   });
 
-  test("b2. cancel unmounts on the next macrotask without a frame; re-open cancels it", async () => {
+  test("b2. cancel unmounts on the next microtask without a frame; re-open cancels it", async () => {
     const queued: FrameRequestCallback[] = [];
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
       queued.push(callback);
@@ -1232,9 +1243,7 @@ describe("ask panel", () => {
     await act(async () => {
       activateButton(cancel!);
       expectPanelHiddenSelecting();
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, 0);
-      });
+      await drainExitMicrotask();
     });
     expect(container.querySelector("[data-ask-panel]")).toBeNull();
     expect(queued).toHaveLength(0);
@@ -1249,10 +1258,9 @@ describe("ask panel", () => {
     await act(async () => {
       activateButton(cancelAgain!);
       expectPanelHiddenSelecting();
+      // Re-open before the exit microtask runs. The cancelled flag drops the unmount.
       usePlayerStore.setState({ askPhase: "drafting" });
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, 0);
-      });
+      await drainExitMicrotask();
     });
     expect(container.querySelector("[data-ask-panel]")).not.toBeNull();
     expect(usePlayerStore.getState().askPhase).toBe("drafting");
