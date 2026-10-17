@@ -13,9 +13,10 @@ import {
 } from "@playwright/test";
 
 /**
- * Cancel paint: event.timeStamp of 取消 pointerup to the next frame after
- * [data-ask-panel] leaves the document. Timing test, not in daily e2e.
- * The whole file is skipped unless S4_CANCEL_PAINT=1.
+ * Cancel paint: event.timeStamp of 取消 pointerup to the next frame where
+ * [data-ask-panel] is visually gone (display:none, aria-hidden, inert, or
+ * absent). Node removal is recorded and is not the paint end. Timing test,
+ * not in daily e2e. The whole file is skipped unless S4_CANCEL_PAINT=1.
  * Helpers are copied from the r5c cancel harness, not imported.
  */
 
@@ -42,6 +43,7 @@ type PaintBag = {
   __paint: number | null;
   __paintPost: number | null;
   __unmount: number | null;
+  __hide: number | null;
   __downState: string | null;
   __upState: string | null;
   __geom: GeomFrame | null;
@@ -285,9 +287,10 @@ async function waitPrep(page: Page) {
 
 /**
  * Capture-phase pointerup on [data-ask-cancel] records event.timeStamp.
- * MutationObserver detects [data-ask-panel] removal, then one rAF and one
- * MessageChannel macrotask record the paint clock. At 390 the same first
- * rAF reads occlusion, selection, and the bottom bar.
+ * Paint is the next rAF where the panel is visually gone (display:none,
+ * aria-hidden, inert, or absent). MutationObserver only notes node removal
+ * and is not the paint end. At 390 preparing, that same rAF reads occlusion,
+ * selection, and the bottom bar.
  */
 const armPaint = (p: Page, recordGeom: boolean) =>
   p.evaluate((wantGeom) => {
@@ -296,7 +299,50 @@ const armPaint = (p: Page, recordGeom: boolean) =>
     W.__paint = null;
     W.__paintPost = null;
     W.__unmount = null;
+    W.__hide = null;
     W.__geom = null;
+    /** Uma: visually cancelled = gone OR hideAskPanelNow (display:none / aria-hidden / inert). */
+    const visuallyGone = () => {
+      const el = document.querySelector<HTMLElement>("[data-ask-panel]");
+      if (!el) return true;
+      return el.style.display === "none" || el.getAttribute("aria-hidden") === "true" || el.hasAttribute("inert");
+    };
+    const stampPaint = () => {
+      if (W.__paint != null) return;
+      W.__paint = performance.now();
+      if (wantGeom) {
+        const sel = document.querySelector("[data-ask-selection]");
+        const bar = document.querySelector("[data-ask-bottom-bar]");
+        const selBox = sel?.getBoundingClientRect();
+        const barBox = bar?.getBoundingClientRect();
+        W.__geom = {
+          occl: getComputedStyle(document.documentElement).getPropertyValue("--ask-bottom-occlusion").trim(),
+          selTop: selBox ? selBox.top : null,
+          selBottom: selBox ? selBox.bottom : null,
+          barTop: barBox ? barBox.top : null,
+        };
+      }
+      const ch = new MessageChannel();
+      ch.port1.onmessage = () => {
+        W.__paintPost = performance.now();
+      };
+      ch.port2.postMessage(0);
+    };
+    // Uma metric: release timeStamp → next frame paint (panel visually cancelled).
+    // Do NOT wait for React unmount / MutationObserver removal.
+    const armFrame = () => {
+      requestAnimationFrame(() => {
+        if (visuallyGone()) {
+          if (W.__hide == null) W.__hide = performance.now();
+          stampPaint();
+        } else {
+          requestAnimationFrame(() => {
+            if (W.__hide == null) W.__hide = performance.now();
+            stampPaint();
+          });
+        }
+      });
+    };
     document.addEventListener(
       "pointerdown",
       (e) => {
@@ -322,37 +368,19 @@ const armPaint = (p: Page, recordGeom: boolean) =>
             : document.querySelector("[data-ask-capture-preparing]")
               ? "preparing"
               : "idle";
+          armFrame();
         }
       },
       { capture: true },
     );
+    // informational only: when React finally removes the node
     const mo = new MutationObserver(() => {
       if (W.__rel && !W.__unmount && !document.querySelector("[data-ask-panel]")) {
         W.__unmount = performance.now();
-        requestAnimationFrame(() => {
-          W.__paint = performance.now();
-          if (wantGeom) {
-            const sel = document.querySelector("[data-ask-selection]");
-            const bar = document.querySelector("[data-ask-bottom-bar]");
-            const selBox = sel?.getBoundingClientRect();
-            const barBox = bar?.getBoundingClientRect();
-            W.__geom = {
-              occl: getComputedStyle(document.documentElement).getPropertyValue("--ask-bottom-occlusion").trim(),
-              selTop: selBox ? selBox.top : null,
-              selBottom: selBox ? selBox.bottom : null,
-              barTop: barBox ? barBox.top : null,
-            };
-          }
-          const ch = new MessageChannel();
-          ch.port1.onmessage = () => {
-            W.__paintPost = performance.now();
-          };
-          ch.port2.postMessage(0);
-        });
         mo.disconnect();
       }
     });
-    mo.observe(document.body, { subtree: true, childList: true, attributes: true });
+    mo.observe(document.body, { subtree: true, childList: true });
   }, recordGeom);
 
 const paintMetrics = (p: Page): Promise<PaintResult> =>
@@ -518,11 +546,17 @@ async function collectRounds(
       await expect(page.locator("[data-ask-panel]")).toHaveCount(0);
       await expect(page.locator("[data-ask-error]")).toHaveCount(0);
       if (phase === "preparing") expect(asks).toHaveLength(0);
-      const focusChip = await page.evaluate(() => !!document.activeElement?.closest("[data-ask-shortcut]"));
+      const focusLanded = await page.evaluate((w) => {
+        const active = document.activeElement;
+        if (!(active instanceof HTMLElement)) return false;
+        if (w === 390) return !!active.closest("[data-ask-shortcut]");
+        return !!active.closest("[data-ask-layer]") || active.matches("[data-ask-id], [data-ask-selection]");
+      }, width);
+      expect(focusLanded, width === 390 ? "chip keeps focus" : "selection or layer keeps focus").toBe(true);
+      const focusChip = width === 390 ? focusLanded : false;
       let occl1: string | null = null;
       let occlSettled: string | null = null;
       if (width === 390 && phase === "preparing") {
-        expect(focusChip, "chip keeps focus").toBe(true);
         const occl = await assertOcclusion(page);
         occl1 = occl.occl1;
         occlSettled = occl.occlSettled;
