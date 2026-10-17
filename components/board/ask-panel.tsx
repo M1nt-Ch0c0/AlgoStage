@@ -447,7 +447,11 @@ function AskPanelActive({ stage }: AskPanelProps) {
     const stageWidth = hostEl.clientWidth || window.innerWidth;
     const roomRight = stageWidth - (box.x + box.width) - GAP;
     const left = roomRight >= PANEL_WIDTH ? box.x + box.width + GAP : box.x;
-    const top = roomRight >= PANEL_WIDTH ? box.y : box.y + box.height + GAP;
+    let top = roomRight >= PANEL_WIDTH ? box.y : box.y + box.height + GAP;
+    const hostTop = hostEl.getBoundingClientRect().top;
+    const panelH = panelRef.current?.offsetHeight ?? 0;
+    const maxTop = window.innerHeight - getAskBottomOcclusion() - GAP - panelH - hostTop;
+    top = Math.min(top, maxTop);
     setAnchor({ top: Math.max(0, top), left: Math.max(0, left) });
   }, [stage, selection]);
 
@@ -459,11 +463,18 @@ function AskPanelActive({ stage }: AskPanelProps) {
     window.addEventListener("resize", onChange);
     window.visualViewport?.addEventListener("resize", onChange);
     window.visualViewport?.addEventListener("scroll", onChange);
+    const panel = panelRef.current;
+    const observer = panel && typeof ResizeObserver !== "undefined" ? new ResizeObserver(() => {
+      // Desktop only: mobile place() scrolls the selection, which must not move on panel resize.
+      if (window.matchMedia(DESKTOP_QUERY).matches) place();
+    }) : null;
+    if (panel && observer) observer.observe(panel);
     return () => {
       mq.removeEventListener("change", onChange);
       window.removeEventListener("resize", onChange);
       window.visualViewport?.removeEventListener("resize", onChange);
       window.visualViewport?.removeEventListener("scroll", onChange);
+      observer?.disconnect();
     };
   }, [place]);
 
