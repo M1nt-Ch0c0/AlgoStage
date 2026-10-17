@@ -467,7 +467,7 @@ function AskSelectionLayerActive({
     };
     // The compatibility mousedown that follows a touch cancel lands after the
     // panel has unmounted, so it hits the layer and focuses it. preventDefault
-    // on that mousedown keeps the chip focus the layout effect just set.
+    // on that mousedown keeps the chip focus finishAskCancelSync just set.
     const onDocMouseDown = (event: globalThis.MouseEvent) => {
       if (!ghostMouse(event)) return;
       event.preventDefault();
@@ -644,7 +644,11 @@ function AskSelectionLayerActive({
     // Focus is owned by finishAskCancelSync. This effect does not blur or
     // focus. CSS vars still come from the cache below — that path must not
     // measure.
-    const closingPanel = prev === "drafting" || prev === "error";
+    // Waiting cancel (sending|streaming → selecting) also needs ghost
+    // mousedown suppress so chip focus from finishAskCancelSync sticks
+    // until paint. The compatibility mousedown hits [data-ask-layer].
+    const closingPanel =
+      prev === "drafting" || prev === "error" || prev === "sending" || prev === "streaming";
     const cancelToSelecting = askPhase === "selecting" && prev !== "selecting" && prev !== "idle";
 
     if (askPhase === "selecting" && closingPanel) {
