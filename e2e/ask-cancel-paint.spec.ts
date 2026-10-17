@@ -30,6 +30,8 @@ const ROUNDS = Number(process.env.S4_CANCEL_ROUNDS ?? 6);
 const BUDGET_MS = 100;
 const CPU_RATE = 4;
 const OUT_DIR = process.env.S4_OUT_DIR;
+/** Default opens from the viz chip. `S4_OPEN=marquee` keeps drag-then-chip for debugging. */
+const OPEN_MARQUEE = process.env.S4_OPEN === "marquee";
 
 type StepOpts = { id?: string; narration?: string; viz?: boolean };
 type Phase = "preparing" | "waiting";
@@ -73,6 +75,7 @@ type PaintResult = {
   unmountMs: number;
   paintMs: number;
   focusAtPaint: FocusAtPaint | null;
+  via: string;
 };
 
 type RoundRow = {
@@ -267,19 +270,34 @@ async function marquee(page: Page, x0: number, y0: number, x1: number, y1: numbe
   await page.mouse.up();
 }
 
-/** viz marquee; falls back to the viz shortcut (real tap) if the drag misses. */
-async function openViz(page: Page, touch: boolean) {
+/** Real tap on the viz chip. Records chip open-source so cancel restores that chip. */
+async function tapVizChip(page: Page, touch: boolean) {
+  const s = page.locator('[data-ask-shortcut="viz"]').first();
+  await s.scrollIntoViewIfNeeded();
+  const h = await hitOf(page, s);
+  await tapAt(page, h.cx, h.cy, touch);
+}
+
+/**
+ * Open the viz ask panel and fill the question.
+ * Default matches the prof harness: chip first, returns "chip". No marquee.
+ * S4_OPEN=marquee keeps the old drag, then chip fallback, for debugging.
+ */
+async function openViz(page: Page, touch: boolean): Promise<"chip" | "marquee" | "shortcut-viz"> {
+  if (!OPEN_MARQUEE) {
+    await tapVizChip(page, touch);
+    await expect(page.locator("[data-ask-panel]")).toBeVisible();
+    await page.locator("[data-ask-question]").fill(QUESTION);
+    return "chip";
+  }
   const viz = page.locator('[data-ask-stage] [data-ask-id="viz:s1"]').first();
   await viz.scrollIntoViewIfNeeded();
   const vb = (await viz.boundingBox())!;
   await marquee(page, vb.x + 8, vb.y + 8, vb.x + vb.width - 8, vb.y + Math.min(vb.height - 8, 80));
-  let via = "marquee";
+  let via: "marquee" | "shortcut-viz" = "marquee";
   if (!(await page.locator("[data-ask-panel]").isVisible({ timeout: 1500 }).catch(() => false))) {
     via = "shortcut-viz";
-    const s = page.locator('[data-ask-shortcut="viz"]').first();
-    await s.scrollIntoViewIfNeeded();
-    const h = await hitOf(page, s);
-    await tapAt(page, h.cx, h.cy, touch);
+    await tapVizChip(page, touch);
   }
   await expect(page.locator("[data-ask-panel]")).toBeVisible();
   await page.locator("[data-ask-question]").fill(QUESTION);
@@ -424,7 +442,7 @@ const paintMetrics = (p: Page): Promise<PaintResult> =>
     const W = window as unknown as PaintBag;
     const rel = W.__rel;
     if (!rel || W.__paint == null) {
-      return { missing: true, rel: !!rel, stallAdj: 0, unmountMs: 0, paintMs: 0, focusAtPaint: null };
+      return { missing: true, rel: !!rel, stallAdj: 0, unmountMs: 0, paintMs: 0, focusAtPaint: null, via: "" };
     }
     let start = rel.ts;
     for (const x of W.__lt) {
@@ -438,6 +456,7 @@ const paintMetrics = (p: Page): Promise<PaintResult> =>
       unmountMs: r((W.__unmount ?? start) - start),
       paintMs: r(paintAt - start),
       focusAtPaint: W.__focusAtPaint,
+      via: "",
     };
   });
 
@@ -479,7 +498,7 @@ async function freshRound(context: BrowserContext, width: Width, phase: Phase) {
 
 async function runCancelRound(page: Page, width: Width, phase: Phase, touch: boolean): Promise<PaintResult> {
   await enter(page, touch);
-  await openViz(page, touch);
+  const via = await openViz(page, touch);
   const submit = await hitOf(page, page.locator("[data-ask-submit]"));
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("Emulation.setCPUThrottlingRate", { rate: CPU_RATE });
@@ -500,7 +519,8 @@ async function runCancelRound(page: Page, width: Width, phase: Phase, touch: boo
     await expect
       .poll(async () => page.evaluate(() => (window as unknown as PaintBag).__paintPost != null), { timeout: 5_000 })
       .toBe(true);
-    return paintMetrics(page);
+    const paint = await paintMetrics(page);
+    return { ...paint, via };
   } finally {
     await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 }).catch(() => {});
   }
@@ -596,7 +616,10 @@ async function collectRounds(
         if (active.closest("[data-ask-id]")) return "ask-id";
         return active.tagName;
       });
-      console.log(`cancel-paint round ${round} focusAtPaint=${focusWhere || "null"} liveActive=${liveFocus}`);
+      console.log(
+        `cancel-paint round ${round} via=${paint.via} focusAtPaint=${focusWhere || "null"} liveActive=${liveFocus}`,
+      );
+      if (!OPEN_MARQUEE) expect(paint.via, "open source is chip").toBe("chip");
       expect(focusChip, "chip keeps focus").toBe(true);
       let occl1: string | null = null;
       let occlSettled: string | null = null;
