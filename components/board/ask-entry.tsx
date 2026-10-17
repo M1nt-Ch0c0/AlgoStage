@@ -22,6 +22,7 @@ import {
   type AskDisabledReason,
 } from "@/lib/player/store";
 import { usePrefersReducedMotion } from "@/components/effects/fx-context";
+import { isAskCancelGhostActive } from "@/lib/ask/ask-cancel";
 import { exitAskAndFocusEntry } from "./ask-selection-layer";
 import { useIsMobile } from "./use-is-mobile";
 
@@ -33,6 +34,8 @@ const TIMEOUT_ID = "ask-entry-timeout";
 const GREY_CLASS = "opacity-50 text-chalk-500";
 
 const IN_ASK = new Set(["selecting", "drafting", "error"]);
+/** Phases that already left idle. Returning to selecting from these must not focus the bar exit. */
+const ASK_RESUME = new Set(["sending", "streaming", "drafting", "error"]);
 
 export default function AskEntry() {
   const availability = usePlayerStore(useShallow(selectAskAvailability));
@@ -88,19 +91,26 @@ export default function AskEntry() {
     }
   }, [askPhase]);
 
-  // 当在 390 移动端从入口按钮进入圈选时，将焦点转移到底部条退出按钮
+  // 仅从 idle 进入圈选时，把焦点移到底部条退出按钮。
+  // sending|streaming|drafting|error → selecting 时 hideAtMobileAsk 也会从 false 变 true
+  // （IN_ASK 不含 sending），但那是取消后回到圈选，不能抢走开场芯片的焦点。
+  const prevHidePhaseRef = useRef(askPhase);
   useEffect(() => {
-    if (hideAtMobileAsk) {
-      const schedule = () => {
-        const barExit = document.querySelector<HTMLElement>("[data-ask-bottom-bar] [data-ask-entry]");
-        barExit?.focus({ preventScroll: true });
-      };
-      if (typeof requestAnimationFrame !== "undefined") {
-        requestAnimationFrame(schedule);
-      }
-      setTimeout(schedule, 0);
+    const prev = prevHidePhaseRef.current;
+    prevHidePhaseRef.current = askPhase;
+    if (!hideAtMobileAsk) return;
+    if (ASK_RESUME.has(prev)) return;
+    if (prev !== "idle") return;
+    const schedule = () => {
+      if (isAskCancelGhostActive()) return;
+      const barExit = document.querySelector<HTMLElement>("[data-ask-bottom-bar] [data-ask-entry]");
+      barExit?.focus({ preventScroll: true });
+    };
+    if (typeof requestAnimationFrame !== "undefined") {
+      requestAnimationFrame(schedule);
     }
-  }, [hideAtMobileAsk]);
+    setTimeout(schedule, 0);
+  }, [hideAtMobileAsk, askPhase]);
 
   const reason: AskDisabledReason | null = pendingIdle ? null : availability.reason;
 

@@ -290,6 +290,53 @@ test("on mobile busy notes stay in-flow but invisible (reserve height, no chalk 
 });
 
 
+test("mobile sending → selecting does not focus the bar exit after rAF", async () => {
+  vi.useRealTimers();
+  const original = window.matchMedia;
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: query === "(max-width: 639px)",
+    media: query,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  }));
+
+  loadReady();
+  usePlayerStore.setState({ askPhase: "sending" });
+  await render();
+
+  const bar = document.createElement("div");
+  bar.setAttribute("data-ask-bottom-bar", "");
+  const exitBtn = document.createElement("button");
+  exitBtn.setAttribute("data-ask-entry", "");
+  exitBtn.textContent = "退出圈选";
+  bar.append(exitBtn);
+  const chip = document.createElement("button");
+  chip.setAttribute("data-ask-shortcut", "viz");
+  bar.append(chip);
+  document.body.append(bar);
+  chip.focus();
+
+  await act(async () => {
+    usePlayerStore.setState({ askPhase: "selecting", status: "interrupted" });
+  });
+  await act(async () => {
+    await Promise.resolve();
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => resolve());
+    });
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+  });
+
+  expect(document.activeElement).toBe(chip);
+  expect(document.activeElement).not.toBe(exitBtn);
+
+  bar.remove();
+  window.matchMedia = original;
+  vi.useFakeTimers();
+});
+
 test("on mobile when in ask mode, entry button in player area is hidden and has no data-ask-entry", async () => {
   const original = window.matchMedia;
   window.matchMedia = vi.fn().mockImplementation((query: string) => ({

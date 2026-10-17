@@ -3,7 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { scrollHeight, clientHeight, scrollWidth, clientWidth } from "happy-dom/lib/PropertySymbol.js";
-import { askCancelGhostUntil, finishAskCancelSync } from "../lib/ask/ask-cancel";
+import { armAskCancelGhostSuppress, askCancelGhostUntil, finishAskCancelSync, isAskCancelGhostActive } from "../lib/ask/ask-cancel";
 import AskEntry from "../components/board/ask-entry";
 import AskPlayerBarVar from "../components/board/ask-player-bar-var";
 import AskSelectionLayer, { computeBottomOcclusion, computeOcclusion, isElementFullyInView, nextRovingIndex, resolveAskEscape } from "../components/board/ask-selection-layer";
@@ -2205,6 +2205,118 @@ describe("resolveAskEscape", () => {
       expect(ghostDown.defaultPrevented).toBe(true);
       expect(document.activeElement).toBe(chip);
       expect(document.activeElement).not.toBe(layerEl);
+
+      window.matchMedia = originalMatchMedia;
+    });
+
+    async function flushFocusWork() {
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await new Promise<void>((resolve) => {
+          requestAnimationFrame(() => resolve());
+        });
+      });
+      await act(async () => {
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 0);
+        });
+      });
+    }
+
+    test("mobile sending → selecting via finishAskCancelSync leaves the opener chip focused after rAF", async () => {
+      const originalMatchMedia = window.matchMedia;
+      window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+        matches: query === "(max-width: 639px)",
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }));
+
+      usePlayerStore.getState().setLectureAnswerMeta({
+        cacheKey: "ck",
+        scriptVersion: "v1",
+        askDisabledStepIds: [],
+        storageMode: "server",
+      });
+      usePlayerStore.setState({ answersReady: true, askPhase: "selecting", status: "interrupted" });
+
+      // Entry is already mounted in selecting, then the lecture goes to sending
+      // (hide effect off) and cancel returns to selecting. The effect must not
+      // move focus onto the bar exit.
+      const entryHost = document.createElement("div");
+      document.body.append(entryHost);
+      const entryRoot = createRoot(entryHost);
+      await act(async () => {
+        root.render(
+          createElement(
+            "div",
+            null,
+            createElement(AskPlayerBarVar),
+            createElement(AskSelectionLayer, { stage }),
+          ),
+        );
+        entryRoot.render(createElement(AskEntry));
+      });
+
+      await act(async () => {
+        usePlayerStore.setState({ askPhase: "sending" });
+      });
+      await flushFocusWork();
+
+      setAskOpenSource({ kind: "chip", key: "viz" });
+
+      await act(async () => {
+        finishAskCancelSync(null, () => usePlayerStore.setState({ askPhase: "selecting" }));
+      });
+
+      await flushFocusWork();
+
+      const chip = document.querySelector<HTMLElement>('[data-ask-shortcut="viz"]');
+      const exitBtn = document.querySelector<HTMLButtonElement>("[data-ask-bottom-bar] [data-ask-entry]");
+      expect(chip).not.toBeNull();
+      expect(exitBtn).not.toBeNull();
+      expect(document.activeElement).toBe(chip);
+      expect(document.activeElement).not.toBe(exitBtn);
+      expect(exitBtn!.style.pointerEvents).toBe("none");
+
+      await act(async () => entryRoot.unmount());
+      entryHost.remove();
+      window.matchMedia = originalMatchMedia;
+    });
+
+    test("ghost window: programmatic focus on the bar exit is restored to the chip synchronously", async () => {
+      const originalMatchMedia = window.matchMedia;
+      window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+        matches: query === "(max-width: 639px)",
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }));
+
+      await render();
+      await act(async () => {
+        usePlayerStore.setState({ askPhase: "selecting" });
+      });
+      setAskOpenSource({ kind: "chip", key: "viz" });
+
+      const chip = document.querySelector<HTMLElement>('[data-ask-shortcut="viz"]');
+      const exitBtn = document.querySelector<HTMLButtonElement>("[data-ask-bottom-bar] [data-ask-entry]");
+      expect(chip).not.toBeNull();
+      expect(exitBtn).not.toBeNull();
+      chip!.focus();
+      expect(document.activeElement).toBe(chip);
+
+      armAskCancelGhostSuppress();
+      expect(isAskCancelGhostActive()).toBe(true);
+      expect(exitBtn!.style.pointerEvents).toBe("none");
+
+      // focus() is synchronous and fires focusin before it returns.
+      exitBtn!.focus();
+      expect(document.activeElement).toBe(chip);
+      expect(document.activeElement).not.toBe(exitBtn);
 
       window.matchMedia = originalMatchMedia;
     });

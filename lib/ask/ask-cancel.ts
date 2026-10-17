@@ -35,6 +35,49 @@ function ghostSuppressActive(): boolean {
   return askCancelGhostUntil > 0 && performance.now() < askCancelGhostUntil;
 }
 
+/** True while the post-cancel ghost window is still open. */
+export function isAskCancelGhostActive(): boolean {
+  return ghostSuppressActive();
+}
+
+const BAR_EXIT_SELECTOR = "[data-ask-bottom-bar] [data-ask-entry]";
+
+/** Bar exit, or any ask-entry that is not the opener chip. */
+function isGhostFocusSteal(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  const entry = target.closest("[data-ask-entry]");
+  if (!entry) return false;
+  if (entry.closest("[data-ask-shortcut]")) return false;
+  return true;
+}
+
+function barExitButton(): HTMLElement | null {
+  if (typeof document === "undefined") return null;
+  return document.querySelector<HTMLElement>(BAR_EXIT_SELECTOR);
+}
+
+/**
+ * While the ghost window is up, the bar exit cannot take a pointer hit.
+ * Cleared when the window ends (timeout or the first real touch). Keyboard
+ * Esc stays on the window listener — this only sets pointer-events.
+ */
+function syncGhostExitPointerEvents(): void {
+  const exit = barExitButton();
+  if (!exit) return;
+  if (ghostSuppressActive()) {
+    exit.style.pointerEvents = "none";
+    return;
+  }
+  if (exit.style.pointerEvents === "none") exit.style.pointerEvents = "";
+}
+
+function endAskCancelGhostWindow(): void {
+  askCancelGhostUntil = 0;
+  ghostGestureSpent = false;
+  ghostMouseDown = null;
+  syncGhostExitPointerEvents();
+}
+
 function eventInGhostZone(event: Event): boolean {
   const target = event.target;
   if (!(target instanceof Element)) return false;
@@ -72,6 +115,18 @@ function installAskCancelGhostSuppress(): void {
   document.addEventListener("mousedown", onGhostMouse, true);
   document.addEventListener("click", onGhostMouse, true);
   document.addEventListener("pointerdown", onGhostPointerDown, true);
+  document.addEventListener("focusin", onGhostFocusIn, true);
+}
+
+/**
+ * Capture focusin while the ghost window is up. A scheduled focus (ask-entry
+ * hide effect, or a ghost that focuses the exit) must not stick. Same
+ * resolve+focus as finishAskCancelSync, synchronously — no rAF.
+ */
+function onGhostFocusIn(event: FocusEvent): void {
+  if (!ghostSuppressActive()) return;
+  if (!isGhostFocusSteal(event.target)) return;
+  focusAskCancelTarget();
 }
 
 function onGhostPointerDown(event: Event): void {
@@ -79,9 +134,7 @@ function onGhostPointerDown(event: Event): void {
   if (!(event instanceof PointerEvent)) return;
   // A new touch is a real gesture. Drop the window so its click is delivered.
   if (event.pointerType === "touch") {
-    askCancelGhostUntil = 0;
-    ghostGestureSpent = false;
-    ghostMouseDown = null;
+    endAskCancelGhostWindow();
     return;
   }
   if (event.pointerType !== "mouse" || ghostGestureSpent) return;
@@ -99,6 +152,12 @@ export function armAskCancelGhostSuppress(): void {
   ghostGestureSpent = false;
   ghostMouseDown = null;
   askCancelGhostUntil = performance.now() + GHOST_SUPPRESS_MS;
+  syncGhostExitPointerEvents();
+  if (typeof window !== "undefined") {
+    window.setTimeout(() => {
+      if (!ghostSuppressActive()) syncGhostExitPointerEvents();
+    }, GHOST_SUPPRESS_MS);
+  }
 }
 
 /** Visual close in this turn. Does not move focus. */
