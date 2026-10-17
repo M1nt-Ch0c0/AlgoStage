@@ -27,7 +27,7 @@ import {
 } from "@/lib/ask/ask-ui-text";
 import { ASK_LIMITS, type AskBBox, type AskSelectionSummary, type AskTarget } from "@/lib/ask/types";
 import { setAskCodeMissNotice } from "@/lib/ask/code-editor-registry";
-import { finishAskCancelSync } from "@/lib/ask/ask-cancel";
+import { askCancelGhostUntil, finishAskCancelSync } from "@/lib/ask/ask-cancel";
 import { setAskOpenSource } from "@/lib/ask/ask-open-source";
 import {
   applyAskSelectingRootVars,
@@ -443,6 +443,16 @@ function AskSelectionLayerActive({
   useEffect(() => {
     const onDocPointerDown = (event: globalThis.PointerEvent) => {
       lastPointerTypeRef.current = event.pointerType;
+      // A compatibility mousedown after waiting-cancel still has
+      // askCancelGhostUntil in the future. Clearing the touch-selection
+      // window here would let that ghost click through.
+      if (
+        typeof performance !== "undefined" &&
+        askCancelGhostUntil > 0 &&
+        performance.now() < askCancelGhostUntil
+      ) {
+        return;
+      }
       suppressClickUntilRef.current = null;
       touchCompletedSelectionRef.current = false;
       lastTouchCancelPointerUpRef.current = null;
@@ -1317,6 +1327,7 @@ function AskSelectionLayerActive({
               <button
                 type="button"
                 data-ask-entry
+                tabIndex={-1}
                 aria-pressed="true"
                 aria-keyshortcuts="Escape"
                 className="shrink-0 min-h-11 min-w-11 pointer-coarse:min-h-11 pointer-coarse:min-w-11 inline-flex items-center justify-center gap-1 rounded-full border border-board-600 bg-board-900/80 px-3 py-1 font-mono text-xs text-chalk-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beam-gold focus-visible:ring-inset sm:hidden whitespace-nowrap"

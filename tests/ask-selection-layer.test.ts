@@ -3,7 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { scrollHeight, clientHeight, scrollWidth, clientWidth } from "happy-dom/lib/PropertySymbol.js";
-import { finishAskCancelSync } from "../lib/ask/ask-cancel";
+import { askCancelGhostUntil, finishAskCancelSync } from "../lib/ask/ask-cancel";
 import AskEntry from "../components/board/ask-entry";
 import AskPlayerBarVar from "../components/board/ask-player-bar-var";
 import AskSelectionLayer, { computeBottomOcclusion, computeOcclusion, isElementFullyInView, nextRovingIndex, resolveAskEscape } from "../components/board/ask-selection-layer";
@@ -1701,6 +1701,7 @@ describe("resolveAskEscape", () => {
 
       const exitBtn = bar!.querySelector<HTMLButtonElement>("[data-ask-entry]");
       expect(exitBtn).not.toBeNull();
+      expect(exitBtn!.tabIndex).toBe(-1);
       expect(exitBtn!.textContent).toContain("退出圈选");
 
       await act(async () => {
@@ -2204,6 +2205,51 @@ describe("resolveAskEscape", () => {
       expect(ghostDown.defaultPrevented).toBe(true);
       expect(document.activeElement).toBe(chip);
       expect(document.activeElement).not.toBe(layerEl);
+
+      window.matchMedia = originalMatchMedia;
+    });
+
+    test("sending cancel then mousedown on the bar exit leaves the opener chip focused", async () => {
+      const originalMatchMedia = window.matchMedia;
+      window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+        matches: query === "(max-width: 639px)",
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }));
+
+      await render();
+      await act(async () => {
+        usePlayerStore.setState({ askPhase: "sending" });
+      });
+      expect(document.querySelector("[data-ask-shortcut]")).toBeNull();
+
+      setAskOpenSource({ kind: "chip", key: "viz" });
+
+      await act(async () => {
+        finishAskCancelSync(null, () => usePlayerStore.setState({ askPhase: "selecting" }));
+      });
+
+      const chip = document.querySelector<HTMLElement>('[data-ask-shortcut="viz"]');
+      const exitBtn = document.querySelector<HTMLButtonElement>("[data-ask-bottom-bar] [data-ask-entry]");
+      expect(chip).not.toBeNull();
+      expect(exitBtn).not.toBeNull();
+      expect(exitBtn!.tabIndex).toBe(-1);
+      // Assert before any unmount. The bar and the exit button are still mounted.
+      expect(document.querySelector("[data-ask-bottom-bar]")).not.toBeNull();
+      expect(document.activeElement).toBe(chip);
+      expect(askCancelGhostUntil).toBeGreaterThan(performance.now());
+
+      const ghostDown = new MouseEvent("mousedown", { bubbles: true, cancelable: true, detail: 1 });
+      await act(async () => {
+        exitBtn!.dispatchEvent(ghostDown);
+        if (!ghostDown.defaultPrevented) exitBtn!.focus();
+      });
+
+      expect(ghostDown.defaultPrevented).toBe(true);
+      expect(document.activeElement).toBe(chip);
+      expect(document.activeElement).not.toBe(exitBtn);
+      expect(document.querySelector("[data-ask-bottom-bar]")).not.toBeNull();
 
       window.matchMedia = originalMatchMedia;
     });
