@@ -624,22 +624,81 @@ describe("回答到达 / 播放 / 展开", () => {
     expect(selectAskPresentation(s())).toBeNull();
   });
 
-  test("截图失败记在 askCaptureFallback，前台回答落地仍保留，播完清掉", () => {
+  test("截图失败记在 askCaptureFallback，前台回答落地仍保留，播完后 exitAsk 清掉", () => {
     loadReady();
     enterDrafting("没截到");
-    usePlayerStore.setState({ askCaptureFallback: true });
+    usePlayerStore.setState({ askCaptureFallback: true, expandedAnswerIds: new Set(["ans-cap"]) });
     s().askSent(guard({ token: 1 }));
     expect(s().askCaptureFallback).toBe(true);
     s().askStarted("ans-cap", guard({ token: 1 }));
     s().answerArrived(answerOf({ id: "ans-cap", stepId: "s1", segments: [segment("only")] }), guard({ token: 1 }));
     expect(s()).toMatchObject({ askPhase: "playing", askCaptureFallback: true });
     s().nextAnswerSegment(s().askPlaybackRun);
-    // 播完停在 done，提示还在。exitAsk 在 done 是空操作，下一次提问才清掉。
+    // 播完停在 done，提示还在（播完本身不清）。
     expect(s()).toMatchObject({ askPhase: "done", askCaptureFallback: true });
     s().exitAsk();
-    expect(s()).toMatchObject({ askPhase: "done", askCaptureFallback: true });
+    expect(s()).toMatchObject({ askPhase: "idle", askCaptureFallback: false });
+    expect(s().answers.s1?.map((item) => item.id)).toEqual(["ans-cap"]);
+    expect(s().expandedAnswerIds.has("ans-cap")).toBe(true);
     s().enterAsk();
     expect(s().askCaptureFallback).toBe(false);
+  });
+
+  test("playing 态 exitAsk 切回 idle 并清除 askCaptureFallback，保留 answers 与展开状态", () => {
+    loadReady();
+    const stored = answerOf({ id: "ans-play", stepId: "s1", segments: [segment("seg1"), segment("seg2")] });
+    enterDrafting("播放中退出");
+    usePlayerStore.setState({ askCaptureFallback: true, expandedAnswerIds: new Set(["ans-play"]) });
+    s().askSent(guard({ token: 1 }));
+    s().askStarted("ans-play", guard({ token: 1 }));
+    s().answerArrived(stored, guard({ token: 1 }));
+    expect(s()).toMatchObject({ askPhase: "playing", askCaptureFallback: true });
+    expect(s().answers.s1?.map((item) => item.id)).toEqual(["ans-play"]);
+
+    s().exitAsk();
+    expect(s()).toMatchObject({ askPhase: "idle", askCaptureFallback: false });
+    expect(s().answers.s1?.map((item) => item.id)).toEqual(["ans-play"]);
+    expect(s().expandedAnswerIds.has("ans-play")).toBe(true);
+  });
+
+  test("done 态 exitAsk 切回 idle 并清除 askCaptureFallback，保留 answers 与展开状态", () => {
+    loadReady();
+    const stored = answerOf({ id: "ans-done", stepId: "s1", segments: [segment("only")] });
+    enterDrafting("完成态退出");
+    usePlayerStore.setState({ askCaptureFallback: true, expandedAnswerIds: new Set(["ans-done"]) });
+    s().askSent(guard({ token: 1 }));
+    s().askStarted("ans-done", guard({ token: 1 }));
+    s().answerArrived(stored, guard({ token: 1 }));
+    expect(s()).toMatchObject({ askPhase: "playing", askCaptureFallback: true });
+    s().nextAnswerSegment(s().askPlaybackRun);
+    expect(s()).toMatchObject({ askPhase: "done", askCaptureFallback: true });
+
+    s().exitAsk();
+    expect(s()).toMatchObject({ askPhase: "idle", askCaptureFallback: false });
+    expect(s().answers.s1?.map((item) => item.id)).toEqual(["ans-done"]);
+    expect(s().expandedAnswerIds.has("ans-done")).toBe(true);
+  });
+
+  test("sending 与 streaming 态 exitAsk 保持空操作，标记留存且不影响 answers", () => {
+    loadReady();
+    const stored = answerOf({ id: "ans-prior", stepId: "s1" });
+    s().setAnswers({ s1: [stored] });
+    enterDrafting("发送中退出应无效");
+    usePlayerStore.setState({ askCaptureFallback: true, expandedAnswerIds: new Set(["ans-prior"]) });
+    s().askSent(guard({ token: 1 }));
+    expect(s().askPhase).toBe("sending");
+
+    s().exitAsk();
+    expect(s()).toMatchObject({ askPhase: "sending", askCaptureFallback: true });
+    expect(s().answers.s1?.map((item) => item.id)).toEqual(["ans-prior"]);
+    expect(s().expandedAnswerIds.has("ans-prior")).toBe(true);
+
+    s().askStarted("ans-live", guard({ token: 1 }));
+    expect(s().askPhase).toBe("streaming");
+    s().exitAsk();
+    expect(s()).toMatchObject({ askPhase: "streaming", askCaptureFallback: true });
+    expect(s().answers.s1?.map((item) => item.id)).toEqual(["ans-prior"]);
+    expect(s().expandedAnswerIds.has("ans-prior")).toBe(true);
   });
 
   test("selecting 时 replay 不生效", () => {

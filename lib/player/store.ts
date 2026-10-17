@@ -156,7 +156,8 @@ interface PlayerState {
   /**
    * 这次提问截图失败。挂在 store 上，避免回答落地把 phase 拉到 streaming / playing、
    * 面板按阶段卸载后本地 state 把「没截到图」提示丢掉。
-   * 播完进入 done 也不清：下一次 enterAsk，或仍在 selecting / drafting / error 时 exitAsk 才清掉。
+   * 清掉时机：下一次 enterAsk，或 exitAsk 从 selecting / drafting / error / playing / done 退出时。
+   * sending / streaming 的 exitAsk 仍是空操作，标记留着。
    */
   askCaptureFallback: boolean;
   askContext: AskContext | null;
@@ -953,8 +954,15 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   exitAsk: () => {
     const state = get();
-    if (state.askPhase !== "selecting" && state.askPhase !== "drafting" && state.askPhase !== "error") {
-      return;
+    const phase = state.askPhase;
+    if (
+      phase !== "selecting" &&
+      phase !== "drafting" &&
+      phase !== "error" &&
+      phase !== "playing" &&
+      phase !== "done"
+    ) {
+      return; // sending | streaming | idle → no-op
     }
     setAskCodeMissNotice(null);
     const ctx = state.askContext;
@@ -971,6 +979,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       askStartedAt: null,
       askPlaybackPaused: false,
       pendingEnterIntent: null,
+      // DO NOT touch answers or expandedAnswerIds
     });
   },
 
