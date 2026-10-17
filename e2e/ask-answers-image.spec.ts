@@ -161,6 +161,8 @@ test.describe("M7/T9 step answer imageAttached note (1280x800)", () => {
     const notice = page.locator("[data-testid='answer-image-missing']");
     await expect(notice).toBeVisible();
     await expect(notice).toHaveText(ASK_IMAGE_NOT_USED_NOTE);
+    await expect(notice).not.toHaveAttribute("aria-live");
+    await expect(notice).not.toHaveAttribute("role");
     await expect(page.locator("[data-answer-image-notice]")).toBeVisible();
     await expect(page.getByText(ANSWER_TEXT)).toBeVisible();
 
@@ -236,6 +238,8 @@ test.describe("M7/T9 mobile viewport (390x844)", () => {
     const notice = page.locator("[data-testid='answer-image-missing']");
     await expect(notice).toBeVisible();
     await expect(notice).toHaveText(ASK_IMAGE_NOT_USED_NOTE);
+    await expect(notice).not.toHaveAttribute("aria-live");
+    await expect(notice).not.toHaveAttribute("role");
     await expect(page.locator("[data-answer-image-notice]")).toBeVisible();
   });
 });
