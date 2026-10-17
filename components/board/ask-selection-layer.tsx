@@ -28,10 +28,14 @@ import {
 import { ASK_LIMITS, type AskBBox, type AskSelectionSummary, type AskTarget } from "@/lib/ask/types";
 import { setAskCodeMissNotice } from "@/lib/ask/code-editor-registry";
 import {
+  applyAskSelectingRootVars,
   computeBottomOcclusion,
+  createAskMeasureCache,
   getAskBottomObstacle,
+  invalidateAskMeasureCache,
   measureAskElementHeight,
   measureAskPlayerBarHeight,
+  writeAskRootVars,
   type OcclusionParts,
 } from "@/lib/ask/ask-occlusion";
 import { scheduleEncodeWorkerPrewarm } from "@/lib/ask/capture-worker";
@@ -424,11 +428,11 @@ function AskSelectionLayerActive({
   const cancelClickSeenRef = useRef(false);
 
   const bottomBarRef = useRef<HTMLDivElement>(null);
-  // Last mobile player / chip-bar heights published by updateMeasurements.
-  // Cancel reuses them so this commit can drop the panel contribution without
-  // measuring the panel (a measure here forced a full style recalc).
-  const lastPlayerHeightRef = useRef<number | null>(null);
-  const lastBarHeightRef = useRef<number | null>(null);
+  // Last mobile / keyboard / height snapshot from updateMeasurements.
+  // A cancel commit restores selecting vars from this cache and does not
+  // measure: innerHeight, visualViewport, matchMedia, and getBoundingClientRect
+  // after a root custom-property write each force a full-document recalc.
+  const measureCacheRef = useRef(createAskMeasureCache());
 
   const [rubberBand, setRubberBand] = useState<RubberBand | null>(null);
   const [hint, setHint] = useState<string | null>(null);
@@ -566,15 +570,15 @@ function AskSelectionLayerActive({
     const kbOpen =
       viewport != null && typeof window !== "undefined" && window.innerHeight - viewport.height > 120;
 
-    const rootStyle = document.documentElement.style;
-    const currentBar = rootStyle.getPropertyValue("--ask-bottom-bar-h");
-    const currentOcclusion = rootStyle.getPropertyValue("--ask-bottom-occlusion");
+    const cache = measureCacheRef.current;
+    cache.isMobile = isMobileDevice;
+    cache.keyboardOpen = kbOpen;
 
     let nextBar = "0px";
     let nextOcclusion = "0px";
     if (active && isMobileDevice && !kbOpen) {
       const playerH = measureAskPlayerBarHeight();
-      lastPlayerHeightRef.current = playerH;
+      cache.playerHeight = playerH;
 
       let panelH = 0;
       const panelEl = document.querySelector<HTMLElement>("[data-ask-panel]");
@@ -589,7 +593,7 @@ function AskSelectionLayerActive({
         barH = measureAskElementHeight(barEl);
         // A missing bar is not a measured 0. Keep the previous height so a
         // later cancel can still restore the chip bar without a fresh read.
-        if (barEl) lastBarHeightRef.current = barH;
+        if (barEl) cache.barHeight = barH;
       }
       nextBar = `${barH}px`;
       nextOcclusion = `${computeBottomOcclusion({
@@ -608,12 +612,10 @@ function AskSelectionLayerActive({
     // and the occlusion total, and only while the chrome is up. Skip a write
     // whose inline value is already what we measured: the cancel frame's
     // selecting restore is then a no-op and the box does not move.
-    if (currentBar !== nextBar) {
-      rootStyle.setProperty("--ask-bottom-bar-h", nextBar);
-    }
-    if (currentOcclusion !== nextOcclusion) {
-      rootStyle.setProperty("--ask-bottom-occlusion", nextOcclusion);
-    }
+    writeAskRootVars({
+      "--ask-bottom-bar-h": nextBar,
+      "--ask-bottom-occlusion": nextOcclusion,
+    });
   }, [active, askPhase]);
 
   const measureRafRef = useRef<number | null>(null);
@@ -641,50 +643,14 @@ function AskSelectionLayerActive({
     });
   }, []);
 
-  // Selecting targets for a cancel commit. Panel contribution is 0. Reuses
-  // the last player / chip-bar heights from updateMeasurements so this commit
-  // does not measure the panel. Same inactive / desktop / keyboard rule:
-  // anything other than an active narrow viewport with the keyboard closed
-  // publishes 0px. Reads finish before any setProperty.
+  // Selecting targets for a cancel commit. Panel contribution is 0. Uses only
+  // the measure cache, so this path does no layout read (no innerHeight,
+  // visualViewport, matchMedia, or getBoundingClientRect). An incomplete
+  // cache writes nothing; the scheduleUpdate rAF already queued by the
+  // layout effect re-measures before the next paint.
   const writeSelectingCssVarsSync = useCallback(() => {
     if (typeof document === "undefined") return;
-    const isMobileDevice = typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches;
-    const viewport = typeof window !== "undefined" ? window.visualViewport : null;
-    const kbOpen =
-      viewport != null && typeof window !== "undefined" && window.innerHeight - viewport.height > 120;
-
-    const rootStyle = document.documentElement.style;
-    const currentBar = rootStyle.getPropertyValue("--ask-bottom-bar-h");
-    const currentOcclusion = rootStyle.getPropertyValue("--ask-bottom-occlusion");
-
-    let nextBar = "0px";
-    let nextOcclusion = "0px";
-    if (active && isMobileDevice && !kbOpen) {
-      let playerH = lastPlayerHeightRef.current;
-      if (playerH == null) {
-        playerH = measureAskPlayerBarHeight();
-        lastPlayerHeightRef.current = playerH;
-      }
-      let barH = lastBarHeightRef.current;
-      if (barH == null) {
-        const barEl = bottomBarRef.current ?? document.querySelector<HTMLElement>("[data-ask-bottom-bar]");
-        barH = measureAskElementHeight(barEl);
-        if (barEl) lastBarHeightRef.current = barH;
-      }
-      nextBar = `${barH}px`;
-      nextOcclusion = `${computeBottomOcclusion({
-        playerHeight: playerH,
-        barHeight: barH,
-        panelHeight: 0,
-      })}px`;
-    }
-
-    if (currentBar !== nextBar) {
-      rootStyle.setProperty("--ask-bottom-bar-h", nextBar);
-    }
-    if (currentOcclusion !== nextOcclusion) {
-      rootStyle.setProperty("--ask-bottom-occlusion", nextOcclusion);
-    }
+    applyAskSelectingRootVars(measureCacheRef.current, active);
   }, [active]);
 
   const prevAskPhaseRef = useRef(askPhase);
@@ -696,7 +662,10 @@ function AskSelectionLayerActive({
     // commit invalidates style for the document. Cancel (any phase other
     // than selecting/idle → selecting) drops the panel contribution in this
     // same commit so waiting values cannot sit for one frame.
-    const isMobileDevice = typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches;
+    // matchMedia only when the cache has not recorded a viewport yet.
+    const isMobileDevice =
+      measureCacheRef.current.isMobile ??
+      (typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches);
     const closingPanel = prev === "drafting" || prev === "error";
     const cancelToSelecting = askPhase === "selecting" && prev !== "selecting" && prev !== "idle";
 
@@ -712,32 +681,40 @@ function AskSelectionLayerActive({
         touchCompletedSelectionRef.current = true;
       }
       lastTouchCancelPointerUpRef.current = null;
-
-      if (isMobileDevice) {
-        const bar = bottomBarRef.current ?? document.querySelector<HTMLElement>("[data-ask-bottom-bar]");
-        const chips = bar?.querySelectorAll<HTMLButtonElement>("[data-ask-shortcut]");
-        const currentChip = Array.from(chips ?? []).find((c) => c.tabIndex === 0) ?? chips?.[0];
-        // The button that closed the panel still holds focus on this commit.
-        // Blur it first so the chip can take focus in the same frame.
-        const focused = document.activeElement;
-        if (focused instanceof HTMLElement && focused !== currentChip) focused.blur();
-        currentChip?.focus({ preventScroll: true });
-      }
     }
 
-    // Selecting targets before paint. The queued frame still rebinds
-    // ResizeObserver; when these values already match, that frame skips setProperty.
+    // Write the cached selecting vars before focus. focus() forces style
+    // and layout; doing it while the root is already dirty is one recalc
+    // that also settles these vars. A write after focus would dirty the
+    // root again and the next frame would pay for a second full recalc.
     if (cancelToSelecting) {
       writeSelectingCssVarsSync();
     }
+
+    if (askPhase === "selecting" && closingPanel && isMobileDevice) {
+      const bar = bottomBarRef.current ?? document.querySelector<HTMLElement>("[data-ask-bottom-bar]");
+      const chips = bar?.querySelectorAll<HTMLButtonElement>("[data-ask-shortcut]");
+      const currentChip = Array.from(chips ?? []).find((c) => c.tabIndex === 0) ?? chips?.[0];
+      // The button that closed the panel still holds focus on this commit.
+      // Blur it first so the chip can take focus in the same frame.
+      const focused = document.activeElement;
+      if (focused instanceof HTMLElement && focused !== currentChip) focused.blur();
+      currentChip?.focus({ preventScroll: true });
+    }
+
+    // The queued frame re-measures and rebinds ResizeObserver. When the
+    // cached values already match the inline style, that frame writes nothing.
     scheduleUpdate();
   }, [active, askPhase, scheduleUpdate, writeSelectingCssVarsSync]);
 
   // 测量底部条高度、播放区高度与抽屉面板高度，并同步 --ask-bottom-bar-h 和 --ask-bottom-occlusion。
   // --ask-player-bar-h 由始终挂载的 AskPlayerBarVar 写。
   // 桌面/inactive/unmount/键盘打开时设为 0px（或 removeProperty）。
-  // 取消回到 selecting 由 writeSelectingCssVarsSync 在同一次提交里先写上目标值；
+  // 取消回到 selecting 时，先用缓存写上目标值，再在同一次提交里 blur + focus；
   // 其余阶段变化、ResizeObserver、scroll、mount 仍走 scheduleUpdate 的 rAF。
+  // resize / visualViewport / orientationchange / matchMedia change 先作废缓存，
+  // 这样下一次取消不会用过期高度。ResizeObserver 只排 rAF：面板开着时底栏不在，
+  // 不能把已记住的底栏高度清成未测量。
   useEffect(() => {
     if (typeof document === "undefined") return;
 
@@ -802,12 +779,15 @@ function AskSelectionLayerActive({
     }
 
     const mq = window.matchMedia("(max-width: 639px)");
-    const onMqChange = () => scheduleUpdate();
-    mq.addEventListener("change", onMqChange);
+    const onInvalidate = () => {
+      invalidateAskMeasureCache(measureCacheRef.current);
+      scheduleUpdate();
+    };
+    mq.addEventListener("change", onInvalidate);
 
-    const onResize = () => scheduleUpdate();
-    window.addEventListener("resize", onResize);
-    window.visualViewport?.addEventListener("resize", onResize);
+    window.addEventListener("resize", onInvalidate);
+    window.addEventListener("orientationchange", onInvalidate);
+    window.visualViewport?.addEventListener("resize", onInvalidate);
 
     const onScroll = () => scheduleUpdate();
     window.addEventListener("scroll", onScroll, { passive: true, capture: true });
@@ -820,9 +800,10 @@ function AskSelectionLayerActive({
       }
       ro?.disconnect();
       mo?.disconnect();
-      mq.removeEventListener("change", onMqChange);
-      window.removeEventListener("resize", onResize);
-      window.visualViewport?.removeEventListener("resize", onResize);
+      mq.removeEventListener("change", onInvalidate);
+      window.removeEventListener("resize", onInvalidate);
+      window.removeEventListener("orientationchange", onInvalidate);
+      window.visualViewport?.removeEventListener("resize", onInvalidate);
       window.removeEventListener("scroll", onScroll, { capture: true } as EventListenerOptions);
       document.documentElement.style.setProperty("--ask-bottom-bar-h", "0px");
       document.documentElement.style.setProperty("--ask-bottom-occlusion", "0px");
