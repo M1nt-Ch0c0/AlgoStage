@@ -328,11 +328,11 @@ test.describe("ask Esc stepwise exit", () => {
       await expectBusyEntry(page);
       await expect.poll(() => stream.requests()).toBe(1);
 
-      // sending 与 0.3.1 一样：Esc 不关面板、不退出圈选、不取消请求。
+      // sending 与 0.3.1 一样：Esc 不关面板、不退出、不取消请求。
+      // LAYER_MOUNTED 含 sending（waiting cancel 同帧回 chip），壳可挂着；不断言 layer count=0。
       await panel(page).locator("[data-ask-question]").press("Escape");
       await expect(panel(page)).toBeVisible();
       await expect(panel(page).locator("[data-ask-waiting]")).toBeVisible();
-      await expect(layer(page)).toHaveCount(0);
       await expectBusyEntry(page);
       await expect(page.getByRole("button", { name: `你问的 ${QUESTION}` })).toHaveCount(0);
 
