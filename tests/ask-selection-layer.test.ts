@@ -20,8 +20,8 @@ import AskSelectionLayer, {
   nextRovingIndex,
   resolveAskEscape,
 } from "../components/board/ask-selection-layer";
-import { ASK_CODE_MISS_HINT, ASK_EMPTY_HIT, ASK_ENTERED_STATUS, ASK_RESIZE_HINT } from "../lib/ask/ask-ui-text";
-import { type CodeEditorHandle, getAskCodeMissNotice, registerCodeEditor, resetCodeEditorRegistry } from "../lib/ask/code-editor-registry";
+import { ASK_CODE_MISS_HINT, ASK_EMPTY_HIT, ASK_ENTERED_STATUS, ASK_LAYER_HINT, ASK_RESIZE_HINT } from "../lib/ask/ask-ui-text";
+import { type CodeEditorHandle, getAskCodeMissNotice, registerCodeEditor, resetCodeEditorRegistry, setAskCodeMissNotice } from "../lib/ask/code-editor-registry";
 import { summarizeSelection } from "../lib/ask/collect-candidates";
 import * as askOcclusion from "../lib/ask/ask-occlusion";
 import { invalidateAskMeasureCache, sharedAskMeasureCache } from "../lib/ask/ask-occlusion";
@@ -4691,6 +4691,126 @@ describe("resolveAskEscape", () => {
       expect(chip229Event.defaultPrevented).toBe(false);
       expect(usePlayerStore.getState().selection).toBeNull();
       expect(usePlayerStore.getState().askPhase).toBe("selecting");
+    });
+  });
+
+  describe("Task C8: hint & askCodeMissNotice phase transitions and silent void", () => {
+    test("phase drafting->idle resets hint and code notice to null", async () => {
+      await render();
+      // 1. In selecting, set hint via window resize
+      await act(async () => {
+        window.dispatchEvent(new Event("resize"));
+      });
+      expect(layer().textContent).toContain(ASK_RESIZE_HINT);
+
+      // 2. Set code notice and transition to drafting
+      act(() => {
+        setAskCodeMissNotice("代码部分没选上，换个地方再框一次");
+        usePlayerStore.setState({ askPhase: "drafting" });
+      });
+      expect(getAskCodeMissNotice()).toBe("代码部分没选上，换个地方再框一次");
+
+      // 3. Transition drafting -> idle
+      await act(async () => {
+        usePlayerStore.setState({ askPhase: "idle" });
+      });
+
+      // Code notice should be cleared to null
+      expect(getAskCodeMissNotice()).toBeNull();
+
+      // 4. Re-enter selecting: layer is visible, hint has been cleared back to null (ASK_LAYER_HINT default)
+      await act(async () => {
+        usePlayerStore.setState({ askPhase: "selecting" });
+      });
+      expect(layer().textContent).not.toContain(ASK_RESIZE_HINT);
+      expect(layer().textContent).toContain(ASK_LAYER_HINT);
+      expect(getAskCodeMissNotice()).toBeNull();
+    });
+
+    test("phase drafting->selecting preserves hint and code notice", async () => {
+      await render();
+      // 1. In selecting, set hint via window resize
+      await act(async () => {
+        window.dispatchEvent(new Event("resize"));
+      });
+      expect(layer().textContent).toContain(ASK_RESIZE_HINT);
+
+      // 2. Set code notice and transition to drafting
+      act(() => {
+        setAskCodeMissNotice("代码部分没选上，换个地方再框一次");
+        usePlayerStore.setState({ askPhase: "drafting" });
+      });
+      expect(getAskCodeMissNotice()).toBe("代码部分没选上，换个地方再框一次");
+
+      // 3. Transition drafting -> selecting (e.g. single Esc / closeAskPanel)
+      await act(async () => {
+        usePlayerStore.getState().closeAskPanel();
+      });
+      expect(usePlayerStore.getState().askPhase).toBe("selecting");
+
+      // Both hint and code notice must be preserved
+      expect(layer().textContent).toContain(ASK_RESIZE_HINT);
+      expect(getAskCodeMissNotice()).toBe("代码部分没选上，换个地方再框一次");
+    });
+
+    test("silent void does not clear code notice or existing hint", async () => {
+      await render();
+      // Set hint via window resize
+      await act(async () => {
+        window.dispatchEvent(new Event("resize"));
+      });
+      expect(layer().textContent).toContain(ASK_RESIZE_HINT);
+
+      // Set code notice
+      setAskCodeMissNotice("代码部分没选上，换个地方再框一次");
+      expect(getAskCodeMissNotice()).toBe("代码部分没选上，换个地方再框一次");
+
+      // Box / tap in empty area where hit.targets.length === 0 -> silent void
+      const initialVoidCount = Number(layer().getAttribute("data-ask-void-count") ?? "0");
+      await gesture(142, 20, 144, 20);
+
+      // Void occurred
+      expect(layer().getAttribute("data-ask-void-count")).toBe(String(initialVoidCount + 1));
+      expect(usePlayerStore.getState().selection).toBeNull();
+
+      // Notice and hint must remain intact
+      expect(getAskCodeMissNotice()).toBe("代码部分没选上，换个地方再框一次");
+      expect(layer().textContent).toContain(ASK_RESIZE_HINT);
+    });
+
+    test("silent void on invalid code (!hasValidCode) does not clear notice or hint", async () => {
+      const codeEl = document.createElement("div");
+      codeEl.setAttribute("data-ask-target", "code");
+      codeEl.setAttribute("data-ask-id", "code:main");
+      codeEl.setAttribute("data-ask-step-id", "s1");
+      codeEl.getBoundingClientRect = () => domRect(250, 10, 80, 50);
+      stage.append(codeEl);
+
+      const mockHandle: CodeEditorHandle = {
+        getLineRangeForClientBox: vi.fn(() => null),
+        getLinesText: vi.fn(() => ""),
+        getFullText: vi.fn(() => ""),
+      };
+      registerCodeEditor(codeEl, mockHandle);
+
+      await render();
+
+      await act(async () => {
+        window.dispatchEvent(new Event("resize"));
+      });
+      expect(layer().textContent).toContain(ASK_RESIZE_HINT);
+
+      setAskCodeMissNotice("既有提示");
+      expect(getAskCodeMissNotice()).toBe("既有提示");
+
+      const initialVoidCount = Number(layer().getAttribute("data-ask-void-count") ?? "0");
+      // Box only code element where handle returns null and box does not enclose codeEl -> hasValidCode is false
+      await gesture(260, 15, 300, 40);
+
+      expect(layer().getAttribute("data-ask-void-count")).toBe(String(initialVoidCount + 1));
+      expect(usePlayerStore.getState().selection).toBeNull();
+      expect(getAskCodeMissNotice()).toBe("既有提示");
+      expect(layer().textContent).toContain(ASK_RESIZE_HINT);
     });
   });
 });

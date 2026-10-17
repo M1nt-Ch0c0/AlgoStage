@@ -619,6 +619,25 @@ function AskSelectionLayerActive({
 
   const [rubberBand, setRubberBand] = useState<RubberBand | null>(null);
   const [hint, setHint] = useState<string | null>(null);
+  const prevPhaseRef = useRef(askPhase);
+
+  useEffect(() => {
+    const prev = prevPhaseRef.current;
+    if (prev !== askPhase) {
+      if (
+        (prev === "selecting" || prev === "drafting" || prev === "error") &&
+        askPhase === "idle"
+      ) {
+        setHint(null);
+        setAskCodeMissNotice(null);
+      } else if (prev === "idle" && askPhase === "selecting") {
+        setHint(null);
+        setAskCodeMissNotice(null);
+      }
+      prevPhaseRef.current = askPhase;
+    }
+  }, [askPhase]);
+
   const [activeShortcut, setActiveShortcut] = useState(0);
   const [rovingIndex, setRovingIndex] = useState(0);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
@@ -1274,8 +1293,6 @@ function AskSelectionLayerActive({
 
         if (!hasValidCode) {
           setRubberBand(null);
-          setHint(null);
-          setAskCodeMissNotice(null);
           incrementVoid();
           return false;
         }
