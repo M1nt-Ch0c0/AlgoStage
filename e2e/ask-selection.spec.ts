@@ -3290,7 +3290,7 @@ test.describe("390 selection flow", () => {
       await expect(page.locator("[data-ask-layer]")).toBeVisible();
     });
 
-    test("m. Tab order: after closing panel with Esc, Tab moves focus to bar chips then entry button", async ({ page }) => {
+    test("m. Tab order: after Esc cancel, focus on chip; Tab does not land on exit (S4)", async ({ page }) => {
       await startGenerated(page);
       await pauseLecture(page);
       await enterSelection(page);
@@ -3336,23 +3336,26 @@ test.describe("390 selection flow", () => {
         document.activeElement?.getAttribute("data-ask-shortcut"),
       );
 
-      // Tab moves focus forward to the exit button in the bar (roving: only one chip is tabbable)
+      // S4: bar exit is tabIndex=-1 (out of tab order) so cancel ghost focus sticks.
+      // Tab from the opener chip must NOT land on the exit button.
       await page.keyboard.press("Tab");
       await expect.poll(() =>
         page.evaluate(() => {
           const active = document.activeElement as HTMLElement | null;
-          if (!active) return false;
+          if (!active) return true;
           const bar = document.querySelector("[data-ask-bottom-bar]");
-          return Boolean(
-            bar &&
-            bar.contains(active) &&
-            active.hasAttribute("data-ask-entry"),
-          );
+          const exit = bar?.querySelector("[data-ask-entry]");
+          return !(exit && (active === exit || exit.contains(active)));
         }),
       ).toBe(true);
 
-      // Return focus to the chip and test ArrowRight roving navigation among chips
-      await page.keyboard.press("Shift+Tab");
+      // Re-focus the opener chip and test ArrowRight roving among chips
+      await page.evaluate((key) => {
+        const chip = document.querySelector<HTMLElement>(
+          `[data-ask-bottom-bar] [data-ask-shortcut="${key}"]`,
+        );
+        chip?.focus({ preventScroll: true });
+      }, initialChipKey);
       await expect.poll(() =>
         page.evaluate(() => {
           const active = document.activeElement as HTMLElement | null;
@@ -3994,13 +3997,14 @@ test.describe("390 selection flow", () => {
       // bar height unchanged vs before (still 60px)
       expect(barBoxBefore.height).toBeLessThanOrEqual(60);
 
-      // Tab order: chip group (one tabbable) -> exit button
+      // One chip is tabbable; S4 keeps exit at tabIndex=-1 (not in tab order).
       const tabbableCount = await bar.locator('[data-ask-shortcut][tabindex="0"]').count();
       expect(tabbableCount).toBe(1);
+      await expect(exitBtn).toHaveAttribute("tabindex", "-1");
 
       await bar.locator('[data-ask-shortcut][tabindex="0"]').focus();
       await page.keyboard.press("Tab");
-      await expect(exitBtn).toBeFocused();
+      await expect(exitBtn).not.toBeFocused();
 
       // ArrowRight moves among chips
       const secondChip = bar.locator("[data-ask-shortcut]").nth(1);
