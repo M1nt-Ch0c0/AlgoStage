@@ -37,6 +37,15 @@ type Width = 390 | 1280;
 
 type LongTask = { s: number; d: number };
 type ReleaseStamp = { ts: number; dispatch: number };
+/** Paint-time focus, same shape as the prof harness. `where` is `chip:<key>` on a shortcut. */
+type FocusAtPaint = {
+  ok: boolean;
+  where: string | null;
+  chipN: number;
+  bar: boolean;
+  panelHidden: boolean;
+};
+
 type PaintBag = {
   __lt: LongTask[];
   __rel: ReleaseStamp | null;
@@ -47,6 +56,7 @@ type PaintBag = {
   __downState: string | null;
   __upState: string | null;
   __geom: GeomFrame | null;
+  __focusAtPaint: FocusAtPaint | null;
 };
 
 type GeomFrame = {
@@ -62,6 +72,7 @@ type PaintResult = {
   stallAdj: number;
   unmountMs: number;
   paintMs: number;
+  focusAtPaint: FocusAtPaint | null;
 };
 
 type RoundRow = {
@@ -301,15 +312,40 @@ const armPaint = (p: Page, recordGeom: boolean) =>
     W.__unmount = null;
     W.__hide = null;
     W.__geom = null;
+    W.__focusAtPaint = null;
     /** Uma: visually cancelled = gone OR hideAskPanelNow (display:none / aria-hidden / inert). */
     const visuallyGone = () => {
       const el = document.querySelector<HTMLElement>("[data-ask-panel]");
       if (!el) return true;
       return el.style.display === "none" || el.getAttribute("aria-hidden") === "true" || el.hasAttribute("inert");
     };
+    /** Prof harness: chip opener is `chip:<key>`; otherwise layer / ask-id / selection. */
+    const describeFocus = () => {
+      const active = document.activeElement;
+      const a = active instanceof HTMLElement ? active : null;
+      const chipN = document.querySelectorAll("[data-ask-shortcut]").length;
+      const bar = !!document.querySelector("[data-ask-bottom-bar]");
+      const panel = document.querySelector<HTMLElement>("[data-ask-panel]");
+      const panelHidden =
+        !panel || panel.style.display === "none" || panel.getAttribute("aria-hidden") === "true";
+      const base = { chipN, bar, panelHidden };
+      if (!a || a === document.body) return { ok: false, where: null, ...base };
+      const chip = a.closest("[data-ask-shortcut]");
+      if (chip) {
+        return { ok: true, where: `chip:${chip.getAttribute("data-ask-shortcut") ?? ""}`, ...base };
+      }
+      if (a.closest("[data-ask-selection]")) return { ok: true, where: "selection", ...base };
+      if (a.matches("[data-ask-id]") || a.closest("[data-ask-id]")) {
+        return { ok: true, where: "ask-id", ...base };
+      }
+      if (a.closest("[data-ask-layer]")) return { ok: true, where: "layer", ...base };
+      const cancel = a.hasAttribute("data-ask-cancel") ? "#cancel" : "";
+      return { ok: false, where: `${a.tagName}${cancel}`, ...base };
+    };
     const stampPaint = () => {
       if (W.__paint != null) return;
       W.__paint = performance.now();
+      W.__focusAtPaint = describeFocus();
       if (wantGeom) {
         const sel = document.querySelector("[data-ask-selection]");
         const bar = document.querySelector("[data-ask-bottom-bar]");
@@ -388,7 +424,7 @@ const paintMetrics = (p: Page): Promise<PaintResult> =>
     const W = window as unknown as PaintBag;
     const rel = W.__rel;
     if (!rel || W.__paint == null) {
-      return { missing: true, rel: !!rel, stallAdj: 0, unmountMs: 0, paintMs: 0 };
+      return { missing: true, rel: !!rel, stallAdj: 0, unmountMs: 0, paintMs: 0, focusAtPaint: null };
     }
     let start = rel.ts;
     for (const x of W.__lt) {
@@ -401,6 +437,7 @@ const paintMetrics = (p: Page): Promise<PaintResult> =>
       stallAdj: r(start - rel.ts),
       unmountMs: r((W.__unmount ?? start) - start),
       paintMs: r(paintAt - start),
+      focusAtPaint: W.__focusAtPaint,
     };
   });
 
@@ -546,12 +583,20 @@ async function collectRounds(
       await expect(page.locator("[data-ask-panel]")).toHaveCount(0);
       await expect(page.locator("[data-ask-error]")).toHaveCount(0);
       if (phase === "preparing") expect(asks).toHaveLength(0);
-      // Chip-opened (viz shortcut) at both widths: focus returns to that opener.
-      const focusChip = await page.evaluate(() => {
+      // Chip opener: Uma's gate is focus at paint (`chip:<key>`), not live
+      // activeElement after the panel has unmounted (focus can drift by then).
+      const focusWhere = paint.focusAtPaint?.where ?? "";
+      const focusChip = focusWhere.startsWith("chip:");
+      const liveFocus = await page.evaluate(() => {
         const active = document.activeElement;
-        if (!(active instanceof HTMLElement)) return false;
-        return !!active.closest("[data-ask-shortcut]");
+        if (!(active instanceof HTMLElement) || active === document.body) return "BODY";
+        const chip = active.closest("[data-ask-shortcut]");
+        if (chip instanceof HTMLElement) return `chip:${chip.getAttribute("data-ask-shortcut") ?? ""}`;
+        if (active.closest("[data-ask-layer]")) return "layer";
+        if (active.closest("[data-ask-id]")) return "ask-id";
+        return active.tagName;
       });
+      console.log(`cancel-paint round ${round} focusAtPaint=${focusWhere || "null"} liveActive=${liveFocus}`);
       expect(focusChip, "chip keeps focus").toBe(true);
       let occl1: string | null = null;
       let occlSettled: string | null = null;
