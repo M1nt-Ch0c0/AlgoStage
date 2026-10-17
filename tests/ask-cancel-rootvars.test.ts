@@ -4,6 +4,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import AskPlayerBarVar, { syncAskPlayerBarHeight } from "../components/board/ask-player-bar-var";
 import AskSelectionLayer, { computeBottomOcclusion } from "../components/board/ask-selection-layer";
+import { finishAskCancelSync } from "../lib/ask/ask-cancel";
+import { invalidateAskMeasureCache, sharedAskMeasureCache } from "../lib/ask/ask-occlusion";
+import { setAskOpenSource } from "../lib/ask/ask-open-source";
 import { usePlayerStore } from "../lib/player/store";
 import type { TeachingScript } from "../lib/teaching/types";
 
@@ -69,6 +72,8 @@ let stage: HTMLDivElement;
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  invalidateAskMeasureCache(sharedAskMeasureCache);
+  setAskOpenSource(null);
   usePlayerStore.getState().reset();
   usePlayerStore.getState().loadScript(script);
   document.documentElement.style.removeProperty("--ask-player-bar-h");
@@ -92,6 +97,8 @@ beforeEach(() => {
 
 afterEach(async () => {
   if (root) await act(async () => root.unmount());
+  invalidateAskMeasureCache(sharedAskMeasureCache);
+  setAskOpenSource(null);
   usePlayerStore.getState().reset();
   container.remove();
   stage.remove();
@@ -359,7 +366,9 @@ describe("cancel root vars", () => {
 
     panel.remove();
     await act(async () => {
-      usePlayerStore.setState({ askPhase: "selecting", selection });
+      finishAskCancelSync(null, () => {
+        usePlayerStore.setState({ askPhase: "selecting", selection });
+      });
     });
 
     const chip = document.activeElement as HTMLElement | null;
@@ -521,6 +530,27 @@ describe("cancel root vars", () => {
     setProperty.mockRestore();
   });
 
+  test("while askPhase is sending, --ask-bottom-bar-h stays 0px", async () => {
+    await renderLayer();
+    await settle();
+    expect(document.documentElement.style.getPropertyValue("--ask-bottom-bar-h")).toBe("60px");
+
+    await act(async () => {
+      usePlayerStore.setState({ askPhase: "sending" });
+    });
+    await settle();
+
+    expect(usePlayerStore.getState().askPhase).toBe("sending");
+    expect(document.querySelector("[data-ask-layer]")).not.toBeNull();
+    expect(document.documentElement.style.getPropertyValue("--ask-bottom-bar-h")).toBe("0px");
+
+    await act(async () => {
+      window.dispatchEvent(new Event("resize"));
+    });
+    await settle();
+    expect(document.documentElement.style.getPropertyValue("--ask-bottom-bar-h")).toBe("0px");
+  });
+
   test("mobile sending to selecting focuses a shortcut in the same act, before any rAF", async () => {
     await renderLayer();
     await settle();
@@ -546,7 +576,9 @@ describe("cancel root vars", () => {
     expect(frames.pending()).toBe(0);
 
     await act(async () => {
-      usePlayerStore.setState({ askPhase: "selecting", selection });
+      finishAskCancelSync(null, () => {
+        usePlayerStore.setState({ askPhase: "selecting", selection });
+      });
     });
 
     const chip = document.activeElement as HTMLElement | null;
@@ -598,7 +630,9 @@ describe("cancel root vars", () => {
     }) as typeof window.setTimeout);
 
     await act(async () => {
-      usePlayerStore.setState({ askPhase: "selecting", selection });
+      finishAskCancelSync(null, () => {
+        usePlayerStore.setState({ askPhase: "selecting", selection });
+      });
     });
 
     expect(document.activeElement).toBe(target);

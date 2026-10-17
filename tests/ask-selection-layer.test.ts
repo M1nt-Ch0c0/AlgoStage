@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { scrollHeight, clientHeight, scrollWidth, clientWidth } from "happy-dom/lib/PropertySymbol.js";
+import { finishAskCancelSync } from "../lib/ask/ask-cancel";
 import AskEntry from "../components/board/ask-entry";
 import AskPlayerBarVar from "../components/board/ask-player-bar-var";
 import AskSelectionLayer, { computeBottomOcclusion, computeOcclusion, isElementFullyInView, nextRovingIndex, resolveAskEscape } from "../components/board/ask-selection-layer";
@@ -10,6 +11,8 @@ import { ASK_CODE_MISS_HINT, ASK_EMPTY_HIT, ASK_ENTERED_STATUS, ASK_RESIZE_HINT 
 import { type CodeEditorHandle, getAskCodeMissNotice, registerCodeEditor, resetCodeEditorRegistry } from "../lib/ask/code-editor-registry";
 import { summarizeSelection } from "../lib/ask/collect-candidates";
 import * as askOcclusion from "../lib/ask/ask-occlusion";
+import { invalidateAskMeasureCache, sharedAskMeasureCache } from "../lib/ask/ask-occlusion";
+import { setAskOpenSource } from "../lib/ask/ask-open-source";
 import * as hitTest from "../lib/ask/hit-test";
 import { usePlayerStore } from "../lib/player/store";
 import type { TeachingScript } from "../lib/teaching/types";
@@ -48,6 +51,8 @@ let scroller: HTMLDivElement;
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  invalidateAskMeasureCache(sharedAskMeasureCache);
+  setAskOpenSource(null);
   usePlayerStore.getState().reset();
   usePlayerStore.getState().loadScript(script);
   usePlayerStore.setState({ askPhase: "selecting", status: "interrupted", draftQuestion: "保留的问题" });
@@ -95,6 +100,8 @@ beforeEach(() => {
 
 afterEach(async () => {
   if (root) await act(async () => root.unmount());
+  invalidateAskMeasureCache(sharedAskMeasureCache);
+  setAskOpenSource(null);
   usePlayerStore.getState().reset();
   resetCodeEditorRegistry();
   container.remove();
@@ -509,6 +516,8 @@ describe("AskSelectionLayer", () => {
     expect(close.defaultPrevented).toBe(true);
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
     expect(usePlayerStore.getState().draftQuestion).toBe("窗口也能关");
+    // Focus is owned by finishAskCancelSync, which this Esc path calls.
+    // Box open (no recorded chip) returns the selection target.
     expect(document.activeElement).toBe(target);
 
     const exit = await act(async () => pressEscape(layer()));
@@ -550,6 +559,7 @@ describe("AskSelectionLayer", () => {
     const close = await act(async () => pressEscape(question));
     expect(close.defaultPrevented).toBe(true);
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
+    // No selection and no recorded chip: finishAskCancelSync falls back to the layer.
     expect(document.activeElement).toBe(layer());
 
     editor.remove();
@@ -581,7 +591,7 @@ describe("AskSelectionLayer", () => {
     cancel.type = "button";
     cancel.textContent = "取消";
     cancel.addEventListener("click", () => {
-      usePlayerStore.getState().closeAskPanel();
+      finishAskCancelSync(panel, () => usePlayerStore.getState().closeAskPanel());
     });
     panel.append(cancel);
     document.body.append(panel);
@@ -651,6 +661,27 @@ describe("AskSelectionLayer", () => {
     expect(close.defaultPrevented).toBe(true);
     expect(usePlayerStore.getState().askPhase).toBe("selecting");
     expect(document.activeElement).toBe(layer());
+  });
+
+  test("sending pointerdown does not start selection while the layer stays mounted", async () => {
+    await render();
+    await act(async () => {
+      usePlayerStore.setState({ askPhase: "sending" });
+    });
+    expect(usePlayerStore.getState().askPhase).toBe("sending");
+    const host = layer();
+    expect(host.isConnected).toBe(true);
+    const setCaptureSpy = vi.spyOn(host, "setPointerCapture");
+
+    await act(async () => {
+      host.dispatchEvent(pointer("pointerdown", { clientX: 40, clientY: 40 }));
+      host.dispatchEvent(pointer("pointermove", { clientX: 120, clientY: 90 }));
+    });
+
+    expect(setCaptureSpy).not.toHaveBeenCalled();
+    expect(host.querySelector("[data-ask-rubber]")).toBeNull();
+    expect(usePlayerStore.getState().askPhase).toBe("sending");
+    expect(usePlayerStore.getState().selection).toBeNull();
   });
 
   test("sending/streaming 时窗口级 Esc 不关面板也不退出", async () => {
@@ -1474,10 +1505,10 @@ describe("resolveAskEscape", () => {
       lingering.focus();
       expect(document.activeElement).toBe(lingering);
 
-      // Close panel
+      // Close panel. Focus is owned by finishAskCancelSync, not the layout effect.
       panelEl.remove();
       await act(async () => {
-        usePlayerStore.getState().closeAskPanel();
+        finishAskCancelSync(null, () => usePlayerStore.getState().closeAskPanel());
       });
 
       expect(usePlayerStore.getState().askPhase).toBe("selecting");
@@ -1531,7 +1562,7 @@ describe("resolveAskEscape", () => {
       lingering.focus();
 
       await act(async () => {
-        usePlayerStore.getState().closeAskPanel();
+        finishAskCancelSync(null, () => usePlayerStore.getState().closeAskPanel());
       });
 
       expect(usePlayerStore.getState().askPhase).toBe("selecting");
@@ -2085,7 +2116,7 @@ describe("resolveAskEscape", () => {
       await act(async () => {
         cancelBtn.dispatchEvent(down);
         cancelBtn.dispatchEvent(up);
-        usePlayerStore.getState().closeAskPanel();
+        finishAskCancelSync(panel, () => usePlayerStore.getState().closeAskPanel());
         panel.remove();
       });
 

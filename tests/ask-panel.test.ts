@@ -11,6 +11,8 @@ import { CAPTURE_FALLBACK_NOTICE, type CaptureResult } from "../lib/ask/capture"
 import { cancelAsk, retroCancelAsk, sendAsk } from "../lib/ask/ask-client";
 import { captureStage } from "../lib/ask/capture";
 import { resetCodeEditorRegistry, setAskCodeMissNotice } from "../lib/ask/code-editor-registry";
+import { invalidateAskMeasureCache, sharedAskMeasureCache } from "../lib/ask/ask-occlusion";
+import { setAskOpenSource } from "../lib/ask/ask-open-source";
 import { usePlayerStore } from "../lib/player/store";
 import type { TeachingScript } from "../lib/teaching/types";
 
@@ -96,6 +98,8 @@ let status: HTMLParagraphElement;
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  invalidateAskMeasureCache(sharedAskMeasureCache);
+  setAskOpenSource(null);
   usePlayerStore.getState().reset();
   usePlayerStore.getState().loadScript(script);
   vi.mocked(sendAsk).mockReset();
@@ -141,6 +145,8 @@ beforeEach(() => {
 
 afterEach(async () => {
   await act(async () => root.unmount());
+  invalidateAskMeasureCache(sharedAskMeasureCache);
+  setAskOpenSource(null);
   usePlayerStore.getState().reset();
   resetCodeEditorRegistry();
   resetLongTaskEndForTests();
@@ -1265,5 +1271,33 @@ describe("ask panel", () => {
     expect(container.querySelector("[data-ask-panel]")).not.toBeNull();
     expect(usePlayerStore.getState().askPhase).toBe("drafting");
     expect(queued).toHaveLength(0);
+  });
+
+  test("exitHold: cancel, drafting before the microtask, cancel again, panel gone after the microtask", async () => {
+    draft("drafting", { draftQuestion: "先取消一次" });
+    await render();
+    const cancel = container.querySelector<HTMLButtonElement>("[data-ask-cancel]");
+    expect(cancel).not.toBeNull();
+
+    await act(async () => {
+      activateButton(cancel!);
+      expectPanelHiddenSelecting();
+      // Re-open before the exit microtask drains. The hold must clear because
+      // the phase is a panel phase again, or the second cancel cannot unmount.
+      usePlayerStore.setState({ askPhase: "drafting", draftQuestion: "再取消一次" });
+      await drainExitMicrotask();
+    });
+    expect(container.querySelector("[data-ask-panel]")).not.toBeNull();
+    expect(usePlayerStore.getState().askPhase).toBe("drafting");
+
+    const cancelAgain = container.querySelector<HTMLButtonElement>("[data-ask-cancel]");
+    expect(cancelAgain).not.toBeNull();
+    await act(async () => {
+      activateButton(cancelAgain!);
+      expectPanelHiddenSelecting();
+      await drainExitMicrotask();
+    });
+    expect(container.querySelector("[data-ask-panel]")).toBeNull();
+    expect(usePlayerStore.getState().askPhase).toBe("selecting");
   });
 });

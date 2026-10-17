@@ -10,9 +10,14 @@ import {
   measureAskElementHeight,
   measureAskPlayerBarHeight,
   selectingRootVarsFromCache,
+  sharedAskMeasureCache,
   writeAskRootVars,
   type AskMeasureCache,
 } from "../lib/ask/ask-occlusion";
+
+afterEach(() => {
+  invalidateAskMeasureCache(sharedAskMeasureCache);
+});
 
 describe("getAskBottomOcclusion", () => {
   afterEach(() => {
